@@ -546,13 +546,24 @@ jobs:
           echo "   2. Ensuring RDS cluster password matches..."
           echo "      (This ensures RDS cluster password = Secrets Manager password)"
           
-          aws rds modify-db-cluster \
+          # Check current cluster status first
+          CLUSTER_STATUS=$(aws rds describe-db-clusters \
+            --db-cluster-identifier warmpawz-dev-cluster \
+            --query 'DBClusters[0].Status' \
+            --output text 2>/dev/null || echo "unknown")
+          
+          echo "      Current cluster status: $CLUSTER_STATUS"
+          
+          # Update RDS cluster password with error capture
+          UPDATE_OUTPUT=$(aws rds modify-db-cluster \
             --db-cluster-identifier warmpawz-dev-cluster \
             --master-user-password "$EXPECTED_PASSWORD" \
             --apply-immediately \
-            --region ap-south-1 > /dev/null
+            --region ap-south-1 2>&1)
           
-          if [ $? -eq 0 ]; then
+          UPDATE_EXIT_CODE=$?
+          
+          if [ $UPDATE_EXIT_CODE -eq 0 ]; then
             echo "   ✅ RDS cluster password update initiated"
             echo "   ⏳ Waiting 30 seconds for password change to propagate..."
             sleep 30
@@ -587,8 +598,41 @@ jobs:
             echo "password_updated=true" >> $GITHUB_OUTPUT
           else
             echo "   ❌ Failed to update RDS cluster password"
-            echo "   This might be okay if password is already correct"
+            echo "   Attempting to verify current password..."
+            
+            # Try to get cluster info to see if update is pending
+            CLUSTER_INFO=$(aws rds describe-db-clusters \
+              --db-cluster-identifier warmpawz-dev-cluster \
+              --query 'DBClusters[0].{Status:Status,PendingModifiedValues:PendingModifiedValues}' \
+              --output json 2>/dev/null || echo "{}")
+            
+            PENDING_PASSWORD=$(echo "$CLUSTER_INFO" | jq -r '.PendingModifiedValues.MasterUserPassword // ""')
+            if [ -n "$PENDING_PASSWORD" ]; then
+              echo "   ⚠️  Password update is pending - waiting for it to complete..."
+              sleep 30
+            fi
+            
             echo "password_updated=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Verify password update by testing connection
+          echo ""
+          echo "🔍 Verifying password update with test connection..."
+          RDS_ENDPOINT="${{ steps.db-creds.outputs.rds_endpoint }}"
+          TEST_USERNAME="$CURRENT_USERNAME"
+          TEST_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$EXPECTED_PASSWORD''', safe=''))")
+          TEST_DB_URL="postgresql://${TEST_USERNAME}:${TEST_PASSWORD_ENCODED}@${RDS_ENDPOINT}:5432/warmpawz"
+          
+          # Install psql if not already installed
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1 || true
+          
+          # Test connection with new password
+          if psql "$TEST_DB_URL" -c "SELECT 1;" > /dev/null 2>&1; then
+            echo "   ✅ Password verification successful - connection works!"
+          else
+            echo "   ⚠️  Password verification failed - RDS cluster password may not be updated yet"
+            echo "   This is okay - the password update may still be propagating"
+            echo "   Will retry in connectivity test step"
           fi
 
       - name: Re-fetch credentials after password update
@@ -713,7 +757,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null
           
           # Test actual PostgreSQL connection with retries
-          MAX_PG_ATTEMPTS=3
+          MAX_PG_ATTEMPTS=5  # Increased retries since password update may take time
           PG_ATTEMPT=1
           PG_SUCCESS=false
           
@@ -726,18 +770,24 @@ jobs:
           echo "   Password: Warmpawz2026 (from Secrets Manager)"
           echo ""
           
+          # If password was just updated, wait a bit longer for propagation
+          if [ "${{ steps.update-password.outputs.password_updated }}" = "true" ]; then
+            echo "   ℹ️  Password was just updated - waiting 20 seconds for propagation..."
+            sleep 20
+          fi
+          
           while [ $PG_ATTEMPT -le $MAX_PG_ATTEMPTS ]; do
             echo "   Attempt $PG_ATTEMPT of $MAX_PG_ATTEMPTS..."
             
             # Try connection with detailed error output on last attempt
             if [ $PG_ATTEMPT -eq $MAX_PG_ATTEMPTS ]; then
               # Last attempt - show error details
-              if psql "$DB_URL" -c "SELECT version();" 2>&1; then
+              ERROR_OUTPUT=$(psql "$DB_URL" -c "SELECT version();" 2>&1 || true)
+              if echo "$ERROR_OUTPUT" | grep -q "version"; then
                 echo "   ✅ PostgreSQL connection successful"
                 PG_SUCCESS=true
                 break
               else
-                ERROR_OUTPUT=$(psql "$DB_URL" -c "SELECT version();" 2>&1 || true)
                 echo "   ⚠️  Authentication failed"
                 echo "   Error details: $ERROR_OUTPUT"
               fi
@@ -752,8 +802,9 @@ jobs:
             fi
             
             if [ $PG_ATTEMPT -lt $MAX_PG_ATTEMPTS ]; then
-              echo "   Waiting 5 seconds before retry..."
-              sleep 5
+              WAIT_TIME=$((PG_ATTEMPT * 10))  # Increasing wait time: 10s, 20s, 30s, 40s
+              echo "   Waiting ${WAIT_TIME} seconds before retry (password may still be propagating)..."
+              sleep $WAIT_TIME
             fi
             
             PG_ATTEMPT=$((PG_ATTEMPT + 1))
