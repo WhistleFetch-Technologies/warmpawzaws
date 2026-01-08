@@ -295,6 +295,11 @@ module "api_gateway" {
     }
   }
 
+  # Custom domain configuration
+  custom_domain_name = local.api_subdomain
+  certificate_arn    = module.acm.regional_validated_certificate_arn
+  route53_zone_id    = data.aws_route53_zone.main.zone_id
+
   alarm_actions = [module.sns.system_alerts_topic_arn]
 }
 
