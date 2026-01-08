@@ -122,3 +122,9 @@ variable "alarm_actions" {
   default     = []
 }
 
+variable "existing_api_gateway_id" {
+  description = "Existing API Gateway ID to reference (instead of creating new). Set this to reuse an existing API Gateway."
+  type        = string
+  default     = null
+}
+
