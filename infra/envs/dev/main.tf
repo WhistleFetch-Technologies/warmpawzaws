@@ -72,13 +72,19 @@ locals {
     Project     = "Warmpawz"
   }
   
-  # CORS allowed origins including custom domains
+  # CORS allowed origins including custom domains and CloudFront distributions
   cors_allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://${local.admin_subdomain}",
     "https://${local.vendor_subdomain}",
-    "https://${local.customer_subdomain}"
+    "https://${local.customer_subdomain}",
+    # Admin CloudFront: dfof7mguaa0a5.cloudfront.net
+    "https://dfof7mguaa0a5.cloudfront.net",
+    # Customer CloudFront: d2aoyjj8ine0wk.cloudfront.net
+    "https://d2aoyjj8ine0wk.cloudfront.net",
+    # Vendor CloudFront: d1s6ykkj381k58.cloudfront.net
+    "https://d1s6ykkj381k58.cloudfront.net",
   ]
 }
 
