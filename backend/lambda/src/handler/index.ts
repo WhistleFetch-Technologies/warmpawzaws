@@ -247,9 +247,20 @@ export const handler = async (
 ): Promise<APIGatewayProxyResultV2> => {
   try {
     // Convert API Gateway HTTP API (v2) event to Request
-    const domainName = event.requestContext.domainName;
+    // domainName is only present when using custom domains
+    // For default endpoints, construct from apiId or use relative URL
     const rawPath = event.rawPath || event.requestContext.http?.path || '/';
     const queryString = event.rawQueryString ? `?${event.rawQueryString}` : '';
+    
+    // Try to get domainName from requestContext (custom domain) or construct from apiId
+    let domainName = event.requestContext.domainName;
+    if (!domainName) {
+      // For default API Gateway endpoints, construct from apiId and region
+      const apiId = event.requestContext.apiId;
+      const region = process.env.AWS_REGION || 'ap-south-1';
+      domainName = `${apiId}.execute-api.${region}.amazonaws.com`;
+    }
+    
     const url = `https://${domainName}${rawPath}${queryString}`;
 
     const headers = new Headers();
