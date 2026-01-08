@@ -857,6 +857,9 @@ jobs:
         env:
           DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
+          echo "🔄 Rebuilding database credentials with updated password (Warmpawz2026)..."
+          EXPECTED_PASSWORD="Warmpawz2026"
+          
           # If DEV_DATABASE_URL is set, rebuild it with correct password
           if [ -n "$DEV_DATABASE_URL" ]; then
             echo "ℹ️  Rebuilding DEV_DATABASE_URL with updated password..."
@@ -866,12 +869,13 @@ jobs:
             DB_PORT=$(echo "$DEV_DATABASE_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p' || echo "5432")
             DB_NAME=$(echo "$DEV_DATABASE_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
             
-            EXPECTED_PASSWORD="Warmpawz2026"
+            # Use expected password (what we just set in RDS cluster)
             DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$EXPECTED_PASSWORD''', safe=''))")
             
             DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
             echo "::add-mask::$DATABASE_URL"
             echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+            echo "✅ Rebuilt DATABASE_URL with correct password (Warmpawz2026)"
             exit 0
           fi
           
@@ -900,8 +904,16 @@ jobs:
         run: |
           echo "🔍 Testing database connectivity..."
           
-          # Use updated credentials if available, otherwise use original
+          # ALWAYS use updated credentials (with correct password) if available
+          # Otherwise fall back to original (but this should not happen)
           DB_URL="${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}"
+          
+          if [ -z "$DB_URL" ] || [ "$DB_URL" = "null" ]; then
+            echo "❌ ERROR: No database URL available"
+            exit 1
+          fi
+          
+          echo "   Using credentials: ${{ steps.db-creds-updated.outputs.database_url != '' && 'Updated (after password sync)' || 'Original' }}"
           DB_HOST=$(echo "$DB_URL" | sed -n 's|.*@\([^:]*\):[0-9]*/.*|\1|p')
           DB_PORT=$(echo "$DB_URL" | sed -n 's|.*@[^:]*:\([0-9]*\)/.*|\1|p')
           
