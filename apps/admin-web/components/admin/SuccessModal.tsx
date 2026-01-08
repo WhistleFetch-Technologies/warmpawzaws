@@ -5,12 +5,12 @@ import { CheckCircle, X } from 'lucide-react';
 
 interface SuccessModalProps {
   isOpen: boolean;
-  title: string;
+  title?: string;
   message: string;
   onClose: () => void;
 }
 
-export function SuccessModal({ isOpen, title, message, onClose }: SuccessModalProps) {
+export function SuccessModal({ isOpen, title = "Success", message, onClose }: SuccessModalProps) {
   if (!isOpen) return null;
 
   return (
