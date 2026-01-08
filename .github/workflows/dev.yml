@@ -7,9 +7,10 @@ on:
   workflow_dispatch:
 
 # Prevent parallel deployments to the same environment
+# Using commit SHA in group allows builds to complete while preventing duplicate deployments
 concurrency:
-  group: dev-deployment
-  cancel-in-progress: true
+  group: dev-deployment-${{ github.sha }}
+  cancel-in-progress: false
 
 env:
   AWS_REGION: ap-south-1
