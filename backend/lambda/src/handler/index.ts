@@ -253,12 +253,17 @@ export const handler = async (
     const queryString = event.rawQueryString ? `?${event.rawQueryString}` : '';
     
     // Try to get domainName from requestContext (custom domain) or construct from apiId
-    let domainName = event.requestContext.domainName;
+    let domainName = event.requestContext?.domainName;
     if (!domainName) {
       // For default API Gateway endpoints, construct from apiId and region
-      const apiId = event.requestContext.apiId;
-      const region = process.env.AWS_REGION || 'ap-south-1';
-      domainName = `${apiId}.execute-api.${region}.amazonaws.com`;
+      const apiId = event.requestContext?.apiId;
+      if (apiId) {
+        const region = process.env.AWS_REGION || 'ap-south-1';
+        domainName = `${apiId}.execute-api.${region}.amazonaws.com`;
+      } else {
+        // Fallback: use a placeholder if apiId is also missing (shouldn't happen)
+        domainName = 'api.warmpawz.com';
+      }
     }
     
     const url = `https://${domainName}${rawPath}${queryString}`;
