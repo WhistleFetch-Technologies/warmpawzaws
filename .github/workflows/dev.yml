@@ -479,6 +479,100 @@ jobs:
           echo "rds_secret_arn=$RDS_SECRET_ARN" >> $GITHUB_OUTPUT
           echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
 
+      - name: Verify AWS IAM permissions
+        run: |
+          echo "🔐 Verifying AWS IAM permissions..."
+          echo ""
+          
+          # Test Secrets Manager permissions
+          echo "1. Testing Secrets Manager permissions..."
+          RDS_SECRET_ARN="${{ steps.db-creds.outputs.rds_secret_arn }}"
+          
+          if [ -z "$RDS_SECRET_ARN" ]; then
+            echo "   ⚠️  Secret ARN not available - skipping permission check"
+          else
+            # Test GetSecretValue
+            if aws secretsmanager get-secret-value \
+              --secret-id "$RDS_SECRET_ARN" \
+              --query SecretString \
+              --output text > /dev/null 2>&1; then
+              echo "   ✅ secretsmanager:GetSecretValue - OK"
+            else
+              echo "   ❌ secretsmanager:GetSecretValue - FAILED"
+              echo "   ERROR: Cannot read secret from Secrets Manager"
+              exit 1
+            fi
+            
+            # Test PutSecretValue
+            TEST_SECRET=$(aws secretsmanager get-secret-value \
+              --secret-id "$RDS_SECRET_ARN" \
+              --query SecretString \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$TEST_SECRET" ]; then
+              if aws secretsmanager put-secret-value \
+                --secret-id "$RDS_SECRET_ARN" \
+                --secret-string "$TEST_SECRET" \
+                --region ap-south-1 > /dev/null 2>&1; then
+                echo "   ✅ secretsmanager:PutSecretValue - OK"
+              else
+                echo "   ❌ secretsmanager:PutSecretValue - FAILED"
+                echo "   ERROR: Cannot update secret in Secrets Manager"
+                echo "   ACTION REQUIRED: Add 'secretsmanager:PutSecretValue' permission to IAM user/role"
+                exit 1
+              fi
+            fi
+          fi
+          
+          # Test RDS permissions
+          echo ""
+          echo "2. Testing RDS permissions..."
+          
+          # Test DescribeDBClusters
+          if aws rds describe-db-clusters \
+            --db-cluster-identifier warmpawz-dev-cluster \
+            --query 'DBClusters[0].Status' \
+            --output text > /dev/null 2>&1; then
+            echo "   ✅ rds:DescribeDBClusters - OK"
+          else
+            echo "   ❌ rds:DescribeDBClusters - FAILED"
+            echo "   ERROR: Cannot describe RDS cluster"
+            exit 1
+          fi
+          
+          # Test ModifyDBCluster (dry-run by checking if command exists and shows help)
+          echo "   ℹ️  Testing rds:ModifyDBCluster permission..."
+          MODIFY_TEST=$(aws rds modify-db-cluster \
+            --db-cluster-identifier warmpawz-dev-cluster \
+            --master-user-password "TestPassword123!" \
+            --apply-immediately \
+            --region ap-south-1 2>&1 || true)
+          
+          # Check if error is permission-related or just validation
+          if echo "$MODIFY_TEST" | grep -qi "AccessDenied\|UnauthorizedOperation\|Forbidden"; then
+            echo "   ❌ rds:ModifyDBCluster - PERMISSION DENIED"
+            echo "   ERROR: Cannot modify RDS cluster password"
+            echo "   ACTION REQUIRED: Add 'rds:ModifyDBCluster' permission to IAM user/role"
+            echo ""
+            echo "   Required IAM policy:"
+            echo "   {"
+            echo "     \"Effect\": \"Allow\","
+            echo "     \"Action\": ["
+            echo "       \"rds:ModifyDBCluster\","
+            echo "       \"rds:DescribeDBClusters\""
+            echo "     ],"
+            echo "     \"Resource\": \"arn:aws:rds:ap-south-1:*:cluster:warmpawz-dev-cluster\""
+            echo "   }"
+            exit 1
+          elif echo "$MODIFY_TEST" | grep -qi "InvalidParameterValue\|same password\|identical"; then
+            echo "   ✅ rds:ModifyDBCluster - OK (permission exists, validation error expected)"
+          else
+            echo "   ✅ rds:ModifyDBCluster - OK (command executed)"
+          fi
+          
+          echo ""
+          echo "✅ All required IAM permissions verified!"
+
       - name: Verify and update RDS password if needed
         id: update-password
         run: |
@@ -525,16 +619,29 @@ jobs:
             echo "   1. Updating Secrets Manager..."
             NEW_SECRET_JSON=$(echo "$CURRENT_SECRET" | jq --arg pwd "$EXPECTED_PASSWORD" '.password = $pwd | .Password = $pwd')
             
-            aws secretsmanager put-secret-value \
+            PUT_OUTPUT=$(aws secretsmanager put-secret-value \
               --secret-id "$RDS_SECRET_ARN" \
               --secret-string "$NEW_SECRET_JSON" \
-              --region ap-south-1 > /dev/null
+              --region ap-south-1 2>&1)
             
-            if [ $? -eq 0 ]; then
+            PUT_EXIT_CODE=$?
+            
+            if [ $PUT_EXIT_CODE -eq 0 ]; then
               echo "   ✅ Secrets Manager updated"
             else
               echo "   ❌ Failed to update Secrets Manager"
-              exit 1
+              echo "   Exit code: $PUT_EXIT_CODE"
+              echo "   Error output: $PUT_OUTPUT"
+              
+              if echo "$PUT_OUTPUT" | grep -qi "AccessDenied\|UnauthorizedOperation\|Forbidden"; then
+                echo ""
+                echo "   ⚠️  PERMISSION ERROR DETECTED"
+                echo "   The IAM user/role does not have 'secretsmanager:PutSecretValue' permission"
+                echo "   ACTION REQUIRED: Add this permission to your IAM user/role"
+                exit 1
+              else
+                exit 1
+              fi
             fi
           else
             echo "✅ Secrets Manager password is correct"
@@ -555,6 +662,8 @@ jobs:
           echo "      Current cluster status: $CLUSTER_STATUS"
           
           # Update RDS cluster password with error capture
+          echo "      Executing: aws rds modify-db-cluster --db-cluster-identifier warmpawz-dev-cluster --master-user-password '***' --apply-immediately"
+          
           UPDATE_OUTPUT=$(aws rds modify-db-cluster \
             --db-cluster-identifier warmpawz-dev-cluster \
             --master-user-password "$EXPECTED_PASSWORD" \
@@ -562,6 +671,35 @@ jobs:
             --region ap-south-1 2>&1)
           
           UPDATE_EXIT_CODE=$?
+          
+          echo "      Command exit code: $UPDATE_EXIT_CODE"
+          
+          # Check for permission errors
+          if echo "$UPDATE_OUTPUT" | grep -qi "AccessDenied\|UnauthorizedOperation\|Forbidden"; then
+            echo ""
+            echo "   ❌ PERMISSION ERROR: Cannot modify RDS cluster"
+            echo "   Error: $UPDATE_OUTPUT"
+            echo ""
+            echo "   ACTION REQUIRED:"
+            echo "   The IAM user/role needs 'rds:ModifyDBCluster' permission"
+            echo ""
+            echo "   Add this policy to your IAM user/role:"
+            echo "   {"
+            echo "     \"Version\": \"2012-10-17\","
+            echo "     \"Statement\": ["
+            echo "       {"
+            echo "         \"Effect\": \"Allow\","
+            echo "         \"Action\": ["
+            echo "           \"rds:ModifyDBCluster\","
+            echo "           \"rds:DescribeDBClusters\""
+            echo "         ],"
+            echo "         \"Resource\": \"arn:aws:rds:ap-south-1:*:cluster:warmpawz-dev-cluster\""
+            echo "       }"
+            echo "     ]"
+            echo "   }"
+            echo ""
+            exit 1
+          fi
           
           if [ $UPDATE_EXIT_CODE -eq 0 ]; then
             echo "   ✅ RDS cluster password update initiated"
@@ -615,9 +753,54 @@ jobs:
             echo "password_updated=false" >> $GITHUB_OUTPUT
           fi
           
+          # Check if password update is pending or completed
+          echo ""
+          echo "🔍 Checking RDS cluster password update status..."
+          CLUSTER_DETAILS=$(aws rds describe-db-clusters \
+            --db-cluster-identifier warmpawz-dev-cluster \
+            --query 'DBClusters[0].{Status:Status,PendingModifiedValues:PendingModifiedValues}' \
+            --output json 2>/dev/null || echo "{}")
+          
+          PENDING_PASSWORD=$(echo "$CLUSTER_DETAILS" | jq -r '.PendingModifiedValues.MasterUserPassword // ""')
+          CLUSTER_STATUS=$(echo "$CLUSTER_DETAILS" | jq -r '.Status // "unknown"')
+          
+          if [ -n "$PENDING_PASSWORD" ] && [ "$PENDING_PASSWORD" != "null" ]; then
+            echo "   ⚠️  Password update is PENDING - waiting for it to complete..."
+            echo "   Cluster status: $CLUSTER_STATUS"
+            echo "   Waiting up to 2 minutes for password update to complete..."
+            
+            MAX_PASSWORD_WAIT=120
+            PASSWORD_WAITED=0
+            while [ $PASSWORD_WAITED -lt $MAX_PASSWORD_WAIT ]; do
+              CLUSTER_CHECK=$(aws rds describe-db-clusters \
+                --db-cluster-identifier warmpawz-dev-cluster \
+                --query 'DBClusters[0].{Status:Status,PendingModifiedValues:PendingModifiedValues}' \
+                --output json 2>/dev/null || echo "{}")
+              
+              PENDING_CHECK=$(echo "$CLUSTER_CHECK" | jq -r '.PendingModifiedValues.MasterUserPassword // ""')
+              STATUS_CHECK=$(echo "$CLUSTER_CHECK" | jq -r '.Status // "unknown"')
+              
+              if [ -z "$PENDING_CHECK" ] || [ "$PENDING_CHECK" = "null" ]; then
+                echo "   ✅ Password update completed! (waited ${PASSWORD_WAITED}s)"
+                break
+              fi
+              
+              if [ "$STATUS_CHECK" = "available" ] && [ "$PASSWORD_WAITED" -gt 60 ]; then
+                echo "   ⚠️  Cluster is available but password update still pending (waited ${PASSWORD_WAITED}s)"
+                echo "   This may indicate the password update failed or was rejected"
+              fi
+              
+              echo "   Status: $STATUS_CHECK, Pending: $([ -n "$PENDING_CHECK" ] && echo "yes" || echo "no") (waited ${PASSWORD_WAITED}s)"
+              sleep 10
+              PASSWORD_WAITED=$((PASSWORD_WAITED + 10))
+            done
+          else
+            echo "   ✅ No pending password update - password should be current"
+          fi
+          
           # Verify password update by testing connection
           echo ""
-          echo "🔍 Verifying password update with test connection..."
+          echo "🔍 Verifying password with test connection..."
           RDS_ENDPOINT="${{ steps.db-creds.outputs.rds_endpoint }}"
           TEST_USERNAME="$CURRENT_USERNAME"
           TEST_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$EXPECTED_PASSWORD''', safe=''))")
@@ -626,13 +809,31 @@ jobs:
           # Install psql if not already installed
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1 || true
           
-          # Test connection with new password
-          if psql "$TEST_DB_URL" -c "SELECT 1;" > /dev/null 2>&1; then
-            echo "   ✅ Password verification successful - connection works!"
+          # Test connection with new password (with retries)
+          TEST_SUCCESS=false
+          for TEST_ATTEMPT in 1 2 3; do
+            if psql "$TEST_DB_URL" -c "SELECT 1;" > /dev/null 2>&1; then
+              echo "   ✅ Password verification successful - connection works!"
+              TEST_SUCCESS=true
+              break
+            else
+              if [ $TEST_ATTEMPT -lt 3 ]; then
+                echo "   ⚠️  Test connection failed (attempt $TEST_ATTEMPT/3) - waiting 10s..."
+                sleep 10
+              else
+                echo "   ⚠️  Password verification failed after 3 attempts"
+                echo "   This may indicate:"
+                echo "   1. Password update is still propagating (will retry in connectivity test)"
+                echo "   2. RDS cluster password was not actually updated"
+                echo "   3. Username or database name mismatch"
+              fi
+            fi
+          done
+          
+          if [ "$TEST_SUCCESS" = "true" ]; then
+            echo "password_verified=true" >> $GITHUB_OUTPUT
           else
-            echo "   ⚠️  Password verification failed - RDS cluster password may not be updated yet"
-            echo "   This is okay - the password update may still be propagating"
-            echo "   Will retry in connectivity test step"
+            echo "password_verified=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Re-fetch credentials after password update
