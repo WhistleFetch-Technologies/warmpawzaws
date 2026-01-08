@@ -1138,7 +1138,12 @@ jobs:
           # Install dependencies if not already installed
           if [ ! -d "node_modules" ]; then
             echo "📦 Installing dependencies..."
-            npm ci
+            # Use npm install if package-lock.json doesn't exist, otherwise npm ci
+            if [ -f "package-lock.json" ]; then
+              npm ci
+            else
+              npm install
+            fi
           fi
           
           # Run migration status check
