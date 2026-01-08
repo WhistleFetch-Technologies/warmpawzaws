@@ -146,54 +146,171 @@ jobs:
           cd apps/customer-web
           npm run build
 
+      - name: Verify build outputs exist
+        run: |
+          echo "🔍 Verifying build outputs..."
+          for app in admin-web vendor-web customer-web; do
+            if [ ! -d "apps/$app/dist" ]; then
+              echo "❌ ERROR: apps/$app/dist directory not found!"
+              echo "Build may have failed. Please check the build logs above."
+              exit 1
+            fi
+            echo "✅ apps/$app/dist exists ($(du -sh apps/$app/dist | cut -f1))"
+            # Verify index.html exists
+            if [ ! -f "apps/$app/dist/index.html" ]; then
+              echo "❌ ERROR: apps/$app/dist/index.html not found!"
+              exit 1
+            fi
+            echo "✅ apps/$app/dist/index.html exists"
+          done
+          echo "✅ All build outputs verified"
+
+      - name: Setup Terraform (READ-ONLY for API endpoint)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+
+      - name: Get API Gateway endpoint from Terraform
+        id: api-endpoint
+        working-directory: infra/envs/dev
+        run: |
+          echo "🔍 Getting API Gateway endpoint from Terraform..."
+          terraform init -backend-config=backend.hcl > /dev/null 2>&1
+          API_ENDPOINT=$(terraform output -raw api_endpoint 2>/dev/null || echo "")
+          if [ -z "$API_ENDPOINT" ]; then
+            echo "⚠️  Could not get API endpoint from Terraform, using fallback"
+            # Fallback: Try to get from AWS directly
+            API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \
+              --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
+              --output text 2>/dev/null | head -1 || echo "")
+            if [ -z "$API_ENDPOINT" ]; then
+              echo "❌ ERROR: Could not determine API endpoint"
+              echo "   Please ensure API Gateway is deployed or set DEV_API_URL secret"
+              exit 1
+            fi
+          fi
+          echo "✅ API Gateway endpoint: $API_ENDPOINT"
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Inject runtime-config.js with API endpoint
+        run: |
+          echo "🔧 Injecting runtime-config.js with actual API Gateway endpoint..."
+          API_ENDPOINT="${{ steps.api-endpoint.outputs.api_endpoint }}"
+          
+          if [ -z "$API_ENDPOINT" ]; then
+            echo "⚠️  API endpoint not available, using fallback from secrets"
+            API_ENDPOINT="${{ secrets.DEV_API_URL || 'https://dev.api.warmpawz.com' }}"
+          fi
+          
+          echo "   Using API endpoint: $API_ENDPOINT"
+          
+          # Inject runtime-config.js for each app
+          for app in admin-web vendor-web customer-web; do
+            if [ -d "apps/$app/dist" ]; then
+              cat > "apps/$app/dist/runtime-config.js" <<EOF
+// Runtime Configuration for Warmpawz ${app}
+// Injected at deployment time with actual API Gateway endpoint
+(function() {
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+    apiBaseUrl: "${API_ENDPOINT}",
+    uatMode: true
+  };
+  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+})();
+EOF
+              echo "✅ Injected runtime-config.js for $app"
+            fi
+          done
+
       - name: Deploy to S3 (Admin Web)
         run: |
-          aws s3 sync apps/admin-web/.next/static s3://${{ secrets.S3_BUCKET_ADMIN }}/_next/static --delete
-          aws s3 sync apps/admin-web/.next/server s3://${{ secrets.S3_BUCKET_ADMIN }}/_next/server --delete
-          aws s3 sync apps/admin-web/public s3://${{ secrets.S3_BUCKET_ADMIN }}/public --delete
-          aws s3 cp apps/admin-web/.next/BUILD_ID s3://${{ secrets.S3_BUCKET_ADMIN }}/BUILD_ID
+          echo "📦 Deploying Admin Web from dist/ directory..."
+          # Verify dist directory exists
+          if [ ! -d "apps/admin-web/dist" ]; then
+            echo "❌ Error: apps/admin-web/dist directory not found!"
+            echo "Build may have failed. Check build logs above."
+            exit 1
+          fi
+          # Sync entire dist directory (includes all static assets and public files)
+          aws s3 sync apps/admin-web/dist/ s3://${{ secrets.S3_BUCKET_ADMIN }}/ --delete
+          echo "✅ Admin Web deployed successfully"
         continue-on-error: true
 
       - name: Deploy to S3 (Vendor Web)
         run: |
-          aws s3 sync apps/vendor-web/.next/static s3://${{ secrets.S3_BUCKET_VENDOR }}/_next/static --delete
-          aws s3 sync apps/vendor-web/.next/server s3://${{ secrets.S3_BUCKET_VENDOR }}/_next/server --delete
-          aws s3 sync apps/vendor-web/public s3://${{ secrets.S3_BUCKET_VENDOR }}/public --delete
-          aws s3 cp apps/vendor-web/.next/BUILD_ID s3://${{ secrets.S3_BUCKET_VENDOR }}/BUILD_ID
+          echo "📦 Deploying Vendor Web from dist/ directory..."
+          # Verify dist directory exists
+          if [ ! -d "apps/vendor-web/dist" ]; then
+            echo "❌ Error: apps/vendor-web/dist directory not found!"
+            echo "Build may have failed. Check build logs above."
+            exit 1
+          fi
+          # Sync entire dist directory (includes all static assets and public files)
+          aws s3 sync apps/vendor-web/dist/ s3://${{ secrets.S3_BUCKET_VENDOR }}/ --delete
+          echo "✅ Vendor Web deployed successfully"
         continue-on-error: true
 
       - name: Deploy to S3 (Customer Web)
         run: |
-          aws s3 sync apps/customer-web/.next/static s3://${{ secrets.S3_BUCKET_CUSTOMER }}/_next/static --delete
-          aws s3 sync apps/customer-web/.next/server s3://${{ secrets.S3_BUCKET_CUSTOMER }}/_next/server --delete
-          aws s3 sync apps/customer-web/public s3://${{ secrets.S3_BUCKET_CUSTOMER }}/public --delete
-          aws s3 cp apps/customer-web/.next/BUILD_ID s3://${{ secrets.S3_BUCKET_CUSTOMER }}/BUILD_ID
+          echo "📦 Deploying Customer Web from dist/ directory..."
+          # Verify dist directory exists
+          if [ ! -d "apps/customer-web/dist" ]; then
+            echo "❌ Error: apps/customer-web/dist directory not found!"
+            echo "Build may have failed. Check build logs above."
+            exit 1
+          fi
+          # Sync entire dist directory (includes all static assets and public files)
+          aws s3 sync apps/customer-web/dist/ s3://${{ secrets.S3_BUCKET_CUSTOMER }}/ --delete
+          echo "✅ Customer Web deployed successfully"
         continue-on-error: true
 
       - name: Invalidate CloudFront (Admin)
+        id: invalidate-admin
         run: |
-          aws cloudfront create-invalidation \
+          echo "🔄 Invalidating CloudFront cache for Admin Web..."
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID_ADMIN }} \
-            --paths "/*"
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+          echo "✅ CloudFront invalidation created: $INVALIDATION_ID"
+          echo "⏳ Note: Full propagation may take 5-15 minutes"
         continue-on-error: true
 
       - name: Invalidate CloudFront (Vendor)
+        id: invalidate-vendor
         run: |
-          aws cloudfront create-invalidation \
+          echo "🔄 Invalidating CloudFront cache for Vendor Web..."
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID_VENDOR }} \
-            --paths "/*"
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+          echo "✅ CloudFront invalidation created: $INVALIDATION_ID"
+          echo "⏳ Note: Full propagation may take 5-15 minutes"
         continue-on-error: true
 
       - name: Invalidate CloudFront (Customer)
+        id: invalidate-customer
         run: |
-          aws cloudfront create-invalidation \
+          echo "🔄 Invalidating CloudFront cache for Customer Web..."
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID_CUSTOMER }} \
-            --paths "/*"
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+          echo "✅ CloudFront invalidation created: $INVALIDATION_ID"
+          echo "⏳ Note: Full propagation may take 5-15 minutes"
         continue-on-error: true
 
       - name: Wait for CloudFront propagation
         run: |
-          echo "⏳ Waiting 30 seconds for CloudFront invalidation to propagate..."
+          echo "⏳ Waiting 30 seconds for CloudFront invalidation to start processing..."
+          echo "   (Full global propagation may take 5-15 minutes)"
           sleep 30
           echo "✅ Proceeding with smoke tests"
 
