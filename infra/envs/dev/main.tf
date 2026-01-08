@@ -122,7 +122,7 @@ module "rds" {
   allowed_security_groups = [module.lambda.lambda_security_group_id]
   database_name           = "warmpawz"
   master_username         = "warmpawz_admin"
-  min_capacity            = 0.5
+  min_capacity            = 1.0  # Increased from 0.5 to 1.0 ACU to reduce scaling delays and improve response times
   max_capacity            = 1.0
   backup_retention_period = 1  # Free tier allows max 1 day
   availability_zones      = slice(module.vpc.availability_zones, 0, 2)
@@ -193,7 +193,7 @@ module "lambda" {
     api-handler = {
       handler     = "index.handler"
       runtime     = "nodejs20.x"
-      timeout     = 30
+      timeout     = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
       memory_size = 512
       zip_path    = "${path.module}/../../../backend/lambda/api-handler.zip"
       env_vars    = {}
@@ -272,12 +272,16 @@ module "api_gateway" {
   cognito_user_pool_arn       = module.cognito.user_pool_arn
   cognito_user_pool_id        = module.cognito.user_pool_id
   cognito_user_pool_client_id = module.cognito.customer_web_client_id
+  
+  # CRITICAL: Reference existing API Gateway (IMMUTABLE - do not create or modify)
+  # This API Gateway is LIVE and IN USE - z0b3obweb6
+  existing_api_gateway_id     = "z0b3obweb6"
 
   lambda_integrations = {
     api-handler = {
       invoke_arn    = module.lambda.lambda_function_invoke_arns["api-handler"]
       function_name = module.lambda.lambda_function_names["api-handler"]
-      timeout_ms    = 30000
+      timeout_ms    = 60000  # Increased to match Lambda timeout (60s)
     }
   }
 
