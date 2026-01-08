@@ -476,13 +476,171 @@ jobs:
           
           # Output for next steps
           echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+          echo "rds_secret_arn=$RDS_SECRET_ARN" >> $GITHUB_OUTPUT
+          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Verify and update RDS password if needed
+        id: update-password
+        run: |
+          echo "🔐 Verifying RDS password configuration..."
+          
+          # Skip if using DEV_DATABASE_URL (password should be set manually)
+          if [ -n "${{ secrets.DEV_DATABASE_URL }}" ]; then
+            echo "ℹ️  DEV_DATABASE_URL is set - skipping automatic password update"
+            echo "   Ensure DEV_DATABASE_URL has the correct password (Warmpawz2026)"
+            echo "password_updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          RDS_SECRET_ARN="${{ steps.db-creds.outputs.rds_secret_arn }}"
+          EXPECTED_PASSWORD="Warmpawz2026"
+          
+          if [ -z "$RDS_SECRET_ARN" ]; then
+            echo "⚠️  RDS secret ARN not available - skipping password update"
+            echo "password_updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Get current password from Secrets Manager
+          CURRENT_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "$RDS_SECRET_ARN" \
+            --query SecretString \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$CURRENT_SECRET" ]; then
+            echo "❌ ERROR: Failed to retrieve secret from Secrets Manager"
+            exit 1
+          fi
+          
+          CURRENT_PASSWORD=$(echo "$CURRENT_SECRET" | jq -r '.password // .Password // ""' 2>/dev/null || echo "")
+          CURRENT_USERNAME=$(echo "$CURRENT_SECRET" | jq -r '.username // .Username // "warmpawz_admin"' 2>/dev/null || echo "warmpawz_admin")
+          
+          echo "   Current password in secret: ${CURRENT_PASSWORD:0:4}*** (length: ${#CURRENT_PASSWORD})"
+          echo "   Expected password: ${EXPECTED_PASSWORD:0:4}*** (length: ${#EXPECTED_PASSWORD})"
+          
+          # Check if password needs to be updated
+          if [ "$CURRENT_PASSWORD" != "$EXPECTED_PASSWORD" ]; then
+            echo ""
+            echo "⚠️  Password mismatch detected!"
+            echo "   Updating Secrets Manager and RDS cluster password..."
+            
+            # Update Secrets Manager with new password
+            echo "   1. Updating Secrets Manager..."
+            NEW_SECRET_JSON=$(echo "$CURRENT_SECRET" | jq --arg pwd "$EXPECTED_PASSWORD" '.password = $pwd | .Password = $pwd')
+            
+            aws secretsmanager put-secret-value \
+              --secret-id "$RDS_SECRET_ARN" \
+              --secret-string "$NEW_SECRET_JSON" \
+              --region ap-south-1 > /dev/null
+            
+            if [ $? -eq 0 ]; then
+              echo "   ✅ Secrets Manager updated"
+            else
+              echo "   ❌ Failed to update Secrets Manager"
+              exit 1
+            fi
+            
+            # Update RDS cluster password
+            echo "   2. Updating RDS cluster password..."
+            aws rds modify-db-cluster \
+              --db-cluster-identifier warmpawz-dev-cluster \
+              --master-user-password "$EXPECTED_PASSWORD" \
+              --apply-immediately \
+              --region ap-south-1 > /dev/null
+            
+            if [ $? -eq 0 ]; then
+              echo "   ✅ RDS cluster password update initiated"
+              echo "   ⏳ Waiting 30 seconds for password change to propagate..."
+              sleep 30
+              
+              # Wait for cluster to be available
+              echo "   ⏳ Waiting for cluster to be available..."
+              MAX_WAIT=120
+              WAITED=0
+              while [ $WAITED -lt $MAX_WAIT ]; do
+                STATUS=$(aws rds describe-db-clusters \
+                  --db-cluster-identifier warmpawz-dev-cluster \
+                  --query 'DBClusters[0].Status' \
+                  --output text 2>/dev/null || echo "unknown")
+                
+                if [ "$STATUS" = "available" ]; then
+                  echo "   ✅ RDS cluster is available"
+                  break
+                fi
+                
+                echo "   Status: $STATUS (waited ${WAITED}s)"
+                sleep 10
+                WAITED=$((WAITED + 10))
+              done
+              
+              if [ "$STATUS" != "available" ]; then
+                echo "   ⚠️  Warning: Cluster status is $STATUS (may still be updating)"
+              fi
+            else
+              echo "   ❌ Failed to update RDS cluster password"
+              exit 1
+            fi
+            
+            echo ""
+            echo "✅ Password updated successfully!"
+            echo "   Both Secrets Manager and RDS cluster now use: ${EXPECTED_PASSWORD:0:4}***"
+            echo "password_updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Password is correct - no update needed"
+            echo "password_updated=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Re-fetch credentials after password update
+        id: db-creds-updated
+        if: always() && steps.update-password.outputs.password_updated == 'true'
+        env:
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+        run: |
+          # If DEV_DATABASE_URL is set, rebuild it with correct password
+          if [ -n "$DEV_DATABASE_URL" ]; then
+            echo "ℹ️  Rebuilding DEV_DATABASE_URL with updated password..."
+            # Extract components from existing URL
+            DB_USERNAME=$(echo "$DEV_DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+            DB_HOST=$(echo "$DEV_DATABASE_URL" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+            DB_PORT=$(echo "$DEV_DATABASE_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p' || echo "5432")
+            DB_NAME=$(echo "$DEV_DATABASE_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+            
+            EXPECTED_PASSWORD="Warmpawz2026"
+            DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$EXPECTED_PASSWORD''', safe=''))")
+            
+            DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+            echo "::add-mask::$DATABASE_URL"
+            echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Otherwise, rebuild DATABASE_URL with updated password from Secrets Manager
+          RDS_SECRET_ARN="${{ steps.db-creds.outputs.rds_secret_arn }}"
+          RDS_ENDPOINT="${{ steps.db-creds.outputs.rds_endpoint }}"
+          EXPECTED_PASSWORD="Warmpawz2026"
+          
+          # Get updated secret
+          DB_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "$RDS_SECRET_ARN" \
+            --query SecretString \
+            --output text 2>/dev/null || echo "")
+          
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "warmpawz_admin"' 2>/dev/null || echo "warmpawz_admin")
+          
+          # Use expected password (should match what we just set)
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$EXPECTED_PASSWORD''', safe=''))")
+          
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:5432/warmpawz"
+          
+          echo "::add-mask::$DATABASE_URL"
+          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
 
       - name: Test database connectivity
         run: |
           echo "🔍 Testing database connectivity..."
           
-          # Extract host and port from DATABASE_URL
-          DB_URL="${{ steps.db-creds.outputs.database_url }}"
+          # Use updated credentials if available, otherwise use original
+          DB_URL="${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}"
           DB_HOST=$(echo "$DB_URL" | sed -n 's|.*@\([^:]*\):[0-9]*/.*|\1|p')
           DB_PORT=$(echo "$DB_URL" | sed -n 's|.*@[^:]*:\([0-9]*\)/.*|\1|p')
           
@@ -606,7 +764,8 @@ jobs:
         run: |
           echo "🔍 Checking if database schema exists..."
           
-          DB_URL="${{ steps.db-creds.outputs.database_url }}"
+          # Use updated credentials if available, otherwise use original
+          DB_URL="${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}"
           
           # Check if key tables exist (customers, vendors, bookings, pets are core tables)
           KEY_TABLES_COUNT=$(PGPASSWORD=$(echo "$DB_URL" | sed -n 's|.*:\([^@]*\)@.*|\1|p') \
@@ -652,7 +811,7 @@ jobs:
           echo "   Migrations are idempotent - safe to run multiple times"
           npm run migrate:up
         env:
-          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
+          DATABASE_URL: ${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}
           ENVIRONMENT: dev
 
       - name: Verify schema deployment
@@ -661,7 +820,7 @@ jobs:
           echo "🔍 Verifying schema deployment..."
           npm run migrate:status
         env:
-          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
+          DATABASE_URL: ${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}
 
       - name: Schema deployment summary
         if: always()
