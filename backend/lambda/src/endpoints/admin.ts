@@ -10,6 +10,10 @@
  * - POST /admin/vendors/:id/approve - Approve vendor
  * - POST /admin/vendors/:id/reject - Reject vendor
  * - GET /admin/vendors - List all vendors
+ * - GET /admin/vendors/all - Alias for /admin/vendors (frontend compatibility)
+ * - POST /admin/vendor/application/:applicationId/approve - Approve vendor application (frontend compatibility)
+ * - POST /admin/vendor/application/:applicationId/reject - Reject vendor application (frontend compatibility)
+ * - POST /admin/vendor/application/:applicationId/request-clarification - Request clarification (frontend compatibility)
  * 
  * Date: 2025-01-28
  * Migration: Supabase to AWS Lambda
@@ -272,6 +276,45 @@ export function registerAdminEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await listHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Alias for /admin/vendors/all (frontend compatibility)
+  app.get('/admin/vendors/all', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await listHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Frontend compatibility: /admin/vendor/application/:applicationId/approve
+  app.post('/admin/vendor/application/:applicationId/approve', async (c) => {
+    const applicationId = c.req.param('applicationId');
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: applicationId };
+    const context = createLambdaContext();
+    const result = await approveHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Frontend compatibility: /admin/vendor/application/:applicationId/reject
+  app.post('/admin/vendor/application/:applicationId/reject', async (c) => {
+    const applicationId = c.req.param('applicationId');
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: applicationId };
+    const context = createLambdaContext();
+    const result = await rejectHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Frontend compatibility: /admin/vendor/application/:applicationId/request-clarification
+  app.post('/admin/vendor/application/:applicationId/request-clarification', async (c) => {
+    // This endpoint can use the reject handler with a clarification reason
+    const applicationId = c.req.param('applicationId');
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: applicationId };
+    const context = createLambdaContext();
+    const result = await rejectHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
