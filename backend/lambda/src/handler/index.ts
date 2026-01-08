@@ -249,7 +249,7 @@ export const handler = async (
     // Convert API Gateway HTTP API (v2) event to Request
     // domainName is only present when using custom domains
     // For default endpoints, construct from apiId or use relative URL
-    const rawPath = event.rawPath || event.requestContext.http?.path || '/';
+    const rawPath = event.rawPath || event.requestContext?.http?.path || '/';
     const queryString = event.rawQueryString ? `?${event.rawQueryString}` : '';
     
     // Try to get domainName from requestContext (custom domain) or construct from apiId
@@ -280,7 +280,7 @@ export const handler = async (
       : event.body || undefined;
 
     const request = new Request(url, {
-      method: event.requestContext.http?.method || 'GET',
+      method: event.requestContext?.http?.method || 'GET',
       headers,
       body: requestBody,
     });
