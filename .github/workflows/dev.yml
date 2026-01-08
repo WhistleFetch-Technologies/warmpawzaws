@@ -482,14 +482,14 @@ jobs:
       - name: Verify and update RDS password if needed
         id: update-password
         run: |
-          echo "🔐 Verifying RDS password configuration..."
+          echo "🔐 Verifying and synchronizing RDS password configuration..."
+          echo "   Target password: Warmpawz2026"
+          echo ""
           
           # Skip if using DEV_DATABASE_URL (password should be set manually)
           if [ -n "${{ secrets.DEV_DATABASE_URL }}" ]; then
-            echo "ℹ️  DEV_DATABASE_URL is set - skipping automatic password update"
+            echo "ℹ️  DEV_DATABASE_URL is set - will still ensure RDS cluster password matches"
             echo "   Ensure DEV_DATABASE_URL has the correct password (Warmpawz2026)"
-            echo "password_updated=false" >> $GITHUB_OUTPUT
-            exit 0
           fi
           
           RDS_SECRET_ARN="${{ steps.db-creds.outputs.rds_secret_arn }}"
@@ -515,16 +515,13 @@ jobs:
           CURRENT_PASSWORD=$(echo "$CURRENT_SECRET" | jq -r '.password // .Password // ""' 2>/dev/null || echo "")
           CURRENT_USERNAME=$(echo "$CURRENT_SECRET" | jq -r '.username // .Username // "warmpawz_admin"' 2>/dev/null || echo "warmpawz_admin")
           
-          echo "   Current password in secret: ${CURRENT_PASSWORD:0:4}*** (length: ${#CURRENT_PASSWORD})"
+          echo "   Current password in Secrets Manager: ${CURRENT_PASSWORD:0:4}*** (length: ${#CURRENT_PASSWORD})"
           echo "   Expected password: ${EXPECTED_PASSWORD:0:4}*** (length: ${#EXPECTED_PASSWORD})"
+          echo ""
           
-          # Check if password needs to be updated
+          # Always ensure Secrets Manager has the correct password
           if [ "$CURRENT_PASSWORD" != "$EXPECTED_PASSWORD" ]; then
-            echo ""
-            echo "⚠️  Password mismatch detected!"
-            echo "   Updating Secrets Manager and RDS cluster password..."
-            
-            # Update Secrets Manager with new password
+            echo "⚠️  Secrets Manager password mismatch detected!"
             echo "   1. Updating Secrets Manager..."
             NEW_SECRET_JSON=$(echo "$CURRENT_SECRET" | jq --arg pwd "$EXPECTED_PASSWORD" '.password = $pwd | .Password = $pwd')
             
@@ -539,60 +536,64 @@ jobs:
               echo "   ❌ Failed to update Secrets Manager"
               exit 1
             fi
+          else
+            echo "✅ Secrets Manager password is correct"
+          fi
+          
+          # ALWAYS update RDS cluster password to ensure it matches
+          # This is critical because RDS cluster password might be different from Secrets Manager
+          echo ""
+          echo "   2. Ensuring RDS cluster password matches..."
+          echo "      (This ensures RDS cluster password = Secrets Manager password)"
+          
+          aws rds modify-db-cluster \
+            --db-cluster-identifier warmpawz-dev-cluster \
+            --master-user-password "$EXPECTED_PASSWORD" \
+            --apply-immediately \
+            --region ap-south-1 > /dev/null
+          
+          if [ $? -eq 0 ]; then
+            echo "   ✅ RDS cluster password update initiated"
+            echo "   ⏳ Waiting 30 seconds for password change to propagate..."
+            sleep 30
             
-            # Update RDS cluster password
-            echo "   2. Updating RDS cluster password..."
-            aws rds modify-db-cluster \
-              --db-cluster-identifier warmpawz-dev-cluster \
-              --master-user-password "$EXPECTED_PASSWORD" \
-              --apply-immediately \
-              --region ap-south-1 > /dev/null
-            
-            if [ $? -eq 0 ]; then
-              echo "   ✅ RDS cluster password update initiated"
-              echo "   ⏳ Waiting 30 seconds for password change to propagate..."
-              sleep 30
+            # Wait for cluster to be available
+            echo "   ⏳ Waiting for cluster to be available..."
+            MAX_WAIT=120
+            WAITED=0
+            while [ $WAITED -lt $MAX_WAIT ]; do
+              STATUS=$(aws rds describe-db-clusters \
+                --db-cluster-identifier warmpawz-dev-cluster \
+                --query 'DBClusters[0].Status' \
+                --output text 2>/dev/null || echo "unknown")
               
-              # Wait for cluster to be available
-              echo "   ⏳ Waiting for cluster to be available..."
-              MAX_WAIT=120
-              WAITED=0
-              while [ $WAITED -lt $MAX_WAIT ]; do
-                STATUS=$(aws rds describe-db-clusters \
-                  --db-cluster-identifier warmpawz-dev-cluster \
-                  --query 'DBClusters[0].Status' \
-                  --output text 2>/dev/null || echo "unknown")
-                
-                if [ "$STATUS" = "available" ]; then
-                  echo "   ✅ RDS cluster is available"
-                  break
-                fi
-                
-                echo "   Status: $STATUS (waited ${WAITED}s)"
-                sleep 10
-                WAITED=$((WAITED + 10))
-              done
-              
-              if [ "$STATUS" != "available" ]; then
-                echo "   ⚠️  Warning: Cluster status is $STATUS (may still be updating)"
+              if [ "$STATUS" = "available" ]; then
+                echo "   ✅ RDS cluster is available"
+                break
               fi
-            else
-              echo "   ❌ Failed to update RDS cluster password"
-              exit 1
+              
+              echo "   Status: $STATUS (waited ${WAITED}s)"
+              sleep 10
+              WAITED=$((WAITED + 10))
+            done
+            
+            if [ "$STATUS" != "available" ]; then
+              echo "   ⚠️  Warning: Cluster status is $STATUS (may still be updating)"
             fi
             
             echo ""
-            echo "✅ Password updated successfully!"
+            echo "✅ Password synchronization complete!"
             echo "   Both Secrets Manager and RDS cluster now use: ${EXPECTED_PASSWORD:0:4}***"
             echo "password_updated=true" >> $GITHUB_OUTPUT
           else
-            echo "✅ Password is correct - no update needed"
+            echo "   ❌ Failed to update RDS cluster password"
+            echo "   This might be okay if password is already correct"
             echo "password_updated=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Re-fetch credentials after password update
         id: db-creds-updated
-        if: always() && steps.update-password.outputs.password_updated == 'true'
+        if: always()
         env:
           DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
@@ -716,19 +717,43 @@ jobs:
           PG_ATTEMPT=1
           PG_SUCCESS=false
           
+          # Extract username and host for debugging
+          DB_USERNAME_DEBUG=$(echo "$DB_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+          DB_HOST_DEBUG=$(echo "$DB_URL" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+          
+          echo "   Testing with username: $DB_USERNAME_DEBUG"
+          echo "   Testing with host: $DB_HOST_DEBUG"
+          echo "   Password: Warmpawz2026 (from Secrets Manager)"
+          echo ""
+          
           while [ $PG_ATTEMPT -le $MAX_PG_ATTEMPTS ]; do
             echo "   Attempt $PG_ATTEMPT of $MAX_PG_ATTEMPTS..."
             
-            if psql "$DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
-              echo "   ✅ PostgreSQL connection successful"
-              PG_SUCCESS=true
-              break
-            else
-              echo "   ⚠️  Authentication failed"
-              if [ $PG_ATTEMPT -lt $MAX_PG_ATTEMPTS ]; then
-                echo "   Waiting 5 seconds before retry..."
-                sleep 5
+            # Try connection with detailed error output on last attempt
+            if [ $PG_ATTEMPT -eq $MAX_PG_ATTEMPTS ]; then
+              # Last attempt - show error details
+              if psql "$DB_URL" -c "SELECT version();" 2>&1; then
+                echo "   ✅ PostgreSQL connection successful"
+                PG_SUCCESS=true
+                break
+              else
+                ERROR_OUTPUT=$(psql "$DB_URL" -c "SELECT version();" 2>&1 || true)
+                echo "   ⚠️  Authentication failed"
+                echo "   Error details: $ERROR_OUTPUT"
               fi
+            else
+              if psql "$DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
+                echo "   ✅ PostgreSQL connection successful"
+                PG_SUCCESS=true
+                break
+              else
+                echo "   ⚠️  Authentication failed"
+              fi
+            fi
+            
+            if [ $PG_ATTEMPT -lt $MAX_PG_ATTEMPTS ]; then
+              echo "   Waiting 5 seconds before retry..."
+              sleep 5
             fi
             
             PG_ATTEMPT=$((PG_ATTEMPT + 1))
@@ -738,14 +763,26 @@ jobs:
             echo ""
             echo "❌ ERROR: PostgreSQL authentication failed after $MAX_PG_ATTEMPTS attempts"
             echo ""
-            echo "   Possible causes:"
-            echo "   1. Incorrect username or password in Secrets Manager"
-            echo "   2. Database does not exist"
-            echo "   3. SSL/TLS configuration issue"
-            echo "   4. RDS is rejecting connections"
+            echo "   Debugging information:"
+            echo "   - Username: $DB_USERNAME_DEBUG"
+            echo "   - Host: $DB_HOST_DEBUG"
+            echo "   - Expected password: Warmpawz2026"
             echo ""
-            echo "   Verify credentials:"
-            echo "   aws secretsmanager get-secret-value --secret-id <RDS_SECRET_ARN>"
+            echo "   Possible causes:"
+            echo "   1. RDS cluster password not updated (check AWS Console)"
+            echo "   2. Username mismatch (check Secrets Manager)"
+            echo "   3. Database 'warmpawz' does not exist"
+            echo "   4. SSL/TLS configuration issue"
+            echo ""
+            echo "   Manual verification steps:"
+            echo "   1. Check Secrets Manager:"
+            echo "      aws secretsmanager get-secret-value --secret-id ${{ steps.db-creds.outputs.rds_secret_arn }}"
+            echo ""
+            echo "   2. Check RDS cluster status:"
+            echo "      aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --query 'DBClusters[0].Status'"
+            echo ""
+            echo "   3. Manually update RDS password if needed:"
+            echo "      aws rds modify-db-cluster --db-cluster-identifier warmpawz-dev-cluster --master-user-password 'Warmpawz2026' --apply-immediately"
             echo ""
             exit 1
           fi
