@@ -370,24 +370,29 @@ jobs:
         run: |
           echo "🔐 Retrieving database credentials..."
           
+          # Get RDS endpoint and secret ARN first (needed for password update even if DEV_DATABASE_URL is set)
+          RDS_CLUSTER_ID="warmpawz-dev-cluster"
+          RDS_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Endpoint' --output text 2>/dev/null || echo "")
+          RDS_PORT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Port' --output text 2>/dev/null || echo "5432")
+          RDS_DB_NAME=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].DatabaseName' --output text 2>/dev/null || echo "warmpawz")
+          
+          # Get secret ARN from Secrets Manager (always needed for password update)
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text | head -1 || echo "")
+          
+          # Output RDS info for password update step (even if using DEV_DATABASE_URL)
+          echo "rds_secret_arn=$RDS_SECRET_ARN" >> $GITHUB_OUTPUT
+          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          
           # PRIORITY 1: Use DEV_DATABASE_URL secret if provided (most reliable)
           if [ -n "$DEV_DATABASE_URL" ]; then
             echo "✅ Using DEV_DATABASE_URL from GitHub secrets"
+            echo "   Note: RDS cluster password will still be verified/updated if needed"
             echo "::add-mask::$DEV_DATABASE_URL"
             echo "database_url=$DEV_DATABASE_URL" >> $GITHUB_OUTPUT
             exit 0
           fi
           
           echo "ℹ️  DEV_DATABASE_URL not set, falling back to Secrets Manager..."
-          
-          # Get RDS endpoint from AWS directly (no Terraform needed)
-          RDS_CLUSTER_ID="warmpawz-dev-cluster"
-          RDS_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Endpoint' --output text 2>/dev/null || echo "")
-          RDS_PORT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Port' --output text 2>/dev/null || echo "5432")
-          RDS_DB_NAME=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].DatabaseName' --output text 2>/dev/null || echo "warmpawz")
-          
-          # Get secret ARN from Secrets Manager
-          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text | head -1 || echo "")
           
           # CRITICAL: Validate all required values exist
           if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "None" ] || [ "$RDS_ENDPOINT" = "null" ]; then
@@ -476,8 +481,7 @@ jobs:
           
           # Output for next steps
           echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
-          echo "rds_secret_arn=$RDS_SECRET_ARN" >> $GITHUB_OUTPUT
-          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          # Note: rds_secret_arn and rds_endpoint are already set above
 
       - name: Verify AWS IAM permissions
         run: |
@@ -580,19 +584,30 @@ jobs:
           echo "   Target password: Warmpawz2026"
           echo ""
           
-          # Skip if using DEV_DATABASE_URL (password should be set manually)
-          if [ -n "${{ secrets.DEV_DATABASE_URL }}" ]; then
-            echo "ℹ️  DEV_DATABASE_URL is set - will still ensure RDS cluster password matches"
-            echo "   Ensure DEV_DATABASE_URL has the correct password (Warmpawz2026)"
-          fi
-          
           RDS_SECRET_ARN="${{ steps.db-creds.outputs.rds_secret_arn }}"
           EXPECTED_PASSWORD="Warmpawz2026"
           
           if [ -z "$RDS_SECRET_ARN" ]; then
-            echo "⚠️  RDS secret ARN not available - skipping password update"
-            echo "password_updated=false" >> $GITHUB_OUTPUT
-            exit 0
+            echo "⚠️  RDS secret ARN not available - attempting to find it..."
+            # Try to find secret ARN if not set
+            RDS_SECRET_ARN=$(aws secretsmanager list-secrets \
+              --region ap-south-1 \
+              --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" \
+              --output text | head -1 || echo "")
+            
+            if [ -z "$RDS_SECRET_ARN" ]; then
+              echo "❌ ERROR: Cannot find RDS secret ARN"
+              echo "   This is required to update the RDS cluster password"
+              echo "   Please ensure the secret exists in Secrets Manager"
+              exit 1
+            fi
+            echo "   ✅ Found secret ARN: $RDS_SECRET_ARN"
+          fi
+          
+          # Check if using DEV_DATABASE_URL
+          if [ -n "${{ secrets.DEV_DATABASE_URL }}" ]; then
+            echo "ℹ️  DEV_DATABASE_URL is set - will still ensure RDS cluster password matches"
+            echo "   After updating RDS password, DEV_DATABASE_URL will be rebuilt with correct password"
           fi
           
           # Get current password from Secrets Manager
