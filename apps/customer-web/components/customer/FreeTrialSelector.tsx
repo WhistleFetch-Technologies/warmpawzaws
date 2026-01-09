@@ -1,174 +1,189 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Check, X, Gift, Calendar, Clock } from 'lucide-react';
-import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
-
-interface FreeTrial {
-  id: string;
-  serviceName: string;
-  description: string;
-  duration: string;
-  vendorName: string;
-  vendorId: string;
-  available: boolean;
-  terms?: string[];
-}
+import { Gift, Check, Calendar, Clock, Star } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 
 interface FreeTrialSelectorProps {
-  serviceType?: string;
-  onSelectTrial?: (trial: FreeTrial) => void;
-  onClose?: () => void;
+  customerId: string;
+  vendorId?: string;
+  onTrialBooked?: (booking: any) => void;
 }
 
-export function FreeTrialSelector({
-  serviceType,
-  onSelectTrial,
-  onClose
-}: FreeTrialSelectorProps) {
-  const [trials, setTrials] = useState<FreeTrial[]>([]);
+export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeTrialSelectorProps) {
+  const [trials, setTrials] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTrial, setSelectedTrial] = useState<FreeTrial | null>(null);
+  const [booking, setBooking] = useState(false);
+  const [selectedTrial, setSelectedTrial] = useState<string | null>(null);
+
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchFreeTrials();
-  }, [serviceType]);
+  }, [vendorId]);
 
   const fetchFreeTrials = async () => {
     try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (serviceType) params.append('serviceType', serviceType);
+      const url = vendorId 
+        ? `${API_BASE}/trainer/free-trials?vendorId=${vendorId}`
+        : `${API_BASE}/trainer/free-trials`;
 
-      const response = await apiClient.get<{ trials: FreeTrial[] }>(
-        `/customer/free-trials?${params}`
-      );
-      
-      if (response.trials) {
-        setTrials(response.trials);
+      const response = await apiClient.get('/vendor/endpoint');
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setTrials(data.freeTrials);
+        }
       }
     } catch (error) {
-      console.error('Error fetching free trials:', error);
+      console.error('Failed to fetch free trials:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectTrial = (trial: FreeTrial) => {
-    setSelectedTrial(trial);
-    onSelectTrial?.(trial);
+  const handleBookTrial = async (trialId: string) => {
+    if (!customerId) {
+      toast.error('Please log in to book a free trial');
+      return;
+    }
+
+    setBooking(true);
+    try {
+      const response = await fetch(`${API_BASE}/trainer/book-free-trial`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({
+          customerId,
+          trialId,
+          vendorId,
+          preferredDate: new Date().toISOString().split('T')[0],
+          preferredTime: '10:00'
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Free trial booked! Trainer will contact you soon.');
+          setSelectedTrial(trialId);
+          if (onTrialBooked) {
+            onTrialBooked(data.booking);
+          }
+        } else {
+          toast.error(data.error || 'Failed to book trial');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to book trial:', error);
+      toast.error('Failed to book trial. Please try again.');
+    } finally {
+      setBooking(false);
+    }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading free trials...</p>
-        </div>
+      <div className="py-8 text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto mb-2"></div>
+        <p className="text-sm text-gray-500">Loading free trials...</p>
       </div>
     );
   }
 
+  if (trials.length === 0) {
+    return null;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
-        <div className="flex items-center gap-4">
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-            >
-              <X className="w-5 h-5 text-white" />
-            </button>
-          )}
-          <div className="flex-1">
-            <h1 className="text-white text-xl font-bold">Free Trial Services</h1>
-            <p className="text-white/90 text-sm">Try services for free</p>
-          </div>
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-            <Gift className="w-6 h-6 text-white" />
-          </div>
-        </div>
+      <div className="flex items-center gap-2 mb-4">
+        <Gift className="w-5 h-5 text-purple-600" />
+        <h3 className="font-bold text-gray-900">Free Trial Sessions</h3>
       </div>
 
-      {/* Content */}
-      <div className="px-0 py-0">
-        {trials.length === 0 ? (
-          <div className="bg-white rounded-xl border p-02 text-center">
-            <Gift className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-600">No free trials available</p>
-            <p className="text-sm text-gray-500 mt-0">Check back later for new offers</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {trials.map((trial) => (
-              <div
-                key={trial.id}
-                onClick={() => handleSelectTrial(trial)}
-                className={`bg-white rounded-xl border-2 p-0 transition-all active:scale-[0.98] cursor-pointer ${
-                  selectedTrial?.id === trial.id
-                    ? 'border-primary bg-orange-50'
-                    : 'border-gray-200 hover:border-primary hover:shadow-md'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-0">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-0 mb-0">
-                      <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                        FREE TRIAL
-                      </span>
-                      {!trial.available && (
-                        <span className="px-0 py-0 bg-red-100 text-red-700 rounded-full text-xs font-semibold">
-                          UNAVAILABLE
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-bold text-gray-900 text-lg mb-0">{trial.serviceName}</h3>
-                    <p className="text-sm text-gray-600 mb-0">{trial.description}</p>
-                    <p className="text-sm font-semibold text-gray-900">{trial.vendorName}</p>
-                  </div>
-                  {selectedTrial?.id === trial.id && (
-                    <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
-                      <Check className="w-5 h-5 text-white" />
-                    </div>
-                  )}
-                </div>
+      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+        <p className="text-sm text-purple-900">
+          🎁 <strong>Try before you commit!</strong> Book a free trial session to experience our training programs.
+        </p>
+      </div>
 
-                <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
-                  <div className="flex items-center gap-0">
-                    <Clock className="w-4 h-4" />
-                    <span>{trial.duration}</span>
-                  </div>
-                </div>
-
-                {trial.terms && trial.terms.length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-0">
-                    <p className="text-xs font-semibold text-gray-700 mb-0">Terms & Conditions:</p>
-                    <ul className="space-y-1">
-                      {trial.terms.map((term, idx) => (
-                        <li key={idx} className="text-xs text-gray-600 flex items-start gap-0">
-                          <span className="text-primary mt-0.5">•</span>
-                          <span>{term}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {!trial.available && (
-                  <div className="mt-0 p-1 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">This trial is currently unavailable</p>
-                  </div>
-                )}
+      {/* Trials Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {trials.map((trial) => (
+          <Card
+            key={trial.id}
+            className={`p-4 transition-all border-2 ${
+              selectedTrial === trial.id
+                ? 'border-purple-500 bg-purple-50'
+                : 'border-gray-200 hover:border-purple-200'
+            }`}
+          >
+            {/* Trial Badge */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white px-3 py-1 rounded-full text-xs font-bold">
+                FREE TRIAL
               </div>
-            ))}
-          </div>
-        )}
+              {selectedTrial === trial.id && (
+                <div className="bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Booked
+                </div>
+              )}
+            </div>
+
+            {/* Trial Name */}
+            <h4 className="font-bold text-gray-900 mb-2">{trial.name}</h4>
+
+            {/* Duration */}
+            <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+              <Clock className="w-4 h-4" />
+              <span>{trial.duration}</span>
+            </div>
+
+            {/* Description */}
+            <p className="text-sm text-gray-700 mb-3">{trial.description}</p>
+
+            {/* Features */}
+            <div className="space-y-1.5 mb-4">
+              {trial.features.map((feature: string, idx: number) => (
+                <div key={idx} className="flex items-start gap-2">
+                  <Check className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-gray-700">{feature}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Price Strike */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm text-gray-400 line-through">
+                ₹{trial.originalPrice}
+              </span>
+              <span className="text-xl font-bold text-green-600">FREE</span>
+            </div>
+
+            {/* Limit */}
+            <p className="text-xs text-gray-500 mb-3">{trial.limit}</p>
+
+            {/* Book Button */}
+            <Button
+              onClick={() => handleBookTrial(trial.id)}
+              disabled={booking || selectedTrial === trial.id}
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
+            >
+              {selectedTrial === trial.id ? 'Trial Booked ✓' : 'Book Free Trial'}
+            </Button>
+          </Card>
+        ))}
       </div>
     </div>
   );
 }
-

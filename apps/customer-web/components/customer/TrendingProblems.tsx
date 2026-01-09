@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, ChevronRight } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { Badge } from '@/components/ui/badge';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface TrendingProblem {
   problemId: string;
@@ -29,18 +30,14 @@ export function TrendingProblems({
 
   useEffect(() => {
     fetchTrendingProblems();
-  }, [limit]);
+  }, []);
 
   const fetchTrendingProblems = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get<{ trending: TrendingProblem[] }>(
-        `/customer/trending-problems?limit=${limit}`
-      );
-      
-      if (response.trending) {
-        setTrending(response.trending);
-      }
+      // AWS Serverless compatible - use apiClient
+      const data = await apiClient.get('/customer/problems/trending');
+      setTrending(data.data?.trending || data.trending || []);
     } catch (error) {
       console.error('Error fetching trending problems:', error);
     } finally {
@@ -50,10 +47,10 @@ export function TrendingProblems({
 
   if (loading) {
     return (
-      <div className={className}>
-        <div className="flex items-center gap-0 mb-4">
-          <TrendingUp className="w-5 h-5 text-primary" />
-          <h3 className="text-gray-900 font-semibold">Trending Now</h3>
+      <div className={`${className}`}>
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="w-5 h-5 text-orange-500" />
+          <h3 className="text-gray-900">Trending Now</h3>
         </div>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -69,13 +66,13 @@ export function TrendingProblems({
   }
 
   return (
-    <div className={className}>
-      <div className="flex items-center gap-0 mb-4">
-        <TrendingUp className="w-5 h-5 text-primary" />
-        <h3 className="text-gray-900 font-semibold">Trending Now</h3>
-        <span className="px-0 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold ml-auto">
+    <div className={`${className}`}>
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingUp className="w-5 h-5 text-orange-500" />
+        <h3 className="text-gray-900">Trending Now</h3>
+        <Badge className="bg-orange-100 text-orange-700 text-xs ml-auto">
           Popular
-        </span>
+        </Badge>
       </div>
 
       <div className="space-y-3">
@@ -83,33 +80,48 @@ export function TrendingProblems({
           <button
             key={problem.problemId}
             onClick={() => onProblemSelect(problem.problemId, problem.title)}
-            className="w-full flex items-center gap-0 p-0 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-primary transition-all group active:scale-[0.98]"
+            className="w-full flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-orange-300 transition-all group"
           >
             {/* Rank */}
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
               index === 0 
-                ? 'bg-gradient-to-r from-primary to-pink-500 text-white'
+                ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}>
               {index + 1}
             </div>
 
             {/* Problem Info */}
-            <div className="flex-1 text-left">
-              <h4 className="font-semibold text-gray-900 mb-0">{problem.title}</h4>
-              {problem.description && (
-                <p className="text-xs text-gray-600 line-clamp-0">{problem.description}</p>
-              )}
-              {problem.searchCount > 0 && (
-                <p className="text-xs text-gray-500 mt-0">{problem.searchCount} searches</p>
-              )}
+            <div className="flex-1 text-left min-w-0">
+              <h4 className="text-sm text-gray-900 mb-1 line-clamp-1">
+                {problem.title}
+              </h4>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>{problem.searchCount} searches</span>
+                {problem.category && (
+                  <>
+                    <span>•</span>
+                    <span className="capitalize">{problem.category}</span>
+                  </>
+                )}
+              </div>
             </div>
 
-            <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-primary transition-colors" />
+            {/* Trend Indicator */}
+            <div className={`flex items-center gap-1 text-xs ${
+              problem.trend === 'up' ? 'text-green-600' : 
+              problem.trend === 'down' ? 'text-red-600' : 
+              'text-gray-400'
+            }`}>
+              <TrendingUp className={`w-4 h-4 ${
+                problem.trend === 'down' ? 'rotate-180' : ''
+              }`} />
+            </div>
+
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-orange-500 group-hover:translate-x-1 transition-all" />
           </button>
         ))}
       </div>
     </div>
   );
 }
-

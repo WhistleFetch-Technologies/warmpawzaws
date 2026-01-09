@@ -150,12 +150,11 @@ export default function AnalyticsPage() {
   const loadSavedReports = async () => {
     setLoadingReports(true);
     try {
-      const response = await apiClient.get<any>('/admin/reports');
-      if (response && (response.success || response.reports)) {
-        setSavedReports(response.reports || []);
-      }
+      const data = await apiClient.get('/admin/reports');
+      setSavedReports((data as any).reports || []);
     } catch (error) {
       console.error('Error loading reports:', error);
+      toast.error('Failed to load saved reports');
     } finally {
       setLoadingReports(false);
     }

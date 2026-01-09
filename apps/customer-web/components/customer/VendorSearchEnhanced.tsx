@@ -1,10 +1,30 @@
 'use client';
 
+/**
+ * ========================================
+ * ENHANCED VENDOR SEARCH PAGE
+ * ========================================
+ * 
+ * Complete vendor search experience with:
+ * - Advanced search with filters
+ * - Map view toggle
+ * - Real-time results
+ * - Mobile responsive
+ * - Location-aware
+ * 
+ * Usage:
+ * <VendorSearchEnhanced />
+ */
+
 import { useState, useEffect } from 'react';
-import { MapPin, List, Map, SlidersHorizontal, X, Star, Clock, Phone } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
-import { EnhancedSearchBar } from './EnhancedSearchBar';
+import { MapPin, List, Map, SlidersHorizontal, X } from 'lucide-react';
+import { UniversalSearchBar } from '@/components/ui/UniversalSearchBar';
+import { AdvancedFiltersPanel, SearchFilters } from '@/components/ui/AdvancedFiltersPanel';
+import { SearchResultsGrid, VendorResultCard } from '@/components/ui/SearchResultsGrid';
+import { GoogleMapVendorView } from '@/components/ui/GoogleMapVendorView';
+import { Button } from '@/components/ui/button';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { useNavigate } from 'react-router-dom';
 
 interface VendorResult {
   id: string;
@@ -23,15 +43,8 @@ interface VendorResult {
   responseTime?: string;
 }
 
-interface SearchFilters {
-  radius?: number;
-  sortBy?: string;
-  location?: { lat: number; lng: number };
-  minRating?: number;
-  serviceStyle?: string;
-}
-
 export function VendorSearchEnhanced() {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<SearchFilters>({
     radius: 10,
@@ -41,9 +54,10 @@ export function VendorSearchEnhanced() {
   const [loading, setLoading] = useState(false);
   const [totalResults, setTotalResults] = useState(0);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Get user location on mount
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -57,6 +71,7 @@ export function VendorSearchEnhanced() {
         },
         (error) => {
           console.log('Location permission denied:', error);
+          // Default to Delhi if location denied
           const defaultLocation = { lat: 28.6139, lng: 77.2090 };
           setUserLocation(defaultLocation);
           setFilters(prev => ({ ...prev, location: defaultLocation }));
@@ -65,21 +80,30 @@ export function VendorSearchEnhanced() {
     }
   }, []);
 
+  // Search vendors
   const searchVendors = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.post<{ results: VendorResult[]; totalResults: number }>(
-        '/advanced-search/vendors',
-        {
-          query,
-          ...filters,
-          limit: 50
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            query,
+            ...filters,
+            limit: 50
+          })
         }
       );
 
-      if (response.results) {
-        setResults(response.results);
-        setTotalResults(response.totalResults || response.results.length);
+      if (response.ok) {
+        const data = await response.json();
+        setResults(data.results || []);
+        setTotalResults(data.totalResults || 0);
+      } else {
+        console.error('Search failed:', response.statusText);
       }
     } catch (error) {
       console.error('Search error:', error);
@@ -88,6 +112,7 @@ export function VendorSearchEnhanced() {
     }
   };
 
+  // Search when query or filters change
   useEffect(() => {
     const timer = setTimeout(() => {
       if (query.length >= 2 || Object.keys(filters).length > 2) {
@@ -98,50 +123,71 @@ export function VendorSearchEnhanced() {
     return () => clearTimeout(timer);
   }, [query, filters]);
 
+  // Handle search from search bar
+  const handleSearchNavigate = (type: string, id?: string) => {
+    if (type === 'vendor' && id) {
+      navigate(`/vendor/${id}`);
+    } else if (type === 'search') {
+      setQuery(id || '');
+    }
+  };
+
+  // Handle filter removal
+  const handleRemoveFilter = (key: keyof SearchFilters) => {
+    setFilters(prev => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+  };
+
+  // Handle vendor click
   const handleVendorClick = (vendorId: string) => {
-    // Navigate to vendor profile
-    window.location.href = `/vendor/${vendorId}`;
+    navigate(`/vendor/${vendorId}`);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="px-4 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           {/* Search Bar */}
           <div className="mb-4">
-            <EnhancedSearchBar
-              onSearch={setQuery}
+            <UniversalSearchBar
+              onNavigate={handleSearchNavigate}
               placeholder="Search for veterinary, grooming, training..."
             />
           </div>
 
           {/* View Controls */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-2">
+              {/* Location Display */}
               {userLocation && (
-                <div className="flex items-center gap-0 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
                   <MapPin className="w-4 h-4" />
                   <span>Searching nearby</span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-0">
-              {/* Filters Toggle */}
-              <button
+            <div className="flex items-center gap-2">
+              {/* Filters Toggle (Mobile) */}
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowFilters(!showFilters)}
-                className="px-0 py-0 border-2 border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-0"
+                className="lg:hidden"
               >
-                <SlidersHorizontal className="w-4 h-4" />
+                <SlidersHorizontal className="w-4 h-4 mr-2" />
                 Filters
-              </button>
+              </Button>
 
               {/* View Mode Toggle */}
-              <div className="flex items-center bg-gray-100 rounded-lg p-0">
+              <div className="flex items-center bg-gray-100 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                     viewMode === 'list'
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
@@ -151,7 +197,7 @@ export function VendorSearchEnhanced() {
                 </button>
                 <button
                   onClick={() => setViewMode('map')}
-                  className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                     viewMode === 'map'
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
@@ -165,141 +211,120 @@ export function VendorSearchEnhanced() {
         </div>
       </div>
 
-      {/* Filters Panel */}
-      {showFilters && (
-        <div className="bg-white border-b border-gray-200 px-4 py-4">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-0">Radius (km)</label>
-              <input
-                type="number"
-                value={filters.radius || 10}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilters({ ...filters, radius: parseInt(e.target.value) })}
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-                min="1"
-                max="50"
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex gap-8">
+          {/* Filters Sidebar */}
+          {(showFilters || window.innerWidth >= 1024) && (
+            <div className="w-80 flex-shrink-0">
+              <div className="sticky top-32">
+                {/* Mobile: Filters Overlay */}
+                {showFilters && window.innerWidth < 1024 && (
+                  <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowFilters(false)}>
+                    <div className="absolute inset-y-0 left-0 w-80 bg-white" onClick={(e) => e.stopPropagation()}>
+                      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                        <h3 className="font-semibold">Filters</h3>
+                        <button onClick={() => setShowFilters(false)}>
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                      <AdvancedFiltersPanel
+                        filters={filters}
+                        onChange={setFilters}
+                        onApply={() => setShowFilters(false)}
+                        onReset={() => {
+                          setFilters({ radius: 10, sortBy: 'relevance', location: userLocation || undefined });
+                          setShowFilters(false);
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Desktop: Filters Sidebar */}
+                <div className="hidden lg:block">
+                  <AdvancedFiltersPanel
+                    filters={filters}
+                    onChange={setFilters}
+                    onReset={() => setFilters({ radius: 10, sortBy: 'relevance', location: userLocation || undefined })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Results */}
+          <div className="flex-1 min-w-0">
+            {viewMode === 'list' ? (
+              <SearchResultsGrid
+                results={results}
+                loading={loading}
+                totalResults={totalResults}
+                query={query}
+                filters={filters}
+                onRemoveFilter={handleRemoveFilter}
+                renderCard={(vendor: VendorResult) => (
+                  <VendorResultCard
+                    {...vendor}
+                    onClick={() => handleVendorClick(vendor.id)}
+                  />
+                )}
+                emptyTitle={query ? `No vendors found for "${query}"` : 'No vendors found'}
+                emptyMessage="Try adjusting your search terms or filters"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-0">Sort By</label>
-              <select
-                value={filters.sortBy || 'relevance'}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, sortBy: e.target.value })}
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-              >
-                <option value="relevance">Relevance</option>
-                <option value="rating">Highest Rated</option>
-                <option value="distance">Nearest</option>
-                <option value="price">Price: Low to High</option>
-              </select>
-            </div>
-            {filters.minRating && (
-              <button
-                onClick={() => setFilters({ ...filters, minRating: undefined })}
-                className="text-sm text-primary hover:text-primary-dark"
-              >
-                Clear rating filter
-              </button>
+            ) : (
+              <div className="space-y-4">
+                {/* Map View */}
+                <GoogleMapVendorView
+                  vendors={results}
+                  userLocation={userLocation || undefined}
+                  onVendorClick={handleVendorClick}
+                  height="600px"
+                />
+                
+                {/* Vendor List Below Map */}
+                {results.length > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <h3 className="font-semibold mb-4">
+                      {totalResults} vendors found
+                    </h3>
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {results.map((vendor, index) => (
+                        <button
+                          key={vendor.id}
+                          onClick={() => handleVendorClick(vendor.id)}
+                          className="w-full flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
+                        >
+                          <div className="flex-shrink-0 w-8 h-8 bg-[#FF8C42] text-white rounded-full flex items-center justify-center font-semibold">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-gray-900 truncate">
+                              {vendor.businessName}
+                            </h4>
+                            <div className="flex items-center gap-3 mt-1">
+                              {vendor.rating && (
+                                <span className="text-sm text-gray-600">
+                                  ⭐ {vendor.rating.toFixed(1)}
+                                </span>
+                              )}
+                              {vendor.distance !== undefined && (
+                                <span className="text-sm text-gray-600">
+                                  📍 {vendor.distance.toFixed(1)} km
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
-      )}
-
-      {/* Results */}
-      <div className="px-4 py-0">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : results.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
-            <p className="text-gray-600">No vendors found</p>
-            <p className="text-sm text-gray-500 mt-0">Try adjusting your search or filters</p>
-          </div>
-        ) : viewMode === 'list' ? (
-          <>
-            <div className="mb-4 text-sm text-gray-600">
-              Found {totalResults} result{totalResults !== 1 ? 's' : ''}
-            </div>
-            <div className="space-y-4">
-              {results.map((vendor) => (
-                <div
-                  key={vendor.id}
-                  onClick={() => handleVendorClick(vendor.id)}
-                  className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-lg transition-shadow active:scale-[0.98] cursor-pointer"
-                >
-                  <div className="flex gap-4">
-                    {vendor.photos && vendor.photos[0] ? (
-                      <img
-                        src={vendor.photos[0]}
-                        alt={vendor.businessName}
-                        className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="w-20 h-20 bg-gradient-to-br from-primary to-primary-dark rounded-xl flex items-center justify-center text-white text-2xl flex-shrink-0">
-                        {vendor.businessName.charAt(0)}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-0">
-                        <h3 className="font-bold text-gray-900 truncate">{vendor.businessName}</h3>
-                        {vendor.isVerified && (
-                          <span className="px-0 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                            Verified
-                          </span>
-                        )}
-                      </div>
-                      {vendor.rating && (
-                        <div className="flex items-center gap-0 mb-0">
-                          <div className="flex items-center gap-0">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="text-sm font-semibold">{vendor.rating.toFixed(1)}</span>
-                          </div>
-                          {vendor.totalReviews && (
-                            <span className="text-sm text-gray-600">({vendor.totalReviews} reviews)</span>
-                          )}
-                        </div>
-                      )}
-                      {vendor.description && (
-                        <p className="text-sm text-gray-600 line-clamp-0 mb-0">{vendor.description}</p>
-                      )}
-                      {vendor.services && vendor.services.length > 0 && (
-                        <div className="flex flex-wrap gap-0 mb-0">
-                          {vendor.services.slice(0, 3).map((service, idx) => (
-                            <span key={idx} className="px-0 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full">
-                              {service}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-0 text-sm text-gray-600">
-                        {vendor.distance && (
-                          <div className="flex items-center gap-0">
-                            <MapPin className="w-4 h-4" />
-                            <span>{vendor.distance.toFixed(1)} km</span>
-                          </div>
-                        )}
-                        {vendor.responseTime && (
-                          <div className="flex items-center gap-0">
-                            <Clock className="w-4 h-4" />
-                            <span>{vendor.responseTime}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="bg-white rounded-xl border p-12 text-center">
-            <Map className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-600">Map view coming soon</p>
-          </div>
-        )}
       </div>
     </div>
   );
 }
-

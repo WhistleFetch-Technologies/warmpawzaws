@@ -1,8 +1,16 @@
 'use client';
 
-import { Landmark, FileText } from 'lucide-react';
+/**
+ * Standard Onboarding Fields Component
+ * Renders common fields required across all vendor types
+ */
 
-interface StandardOnboardingFieldsProps {
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Landmark, Shield, FileText } from 'lucide-react';
+
+interface StandardFieldsProps {
   formData: Record<string, any>;
   errors: Record<string, string>;
   banksList?: string[];
@@ -16,8 +24,9 @@ export function StandardOnboardingFields({
   banksList = [],
   onFieldChange,
   hasLicenseField = false
-}: StandardOnboardingFieldsProps) {
+}: StandardFieldsProps) {
   
+  // Format helpers
   const formatPAN = (value: string) => {
     return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
   };
@@ -54,154 +63,177 @@ export function StandardOnboardingFields({
   };
   
   return (
-    <div className="space-y-6 border-t border-gray-200 pt-0 mt-0">
+    <div className="space-y-6 border-t border-gray-200 pt-6 mt-6">
       {/* Section Header */}
-      <div className="flex items-center gap-0">
-        <FileText className="w-5 h-5 text-primary" />
+      <div className="flex items-center gap-2">
+        <FileText className="w-5 h-5 text-[#FF8C42]" />
         <h3 className="font-medium text-gray-900">Identity & Tax Information</h3>
       </div>
       
-      {/* PAN Number */}
+      {/* PAN Number - MANDATORY */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
+        <Label className="text-sm text-gray-700 mb-2 block">
           PAN Number *
-        </label>
-        <input
-          type="text"
+        </Label>
+        <Input
           value={formData.panNumber || ''}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePANChange(e.target.value)}
+          onChange={(e) => handlePANChange(e.target.value)}
           placeholder="ABCDE1234F"
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl uppercase focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          className="h-12 rounded-xl uppercase"
           maxLength={10}
         />
-        <p className="text-xs text-gray-500 mt-0">Enter your 10-digit PAN number</p>
-        {errors.panNumber && <p className="text-xs text-red-500 mt-0">{errors.panNumber}</p>}
+        <p className="text-xs text-gray-500 mt-1">Enter your 10-digit PAN number</p>
+        {errors.panNumber && <p className="text-xs text-red-500 mt-1">{errors.panNumber}</p>}
       </div>
       
-      {/* Aadhar Number */}
+      {/* Aadhar Number - MANDATORY */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
+        <Label className="text-sm text-gray-700 mb-2 block">
           Aadhar Number *
-        </label>
-        <input
-          type="text"
+        </Label>
+        <Input
           value={formData.aadharNumber || ''}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleAadharChange(e.target.value)}
+          onChange={(e) => handleAadharChange(e.target.value)}
           placeholder="1234 5678 9012"
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          className="h-12 rounded-xl"
           maxLength={14}
         />
-        <p className="text-xs text-gray-500 mt-0">Enter your 12-digit Aadhar number</p>
-        {errors.aadharNumber && <p className="text-xs text-red-500 mt-0">{errors.aadharNumber}</p>}
+        <p className="text-xs text-gray-500 mt-1">Enter your 12-digit Aadhar number</p>
+        {errors.aadharNumber && <p className="text-xs text-red-500 mt-1">{errors.aadharNumber}</p>}
       </div>
       
-      {/* GST Number */}
+      {/* GST Number - OPTIONAL */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
+        <Label className="text-sm text-gray-700 mb-2 block">
           GST Number <span className="text-gray-400">(Optional)</span>
-        </label>
-        <input
-          type="text"
+        </Label>
+        <Input
           value={formData.gstNumber || ''}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleGSTChange(e.target.value)}
+          onChange={(e) => handleGSTChange(e.target.value)}
           placeholder="22AAAAA0000A1Z5"
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl uppercase focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          className="h-12 rounded-xl uppercase"
           maxLength={15}
         />
-        <p className="text-xs text-gray-500 mt-0">Enter your 15-digit GST number (if applicable)</p>
-        {errors.gstNumber && <p className="text-xs text-red-500 mt-0">{errors.gstNumber}</p>}
+        <p className="text-xs text-gray-500 mt-1">Enter your 15-digit GST number (if applicable)</p>
+        {errors.gstNumber && <p className="text-xs text-red-500 mt-1">{errors.gstNumber}</p>}
       </div>
       
       {/* Bank Details Section */}
-      <div className="flex items-center gap-0 pt-4">
-        <Landmark className="w-5 h-5 text-primary" />
+      <div className="flex items-center gap-2 pt-4">
+        <Landmark className="w-5 h-5 text-[#FF8C42]" />
         <h3 className="font-medium text-gray-900">Bank Account Details</h3>
       </div>
       
-      {/* Bank Name */}
+      {/* Bank Name Dropdown */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
+        <Label className="text-sm text-gray-700 mb-2 block">
           Bank Name *
-        </label>
-        <select
+        </Label>
+        <Select
           value={formData.bankName || ''}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onFieldChange('bankName', e.target.value)}
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          onValueChange={(value) => onFieldChange('bankName', value)}
         >
-          <option value="">Select your bank</option>
-          {banksList.map((bank) => (
-            <option key={bank} value={bank}>
-              {bank}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-gray-500 mt-0">Select your bank for payment processing</p>
-        {errors.bankName && <p className="text-xs text-red-500 mt-0">{errors.bankName}</p>}
+          <SelectTrigger className="h-12 rounded-xl">
+            <SelectValue placeholder="Select your bank" />
+          </SelectTrigger>
+          <SelectContent className="max-h-[300px]">
+            {banksList.map((bank) => (
+              <SelectItem key={bank} value={bank}>
+                {bank}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-gray-500 mt-1">Select your bank for payment processing</p>
+        {errors.bankName && <p className="text-xs text-red-500 mt-1">{errors.bankName}</p>}
       </div>
       
-      {/* Bank Name Other */}
+      {/* Bank Name Other (Conditional) */}
       {formData.bankName === 'Other (Please Specify)' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-0">
-            Bank Name (Other) *
-          </label>
-          <input
-            type="text"
+          <Label className="text-sm text-gray-700 mb-2 block">
+            Bank Name (Specify) *
+          </Label>
+          <Input
             value={formData.bankNameOther || ''}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onFieldChange('bankNameOther', e.target.value)}
-            placeholder="Enter bank name"
-            className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+            onChange={(e) => onFieldChange('bankNameOther', e.target.value)}
+            placeholder="Enter your bank name"
+            className="h-12 rounded-xl"
           />
-          {errors.bankNameOther && <p className="text-xs text-red-500 mt-0">{errors.bankNameOther}</p>}
+          {errors.bankNameOther && <p className="text-xs text-red-500 mt-1">{errors.bankNameOther}</p>}
         </div>
       )}
       
+      {/* Account Holder Name */}
+      <div>
+        <Label className="text-sm text-gray-700 mb-2 block">
+          Account Holder Name *
+        </Label>
+        <Input
+          value={formData.accountHolderName || ''}
+          onChange={(e) => onFieldChange('accountHolderName', e.target.value)}
+          placeholder="As per bank records"
+          className="h-12 rounded-xl"
+        />
+        <p className="text-xs text-gray-500 mt-1">Enter name as per bank records</p>
+        {errors.accountHolderName && <p className="text-xs text-red-500 mt-1">{errors.accountHolderName}</p>}
+      </div>
+      
       {/* Account Number */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
-          Account Number *
-        </label>
-        <input
-          type="text"
+        <Label className="text-sm text-gray-700 mb-2 block">
+          Bank Account Number *
+        </Label>
+        <Input
           value={formData.accountNumber || ''}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onFieldChange('accountNumber', e.target.value.replace(/\D/g, ''))}
+          onChange={(e) => onFieldChange('accountNumber', e.target.value.replace(/\D/g, ''))}
           placeholder="Enter account number"
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          className="h-12 rounded-xl"
+          maxLength={18}
         />
-        {errors.accountNumber && <p className="text-xs text-red-500 mt-0">{errors.accountNumber}</p>}
+        {errors.accountNumber && <p className="text-xs text-red-500 mt-1">{errors.accountNumber}</p>}
       </div>
       
       {/* IFSC Code */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
+        <Label className="text-sm text-gray-700 mb-2 block">
           IFSC Code *
-        </label>
-        <input
-          type="text"
+        </Label>
+        <Input
           value={formData.ifscCode || ''}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleIFSCChange(e.target.value)}
-          placeholder="ABCD0123456"
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl uppercase focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          onChange={(e) => handleIFSCChange(e.target.value)}
+          placeholder="SBIN0001234"
+          className="h-12 rounded-xl uppercase"
           maxLength={11}
         />
-        <p className="text-xs text-gray-500 mt-0">Enter your 11-character IFSC code</p>
-        {errors.ifscCode && <p className="text-xs text-red-500 mt-0">{errors.ifscCode}</p>}
+        <p className="text-xs text-gray-500 mt-1">Enter your bank IFSC code</p>
+        {errors.ifscCode && <p className="text-xs text-red-500 mt-1">{errors.ifscCode}</p>}
       </div>
       
-      {/* Account Holder Name */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-0">
-          Account Holder Name *
-        </label>
-        <input
-          type="text"
-          value={formData.accountHolderName || ''}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onFieldChange('accountHolderName', e.target.value)}
-          placeholder="Enter account holder name"
-          className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
-        />
-        {errors.accountHolderName && <p className="text-xs text-red-500 mt-0">{errors.accountHolderName}</p>}
-      </div>
+      {/* License Expiry (Conditional) */}
+      {hasLicenseField && (
+        <div className="border-t border-gray-200 pt-4 mt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-5 h-5 text-[#FF8C42]" />
+            <h3 className="font-medium text-gray-900">License Information</h3>
+          </div>
+          
+          <div>
+            <Label className="text-sm text-gray-700 mb-2 block">
+              License Valid Till <span className="text-gray-400">(Optional)</span>
+            </Label>
+            <Input
+              type="date"
+              value={formData.licenseExpiryDate || ''}
+              onChange={(e) => onFieldChange('licenseExpiryDate', e.target.value)}
+              className="h-12 rounded-xl"
+              min={new Date().toISOString().split('T')[0]}
+            />
+            <p className="text-xs text-gray-500 mt-1">Enter license expiry date (if applicable)</p>
+            {errors.licenseExpiryDate && <p className="text-xs text-red-500 mt-1">{errors.licenseExpiryDate}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

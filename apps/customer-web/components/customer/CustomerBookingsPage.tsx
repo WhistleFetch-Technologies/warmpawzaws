@@ -1,9 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, MapPin, Phone, Plus } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, Calendar, Clock, MapPin, Phone } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface Booking {
   id: string;
@@ -29,25 +32,36 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     if (phone) {
       fetchBookings();
     }
   }, [phone]);
-
+  
   const fetchBookings = async () => {
     try {
       setLoading(true);
       setError(null);
-
-      const response = await apiClient.get<{ bookings: Booking[] }>(
-        `/customer/bookings?phone=${encodeURIComponent(phone)}`
+      
+      const response = await fetch(
+        `${API_BASE}/customer/bookings?phone=${encodeURIComponent(phone)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'apikey': publicAnonKey
+          }
+        }
       );
-
-      if (response.bookings) {
-        setBookings(response.bookings);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch bookings');
       }
+      
+      const data = await response.json();
+      setBookings(data.bookings || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load bookings');
       console.error('Error fetching bookings:', err);
@@ -55,11 +69,81 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
       setLoading(false);
     }
   };
-
+  
   const filteredBookings = activeTab === 'all' 
     ? bookings 
     : bookings.filter(b => b.status === activeTab);
 
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="text-lg font-bold">My Bookings</h1>
+        </div>
+        <Button 
+          size="sm" 
+          className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+          onClick={() => onNavigate('services')}
+        >
+          New Booking
+        </Button>
+      </div>
+      
+      {/* Tabs */}
+      <div className="bg-white px-4 border-b overflow-x-auto">
+        <div className="flex space-x-6">
+          {['all', 'pending', 'confirmed', 'completed', 'cancelled'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setActiveTab(status as any)}
+              className={`py-3 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === status
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6">
+        {loading ? (
+          <LoadingState message="Loading your bookings..." />
+        ) : error ? (
+          <ErrorState message={error} onRetry={fetchBookings} />
+        ) : filteredBookings.length === 0 ? (
+          <EmptyState 
+            message={activeTab === 'all' ? "You haven't made any bookings yet." : `No ${activeTab} bookings found.`}
+            action={activeTab === 'all' ? (
+              <Button onClick={() => onNavigate('services')} className="bg-[#FF8C42]">
+                Book a Service
+              </Button>
+            ) : undefined}
+          />
+        ) : (
+          <div className="space-y-4">
+            {filteredBookings.map((booking) => (
+              <BookingCard 
+                key={booking.id} 
+                booking={booking} 
+                onViewDetails={() => onNavigate('booking-details', { bookingId: booking.id })} 
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BookingCard({ booking, onViewDetails }: { booking: Booking; onViewDetails: () => void }) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed': return 'bg-green-100 text-green-800 border-green-200';
@@ -70,113 +154,39 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-0">
-          <button
-            onClick={onBack}
-            className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="text-lg font-bold">My Bookings</h1>
+    <Card className="overflow-hidden">
+      <div className="p-5">
+        <div className="flex justify-between items-start mb-3">
+          <div>
+            <h3 className="font-bold text-gray-900">{booking.serviceName}</h3>
+            <p className="text-sm text-gray-500">{booking.vendorName}</p>
+          </div>
+          <Badge variant="outline" className={`${getStatusColor(booking.status)} border`}>
+            {booking.status}
+          </Badge>
         </div>
-        <button
-          onClick={() => onNavigate('services')}
-          className="px-4 py-0 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors flex items-center gap-0"
-        >
-          <Plus className="w-4 h-4" />
-          New Booking
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="bg-white px-4 border-b overflow-x-auto">
-        <div className="flex space-x-6">
-          {(['all', 'pending', 'confirmed', 'completed', 'cancelled'] as const).map((status) => (
-            <button
-              key={status}
-              onClick={() => setActiveTab(status)}
-              className={`py-0 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === status
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
+        
+        <div className="space-y-2 mb-4">
+          <div className="flex items-center text-sm text-gray-600">
+            <Calendar className="w-4 h-4 mr-2 text-gray-400" />
+            {new Date(booking.scheduledDate).toLocaleDateString()}
+          </div>
+          <div className="flex items-center text-sm text-gray-600">
+            <Clock className="w-4 h-4 mr-2 text-gray-400" />
+            {booking.scheduledTime}
+          </div>
+          <div className="flex items-center text-sm text-gray-600">
+            <span className="font-medium mr-2">Pet:</span> {booking.petName}
+          </div>
+        </div>
+        
+        <div className="flex items-center justify-between pt-3 border-t">
+          <span className="font-bold text-lg">₹{booking.amount}</span>
+          <Button variant="outline" size="sm" onClick={onViewDetails}>
+            View Details
+          </Button>
         </div>
       </div>
-
-      {/* Content */}
-      <div className="px-4 py-0">
-        {loading ? (
-          <div className="flex items-center justify-center py-02">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-            <p className="text-red-700 mb-0">{error}</p>
-            <button
-              onClick={fetchBookings}
-              className="px-4 py-0 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        ) : filteredBookings.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
-            <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="font-bold text-gray-900 mb-0">
-              {activeTab === 'all' ? "You haven't made any bookings yet." : `No ${activeTab} bookings found.`}
-            </h3>
-            {activeTab === 'all' && (
-              <button
-                onClick={() => onNavigate('services')}
-                className="mt-4 px-0 py-0 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
-              >
-                Book a Service
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredBookings.map((booking) => (
-              <div
-                key={booking.id}
-                onClick={() => onNavigate('booking-details', { bookingId: booking.id })}
-                className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
-              >
-                <div className="flex items-start justify-between mb-0">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-0">{booking.serviceName}</h3>
-                    <p className="text-sm text-gray-600">{booking.vendorName}</p>
-                  </div>
-                  <span className={`px-0.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(booking.status)}`}>
-                    {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                  </span>
-                </div>
-
-                <div className="space-y-2 mb-0">
-                  <div className="flex items-center gap-0 text-sm text-gray-600">
-                    <Calendar className="w-4 h-4" />
-                    <span>{new Date(booking.scheduledDate).toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex items-center gap-0 text-sm text-gray-600">
-                    <Clock className="w-4 h-4" />
-                    <span>{booking.scheduledTime}</span>
-                  </div>
-                  <p className="text-sm text-gray-600">Pet: {booking.petName}</p>
-                  <p className="text-sm font-semibold text-primary">₹{booking.amount}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    </Card>
   );
 }
-

@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
-import { CalendarSlotPicker } from './booking/CalendarSlotPicker';
+import { SmartTimeSlotSelection } from './vet/SmartTimeSlotSelection';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface RescheduleAppointmentViewProps {
   appointmentId: string;
@@ -20,8 +19,8 @@ export function RescheduleAppointmentView({
   const [appointment, setAppointment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [rescheduling, setRescheduling] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     loadAppointment();
@@ -30,9 +29,18 @@ export function RescheduleAppointmentView({
   const loadAppointment = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/appointment/${appointmentId}`);
-      if (response.appointment) {
-        setAppointment(response.appointment);
+      const response = await fetch(
+        `${API_BASE}/appointment/${appointmentId}`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setAppointment(data.appointment);
+      } else {
+        console.error('Failed to load appointment');
       }
     } catch (error) {
       console.error('Error loading appointment:', error);
@@ -44,16 +52,27 @@ export function RescheduleAppointmentView({
   const handleReschedule = async (date: string, time: string) => {
     try {
       setRescheduling(true);
-      const response = await apiClient.post<any>(`/appointment/${appointmentId}/reschedule`, {
-        newDate: date,
-        newTime: time
-      });
+      const response = await fetch(
+        `${API_BASE}/appointment/${appointmentId}/reschedule`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          },
+          body: JSON.stringify({
+            newDate: date,
+            newTime: time
+          })
+        }
+      );
 
-      if (response.success) {
+      if (response.ok) {
         alert('Appointment rescheduled successfully!');
         onSuccess();
       } else {
-        alert(response.error || 'Failed to reschedule appointment');
+        const error = await response.json();
+        alert(error.error || 'Failed to reschedule appointment');
       }
     } catch (error) {
       console.error('Error rescheduling appointment:', error);
@@ -67,7 +86,7 @@ export function RescheduleAppointmentView({
     return (
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
@@ -79,7 +98,7 @@ export function RescheduleAppointmentView({
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-900">Appointment not found</p>
-          <button onClick={onBack} className="mt-4 text-primary">Go Back</button>
+          <button onClick={onBack} className="mt-4 text-[#FF8C42]">Go Back</button>
         </div>
       </div>
     );
@@ -89,7 +108,7 @@ export function RescheduleAppointmentView({
     return (
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Rescheduling appointment...</p>
         </div>
       </div>
@@ -97,35 +116,18 @@ export function RescheduleAppointmentView({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-0 py-4 sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-0 hover:bg-gray-100 rounded-lg">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="font-semibold text-lg">Reschedule Appointment</h1>
-        </div>
-      </div>
-
-      <div className="px-0 py-0">
-        <CalendarSlotPicker
-          selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
-          onTimeSlotSelect={setSelectedTime}
-          availableSlots={[]}
-        />
-
-        {selectedDate && selectedTime && (
-          <button
-            onClick={() => handleReschedule(selectedDate, selectedTime)}
-            className="w-full mt-0 py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
-          >
-            Confirm Reschedule
-          </button>
-        )}
-      </div>
-    </div>
+    <SmartTimeSlotSelection
+      serviceType={appointment.serviceStyle || 'clinic'}
+      vendorName={appointment.vendorName || 'Clinic'}
+      vendorId={appointment.vendorId}
+      selectedService={{
+        serviceName: appointment.serviceName,
+        duration: appointment.duration
+      }}
+      selectedStaffId={appointment.staffId}
+      vendorRoleId={appointment.vendorRoleId}
+      onBack={onBack}
+      onSelectSlot={handleReschedule}
+    />
   );
 }
-

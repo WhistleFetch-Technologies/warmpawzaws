@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, MapPin, User, Phone, Mail, CreditCard, FileText, Navigation, AlertCircle, XCircle, RefreshCw, Download, Star, Package } from 'lucide-react';
-import Image from 'next/image';
+import { ArrowLeft, Calendar, Clock, MapPin, User, Phone, Mail, CreditCard, FileText, Navigation, AlertCircle, XCircle, RefreshCw, Download, Star, Package, Pill, Video } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-// TODO: Import these when they are created
-// import { PrescriptionModal } from './PrescriptionModal';
-// import { CommunicationHub } from './communication/CommunicationHub';
-// import { LiveTrackingMap } from './LiveTrackingMap';
+
+import { PrescriptionModal } from './PrescriptionModal';
+import { CommunicationHub } from '../communication/CommunicationHub';
+import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
 
@@ -26,10 +28,13 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
   const [showMap, setShowMap] = useState(false);
   const [showLiveTracking, setShowLiveTracking] = useState(false);
   
+  // Interaction States
   const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
   const [showPrescription, setShowPrescription] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+
+  // Using apiClient instead of direct Supabase calls
 
   useEffect(() => {
     loadBookingDetails();
@@ -40,12 +45,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
       setLoading(true);
       setError(null);
 
-      const response = await apiClient.get<any>(`/customer/bookings/${bookingId}`);
-      if (response.booking) {
-        setBooking(response.booking);
-      } else {
-        setError('Failed to load booking details');
-      }
+      const data = await apiClient.get(`/customer/bookings/${bookingId}`) as any;
+      setBooking(data.booking || data);
     } catch (err) {
       console.error('Error loading booking:', err);
       setError('An error occurred while loading booking details');
@@ -57,6 +58,7 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
   const getDirections = () => {
     if (!booking) return;
     
+    // For clinic/center visits, use vendor location
     if (booking.serviceType === 'clinic' || booking.serviceType === 'center') {
       if (booking.vendorAddress) {
         const address = encodeURIComponent(booking.vendorAddress);
@@ -94,6 +96,7 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
     if (!booking) return false;
     if (booking.status === 'completed' || booking.status === 'cancelled') return false;
     
+    // Check if booking date hasn't passed
     const bookingDate = new Date(`${booking.scheduledDate} ${booking.scheduledTime}`);
     const now = new Date();
     
@@ -104,7 +107,7 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
     return (
       <div className="min-h-screen bg-gray-50 max-w-md mx-auto flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading appointment details...</p>
         </div>
       </div>
@@ -113,15 +116,15 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
 
   if (error || !booking) {
     return (
-      <div className="min-h-screen bg-gray-50 max-w-md mx-auto flex items-center justify-center px-0">
+      <div className="min-h-screen bg-gray-50 max-w-md mx-auto flex items-center justify-center px-6">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-0">Error Loading Appointment</h2>
-          <p className="text-gray-600 mb-0">{error || 'Appointment not found'}</p>
-          <button onClick={onBack} className="px-4 py-0 bg-primary text-white rounded-lg">
-            <ArrowLeft className="w-4 h-4 inline mr-0" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Error Loading Appointment</h2>
+          <p className="text-gray-600 mb-6">{error || 'Appointment not found'}</p>
+          <Button onClick={onBack} variant="outline">
+            <ArrowLeft className="w-4 h-4 mr-2" />
             Go Back
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -130,27 +133,27 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-0 py-4 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-0 hover:bg-gray-100 rounded-lg">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
             <h1 className="font-semibold text-lg">Appointment Details</h1>
             <p className="text-sm text-gray-600">{booking.bookingId}</p>
           </div>
-          <span className={`px-0 py-0 rounded-full text-xs font-medium border ${getStatusColor(booking.status)}`}>
+          <Badge className={`${getStatusColor(booking.status)} border`}>
             {booking.status.replace('_', ' ').toUpperCase()}
-          </span>
+          </Badge>
         </div>
       </div>
 
-      <div className="px-0 py-0 space-y-4">
+      <div className="px-6 py-6 space-y-4">
         {/* Live Tracking Banner */}
         {booking.status === 'in_progress' && (
-          <div className="p-0 bg-green-50 border-2 border-green-500 rounded-xl shadow-lg animate-pulse">
+          <Card className="p-5 bg-green-50 border-2 border-green-500 shadow-lg animate-pulse-slow">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center animate-pulse">
                   <MapPin className="w-6 h-6 text-green-600" />
                 </div>
@@ -159,231 +162,396 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
                   <p className="text-sm text-green-700">Track live location & ETA</p>
                 </div>
               </div>
-              <button 
+              <Button 
                 onClick={() => setShowLiveTracking(true)}
-                className="px-4 py-0 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md"
+                className="bg-green-600 hover:bg-green-700 text-white shadow-md"
               >
                 Track Live
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Service Information */}
-        <div className="bg-white p-0 rounded-xl border border-gray-200">
+        <Card className="p-5 border border-gray-200">
           <div className="flex items-start gap-4 mb-4">
-            <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
-              <FileText className="w-6 h-6 text-primary" />
+            <div className="w-12 h-12 bg-[#FF8C42] bg-opacity-10 rounded-xl flex items-center justify-center flex-shrink-0">
+              <FileText className="w-6 h-6 text-[#FF8C42]" />
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-lg mb-0">{booking.serviceName}</h3>
-              <div className="flex gap-0 flex-wrap">
-                <span className="px-0 py-0 bg-gray-100 text-gray-700 rounded-full text-xs">
+              <h3 className="font-semibold text-lg mb-1">{booking.serviceName}</h3>
+              <div className="flex gap-2 flex-wrap">
+                <Badge variant="secondary" className="text-xs">
                   {booking.serviceType === 'tele' ? '📱 Tele Consult' : 
                    booking.serviceType === 'clinic' || booking.serviceType === 'center' ? '🏥 At Center' : 
                    '🏠 Home Visit'}
-                </span>
+                </Badge>
                 {booking.isPackage && (
-                  <span className="px-0 py-0 bg-purple-100 text-purple-700 rounded-full text-xs flex items-center gap-0">
-                    <Package className="w-3 h-3" />
+                  <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">
+                    <Package className="w-3 h-3 mr-1" />
                     Package
-                  </span>
+                  </Badge>
                 )}
               </div>
             </div>
           </div>
 
+          {/* Package Progress */}
+          {booking.isPackage && booking.packageDetails && (
+            <div className="bg-purple-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-purple-900">
+                  {booking.packageName || 'Package'}
+                </span>
+                <span className="text-sm text-purple-700">
+                  {booking.packageDetails.completedSessions}/{booking.packageDetails.totalSessions} Sessions
+                </span>
+              </div>
+              <div className="w-full bg-purple-200 rounded-full h-2">
+                <div 
+                  className="bg-purple-600 h-2 rounded-full transition-all"
+                  style={{ width: `${(booking.packageDetails.completedSessions / booking.packageDetails.totalSessions) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Date & Time */}
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="flex items-center gap-0">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
               <Calendar className="w-5 h-5 text-gray-400" />
               <div>
-                <p className="text-xs text-gray-500">Date</p>
-                <p className="font-semibold text-gray-900">
-                  {new Date(booking.scheduledDate).toLocaleDateString('en-IN', {
+                <p className="text-sm text-gray-600">Date</p>
+                <p className="font-semibold">
+                  {new Date(booking.scheduledDate).toLocaleDateString('en-US', {
+                    weekday: 'long',
                     day: 'numeric',
-                    month: 'short',
+                    month: 'long',
                     year: 'numeric'
                   })}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-0">
+
+            <div className="flex items-center gap-3">
               <Clock className="w-5 h-5 text-gray-400" />
               <div>
-                <p className="text-xs text-gray-500">Time</p>
-                <p className="font-semibold text-gray-900">{booking.scheduledTime}</p>
+                <p className="text-sm text-gray-600">Time</p>
+                <p className="font-semibold">{booking.scheduledTime}</p>
               </div>
             </div>
           </div>
+        </Card>
 
-          {/* Vendor Info */}
-          <div className="border-t pt-4">
-            <div className="flex items-center gap-0 mb-0">
-              <User className="w-5 h-5 text-gray-400" />
+        {/* Vendor/Doctor Information */}
+        <Card className="p-5 border border-gray-200">
+          <h3 className="font-semibold mb-4">Service Provider</h3>
+          
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <User className="w-5 h-5 text-gray-400 mt-0.5" />
               <div className="flex-1">
-                <p className="text-xs text-gray-500">Vendor</p>
-                <p className="font-semibold text-gray-900">{booking.vendorName}</p>
+                <p className="text-sm text-gray-600">
+                  {booking.roleId?.includes('vet') ? 'Doctor' : 'Provider'}
+                </p>
+                <p className="font-semibold">{booking.staffName || booking.vendorName}</p>
+                {booking.qualification && (
+                  <p className="text-sm text-gray-500">{booking.qualification}</p>
+                )}
               </div>
             </div>
-            {booking.vendorAddress && (
-              <div className="flex items-start gap-0 mt-0">
-                <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+
+            <div className="flex items-start gap-3">
+              <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm text-gray-600">Location</p>
+                <p className="font-semibold">{booking.vendorName}</p>
+                {booking.vendorAddress && (
+                  <p className="text-sm text-gray-500">{booking.vendorAddress}</p>
+                )}
+              </div>
+            </div>
+
+            {booking.vendorPhone && (
+              <div className="flex items-start gap-3">
+                <Phone className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-xs text-gray-500">Address</p>
-                  <p className="text-sm text-gray-700">{booking.vendorAddress}</p>
+                  <p className="text-sm text-gray-600">Contact</p>
+                  <a href={`tel:${booking.vendorPhone}`} className="font-semibold text-[#FF8C42]">
+                    {booking.vendorPhone}
+                  </a>
                 </div>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Actions */}
+          {/* Get Directions Button - Only for clinic/center visits */}
+          {(booking.serviceType === 'clinic' || booking.serviceType === 'center') && booking.vendorAddress && (
+            <Button
+              className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white"
+              onClick={getDirections}
+            >
+              <Navigation className="w-4 h-4 mr-2" />
+              Get Directions
+            </Button>
+          )}
+        </Card>
+
+        {/* Pet Information */}
+        <Card className="p-5 border border-gray-200">
+          <h3 className="font-semibold mb-4">Pet Details</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Name</span>
+              <span className="font-semibold">{booking.petName}</span>
+            </div>
+            {booking.petType && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Type</span>
+                <span className="font-semibold capitalize">{booking.petType}</span>
+              </div>
+            )}
+            {booking.petBreed && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">Breed</span>
+                <span className="font-semibold">{booking.petBreed}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Payment Information */}
+        <Card className="p-5 border border-gray-200">
+          <h3 className="font-semibold mb-4">Payment Details</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Amount Paid</span>
+              <span className="font-bold text-green-600">₹{booking.amount?.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Payment Method</span>
+              <span className="capitalize">{booking.paymentMethod}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Transaction ID</span>
+              <span className="text-sm font-mono">{booking.transactionId || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Payment Status</span>
+              <Badge className="bg-green-100 text-green-700 border-none text-xs">
+                {booking.paymentStatus || 'Paid'}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+
+        {/* OTP Information - Contextually Smart */}
+        {/* Start OTP - Show when confirmed/arrived */}
+        {booking.status === 'confirmed' && booking.startOTP && (
+          <Card className="p-5 bg-gradient-to-br from-orange-50 to-white border-2 border-orange-300">
+            <h3 className="font-semibold mb-3 text-orange-900">Start Session OTP</h3>
+            <div className="bg-white rounded-lg border-2 border-orange-200 p-4 mb-3">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Share to START the service</p>
+                <div className="text-4xl font-bold text-orange-600 tracking-wider font-mono">
+                  {booking.startOTP}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-orange-800 text-center">
+              Give this to the provider when they arrive/start
+            </p>
+          </Card>
+        )}
+
+        {/* Completion OTP - Show when in progress */}
+        {booking.status === 'in_progress' && booking.completionOTP && (
+          <Card className="p-5 bg-gradient-to-br from-purple-50 to-white border-2 border-purple-300">
+            <h3 className="font-semibold mb-3 text-purple-900">Completion OTP</h3>
+            <div className="bg-white rounded-lg border-2 border-purple-200 p-4 mb-3">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Share to END the service</p>
+                <div className="text-4xl font-bold text-purple-600 tracking-wider font-mono">
+                  {booking.completionOTP}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-purple-800 text-center">
+              Only share after service is fully completed
+            </p>
+          </Card>
+        )}
+
+        {/* OTP Information - Fallback/Legacy */}
+        {booking.otp && booking.status !== 'completed' && !booking.startOTP && !booking.completionOTP && (
+          <Card className="p-5 bg-gradient-to-br from-purple-50 to-white border-2 border-purple-300">
+            <h3 className="font-semibold mb-3 text-purple-900">Service Completion OTP</h3>
+            <div className="bg-white rounded-lg border-2 border-purple-200 p-4 mb-3">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Share this OTP after service completion</p>
+                <div className="text-4xl font-bold text-purple-600 tracking-wider">
+                  {booking.otp}
+                </div>
+              </div>
+            </div>
+            <div className="bg-purple-100 rounded-lg p-3 text-sm text-purple-800">
+              <p className="font-semibold mb-1">⚠️ Important:</p>
+              <p>Only share this OTP with the service provider after service completion to confirm and trigger payment.</p>
+            </div>
+          </Card>
+        )}
+
+        {/* Prescription/Notes - If completed */}
+        {booking.status === 'completed' && (booking.prescriptionId || booking.notes) && (
+          <Card className="p-5 border border-gray-200">
+            <h3 className="font-semibold mb-4">Service Notes</h3>
+            {booking.diagnosis && (
+              <div className="mb-3">
+                <p className="text-sm text-gray-600 mb-1">Diagnosis</p>
+                <p className="font-semibold">{booking.diagnosis}</p>
+              </div>
+            )}
+            {booking.notes && (
+              <div className="mb-3">
+                <p className="text-sm text-gray-600 mb-1">Notes</p>
+                <p>{booking.notes}</p>
+              </div>
+            )}
+            {booking.prescriptionId && (
+              <>
+                <Button 
+                  onClick={() => setShowPrescription(true)}
+                  variant="outline" 
+                  className="w-full mt-2 border-purple-200 text-purple-700 hover:bg-purple-50"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  View Prescription
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full mt-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                  onClick={() => {
+                    // Order Medicine Flow
+                    alert('Navigating to pharmacy with prescription...');
+                  }}
+                >
+                  <Pill className="w-4 h-4 mr-2" />
+                  Order Medicine
+                </Button>
+              </>
+            )}
+          </Card>
+        )}
+
+        {/* Action Buttons */}
         {canCancelOrReschedule() && (
-          <div className="flex gap-0">
-            <button
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            {/* Tele-health Join Button */}
+            {booking.serviceType === 'tele' && booking.status === 'confirmed' && (
+              <Button
+                className="col-span-2 bg-purple-600 hover:bg-purple-700 text-white mb-2"
+                onClick={() => setCommunicationMode('video')}
+              >
+                <Video className="w-4 h-4 mr-2" />
+                Join Video Call
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              className="border-orange-300 text-orange-600 hover:bg-orange-50"
               onClick={handleRescheduleClick}
-              className="flex-1 px-4 py-0 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-orange-50 transition-colors"
             >
-              <RefreshCw className="w-4 h-4 inline mr-0" />
+              <RefreshCw className="w-4 h-4 mr-2" />
               Reschedule
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              className="border-red-300 text-red-600 hover:bg-red-50"
               onClick={handleCancelClick}
-              className="flex-1 px-4 py-0 bg-white border-2 border-red-500 text-red-600 rounded-xl font-semibold hover:bg-red-50 transition-colors"
             >
-              <XCircle className="w-4 h-4 inline mr-0" />
+              <XCircle className="w-4 h-4 mr-2" />
               Cancel
-            </button>
+            </Button>
           </div>
         )}
 
-        {/* Prescription */}
-        {booking.status === 'completed' && (
-          <button
-            onClick={() => setShowPrescription(true)}
-            className="w-full p-4 bg-white border border-gray-200 rounded-xl text-left hover:border-primary transition-colors"
+        {/* Chat Button - Always Available */}
+        {booking.status !== 'cancelled' && (
+          <Button
+            variant="outline"
+            className="w-full mt-2 border-gray-300 text-gray-700"
+            onClick={() => setCommunicationMode('chat')}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-0">
-                <FileText className="w-5 h-5 text-primary" />
-                <div>
-                  <p className="font-semibold text-gray-900">View Prescription</p>
-                  <p className="text-xs text-gray-500">Download or view prescription details</p>
-                </div>
-              </div>
-              <Download className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
+            <Mail className="w-4 h-4 mr-2" />
+            Chat with Provider
+          </Button>
         )}
 
-        {/* Rate Service */}
-        {booking.status === 'completed' && !booking.isRated && (
-          <button
-            onClick={() => setShowRateModal(true)}
-            className="w-full p-4 bg-white border border-gray-200 rounded-xl text-left hover:border-primary transition-colors"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-0">
-                <Star className="w-5 h-5 text-yellow-500" />
-                <div>
-                  <p className="font-semibold text-gray-900">Rate Service</p>
-                  <p className="text-xs text-gray-500">Share your experience</p>
-                </div>
+        {/* Cancelled Information */}
+        {booking.status === 'cancelled' && (
+          <Card className="p-5 bg-red-50 border-2 border-red-200">
+            <div className="flex items-start gap-3">
+              <XCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-red-900 mb-1">Booking Cancelled</h3>
+                {booking.cancellationReason && (
+                  <p className="text-sm text-red-800 mb-2">
+                    Reason: {booking.cancellationReason}
+                  </p>
+                )}
+                {booking.cancelledBy && (
+                  <p className="text-sm text-red-700">
+                    Cancelled by: {booking.cancelledBy}
+                  </p>
+                )}
               </div>
             </div>
-          </button>
+          </Card>
         )}
 
-        {/* Follow-Up Booking */}
+        {/* Completed Information */}
         {booking.status === 'completed' && (
-          <button
-            onClick={() => setShowFollowUpModal(true)}
-            className="w-full p-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
-          >
-            Book Follow-Up Appointment
-          </button>
+          <Card className="p-5 bg-green-50 border-2 border-green-200">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <Star className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-green-900">Service Completed</h3>
+                <p className="text-sm text-green-700">
+                  {booking.completedAt && `on ${new Date(booking.completedAt).toLocaleDateString()}`}
+                </p>
+              </div>
+            </div>
+            <Button className="w-full bg-[#FF8C42] hover:bg-[#FF7029] text-white">
+              <Star className="w-4 h-4 mr-2" />
+              Rate this Service
+            </Button>
+          </Card>
         )}
       </div>
-
-      {/* Modals */}
-      {showPrescription && booking && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-0 max-w-md w-full">
-            <h3 className="font-bold text-lg mb-4">Prescription</h3>
-            <p className="text-gray-600 mb-4">Prescription view coming soon...</p>
-            <button
-              onClick={() => setShowPrescription(false)}
-              className="w-full px-4 py-0 bg-primary text-white rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showRateModal && booking && (
-        <RateServiceModal
-          bookingId={bookingId}
-          vendorId={booking.vendorId}
-          vendorName={booking.vendorName}
-          customerId={customerPhone}
-          onClose={() => setShowRateModal(false)}
-          onSuccess={() => {
-            setShowRateModal(false);
-            loadBookingDetails();
-          }}
+      {/* Communication Hub */}
+      {communicationMode && (
+        <CommunicationHub
+          mode={communicationMode}
+          bookingId={booking.id}
+          userId={customerPhone}
+          userName="You"
+          otherUserName={booking.vendorName}
+          userType="customer"
+          onClose={() => setCommunicationMode(null)}
         />
       )}
 
-      {showFollowUpModal && booking && (
-        <FollowUpBookingModal
-          originalBookingId={bookingId}
-          vendorId={booking.vendorId}
-          vendorName={booking.vendorName}
-          petId={booking.petId}
-          petName={booking.petName}
-          customerPhone={customerPhone}
-          serviceType={booking.serviceType}
-          serviceName={booking.serviceName}
-          onClose={() => setShowFollowUpModal(false)}
-          onSuccess={() => {
-            setShowFollowUpModal(false);
-            onBack();
-          }}
+      {/* Prescription Modal (View Only) */}
+      {showPrescription && booking.prescriptionId && (
+        <PrescriptionModal
+          prescriptionId={booking.prescriptionId}
+          onClose={() => setShowPrescription(false)}
+          readOnly={true}
         />
-      )}
-
-      {showLiveTracking && booking && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-0 max-w-md w-full">
-            <h3 className="font-bold text-lg mb-4">Live Tracking</h3>
-            <p className="text-gray-600 mb-4">Live tracking view coming soon...</p>
-            <button
-              onClick={() => setShowLiveTracking(false)}
-              className="w-full px-4 py-0 bg-primary text-white rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {communicationMode && booking && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-0 max-w-md w-full">
-            <h3 className="font-bold text-lg mb-4">Communication Hub</h3>
-            <p className="text-gray-600 mb-4">Communication hub coming soon...</p>
-            <button
-              onClick={() => setCommunicationMode(null)}
-              className="w-full px-4 py-0 bg-primary text-white rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );
 }
-

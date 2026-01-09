@@ -1,9 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, AlertTriangle, DollarSign, Info, XCircle } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { LoadingState } from '@/components/ui/states';
+import { AlertTriangle, DollarSign, Info, XCircle } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 
 interface CancelBookingModalProps {
   bookingId: string;
@@ -23,6 +28,8 @@ export function CancelBookingModal({
   const [loading, setLoading] = useState(false);
   const [loadingRefundInfo, setLoadingRefundInfo] = useState(true);
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   useEffect(() => {
     loadRefundEligibility();
   }, []);
@@ -30,12 +37,20 @@ export function CancelBookingModal({
   const loadRefundEligibility = async () => {
     try {
       setLoadingRefundInfo(true);
-      const response = await apiClient.get<any>(`/bookings/${bookingId}/refund-eligibility`);
-      if (response) {
-        setRefundInfo(response);
+      const response = await fetch(
+        `${API_BASE}/bookings/${bookingId}/refund-eligibility`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setRefundInfo(data);
+      } else {
+        toast.error('Failed to load refund information');
       }
     } catch (error) {
       console.error('Error loading refund info:', error);
+      toast.error('Network error');
     } finally {
       setLoadingRefundInfo(false);
     }
@@ -43,49 +58,62 @@ export function CancelBookingModal({
 
   const handleCancel = async () => {
     if (!reason.trim()) {
-      alert('Please provide a cancellation reason');
+      toast.error('Please provide a cancellation reason');
       return;
     }
 
     try {
       setLoading(true);
-      const response = await apiClient.post<any>(`/bookings/${bookingId}/cancel`, {
-        userId: customerId,
-        userType: 'customer',
-        reason
-      });
 
-      if (response.success || response.message) {
-        alert(response.message || 'Booking cancelled successfully');
+      const response = await fetch(
+        `${API_BASE}/bookings/${bookingId}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId: customerId,
+            userType: 'customer',
+            reason
+          })
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(data.message || 'Booking cancelled successfully');
         onSuccess();
       } else {
-        alert(response.error || 'Failed to cancel booking');
+        const error = await response.json();
+        toast.error(error.error || 'Failed to cancel booking');
       }
     } catch (error) {
       console.error('Error cancelling:', error);
-      alert('Network error');
+      toast.error('Network error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-0 max-w-md w-full">
-        <div className="flex items-center justify-between mb-0">
-          <div className="flex items-center gap-0 text-red-600">
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
             <XCircle className="w-5 h-5" />
-            <h2 className="font-bold text-lg">Cancel Booking</h2>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            Cancel Booking
+          </DialogTitle>
+          <DialogDescription>
+            Please review the cancellation policy before proceeding
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 py-4">
           {loadingRefundInfo ? (
-            <div className="py-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <div className="py-8">
+              <LoadingState message="Calculating refund..." />
             </div>
           ) : refundInfo ? (
             <>
@@ -95,24 +123,22 @@ export function CancelBookingModal({
                   ? 'bg-green-50 border-green-200' 
                   : 'bg-red-50 border-red-200'
               }`}>
-                <div className="flex items-start justify-between mb-0">
+                <div className="flex items-start justify-between mb-3">
                   <div>
                     <p className="text-sm font-medium text-gray-700">Refund Amount</p>
                     <p className={`text-2xl font-bold ${
                       refundInfo.eligible ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      ₹{refundInfo.refundAmount?.toFixed(2) || '0.00'}
+                      ₹{refundInfo.refundAmount.toFixed(2)}
                     </p>
                   </div>
-                  <span className={`px-0 py-0 rounded-full text-xs font-medium ${
-                    refundInfo.eligible ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {refundInfo.refundPercentage || 0}% Refund
-                  </span>
+                  <Badge variant={refundInfo.eligible ? 'default' : 'destructive'}>
+                    {refundInfo.refundPercentage}% Refund
+                  </Badge>
                 </div>
 
                 {refundInfo.cancellationFee > 0 && (
-                  <div className="flex justify-between text-sm pt-0 border-t border-gray-200">
+                  <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
                     <span className="text-gray-600">Cancellation Fee:</span>
                     <span className="font-semibold text-red-600">
                       -₹{refundInfo.cancellationFee.toFixed(2)}
@@ -120,49 +146,85 @@ export function CancelBookingModal({
                   </div>
                 )}
 
-                <div className="flex items-start gap-0 mt-0 text-xs text-gray-600">
+                <div className="flex items-start gap-2 mt-3 text-xs text-gray-600">
                   <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>
-                    {refundInfo.hoursUntil || 0} hours until booking. 
-                    {refundInfo.eligible ? ' Full refund eligible.' : ' Partial refund only.'}
+                    {refundInfo.hoursUntil} hours until booking. 
+                    {refundInfo.eligible 
+                      ? ` You'll receive ${refundInfo.refundPercentage}% refund.`
+                      : ' No refund available due to cancellation policy.'
+                    }
                   </span>
                 </div>
               </div>
+
+              {/* Cancellation Policy */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm font-medium text-gray-900 mb-2">Cancellation Policy</p>
+                <ul className="space-y-1 text-xs text-gray-600">
+                  {Object.entries(refundInfo.policy || {}).map(([key, value]) => (
+                    <li key={key} className="flex justify-between">
+                      <span>{key}:</span>
+                      <span className="font-medium">{value as string}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for Cancellation <span className="text-red-500">*</span>
+                </label>
+                <Textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Please tell us why you're cancelling..."
+                  rows={4}
+                  className="resize-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This helps us improve our service
+                </p>
+              </div>
+
+              {/* Warning */}
+              <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-yellow-800">
+                  <p className="font-medium">Important</p>
+                  <p className="text-xs mt-1">
+                    This action cannot be undone. The vendor will be notified immediately.
+                    {refundInfo.eligible && ' Your refund will be processed within 5-7 business days.'}
+                  </p>
+                </div>
+              </div>
             </>
-          ) : null}
-
-          {/* Cancellation Reason */}
-          <div>
-            <label className="block text-sm font-medium mb-0">Reason for cancellation *</label>
-            <textarea
-              value={reason}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
-              className="w-full p-0 border border-gray-300 rounded-lg"
-              rows={3}
-              placeholder="Please provide a reason..."
-              required
-            />
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-0">
-            <button
-              onClick={onClose}
-              className="flex-1 px-4 py-0 border border-gray-300 rounded-lg"
-            >
-              Keep Booking
-            </button>
-            <button
-              onClick={handleCancel}
-              disabled={loading || !reason.trim()}
-              className="flex-1 px-4 py-0 bg-red-600 text-white rounded-lg font-semibold disabled:opacity-50"
-            >
-              {loading ? 'Cancelling...' : 'Confirm Cancel'}
-            </button>
-          </div>
+          ) : (
+            <p className="text-sm text-red-600 text-center py-4">
+              Unable to load refund information. Please try again.
+            </p>
+          )}
         </div>
-      </div>
-    </div>
+
+        <DialogFooter>
+          <Button 
+            variant="outline" 
+            onClick={onClose} 
+            disabled={loading}
+          >
+            Keep Booking
+          </Button>
+          <Button
+            onClick={handleCancel}
+            disabled={loading || !reason.trim() || loadingRefundInfo}
+            variant="destructive"
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {loading ? 'Cancelling...' : 'Confirm Cancellation'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
-

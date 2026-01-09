@@ -1,6 +1,8 @@
 'use client';
 
 import { Lock, AlertCircle, Mail } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 interface ModuleDisabledMessageProps {
   moduleName: string;
@@ -24,18 +26,15 @@ export function ModuleDisabledMessage({
 
   if (variant === 'inline') {
     return (
-      <div className="flex items-center gap-0 p-0 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
         {displayIcon}
         <div className="flex-1">
           <p className="text-xs text-gray-600">{reason}</p>
         </div>
         {onAction && (
-          <button
-            onClick={onAction}
-            className="px-0 py-0 text-xs h-7 border border-gray-300 rounded-lg hover:bg-gray-100"
-          >
+          <Button size="sm" variant="outline" onClick={onAction} className="text-xs h-7">
             {actionText}
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -43,20 +42,22 @@ export function ModuleDisabledMessage({
 
   if (variant === 'banner') {
     return (
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-0">
-        <div className="flex items-start gap-0">
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3">
+        <div className="flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <p className="text-sm font-medium text-yellow-900">{moduleName} is disabled</p>
-            <p className="text-xs text-yellow-700 mt-0">{reason}</p>
+            <p className="text-xs text-yellow-700 mt-1">{reason}</p>
             {onAction && (
-              <button
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={onAction}
-                className="mt-0 px-0 py-0 text-xs h-7 border border-yellow-300 text-yellow-700 hover:bg-yellow-100 rounded-lg flex items-center gap-0"
+                className="mt-2 text-xs h-7 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
               >
-                <Mail className="w-3 h-3" />
+                <Mail className="w-3 h-3 mr-1" />
                 {actionText}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -64,30 +65,29 @@ export function ModuleDisabledMessage({
     );
   }
 
+  // Default: card variant
   return (
-    <div className="p-0 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
-      <div className="flex flex-col items-center gap-0">
+    <Card className="p-6 text-center bg-gray-50 border-2 border-dashed border-gray-300">
+      <div className="flex flex-col items-center gap-3">
         <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
           {displayIcon}
         </div>
         <div>
-          <p className="font-semibold text-gray-900 mb-0">{moduleName} Not Available</p>
+          <p className="font-semibold text-gray-900 mb-1">{moduleName} Not Available</p>
           <p className="text-sm text-gray-600">{reason}</p>
         </div>
         {onAction && (
-          <button
-            onClick={onAction}
-            className="mt-0 px-4 py-0 border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center gap-0"
-          >
-            <Mail className="w-4 h-4" />
+          <Button size="sm" variant="outline" onClick={onAction} className="mt-2">
+            <Mail className="w-4 h-4 mr-2" />
             {actionText}
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
+// Specific pre-configured messages for common scenarios
 export const ModuleMessages = {
   staffManagement: (onContactAdmin?: () => void) => (
     <ModuleDisabledMessage
@@ -161,4 +161,3 @@ export const ModuleMessages = {
     />
   )
 };
-

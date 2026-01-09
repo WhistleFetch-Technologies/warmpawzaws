@@ -256,7 +256,11 @@ export function CustomerPetProfileScreen({
   const renderPetList = () => (
     <>
       <View style={styles.logoContainer}>
-        <Text style={styles.logoEmoji}>🐾</Text>
+        <Image 
+          source={require('../../assets/images/logo.png')} 
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
       </View>
       <View style={styles.iconSection}>
         <View style={styles.orangeCircle}>
@@ -551,8 +555,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     marginBottom: spacing.md,
   },
-  logoEmoji: {
-    fontSize: 48,
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   iconSection: {
     alignItems: 'center',

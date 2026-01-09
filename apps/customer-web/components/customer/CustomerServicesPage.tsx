@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Star, MapPin, Clock, ArrowLeft, Filter } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { SearchBar } from '@/components/ui/SearchBar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Star, MapPin, Clock, ArrowLeft } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface Service {
   id: string;
@@ -39,40 +44,20 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Filters
   const [category, setCategory] = useState(initialFilters?.category || '');
   const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'all'>('all');
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
-  }, []);
+  
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchServices();
   }, [category, serviceStyle, roleId, location]);
-
-  useEffect(() => {
-    const filtered = services.filter(service =>
-      service.serviceName.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredServices(filtered);
-  }, [searchQuery, services]);
-
+  
   const fetchServices = async () => {
     try {
       setLoading(true);
@@ -87,13 +72,39 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
         params.append('radius', '10');
       }
       
-      const response = await apiClient.get<{ services: Service[] }>(
-        `/customer/services?${params}`
+      const response = await fetch(
+        `${API_BASE}/customer/services?${params.toString()}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'apikey': publicAnonKey
+          }
+        }
       );
       
-      if (response.services) {
-        setServices(response.services);
+      if (!response.ok) {
+        // Fallback to catalog endpoint if first one fails (as per handoff)
+        const fallbackResponse = await fetch(
+            `${API_BASE}/catalog/services?${params.toString()}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${publicAnonKey}`,
+                'apikey': publicAnonKey
+              }
+            }
+        );
+        
+        if (!fallbackResponse.ok) {
+             throw new Error('Failed to load services');
+        }
+        
+        const data = await fallbackResponse.json();
+        setServices(data.services || []);
+        return;
       }
+      
+      const data = await response.json();
+      setServices(data.services || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load services');
       console.error('Error fetching services:', err);
@@ -101,109 +112,95 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
       setLoading(false);
     }
   };
-
+  
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+        }
+      );
+    }
+  };
+  
+  useEffect(() => {
+    const filtered = services.filter(service =>
+      service.serviceName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredServices(filtered);
+  }, [searchQuery, services]);
+  
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-0">
-        <button onClick={onBack} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
-        </button>
+        </Button>
         <h1 className="text-lg font-bold">Browse Services</h1>
       </div>
 
-      <div className="px-4 py-0">
+      <div className="container mx-auto px-4 py-6">
         {/* Filters */}
-        <div className="mb-0 space-y-4">
-          <div className="flex flex-wrap gap-0">
-            <select
-              value={category}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
-              className="px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="grooming">Grooming</SelectItem>
+                <SelectItem value="vet">Veterinary</SelectItem>
+                <SelectItem value="training">Training</SelectItem>
+                <SelectItem value="boarding">Boarding</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={serviceStyle} onValueChange={(v: any) => setServiceStyle(v)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Styles</SelectItem>
+                <SelectItem value="at_home">At Home</SelectItem>
+                <SelectItem value="at_center">At Center</SelectItem>
+                <SelectItem value="tele">Teleconsultation</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button
+              variant={location ? "default" : "outline"}
+              onClick={getCurrentLocation}
+              className="gap-2"
             >
-              <option value="all">All Categories</option>
-              <option value="vet">Veterinary</option>
-              <option value="grooming">Grooming</option>
-              <option value="training">Training</option>
-            </select>
-
-            <select
-              value={serviceStyle}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceStyle(e.target.value as any)}
-              className="px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-            >
-              <option value="all">All Types</option>
-              <option value="at_home">At Home</option>
-              <option value="at_center">At Center</option>
-              <option value="tele">Teleconsultation</option>
-            </select>
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search services..."
-              value={searchQuery}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-            />
-            <Filter className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <MapPin className="w-4 h-4" />
+              {location ? 'Near Me' : 'Location'}
+            </Button>
           </div>
         </div>
-
-        {/* Services List */}
+        
+        {/* Content */}
         {loading ? (
-          <div className="flex items-center justify-center py-02">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          </div>
+          <LoadingState message="Finding services..." />
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-            <p className="text-red-700">{error}</p>
-          </div>
+          <ErrorState message={error} onRetry={fetchServices} />
         ) : filteredServices.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
-            <p className="text-gray-600">No services found</p>
-          </div>
+          <EmptyState message="No services found matching your filters." />
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredServices.map((service) => (
-              <div
+              <ServiceCard
                 key={service.id}
-                onClick={() => onNavigate('service_details', { serviceId: service.id })}
-                className="bg-white rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-shadow active:scale-[0.98] cursor-pointer"
-              >
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-0">{service.serviceName}</h3>
-                    <p className="text-sm text-gray-600 mb-0 line-clamp-0">{service.description}</p>
-                    
-                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
-                      <div className="flex items-center gap-0">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-semibold">{service.vendorRating.toFixed(1)}</span>
-                      </div>
-                      {service.distance && (
-                        <div className="flex items-center gap-0">
-                          <MapPin className="w-4 h-4" />
-                          <span>{service.distance.toFixed(1)} km</span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-0">
-                        <Clock className="w-4 h-4" />
-                        <span>{service.duration} min</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-2xl font-bold text-primary">₹{service.price}</span>
-                      <span className="text-xs px-0 py-1 bg-gray-100 text-gray-700 rounded-full">
-                        {service.serviceStyle.replace('_', ' ')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                service={service}
+                onSelect={() => onNavigate('create-booking', { serviceId: service.id, vendorId: service.vendorId })}
+              />
             ))}
           </div>
         )}
@@ -212,3 +209,47 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   );
 }
 
+function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => void }) {
+  return (
+    <Card className="overflow-hidden hover:shadow-md transition-shadow">
+      <div className="p-5">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h3 className="font-bold text-lg text-gray-900 line-clamp-1">{service.serviceName}</h3>
+            <p className="text-sm text-gray-500">{service.vendorName}</p>
+          </div>
+          <div className="flex items-center bg-yellow-50 px-2 py-1 rounded text-yellow-700 text-xs font-bold">
+            <Star className="w-3 h-3 fill-yellow-500 mr-1" />
+            {service.vendorRating}
+          </div>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-4 line-clamp-2 min-h-[2.5rem]">{service.description}</p>
+        
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-xl font-bold text-blue-600">₹{service.price}</p>
+            <div className="flex items-center text-xs text-gray-500 mt-1">
+              <Clock className="w-3 h-3 mr-1" />
+              {service.duration} mins
+            </div>
+          </div>
+          <div className="text-right">
+             <Badge variant="secondary" className="mb-1">
+                {service.serviceStyle === 'at_home' ? 'Home Visit' : 
+                 service.serviceStyle === 'at_center' ? 'Center Visit' : 
+                 'Tele-consult'}
+             </Badge>
+             {service.distance && (
+                <p className="text-xs text-gray-400 text-right">{service.distance.toFixed(1)} km</p>
+             )}
+          </div>
+        </div>
+        
+        <Button onClick={onSelect} className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E] text-white">
+          Book Now
+        </Button>
+      </div>
+    </Card>
+  );
+}

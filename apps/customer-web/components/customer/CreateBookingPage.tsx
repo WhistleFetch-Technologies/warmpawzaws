@@ -1,10 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { LoadingState, ErrorState } from '@/components/ui/states';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Calendar, Clock, MapPin } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
-import { AddressAutocomplete, type AddressComponents } from '@warmpawz/ui';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 
 interface CreateBookingPageProps {
   phone: string;
@@ -33,6 +38,8 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     notes: ''
   });
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   useEffect(() => {
     fetchPets();
   }, [phone]);
@@ -40,9 +47,19 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
   const fetchPets = async () => {
     try {
       setLoadingPets(true);
-      const response = await apiClient.get<{ pets: any[] }>(`/customer/pets?phone=${encodeURIComponent(phone)}`);
-      if (response.pets) {
-        setPets(response.pets);
+      const response = await fetch(
+        `${API_BASE}/customer/pets?phone=${encodeURIComponent(phone)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'apikey': publicAnonKey
+          }
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPets(data.pets || []);
       }
     } catch (err) {
       console.error('Error fetching pets:', err);
@@ -55,7 +72,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     e.preventDefault();
     
     if (!formData.petId || !formData.scheduledDate || !formData.scheduledTime) {
-      alert('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
     
@@ -63,62 +80,76 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
       setLoading(true);
       setError(null);
       
-      const response = await apiClient.post<{ booking: { id: string } }>('/booking/create', {
-        phone,
-        petId: formData.petId,
-        vendorId,
-        serviceId,
-        serviceType: 'at_home',
-        scheduledDate: formData.scheduledDate,
-        scheduledTime: formData.scheduledTime,
-        address: formData.address,
-        notes: formData.notes
-      });
+      const response = await fetch(
+        `${API_BASE}/booking/create`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'apikey': publicAnonKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            phone,
+            petId: formData.petId,
+            vendorId,
+            serviceId,
+            serviceType: 'at_home', // Defaulting to at_home for now as per form
+            scheduledDate: formData.scheduledDate,
+            scheduledTime: formData.scheduledTime,
+            address: formData.address,
+            notes: formData.notes
+          })
+        }
+      );
       
-      if (response.booking) {
-        alert('Booking created successfully!');
-        onSuccess(response.booking.id);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create booking');
       }
+      
+      toast.success('Booking created successfully!');
+      onSuccess(data.booking.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create booking';
       setError(msg);
-      alert(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-0">
-        <button
-          onClick={onBack}
-          className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-        >
+    <div className="min-h-screen bg-gray-50 pb-20">
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
-        </button>
+        </Button>
         <h1 className="text-lg font-bold">Create Booking</h1>
       </div>
 
-      <div className="px-4 py-0">
-        <form onSubmit={handleSubmit} className="space-y-6 bg-white p-0 rounded-xl shadow-sm">
+      <div className="container mx-auto px-4 py-6 max-w-lg">
+        <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-xl shadow-sm">
           {/* Pet Selection */}
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">Select Pet *</label>
+            <Label>Select Pet</Label>
             {loadingPets ? (
-              <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+              <div className="h-10 w-full bg-gray-100 rounded animate-pulse" />
             ) : (
-              <select 
+              <Select 
                 value={formData.petId} 
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({...formData, petId: e.target.value})}
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-                required
+                onValueChange={(val) => setFormData({...formData, petId: val})}
               >
-                <option value="">Select a pet</option>
-                {pets.map((pet) => (
-                  <option key={pet.id} value={pet.id}>{pet.name}</option>
-                ))}
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a pet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {pets.map((pet) => (
+                    <SelectItem key={pet.id} value={pet.id}>{pet.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
             {pets.length === 0 && !loadingPets && (
               <p className="text-xs text-red-500">No pets found. Please add a pet first.</p>
@@ -128,28 +159,28 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
           {/* Date & Time */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Date *</label>
+              <Label>Date</Label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
                   type="date"
                   value={formData.scheduledDate}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, scheduledDate: e.target.value})}
-                  className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  onChange={(e) => setFormData({...formData, scheduledDate: e.target.value})}
+                  className="pl-10"
                   min={new Date().toISOString().split('T')[0]}
                   required
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Time *</label>
+              <Label>Time</Label>
               <div className="relative">
-                <Clock className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
                   type="time"
                   value={formData.scheduledTime}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, scheduledTime: e.target.value})}
-                  className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  onChange={(e) => setFormData({...formData, scheduledTime: e.target.value})}
+                  className="pl-10"
                   required
                 />
               </div>
@@ -158,89 +189,63 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
 
           {/* Address */}
           <div className="space-y-4 border-t pt-4">
-            <label className="flex items-center gap-0 text-sm font-semibold text-gray-700">
+            <Label className="flex items-center gap-2">
               <MapPin className="w-4 h-4" /> Service Address
-            </label>
-            <AddressAutocomplete
+            </Label>
+            <Input
+              placeholder="Street Address"
               value={formData.address.street}
-              onChange={(address: string, components?: AddressComponents) => {
-                setFormData({
-                  ...formData,
-                  address: {
-                    street: address,
-                    city: components?.city || formData.address.city,
-                    state: components?.state || formData.address.state,
-                    pincode: components?.pincode || formData.address.pincode,
-                  }
-                });
-              }}
-              placeholder="Search address, landmark, city..."
-              className="w-full"
+              onChange={(e) => setFormData({
+                ...formData,
+                address: { ...formData.address, street: e.target.value }
+              })}
             />
             <div className="grid grid-cols-2 gap-4">
-              <input
-                type="text"
+              <Input
                 placeholder="City"
                 value={formData.address.city}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
+                onChange={(e) => setFormData({
                   ...formData,
                   address: { ...formData.address, city: e.target.value }
                 })}
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               />
-              <input
-                type="text"
-                placeholder="State"
-                value={formData.address.state}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
+              <Input
+                placeholder="Pincode"
+                value={formData.address.pincode}
+                onChange={(e) => setFormData({
                   ...formData,
-                  address: { ...formData.address, state: e.target.value }
+                  address: { ...formData.address, pincode: e.target.value }
                 })}
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               />
             </div>
-            <input
-              type="text"
-              placeholder="Pincode"
-              value={formData.address.pincode}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
-                ...formData,
-                address: { ...formData.address, pincode: e.target.value }
-              })}
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-            />
           </div>
 
           {/* Notes */}
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">Additional Notes</label>
-            <textarea
-              placeholder="Any special instructions or notes..."
+            <Label>Special Instructions</Label>
+            <Textarea
+              placeholder="Any notes for the service provider..."
               value={formData.notes}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
-              rows={4}
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+              onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              rows={3}
             />
           </div>
 
-          {/* Error Message */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
+              {error}
             </div>
           )}
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading || !formData.petId}
-            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <Button 
+            type="submit" 
+            className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]"
+            disabled={loading}
           >
-            {loading ? 'Creating Booking...' : 'Create Booking'}
-          </button>
+            {loading ? 'Confirming...' : 'Confirm Booking'}
+          </Button>
         </form>
       </div>
     </div>
   );
 }
-

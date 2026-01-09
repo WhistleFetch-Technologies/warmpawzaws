@@ -160,25 +160,8 @@ export default function AuthPage() {
       {/* Orange Header Section - 40% of screen */}
       <div className="relative bg-primary h-[40vh] flex flex-col items-center justify-center px-6">
         {/* Warmpawz Logo */}
-        <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6">
-          <div className="relative w-20 h-20">
-            {/* Paw print with cat/dog silhouette */}
-            <svg viewBox="0 0 100 100" className="w-full h-full">
-              {/* Main paw shape */}
-              <ellipse cx="50" cy="70" rx="30" ry="25" fill="#1a1a1a"/>
-              {/* Toe beans */}
-              <ellipse cx="25" cy="45" rx="12" ry="15" fill="#1a1a1a"/>
-              <ellipse cx="50" cy="35" rx="12" ry="15" fill="#1a1a1a"/>
-              <ellipse cx="75" cy="45" rx="12" ry="15" fill="#1a1a1a"/>
-              {/* Cat silhouette inside paw */}
-              <path d="M35 75 Q40 55 50 50 Q60 55 65 75 Q60 80 50 82 Q40 80 35 75" fill="#FF8C42"/>
-              {/* Cat ears */}
-              <path d="M38 55 L42 45 L46 55" fill="#FF8C42"/>
-              <path d="M54 55 L58 45 L62 55" fill="#FF8C42"/>
-              {/* "Warmpawz" text curved */}
-              <text x="50" y="92" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#FF8C42" fontFamily="sans-serif">Warmpawz</text>
-            </svg>
-          </div>
+        <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
+          <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
         </div>
         
         {/* Welcome Text */}

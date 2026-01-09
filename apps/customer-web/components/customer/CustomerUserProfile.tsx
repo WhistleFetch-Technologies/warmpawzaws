@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { Button } from '@/components/ui/button';
 import { Camera } from 'lucide-react';
-import { apiClient, isUatMode } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 
 interface UserProfile {
   firstName: string;
@@ -15,24 +16,23 @@ interface UserProfile {
 }
 
 interface CustomerUserProfileProps {
-  phone: string;
-  journeyStage?: string | null;
+  session: any;
+  journeyStage?: string;
   onComplete: (profile: UserProfile) => void;
 }
 
-export function CustomerUserProfile({ phone, journeyStage, onComplete }: CustomerUserProfileProps) {
+export function CustomerUserProfile({ session, journeyStage, onComplete }: CustomerUserProfileProps) {
   const [profile, setProfile] = useState<UserProfile>({
     firstName: '',
     lastName: '',
     email: '',
-    phone: phone || '',
+    phone: session.phone || '',
     address: '',
     pincode: '',
     photo: ''
   });
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,59 +48,39 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
   };
 
   const handleSubmit = async () => {
-    setError(null);
-    
     // Validation
     if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode) {
-      setError('Please fill in all required fields');
+      alert('Please fill in all required fields');
       return;
     }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(profile.email)) {
-      setError('Please enter a valid email address');
+      alert('Please enter a valid email address');
       return;
     }
 
     // Pincode validation (6 digits for India)
     if (!/^\d{6}$/.test(profile.pincode)) {
-      setError('Please enter a valid 6-digit pincode');
+      alert('Please enter a valid 6-digit pincode');
       return;
     }
 
     setLoading(true);
     try {
-      // UAT Mode: Skip API call
-      if (isUatMode()) {
-        console.log('🔧 [UAT Mode] Profile saved locally:', profile);
-        localStorage.setItem('customerProfile', JSON.stringify(profile));
-        onComplete(profile);
-        return;
-      }
-
-      // Save user profile to backend
+      // Save user profile to backend - AWS Serverless compatible
       await apiClient.post('/customer/profile', {
-        phone: phone,
+        phone: session.phone,
         profile: profile,
-        journeyType: journeyStage,
+        journeyType: journeyStage, // Save journey type
       });
 
-      console.log('✅ User profile saved successfully');
-      localStorage.setItem('customerProfile', JSON.stringify(profile));
+      console.log('User profile saved successfully');
       onComplete(profile);
-    } catch (err: any) {
-      console.error('Error saving user profile:', err);
-      
-      // UAT Fallback: If API fails in UAT mode, save locally
-      if (isUatMode()) {
-        console.log('🔧 [UAT Fallback] Saving profile locally');
-        localStorage.setItem('customerProfile', JSON.stringify(profile));
-        onComplete(profile);
-        return;
-      }
-      
-      setError(err.message || 'Failed to save profile');
+    } catch (error) {
+      console.error('Error saving user profile:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -108,44 +88,57 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
 
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+      {/* Status Bar */}
+      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+        <span className="text-black text-sm">09:41</span>
+        <div className="flex gap-1.5 items-center">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
+            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
+            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
+            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
+            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
+          </svg>
+        </div>
+      </div>
+
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
         {/* Logo */}
-        <div className="flex justify-center pt-8 mb-0">
-          <img src="/logo.png" alt="Warmpawz" className="w-16 h-16 object-contain" />
+        <div className="flex justify-center pt-8 mb-6">
+          <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
         </div>
 
         {/* Orange Circle Icon */}
-        <div className="flex flex-col items-center mb-8 px-0">
-          <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4 shadow-lg shadow-primary/30">
+        <div className="flex flex-col items-center mb-8 px-6">
+          <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
               <circle cx="24" cy="18" r="8" fill="white"/>
               <path d="M10 38C10 30 16 24 24 24C32 24 38 30 38 38V42H10V38Z" fill="white"/>
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 text-center">Create Your<br />Profile 👤</h1>
+          <h1 className="text-black text-center">Create Your<br />Profile 👤</h1>
         </div>
 
         {/* Content */}
-        <div className="px-0 mb-0">
-          <p className="text-center text-gray-600 mb-0 text-sm">
+        <div className="px-6 mb-6">
+          <p className="text-center text-gray-700 mb-6 text-sm">
             Let's set up your account 🌟<br />
             Almost there!
           </p>
 
-          {/* Error Alert */}
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-0">
-              <span className="text-red-500 text-xl">⚠️</span>
-              <p className="text-red-600 text-sm flex-1">{error}</p>
-            </div>
-          )}
-
           {/* Photo Upload */}
-          <div className="flex flex-col items-center mb-0">
+          <div className="flex flex-col items-center mb-6">
             <div 
               onClick={() => fileInputRef.current?.click()}
-              className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-0 relative group"
+              className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-3 relative group"
             >
               {photoPreview ? (
                 <>
@@ -156,8 +149,8 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
                 </>
               ) : (
                 <div className="flex flex-col items-center">
-                  <Camera className="w-10 h-10 text-primary mb-0" />
-                  <span className="text-xs text-primary">Add Photo</span>
+                  <Camera className="w-10 h-10 text-[#FF8C42] mb-2" />
+                  <span className="text-xs text-[#FF8C42]">Add Photo</span>
                 </div>
               )}
             </div>
@@ -177,98 +170,95 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
           {/* First Name and Last Name */}
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 First Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={profile.firstName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
+                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
                 placeholder="John"
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Last Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={profile.lastName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
+                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
                 placeholder="Doe"
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
             </div>
           </div>
 
           {/* Email */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Email Address <span className="text-red-500">*</span>
             </label>
             <input
               type="email"
               value={profile.email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
+              onChange={(e) => setProfile({ ...profile, email: e.target.value })}
               placeholder="john.doe@example.com"
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
           </div>
 
           {/* Phone (Pre-filled, Read-only) */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Phone Number <span className="text-red-500">*</span>
             </label>
-            <div className="flex items-center border-2 border-gray-200 rounded-xl bg-gray-50">
-              <span className="pl-4 pr-0 text-gray-600 font-medium">+91</span>
-              <input
-                type="tel"
-                value={profile.phone}
-                readOnly
-                className="flex-1 px-0 py-0 bg-gray-50 rounded-r-xl cursor-not-allowed outline-none"
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-0">
+            <input
+              type="tel"
+              value={profile.phone}
+              readOnly
+              className="w-full px-4 py-3 border-2 border-gray-200 bg-gray-50 rounded-xl cursor-not-allowed"
+            />
+            <p className="text-xs text-gray-500 mt-1">
               Phone number from your login
             </p>
           </div>
 
           {/* Address */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Address <span className="text-red-500">*</span>
             </label>
             <textarea
               value={profile.address}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
+              onChange={(e) => setProfile({ ...profile, address: e.target.value })}
               placeholder="House No, Street, Area"
               rows={3}
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all resize-none"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
             />
           </div>
 
           {/* Pincode */}
-          <div className="mb-0">
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Pincode <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={profile.pincode}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              onChange={(e) => {
                 const value = e.target.value.replace(/\D/g, '').slice(0, 6);
                 setProfile({ ...profile, pincode: value });
               }}
               placeholder="400001"
               maxLength={6}
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
           </div>
 
           {/* Info Card */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-0">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
             <p className="text-xs text-blue-900 text-center">
               🔒 Your information is secure and will be used<br />
               for service delivery and communication only.
@@ -278,26 +268,20 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-0 py-4 max-w-[430px] mx-auto w-full">
-        <button
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+        <Button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full h-14 bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl disabled:opacity-50 transition-all shadow-lg shadow-primary/30"
+          className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white disabled:opacity-50"
         >
-          {loading ? (
-            <span className="flex items-center justify-center gap-0">
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Creating Profile...
-            </span>
-          ) : (
-            'Complete & Continue'
-          )}
-        </button>
+          {loading ? 'Creating Profile...' : 'Complete & Continue'}
+        </Button>
+
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-4">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
       </div>
     </div>
   );
 }
-

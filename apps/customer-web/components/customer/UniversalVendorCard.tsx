@@ -1,7 +1,8 @@
 'use client';
 
 import { MapPin, Star, Clock, Phone, ChevronRight } from 'lucide-react';
-import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 interface UniversalVendorCardProps {
   vendor: {
@@ -54,14 +55,14 @@ export function UniversalVendorCard({
     if (!badge) return null;
 
     return (
-      <span className={`text-xs px-0 py-0 rounded-full ${badge.color}`}>
+      <span className={`text-xs px-2 py-1 rounded-full ${badge.color}`}>
         {badge.label}
       </span>
     );
   };
 
   return (
-    <div className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-lg transition-shadow">
+    <Card className="p-4 hover:shadow-lg transition-shadow">
       <div className="flex gap-4">
         {/* Icon/Image */}
         <div className={`w-20 h-20 bg-gradient-to-br ${colorClass} rounded-xl flex items-center justify-center text-3xl flex-shrink-0`}>
@@ -82,9 +83,9 @@ export function UniversalVendorCard({
           <h3 className="font-bold text-gray-900 truncate">{vendor.vendorName}</h3>
           
           {/* Rating & Reviews */}
-          <div className="flex items-center gap-0 mt-0">
-            <div className="flex items-center gap-0">
-              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-1">
+              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
               <span className="text-sm font-medium">{rating.toFixed(1)}</span>
             </div>
             {reviewCount > 0 && (
@@ -101,26 +102,26 @@ export function UniversalVendorCard({
             )}
           </div>
 
-          {/* Service Name */}
+          {/* Service Name (if available) */}
           {vendor.serviceName && (
-            <p className="text-sm text-gray-700 mt-0 truncate">{vendor.serviceName}</p>
+            <p className="text-sm text-gray-700 mt-1 truncate">{vendor.serviceName}</p>
           )}
 
-          {/* Description */}
+          {/* Description (if available) */}
           {vendor.description && (
-            <p className="text-sm text-gray-600 mt-0 line-clamp-0">{vendor.description}</p>
+            <p className="text-sm text-gray-600 mt-1 line-clamp-2">{vendor.description}</p>
           )}
 
           {/* Location & Duration */}
-          <div className="flex items-center gap-0 mt-0">
-            <div className="flex items-center gap-0 text-sm text-gray-600">
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex items-center gap-1 text-sm text-gray-600">
               <MapPin className="w-4 h-4" />
               <span className="truncate">{location}</span>
             </div>
             {vendor.duration && (
               <>
                 <span className="text-gray-400">•</span>
-                <div className="flex items-center gap-0 text-sm text-gray-600">
+                <div className="flex items-center gap-1 text-sm text-gray-600">
                   <Clock className="w-4 h-4" />
                   <span>{vendor.duration}</span>
                 </div>
@@ -129,8 +130,8 @@ export function UniversalVendorCard({
           </div>
 
           {/* Price */}
-          <div className="mt-0">
-            <span className="text-lg font-bold text-primary">
+          <div className="mt-2">
+            <span className="text-lg font-bold text-blue-600">
               {formatPrice(vendor.price)}
             </span>
           </div>
@@ -138,25 +139,25 @@ export function UniversalVendorCard({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-0 mt-0">
+      <div className="flex gap-2 mt-3">
         {onViewDetails && (
-          <button
+          <Button
+            variant="outline"
+            className="flex-1"
             onClick={() => onViewDetails(vendor.vendorId || vendor.id)}
-            className="flex-1 px-4 py-0 border-2 border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             View Details
-          </button>
+          </Button>
         )}
         {onBook && (
-          <button
+          <Button
+            className="flex-1"
             onClick={() => onBook(vendor.vendorId || vendor.id)}
-            className="flex-1 px-4 py-0 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
           >
             Book Now
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
-

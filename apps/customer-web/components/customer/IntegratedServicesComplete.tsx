@@ -1,231 +1,436 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { CheckCircle, X, Clock, MapPin, Phone, Navigation } from 'lucide-react';
-import Image from 'next/image';
+import React, { useState, useEffect } from 'react';
+import {
+  Ambulance,
+  Pill,
+  Activity,
+  MapPin,
+  Star,
+  Clock,
+  Phone,
+  ChevronRight,
+  Filter,
+  Building,
+  User,
+  CheckCircle,
+  AlertCircle,
+  ArrowLeft
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 
-interface IntegratedService {
-  id: string;
-  type: 'ambulance' | 'diagnostic' | 'pharmacy';
-  providerName: string;
+interface ServiceProvider {
   providerId: string;
-  status: 'requested' | 'confirmed' | 'in_transit' | 'arrived' | 'completed' | 'cancelled';
-  estimatedArrival?: string;
-  location?: { lat: number; lng: number; address: string };
-  phone?: string;
-  vehicleNumber?: string;
-  driverName?: string;
+  providerName: string;
+  providerType: 'clinic' | 'independent';
+  serviceType: 'ambulance' | 'pharmacy' | 'diagnostics';
+  parentClinicId?: string;
+  location: { lat: number; lng: number; address: string };
+  isAvailable: boolean;
+  rating: number;
+  distance?: number;
 }
 
 interface IntegratedServicesCompleteProps {
-  serviceId: string;
+  customerId: string;
   onBack?: () => void;
-  onCancel?: (serviceId: string) => void;
+  selectedService?: 'ambulance' | 'pharmacy' | 'diagnostics';
 }
 
+const SERVICE_CONFIG = {
+  ambulance: {
+    icon: Ambulance,
+    color: 'red',
+    bgColor: 'bg-red-100',
+    textColor: 'text-red-700',
+    borderColor: 'border-red-500',
+    title: 'Emergency Ambulance',
+    description: 'Quick response for medical emergencies'
+  },
+  pharmacy: {
+    icon: Pill,
+    color: 'blue',
+    bgColor: 'bg-blue-100',
+    textColor: 'text-blue-700',
+    borderColor: 'border-blue-500',
+    title: 'Medicine Delivery',
+    description: 'Get medicines delivered to your doorstep'
+  },
+  diagnostics: {
+    icon: Activity,
+    color: 'teal',
+    bgColor: 'bg-teal-100',
+    textColor: 'text-teal-700',
+    borderColor: 'border-teal-500',
+    title: 'Diagnostic Services',
+    description: 'Book lab tests and health checkups'
+  }
+};
+
 export function IntegratedServicesComplete({
-  serviceId,
+  customerId,
   onBack,
-  onCancel
+  selectedService
 }: IntegratedServicesCompleteProps) {
-  const [service, setService] = useState<IntegratedService | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState<'selector' | 'providers'>('selector');
+  const [activeService, setActiveService] = useState<'ambulance' | 'pharmacy' | 'diagnostics' | null>(
+    selectedService || null
+  );
+  const [providers, setProviders] = useState<ServiceProvider[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [filterType, setFilterType] = useState<'all' | 'clinic' | 'independent'>('all');
 
   useEffect(() => {
-    loadService();
-    const interval = setInterval(loadService, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
-  }, [serviceId]);
-
-  const loadService = async () => {
-    try {
-      setLoading(true);
-      const response = await apiClient.get<{ service: IntegratedService }>(
-        `/integrated-services/${serviceId}`
+    // Get user location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => console.log('Location access denied:', error)
       );
-      if (response.service) {
-        setService(response.service);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeService) {
+      fetchProviders(activeService);
+    }
+  }, [activeService, userLocation]);
+
+  const fetchProviders = async (serviceType: string) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        serviceType
+      });
+
+      if (userLocation) {
+        params.append('lat', userLocation.lat.toString());
+        params.append('lng', userLocation.lng.toString());
+        params.append('radius', '15'); // 15km radius
+      }
+
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setProviders(data.data?.providers || data.providers || []);
+        setCurrentView('providers');
       }
     } catch (error) {
-      console.error('Error loading service:', error);
+      console.error('Error fetching providers:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCancel = async () => {
-    if (!service) return;
+  const handleServiceSelect = (service: 'ambulance' | 'pharmacy' | 'diagnostics') => {
+    setActiveService(service);
+  };
+
+  const handleBack = () => {
+    if (currentView === 'providers') {
+      setCurrentView('selector');
+      setActiveService(null);
+    } else if (onBack) {
+      onBack();
+    }
+  };
+
+  const handleProviderSelect = async (provider: ServiceProvider) => {
+    // Check availability before proceeding
     try {
-      await apiClient.post(`/integrated-services/${serviceId}/cancel`);
-      onCancel?.(serviceId);
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data?.availability?.isAvailable) {
+          // Proceed with booking
+          console.log('Provider available, proceeding to booking:', provider);
+          // TODO: Navigate to booking flow
+        } else {
+          alert(`Service not available: ${data.data?.availability?.reason}`);
+        }
+      }
     } catch (error) {
-      console.error('Error cancelling service:', error);
+      console.error('Error checking availability:', error);
+      alert('Unable to check availability. Please try again.');
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'requested': return 'bg-blue-100 text-blue-700';
-      case 'confirmed': return 'bg-green-100 text-green-700';
-      case 'in_transit': return 'bg-yellow-100 text-yellow-700';
-      case 'arrived': return 'bg-purple-100 text-purple-700';
-      case 'completed': return 'bg-gray-100 text-gray-700';
-      case 'cancelled': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
-  };
+  const filteredProviders = providers.filter((p) => {
+    if (filterType === 'all') return true;
+    return p.providerType === filterType;
+  });
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'requested': return 'Requested';
-      case 'confirmed': return 'Confirmed';
-      case 'in_transit': return 'In Transit';
-      case 'arrived': return 'Arrived';
-      case 'completed': return 'Completed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
-    }
-  };
-
-  if (loading) {
+  // Service Selector View
+  if (currentView === 'selector') {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading service status...</p>
+      <div className="min-h-screen bg-white pb-24">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-orange-500 to-pink-500 px-6 py-6">
+          <div className="flex items-center gap-3 mb-4">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center"
+              >
+                <ArrowLeft className="w-5 h-5 text-white" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-white">Integrated Services</h1>
+              <p className="text-white/90 text-sm">Medical services at your fingertips</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Service Cards */}
+        <div className="px-6 py-6 space-y-4">
+          {(Object.keys(SERVICE_CONFIG) as Array<keyof typeof SERVICE_CONFIG>).map((serviceKey) => {
+            const config = SERVICE_CONFIG[serviceKey];
+            const IconComponent = config.icon;
+
+            return (
+              <Card
+                key={serviceKey}
+                className={`cursor-pointer hover:shadow-lg transition-all border-2 ${config.borderColor}`}
+                onClick={() => handleServiceSelect(serviceKey)}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    {/* Icon */}
+                    <div className={`w-16 h-16 rounded-xl ${config.bgColor} flex items-center justify-center`}>
+                      <IconComponent className={`w-8 h-8 ${config.textColor}`} />
+                    </div>
+
+                    {/* Details */}
+                    <div className="flex-1">
+                      <h3 className={`${config.textColor} mb-1`}>{config.title}</h3>
+                      <p className="text-sm text-gray-600">{config.description}</p>
+                      
+                      {/* Stats */}
+                      <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <Building className="w-3 h-3" />
+                          Clinic-based
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <User className="w-3 h-3" />
+                          Independent
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Arrow */}
+                    <ChevronRight className={`w-6 h-6 ${config.textColor}`} />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Info Section */}
+        <div className="px-6 py-4 bg-gray-50 mx-6 rounded-xl">
+          <h3 className="text-gray-900 text-sm mb-2">Why Choose Integrated Services?</h3>
+          <ul className="space-y-2 text-xs text-gray-600">
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
+              <span>Quick response times for emergencies</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
+              <span>Verified vendors with proper licenses</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
+              <span>Real-time tracking and updates</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
+              <span>24/7 availability for critical services</span>
+            </li>
+          </ul>
         </div>
       </div>
     );
   }
 
-  if (!service) {
-    return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-0">
-        <div className="text-center">
-          <p className="text-gray-600 mb-4">Service not found</p>
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-            >
-              Go Back
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
+  // Providers List View
+  const serviceConfig = activeService ? SERVICE_CONFIG[activeService] : null;
+  if (!serviceConfig) return null;
+
+  const IconComponent = serviceConfig.icon;
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-white pb-24">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-            >
-              <X className="w-5 h-5 text-white" />
-            </button>
-          )}
+      <div className={`bg-gradient-to-r from-${serviceConfig.color}-500 to-${serviceConfig.color}-600 px-6 py-6`}>
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={handleBack}
+            className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center"
+          >
+            <ArrowLeft className="w-5 h-5 text-white" />
+          </button>
           <div className="flex-1">
-            <h1 className="text-white text-xl font-bold">
-              {service.type === 'ambulance' ? 'Ambulance' : 
-               service.type === 'diagnostic' ? 'Diagnostic' : 'Pharmacy'} Service
-            </h1>
-            <p className="text-white/90 text-sm">{service.providerName}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="px-0 py-0 space-y-6">
-        {/* Status Card */}
-        <div className="bg-white rounded-2xl p-0 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900">Service Status</h2>
-            <span className={`px-0 py-0 rounded-full text-sm font-semibold ${getStatusColor(service.status)}`}>
-              {getStatusLabel(service.status)}
-            </span>
-          </div>
-          {service.estimatedArrival && (
-            <div className="flex items-center gap-0 text-gray-600">
-              <Clock className="w-5 h-5" />
-              <span>Estimated arrival: {service.estimatedArrival}</span>
+            <div className="flex items-center gap-2">
+              <IconComponent className="w-6 h-6 text-white" />
+              <h1 className="text-white">{serviceConfig.title}</h1>
             </div>
-          )}
-        </div>
-
-        {/* Provider Info */}
-        <div className="bg-white rounded-2xl p-0 border border-gray-200">
-          <h3 className="font-semibold text-gray-900 mb-0">Provider Details</h3>
-          <p className="text-gray-900 font-medium mb-0">{service.providerName}</p>
-          {service.driverName && (
-            <p className="text-sm text-gray-600">Driver: {service.driverName}</p>
-          )}
-          {service.vehicleNumber && (
-            <p className="text-sm text-gray-600">Vehicle: {service.vehicleNumber}</p>
-          )}
-          {service.phone && (
-            <a
-              href={`tel:${service.phone}`}
-              className="flex items-center gap-0 text-primary mt-0 hover:underline"
-            >
-              <Phone className="w-5 h-5" />
-              <span>{service.phone}</span>
-            </a>
-          )}
-        </div>
-
-        {/* Location */}
-        {service.location && (
-          <div className="bg-white rounded-2xl p-0 border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-0">Location</h3>
-            <div className="flex items-start gap-0">
-              <MapPin className="w-5 h-5 text-primary flex-shrink-0 mt-0" />
-              <div>
-                <p className="text-gray-900">{service.location.address}</p>
-                <button className="flex items-center gap-0 text-primary mt-0 hover:underline">
-                  <Navigation className="w-4 h-4" />
-                  <span>Get Directions</span>
-                </button>
-              </div>
-            </div>
+            <p className="text-white/90 text-sm">{filteredProviders.length} providers available</p>
           </div>
-        )}
+        </div>
 
-        {/* Actions */}
-        {service.status !== 'completed' && service.status !== 'cancelled' && (
-          <div className="space-y-3">
-            {service.status === 'in_transit' || service.status === 'arrived' ? (
-              <button
-                onClick={() => window.location.href = `tel:${service.phone}`}
-                className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
-              >
-                <Phone className="w-5 h-5" />
-                Call Provider
-              </button>
-            ) : null}
+        {/* Filter Tabs */}
+        <div className="flex gap-2">
+          {[
+            { value: 'all', label: 'All' },
+            { value: 'clinic', label: 'Clinic-Based' },
+            { value: 'independent', label: 'Independent' }
+          ].map((filter) => (
             <button
-              onClick={handleCancel}
-              className="w-full py-4 border-2 border-red-500 text-red-500 rounded-xl font-semibold hover:bg-red-50 transition-colors"
+              key={filter.value}
+              onClick={() => setFilterType(filter.value as any)}
+              className={`px-4 py-2 rounded-full text-sm transition-all ${
+                filterType === filter.value
+                  ? 'bg-white text-gray-900'
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
             >
-              Cancel Service
+              {filter.label}
             </button>
-          </div>
-        )}
-
-        {service.status === 'completed' && (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-0 text-center">
-            <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-            <h3 className="font-bold text-green-900 mb-0">Service Completed</h3>
-            <p className="text-green-700">Thank you for using our service!</p>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
+
+      {/* Loading State */}
+      {loading && (
+        <div className="px-6 py-12 text-center">
+          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Finding available providers...</p>
+        </div>
+      )}
+
+      {/* Providers List */}
+      {!loading && (
+        <div className="px-6 py-6 space-y-4">
+          {filteredProviders.map((provider) => (
+            <Card
+              key={provider.providerId}
+              className="cursor-pointer hover:shadow-lg transition-all"
+              onClick={() => handleProviderSelect(provider)}
+            >
+              <CardContent className="p-4">
+                <div className="flex gap-4">
+                  {/* Provider Icon */}
+                  <div className={`w-16 h-16 rounded-lg ${serviceConfig.bgColor} flex items-center justify-center flex-shrink-0`}>
+                    {provider.providerType === 'clinic' ? (
+                      <Building className={`w-8 h-8 ${serviceConfig.textColor}`} />
+                    ) : (
+                      <User className={`w-8 h-8 ${serviceConfig.textColor}`} />
+                    )}
+                  </div>
+
+                  {/* Provider Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex-1">
+                        <h3 className="text-gray-900 line-clamp-1 mb-1">{provider.providerName}</h3>
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs capitalize ${
+                            provider.providerType === 'clinic' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                          }`}
+                        >
+                          {provider.providerType}
+                        </Badge>
+                      </div>
+                      {provider.isAvailable ? (
+                        <Badge className="bg-green-100 text-green-700 text-xs">
+                          Available
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">
+                          Unavailable
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Location */}
+                    <div className="flex items-center gap-1 text-sm text-gray-600 mb-2">
+                      <MapPin className="w-4 h-4" />
+                      <span className="line-clamp-1">{provider.location.address}</span>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="flex items-center gap-4 text-sm">
+                      {provider.rating > 0 && (
+                        <span className="flex items-center gap-1 text-yellow-600">
+                          <Star className="w-4 h-4 fill-current" />
+                          {provider.rating.toFixed(1)}
+                        </span>
+                      )}
+                      
+                      {provider.distance !== undefined && (
+                        <span className="flex items-center gap-1 text-gray-500">
+                          <MapPin className="w-4 h-4" />
+                          {provider.distance.toFixed(1)} km
+                        </span>
+                      )}
+
+                      {provider.isAvailable && (
+                        <span className="flex items-center gap-1 text-green-600">
+                          <Clock className="w-4 h-4" />
+                          Open now
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Arrow */}
+                  <ChevronRight className="w-5 h-5 text-gray-400 self-center" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && filteredProviders.length === 0 && (
+        <div className="px-6 py-12 text-center">
+          <div className={`w-16 h-16 ${serviceConfig.bgColor} rounded-full flex items-center justify-center mx-auto mb-4`}>
+            <AlertCircle className={`w-8 h-8 ${serviceConfig.textColor}`} />
+          </div>
+          <h3 className="text-gray-900 mb-2">No providers found</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            There are no {serviceConfig.title.toLowerCase()} providers available in your area right now.
+          </p>
+          <Button
+            variant="outline"
+            onClick={handleBack}
+            className="border-orange-500 text-orange-500 hover:bg-orange-50"
+          >
+            Try Another Service
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
-

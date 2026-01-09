@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 import { Star, MapPin, Calendar, ArrowRight, Clock } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+
+const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
 interface PreviousProvider {
   providerId: string;
@@ -43,15 +46,20 @@ export function PreviousProvidersCarousel({
       if (serviceType) params.append('serviceType', serviceType);
       if (customerId) params.append('customerId', customerId);
 
-      const response = await apiClient.get<{ providers: PreviousProvider[] }>(
-        `/home-services/providers/previous?${params}`
+      const response = await fetch(
+        `${BASE_URL}/home-services/providers/previous?${params}`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
       );
-      
-      if (response.providers) {
-        setProviders(response.providers);
+
+      if (response.ok) {
+        const data = await response.json();
+        setProviders(data.providers || []);
       }
     } catch (error) {
       console.error('Error fetching previous providers:', error);
+      toast.error('Failed to load previous providers');
     } finally {
       setLoading(false);
     }
@@ -60,6 +68,8 @@ export function PreviousProvidersCarousel({
   const handleRebook = (provider: PreviousProvider) => {
     if (onSelectProvider) {
       onSelectProvider(provider);
+    } else {
+      toast.success(`Rebooking with ${provider.providerName}`);
     }
   };
 
@@ -108,13 +118,13 @@ export function PreviousProvidersCarousel({
         {providers.map((provider) => (
           <div
             key={provider.providerId}
+            className="flex-shrink-0 w-80 bg-white rounded-xl border-2 border-gray-200 p-5 hover:border-orange-400 transition-all cursor-pointer group"
             onClick={() => handleRebook(provider)}
-            className="flex-shrink-0 w-80 bg-white rounded-xl border-2 border-gray-200 p-0 hover:border-primary transition-all cursor-pointer group active:scale-[0.98]"
           >
             {/* Provider Header */}
             <div className="flex items-start gap-4 mb-4">
               {/* Provider Image */}
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center text-white flex-shrink-0">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white flex-shrink-0">
                 {provider.providerImage ? (
                   <img
                     src={provider.providerImage}
@@ -138,44 +148,66 @@ export function PreviousProvidersCarousel({
                 </p>
 
                 {/* Rating */}
-                <div className="flex items-center gap-0 mt-0">
-                  <div className="flex items-center gap-0">
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center gap-1">
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                    <span className="text-sm font-semibold">{provider.rating.toFixed(1)}</span>
+                    <span className="font-bold text-gray-900">
+                      {provider.rating.toFixed(1)}
+                    </span>
                   </div>
-                  {provider.reviewCount > 0 && (
-                    <span className="text-sm text-gray-600">({provider.reviewCount})</span>
-                  )}
+                  <span className="text-sm text-gray-600">
+                    ({provider.reviewCount} reviews)
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Service Info */}
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center gap-0 text-sm text-gray-600">
+            {/* Stats Row */}
+            <div className="flex items-center justify-between mb-4 text-sm">
+              <div className="flex items-center gap-1 text-gray-600">
                 <Calendar className="w-4 h-4" />
-                <span>Last service: {formatDate(provider.lastServiceDate)}</span>
+                <span>{formatDate(provider.lastServiceDate)}</span>
               </div>
-              {provider.distance && (
-                <div className="flex items-center gap-0 text-sm text-gray-600">
+
+              {provider.distance !== undefined && (
+                <div className="flex items-center gap-1 text-gray-600">
                   <MapPin className="w-4 h-4" />
-                  <span>{provider.distance.toFixed(1)} km away</span>
+                  <span>{provider.distance.toFixed(1)} km</span>
                 </div>
               )}
-              <div className="text-sm text-gray-600">
-                {provider.totalBookings} booking{provider.totalBookings !== 1 ? 's' : ''} with this provider
-              </div>
             </div>
 
-            {/* Rebook Button */}
-            <button className="w-full py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0">
-              Rebook Now
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {/* Booking Count Badge */}
+            <div className="flex items-center justify-between">
+              <div className="px-3 py-1 bg-orange-50 text-orange-700 rounded-full text-sm">
+                {provider.totalBookings} previous booking{provider.totalBookings !== 1 ? 's' : ''}
+              </div>
+
+              <Button
+                size="sm"
+                className="bg-orange-600 hover:bg-orange-700 group-hover:scale-105 transition-transform"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRebook(provider);
+                }}
+              >
+                Rebook
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
           </div>
         ))}
       </div>
+
+      <style jsx>{`
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
     </div>
   );
 }
-

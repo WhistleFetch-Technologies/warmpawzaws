@@ -1,178 +1,327 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
-import { Check, Loader2, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { ChevronRight, Check } from 'lucide-react';
 
-interface Service {
+const logoImage = '/logo.png';
+
+interface ServiceType {
   id: string;
   name: string;
-  description: string;
-  category: string;
-  icon?: string;
+  icon: string;
+  popular?: boolean;
+  supportsClinic?: boolean;  // New: Can be provided at clinic
+  supportsHome?: boolean;    // New: Can be provided at home
 }
 
-interface VendorServiceSelectionProps {
-  vendorId: string;
-  roleId?: string;
-  onComplete: () => void;
+const services: ServiceType[] = [
+  { id: 'grooming', name: 'Pet Grooming', icon: '✂️', popular: true, supportsClinic: true, supportsHome: true },
+  { id: 'boarding', name: 'Boarding', icon: '🏠', popular: true, supportsClinic: true, supportsHome: false },
+  { id: 'walking', name: 'Pet Walking', icon: '🐕', popular: false, supportsClinic: false, supportsHome: true },
+  { id: 'training', name: 'Pet Training', icon: '🎓', popular: false, supportsClinic: true, supportsHome: true },
+  { id: 'cafes', name: 'Pet Cafes', icon: '☕', popular: false, supportsClinic: true, supportsHome: false },
+  { id: 'adoption', name: 'Adoption', icon: '🤝', popular: false, supportsClinic: true, supportsHome: true },
+  { id: 'sunset', name: 'SunSet Services', icon: '🌅', popular: false, supportsClinic: false, supportsHome: true },
+  { id: 'events', name: 'Events', icon: '🎪', popular: false, supportsClinic: true, supportsHome: true },
+  { id: 'insurance', name: 'Pet Insurance', icon: '🛡️', popular: false, supportsClinic: true, supportsHome: true },
+  { id: 'mating', name: 'Mating & Dating', icon: '💕', popular: false, supportsClinic: true, supportsHome: false }
+];
+
+interface ServiceStyle {
+  id: 'clinic' | 'home' | 'both';
+  title: string;
+  subtitle: string;
+  icon: string;
 }
 
-export function VendorServiceSelection({ vendorId, roleId, onComplete }: VendorServiceSelectionProps) {
-  const [services, setServices] = useState<Service[]>([]);
+const serviceStyles: ServiceStyle[] = [
+  { id: 'clinic', title: 'At your Clinic/Center', subtitle: 'Customers visit you', icon: '🏪' },
+  { id: 'home', title: "At Customer's Home", subtitle: 'You visit customers', icon: '🏡' },
+  { id: 'both', title: 'Both Locations', subtitle: 'Offer both services', icon: '🔄' }
+];
+
+export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void }) {
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStyle, setSelectedStyle] = useState<'clinic' | 'home' | 'both' | null>(null);
 
-  useEffect(() => {
-    loadServices();
-  }, [roleId]);
-
-  const loadServices = async () => {
-    try {
-      setLoading(true);
-      const endpoint = roleId ? `/vendor/services/available?roleId=${roleId}` : '/vendor/services/available';
-      const response = await apiClient.get<any>(endpoint);
-      if (response.success && response.services) {
-        setServices(response.services);
-      }
-    } catch (error) {
-      console.error('Error loading services:', error);
-    } finally {
-      setLoading(false);
+  // Determine which service styles are available based on selected services
+  const getAvailableStyles = () => {
+    if (selectedServices.length === 0) {
+      return { clinic: true, home: true, both: true }; // All available when nothing selected
     }
+
+    const selectedServiceObjects = services.filter(s => selectedServices.includes(s.id));
+    
+    // Clinic is available if ANY selected service supports clinic
+    const clinicAvailable = selectedServiceObjects.some(s => s.supportsClinic);
+    
+    // Home is available if ANY selected service supports home
+    const homeAvailable = selectedServiceObjects.some(s => s.supportsHome);
+    
+    // Both is available ONLY if ALL selected services support both clinic AND home
+    const bothAvailable = selectedServiceObjects.every(s => s.supportsClinic && s.supportsHome);
+    
+    return { clinic: clinicAvailable, home: homeAvailable, both: bothAvailable };
   };
+  
+  const availableStyles = getAvailableStyles();
+  
+  // Auto-deselect style if it becomes unavailable
+  useEffect(() => {
+    if (selectedStyle === 'clinic' && !availableStyles.clinic) {
+      setSelectedStyle(availableStyles.home ? 'home' : availableStyles.both ? 'both' : null);
+    } else if (selectedStyle === 'home' && !availableStyles.home) {
+      setSelectedStyle(availableStyles.clinic ? 'clinic' : availableStyles.both ? 'both' : null);
+    } else if (selectedStyle === 'both' && !availableStyles.both) {
+      // If "both" becomes unavailable, default to the one that's available
+      setSelectedStyle(availableStyles.clinic ? 'clinic' : availableStyles.home ? 'home' : null);
+    }
+  }, [selectedServices, selectedStyle, availableStyles.clinic, availableStyles.home, availableStyles.both]);
 
   const toggleService = (serviceId: string) => {
-    setSelectedServices(prev =>
-      prev.includes(serviceId)
-        ? prev.filter(id => id !== serviceId)
-        : [...prev, serviceId]
-    );
+    if (selectedServices.includes(serviceId)) {
+      setSelectedServices(selectedServices.filter(id => id !== serviceId));
+    } else {
+      setSelectedServices([...selectedServices, serviceId]);
+    }
   };
-
-  const handleSubmit = async () => {
-    if (selectedServices.length === 0) {
-      alert('Please select at least one service');
+  
+  const handleContinue = () => {
+    if (selectedServices.length === 0 || !selectedStyle) {
+      alert('Please select at least one service and your service style');
       return;
     }
 
-    try {
-      setSaving(true);
-      const response = await apiClient.post<any>('/vendor/services/select', {
-        vendorId,
-        serviceIds: selectedServices,
-      });
-
-      if (response.success) {
-        onComplete();
-      } else {
-        alert('Failed to save service selection');
-      }
-    } catch (error) {
-      console.error('Error saving services:', error);
-      alert('Error saving services');
-    } finally {
-      setSaving(false);
+    // Determine which service styles are selected
+    const serviceStylesArray: string[] = [];
+    if (selectedStyle === 'clinic') {
+      serviceStylesArray.push('clinic');
+    } else if (selectedStyle === 'home') {
+      serviceStylesArray.push('home');
+    } else if (selectedStyle === 'both') {
+      serviceStylesArray.push('clinic', 'home');
     }
+
+    onNext({
+      services: selectedServices,
+      serviceStyle: selectedStyle,
+      serviceStyles: serviceStylesArray // Pass array for form logic
+    });
   };
 
-  const filteredServices = services.filter(service =>
-    service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    service.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const groupedServices = filteredServices.reduce((acc, service) => {
-    if (!acc[service.category]) {
-      acc[service.category] = [];
-    }
-    acc[service.category].push(service);
-    return acc;
-  }, {} as Record<string, Service[]>);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-orange-600" />
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-4">
-      <div className="bg-white rounded-lg border-2 border-gray-200 p-0">
-        <h1 className="text-xl font-bold text-gray-900 mb-0">Select Your Services</h1>
-        <p className="text-sm text-gray-600 mb-0">
-          Choose the services you want to offer. You can add more later from your dashboard.
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto pb-24">
+      {/* Header */}
+      <div className="px-6 pt-12 pb-8 text-center">
+        {/* Logo */}
+        <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg">
+          <div className="w-12 h-12 flex items-center justify-center">
+            <img src={logoImage} alt="Warmpawz" className="w-10 h-10" />
+          </div>
+        </div>
+
+        {/* Welcome Text */}
+        <h1 className="text-2xl font-bold text-gray-800 mb-2">
+          Welcome to
+        </h1>
+        <h2 className="text-3xl font-bold bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] bg-clip-text text-transparent mb-4">
+          WARMPAWZ !!
+        </h2>
+        <p className="text-gray-600 text-sm">
+          Your Professional Pet Service Platform
         </p>
+      </div>
 
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-            placeholder="Search services..."
-            className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
-          />
+      {/* Content */}
+      <div className="px-6 space-y-8">
+        {/* Services Selection */}
+        <div>
+          <h3 className="text-lg font-bold text-gray-800 mb-4 text-center">
+            Services You Can Offer
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {services.map((service) => (
+              <button
+                key={service.id}
+                onClick={() => toggleService(service.id)}
+                className={`relative bg-white rounded-2xl p-4 border-2 transition-all ${
+                  selectedServices.includes(service.id)
+                    ? 'border-[#FF8C42] shadow-md'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {/* Selection Checkmark */}
+                {selectedServices.includes(service.id) && (
+                  <div className="absolute top-2 right-2 w-6 h-6 bg-[#FF8C42] rounded-full flex items-center justify-center">
+                    <Check className="w-4 h-4 text-white" />
+                  </div>
+                )}
+
+                {/* Popular Badge */}
+                {service.popular && (
+                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2">
+                    <span className="bg-green-500 text-white text-xs px-2 py-0.5 rounded-full font-semibold">
+                      Popular
+                    </span>
+                  </div>
+                )}
+
+                {/* Service Content */}
+                <div className="text-center">
+                  <div className="text-4xl mb-2">{service.icon}</div>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {service.name}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="space-y-4 max-h-96 overflow-y-auto mb-0">
-          {Object.entries(groupedServices).map(([category, categoryServices]) => (
-            <div key={category}>
-              <h3 className="font-semibold text-gray-900 mb-0">{category}</h3>
-              <div className="space-y-2">
-                {categoryServices.map((service) => {
-                  const isSelected = selectedServices.includes(service.id);
-                  return (
-                    <button
-                      key={service.id}
-                      onClick={() => toggleService(service.id)}
-                      className={`w-full p-0 rounded-lg border-2 text-left transition-all ${
-                        isSelected
-                          ? 'border-orange-500 bg-orange-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-start gap-0">
-                        {isSelected && (
-                          <Check className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                        )}
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-900">{service.name}</div>
-                          <div className="text-sm text-gray-600">{service.description}</div>
-                        </div>
+        {/* Smart Booking System Info */}
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
+          <div className="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">📅</span>
+          </div>
+          <h4 className="font-bold text-gray-800 text-center mb-2">
+            Smart Booking System
+          </h4>
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Automated appointment scheduling with customer notifications
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
+            <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
+          </div>
+        </div>
+
+        {/* Service Style Selection */}
+        <div>
+          <h3 className="text-lg font-bold text-gray-800 mb-4 text-center">
+            Choose Your Service Style
+          </h3>
+          
+          {/* First Row: Clinic and Home */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {serviceStyles.filter(s => s.id !== 'both').map((style) => {
+              const isDisabled = !availableStyles[style.id];
+              return (
+                <button
+                  key={style.id}
+                  onClick={() => !isDisabled && setSelectedStyle(style.id)}
+                  disabled={isDisabled}
+                  className={`relative bg-white rounded-2xl p-6 border-2 transition-all ${
+                    isDisabled
+                      ? 'opacity-40 cursor-not-allowed border-gray-200'
+                      : selectedStyle === style.id
+                      ? 'border-[#FF8C42] shadow-md bg-orange-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {/* Disabled Overlay */}
+                  {isDisabled && (
+                    <div className="absolute inset-0 bg-gray-100/50 rounded-2xl flex items-center justify-center">
+                      <div className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-semibold">
+                        Not Available
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
+                    </div>
+                  )}
+
+                  {/* Selection Checkmark */}
+                  {selectedStyle === style.id && !isDisabled && (
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-[#FF8C42] rounded-full flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                  )}
+
+                  <div className="text-center">
+                    <div className="text-5xl mb-3">{style.icon}</div>
+                    <p className="font-bold text-gray-800 mb-1 text-sm">
+                      {style.title}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {style.subtitle}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Second Row: Both Option (Full Width) */}
+          {(() => {
+            const bothStyle = serviceStyles.find(s => s.id === 'both')!;
+            const isDisabled = !availableStyles.both;
+            return (
+              <button
+                onClick={() => !isDisabled && setSelectedStyle('both')}
+                disabled={isDisabled}
+                className={`relative w-full bg-white rounded-2xl p-6 border-2 transition-all ${
+                  isDisabled
+                    ? 'opacity-40 cursor-not-allowed border-gray-200'
+                    : selectedStyle === 'both'
+                    ? 'border-[#FF8C42] shadow-md bg-orange-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {/* Disabled Overlay */}
+                {isDisabled && (
+                  <div className="absolute inset-0 bg-gray-100/50 rounded-2xl flex items-center justify-center">
+                    <div className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-semibold">
+                      Not Available
+                    </div>
+                  </div>
+                )}
+
+                {/* Selection Checkmark */}
+                {selectedStyle === 'both' && !isDisabled && (
+                  <div className="absolute top-2 right-2 w-6 h-6 bg-[#FF8C42] rounded-full flex items-center justify-center">
+                    <Check className="w-4 h-4 text-white" />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center gap-4">
+                  <div className="text-5xl">{bothStyle.icon}</div>
+                  <div className="text-left">
+                    <p className="font-bold text-gray-800 mb-1">
+                      {bothStyle.title}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {bothStyle.subtitle}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            );
+          })()}
+          
+          {/* Helper Text */}
+          {selectedServices.length > 0 && (!availableStyles.clinic || !availableStyles.home || !availableStyles.both) && (
+            <div className="mt-4 bg-blue-50 rounded-xl p-4 border border-blue-100">
+              <p className="text-sm text-blue-800 text-center">
+                {!availableStyles.clinic && availableStyles.home && !availableStyles.both && '🏡 Selected services support home visits only'}
+                {availableStyles.clinic && !availableStyles.home && !availableStyles.both && '🏪 Selected services support clinic/center only'}
+                {!availableStyles.both && availableStyles.clinic && availableStyles.home && '⚠️ Not all services support both locations - choose one'}
+                {availableStyles.both && '✅ All selected services support both locations!'}
+              </p>
             </div>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between mb-4 p-0 bg-gray-50 rounded-lg">
-          <span className="text-sm text-gray-600">Selected:</span>
-          <span className="font-semibold text-gray-900">{selectedServices.length} services</span>
-        </div>
-
-        <button
-          onClick={handleSubmit}
-          disabled={saving || selectedServices.length === 0}
-          className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            'Continue'
           )}
-        </button>
+        </div>
+      </div>
+
+      {/* Fixed Bottom Button */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto">
+        <Button
+          onClick={handleContinue}
+          disabled={selectedServices.length === 0 || !selectedStyle}
+          className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white py-6 rounded-xl font-semibold disabled:opacity-50"
+        >
+          Start your pet service business
+          <ChevronRight className="w-5 h-5 ml-2" />
+        </Button>
       </div>
     </div>
   );
 }
-

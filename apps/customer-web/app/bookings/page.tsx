@@ -15,6 +15,6 @@ export default function BookingsPage() {
     return <div>Loading...</div>;
   }
 
-  return <MyBookings phone={phone} />;
+  return <MyBookings phone={phone} onBack={() => window.history.back()} />;
 }
 

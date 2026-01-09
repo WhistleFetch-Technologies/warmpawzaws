@@ -11,6 +11,7 @@ import {
   StyleSheet,
   ScrollView,
   SafeAreaView,
+  Image,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
@@ -58,7 +59,11 @@ export function CustomerOnboardingScreen({ phone, customerId, onComplete }: Cust
         <View style={styles.topSection}>
           {/* Paw Logo */}
           <View style={styles.logoContainer}>
-            <Text style={styles.logoEmoji}>🐾</Text>
+            <Image 
+              source={require('../../assets/images/logo.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           
           <Text style={styles.title}>Choose Your{'\n'}Stage</Text>
@@ -184,8 +189,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoEmoji: {
-    fontSize: 80,
+  logoImage: {
+    width: 120,
+    height: 120,
   },
   title: {
     fontSize: typography.fontSizes['4xl'],

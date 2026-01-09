@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
 import { 
   ChevronLeft, Camera, Edit2, Save, X, User, Calendar, 
-  Package, ChevronRight, Heart, Settings, LogOut, FileText,
-  ShoppingCart, CreditCard, HelpCircle, Bell, Mail, AlertCircle,
-  Wallet, ShoppingBag, Award, Users, MapPin
+  MessageSquare, Heart, Settings, ChevronRight, Package,
+  Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
+  Copy, Check, Navigation, Route, Timer, TrendingUp, ShoppingCart,
+  Home, FileText, Shield, AlertCircle
 } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { BookingDetailModal } from './BookingDetailModal';
 
 interface UserProfile {
   firstName: string;
@@ -44,13 +46,14 @@ interface Booking {
   completionOTP?: string;
 }
 
-interface UserAccountViewProps {
+interface CustomerProfileViewProps {
   phone: string;
   onBack: () => void;
   onViewBooking?: (bookingId: string, petId: string) => void;
 }
 
-export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountViewProps) {
+export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfileViewProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'bookings' | 'profile' | 'complaints' | 'saved' | 'settings'>('bookings');
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [originalProfile, setOriginalProfile] = useState<UserProfile | null>(null);
@@ -61,8 +64,11 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
   const [saving, setSaving] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedBookingForModal, setSelectedBookingForModal] = useState<{ bookingId: string; petId: string } | null>(null);
 
   useEffect(() => {
+    // Slide in animation on mount
+    setTimeout(() => setIsOpen(true), 50);
     loadProfile();
     loadBookings();
   }, [phone]);
@@ -70,11 +76,42 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<{ profile: UserProfile }>(`/customer/profile/${phone}`);
-      if (response.profile) {
-        setProfile(response.profile);
-        setPhotoPreview(response.profile.photo || '');
-        setOriginalProfile(response.profile);
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setProfile({
+          firstName: result.profile?.firstName || '',
+          lastName: result.profile?.lastName || '',
+          email: result.profile?.email || '',
+          phone: result.profile?.phone || phone,
+          address: result.profile?.address || '',
+          pincode: result.profile?.pincode || '',
+          photo: result.profile?.photo || ''
+        });
+        setPhotoPreview(result.profile?.photo || '');
+        setOriginalProfile({
+          firstName: result.profile?.firstName || '',
+          lastName: result.profile?.lastName || '',
+          email: result.profile?.email || '',
+          phone: result.profile?.phone || phone,
+          address: result.profile?.address || '',
+          pincode: result.profile?.pincode || '',
+          photo: result.profile?.photo || ''
+        });
+      } else {
+        setProfile({
+          firstName: '',
+          lastName: '',
+          email: '',
+          phone: phone,
+          address: '',
+          pincode: '',
+          photo: ''
+        });
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -95,9 +132,14 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
   const loadBookings = async () => {
     try {
       setLoadingBookings(true);
-      const response = await apiClient.get<{ bookings: Booking[] }>(`/bookings/${phone}`);
-      if (response.bookings) {
-        setBookings(response.bookings);
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setBookings(result.bookings || []);
       }
     } catch (error) {
       console.error('Error loading bookings:', error);
@@ -118,9 +160,10 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
     }
   };
 
-  const handleSaveProfile = async () => {
+  const handleSave = async () => {
     if (!profile) return;
 
+    // Validation
     if (!profile.firstName || !profile.lastName || !profile.email || !profile.address || !profile.pincode) {
       alert('Please fill in all required fields');
       return;
@@ -139,23 +182,44 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
 
     setSaving(true);
     try {
-      await apiClient.post('/customer/profile', {
-        phone: phone,
-        profile: profile,
-      });
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({
+            phone: phone,
+            profile: profile,
+          }),
+        }
+      );
 
-      await loadProfile();
-      setEditMode(false);
-      alert('✅ Profile updated successfully!');
+      const result = await response.json();
+
+      if (response.ok) {
+        // Show success message
+        alert('✅ Profile updated successfully!');
+        
+        // Reload the profile to ensure we have the latest data
+        await loadProfile();
+        
+        // Exit edit mode
+        setEditMode(false);
+      } else {
+        // Show error message
+        alert(`❌ Failed to save profile: ${result.error || 'Unknown error'}`);
+        console.error('Save error:', result);
+      }
     } catch (error) {
       console.error('Error saving profile:', error);
-      alert('❌ Failed to save profile');
+      alert(`❌ Error saving profile: ${error instanceof Error ? error.message : 'Network error. Please try again.'}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleCancelEdit = () => {
+  const handleCancel = () => {
     if (originalProfile) {
       setProfile(originalProfile);
       setPhotoPreview(originalProfile.photo || '');
@@ -186,242 +250,262 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
   const completedBookings = bookings.filter(b => b.status === 'completed');
 
   return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
-      {/* Status Bar */}
-      <div className="px-0 pt-0 pb-0 flex justify-between items-center">
-        <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-0.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-          </svg>
-        </div>
-      </div>
-
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 py-0">
-        <div className="flex items-center justify-between mb-0">
-          <button
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-          >
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-8 sticky top-0 z-20">
+        <div className="flex items-center gap-4 mb-4">
+          <button onClick={onBack} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
             <ChevronLeft className="w-5 h-5 text-white" />
           </button>
-          <h2 className="text-white font-bold text-lg">My Account</h2>
-          <div className="w-10"></div>
+          <div className="flex-1">
+            <h1 className="text-white text-xl font-bold">My Account</h1>
+            <p className="text-white/90 text-sm">{profile?.firstName || 'User'}</p>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-0">
+        {/* Tab Navigation */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-2 px-2">
           <button
             onClick={() => setActiveTab('bookings')}
-            className={`flex-1 py-0.5 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'bookings'
-                ? 'bg-white text-primary'
+                ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
+            <Calendar className="w-4 h-4" />
             My Bookings
           </button>
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-0.5 rounded-lg font-medium transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'profile'
-                ? 'bg-white text-primary'
+                ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
+            <User className="w-4 h-4" />
             Profile
+          </button>
+          <button
+            onClick={() => setActiveTab('complaints')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
+              activeTab === 'complaints'
+                ? 'bg-white text-[#FF8C42]'
+                : 'bg-white/20 text-white'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            Complaints
+          </button>
+          <button
+            onClick={() => setActiveTab('saved')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
+              activeTab === 'saved'
+                ? 'bg-white text-[#FF8C42]'
+                : 'bg-white/20 text-white'
+            }`}
+          >
+            <Heart className="w-4 h-4" />
+            Saved
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
+              activeTab === 'settings'
+                ? 'bg-white text-[#FF8C42]'
+                : 'bg-white/20 text-white'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            Settings
           </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Content with Curved Top */}
+      <div className="bg-white rounded-t-[32px] -mt-6 px-6 py-6">
+        {/* My Bookings Tab */}
         {activeTab === 'bookings' && (
-          <div className="p-0 space-y-4">
+          <div className="space-y-6">
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-0 mb-0">
-              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl p-4 text-center border border-orange-200">
-                <p className="text-3xl font-bold text-primary">{bookings.length}</p>
-                <p className="text-xs text-gray-600 mt-0.5">Total</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-xl p-4 text-center shadow-sm">
+                <p className="text-2xl font-bold text-[#FF8C42]">{bookings.length}</p>
+                <p className="text-xs text-gray-600 mt-1">Total</p>
               </div>
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-4 text-center border border-green-200">
-                <p className="text-3xl font-bold text-green-600">{activeBookings.length}</p>
-                <p className="text-xs text-gray-600 mt-0.5">Active</p>
+              <div className="bg-white rounded-xl p-4 text-center shadow-sm">
+                <p className="text-2xl font-bold text-green-600">{activeBookings.length}</p>
+                <p className="text-xs text-gray-600 mt-1">Active</p>
               </div>
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-4 text-center border border-gray-200">
-                <p className="text-3xl font-bold text-gray-600">{completedBookings.length}</p>
-                <p className="text-xs text-gray-600 mt-0.5">Done</p>
+              <div className="bg-white rounded-xl p-4 text-center shadow-sm">
+                <p className="text-2xl font-bold text-gray-600">{completedBookings.length}</p>
+                <p className="text-xs text-gray-600 mt-1">Completed</p>
               </div>
             </div>
 
+            {/* Bookings List */}
             {loadingBookings ? (
-              <div className="text-center py-0">
-                <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <div className="text-center py-12">
+                <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                 <p className="text-gray-600">Loading bookings...</p>
               </div>
             ) : bookings.length === 0 ? (
-              <div className="text-center py-02">
+              <div className="text-center py-12 bg-white rounded-2xl">
                 <div className="w-20 h-20 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
                   <Package className="w-10 h-10 text-gray-400" />
                 </div>
-                <h3 className="text-gray-800 font-semibold mb-0">No Bookings Yet</h3>
+                <h3 className="text-gray-800 font-semibold mb-2">No Bookings Yet</h3>
                 <p className="text-gray-600 text-sm">
                   Your service bookings will appear here
                 </p>
               </div>
             ) : (
-              bookings.map((booking) => (
-                <button
-                  key={booking.id}
-                  onClick={() => onViewBooking?.(booking.id, booking.petId)}
-                  className="w-full bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all text-left active:scale-[0.98]"
-                >
-                  <div className="flex gap-4">
-                    {/* Service Icon */}
-                    <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-                      {getServiceIcon(booking.serviceType)}
-                    </div>
-
-                    {/* Booking Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-0">
-                        <div>
-                          <h3 className="font-bold text-gray-800 mb-0">
-                            {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            {booking.petName} • {booking.vendorName}
-                          </p>
-                        </div>
-                        <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
-                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                        </span>
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-800">All Bookings</h3>
+                {bookings.map((booking) => (
+                  <button
+                    key={booking.id}
+                    onClick={() => onViewBooking && onViewBooking(booking.id, booking.petId)}
+                    className="w-full bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all text-left"
+                  >
+                    <div className="flex gap-4">
+                      {/* Service Icon */}
+                      <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                        {getServiceIcon(booking.serviceType)}
                       </div>
 
-                      {/* Progress */}
-                      {booking.status === 'active' && (
-                        <div className="mb-0">
-                          <div className="flex items-center justify-between text-xs text-gray-600 mb-0">
-                            <span>{booking.completedSessions} of {booking.totalSessions} sessions</span>
-                            <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
+                      {/* Booking Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h3 className="font-bold text-gray-800 mb-1">
+                              {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              {booking.petName} • {booking.vendorName}
+                            </p>
                           </div>
-                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-primary to-primary-dark"
-                              style={{ width: `${(booking.completedSessions / booking.totalSessions) * 100}%` }}
-                            />
-                          </div>
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                          </span>
                         </div>
-                      )}
 
-                      {/* OTP Display */}
-                      {booking.requiresOTP && booking.completionOTP && 
-                       booking.status !== 'completed' && booking.status !== 'cancelled' && (
-                        <div className="mb-0 p-0 bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-xl">
-                          <div className="flex items-center justify-between mb-0">
-                            <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">🔐 Service OTP</span>
-                            <span className="text-xs text-orange-600">Share with vendor</span>
+                        {/* 🔐 OTP DISPLAY */}
+                        {booking.requiresOTP && booking.completionOTP && 
+                         booking.status !== 'completed' && booking.status !== 'cancelled' && (
+                          <div className="mb-3 p-3 bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-xl">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">🔐 Service OTP</span>
+                            </div>
+                            <div className="flex items-center justify-center gap-2 mt-2">
+                              <span className="text-3xl font-bold text-orange-600 tracking-widest">
+                                {booking.completionOTP}
+                              </span>
+                            </div>
+                            <p className="text-xs text-center text-orange-600 mt-2">
+                              Share this OTP with vendor to complete service
+                            </p>
                           </div>
-                          <div className="flex items-center justify-center gap-0 mt-0">
-                            <span className="text-3xl font-bold text-orange-600 tracking-widest">
-                              {booking.completionOTP}
-                            </span>
+                        )}
+
+                        {/* Progress */}
+                        {booking.status === 'active' && (
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                              <span>{booking.completedSessions} of {booking.totalSessions} sessions</span>
+                              <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
+                            </div>
+                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35]"
+                                style={{ width: `${(booking.completedSessions / booking.totalSessions) * 100}%` }}
+                              />
+                            </div>
                           </div>
-                          <p className="text-xs text-center text-orange-600 mt-0">
-                            ⚠️ Share this OTP with the vendor to complete your service
-                          </p>
+                        )}
+
+                        {/* Details */}
+                        <div className="flex items-center gap-3 text-xs text-gray-600">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(booking.startDate).toLocaleDateString()}
+                          </span>
+                          <span>•</span>
+                          <span className="font-semibold text-[#FF8C42]">₹{booking.price}</span>
                         </div>
-                      )}
 
-                      {/* Details */}
-                      <div className="flex items-center gap-0 text-xs text-gray-600">
-                        <span className="flex items-center gap-0">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(booking.startDate).toLocaleDateString()}
-                        </span>
-                        <span>•</span>
-                        <span className="font-semibold text-primary">₹{booking.price}</span>
+                        {booking.status === 'active' && booking.upcomingSessions > 0 && (
+                          <div className="mt-2 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md inline-block">
+                            {booking.upcomingSessions} upcoming session{booking.upcomingSessions > 1 ? 's' : ''}
+                          </div>
+                        )}
                       </div>
-
-                      {booking.status === 'active' && booking.upcomingSessions > 0 && (
-                        <div className="mt-0 text-xs bg-blue-50 text-blue-700 px-0 py-0 rounded-md inline-block">
-                          {booking.upcomingSessions} upcoming session{booking.upcomingSessions > 1 ? 's' : ''}
-                        </div>
-                      )}
                     </div>
-                  </div>
-                </button>
-              ))
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         )}
 
+        {/* Profile Tab */}
         {activeTab === 'profile' && (
-          <div className="p-0 space-y-3">
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
             {loading ? (
-              <div className="text-center py-20">
-                <div className="w-14 h-14 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+              <div className="text-center py-12">
+                <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto"></div>
               </div>
             ) : !profile ? (
-              <p className="text-center text-gray-600 py-20">Profile not found</p>
+              <p className="text-center text-gray-600">Profile not found</p>
             ) : (
               <>
-                {/* Edit/Save Buttons */}
-                <div className="flex justify-end mb-0">
+                {/* Edit Button */}
+                <div className="flex justify-end mb-4">
                   {editMode ? (
-                    <div className="flex gap-0 w-full">
-                      <button
-                        onClick={handleCancelEdit}
-                        className="flex-1 h-12 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-0"
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={handleCancel}
+                        variant="outline"
+                        className="gap-2"
                       >
-                        <X className="w-5 h-5" />
+                        <X className="w-4 h-4" />
                         Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveProfile}
+                      </Button>
+                      <Button
+                        onClick={handleSave}
                         disabled={saving}
-                        className="flex-1 h-12 bg-primary hover:bg-primary-dark rounded-xl text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-0"
+                        className="bg-[#FF8C42] text-white gap-2"
                       >
                         {saving ? (
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         ) : (
-                          <Save className="w-5 h-5" />
+                          <Save className="w-4 h-4" />
                         )}
                         Save
-                      </button>
+                      </Button>
                     </div>
                   ) : (
-                    <button
+                    <Button
                       onClick={() => setEditMode(true)}
-                      className="h-12 px-0 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center gap-0"
+                      variant="outline"
+                      className="gap-2"
                     >
-                      <Edit2 className="w-5 h-5" />
+                      <Edit2 className="w-4 h-4" />
                       Edit Profile
-                    </button>
+                    </Button>
                   )}
                 </div>
 
                 {/* Photo */}
-                <div className="flex flex-col items-center mb-0">
+                <div className="flex flex-col items-center mb-6">
                   <div className="relative">
-                    <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
+                    <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200">
                       {photoPreview ? (
                         <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <User className="w-16 h-16 text-gray-400" />
+                          <User className="w-12 h-12 text-gray-400" />
                         </div>
                       )}
                     </div>
@@ -429,9 +513,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                       <>
                         <button
                           onClick={() => fileInputRef.current?.click()}
-                          className="absolute bottom-0 right-0 w-12 h-12 bg-primary rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                          className="absolute bottom-0 right-0 w-8 h-8 bg-[#FF8C42] rounded-full flex items-center justify-center"
                         >
-                          <Camera className="w-6 h-6 text-white" />
+                          <Camera className="w-4 h-4 text-white" />
                         </button>
                         <input
                           ref={fileInputRef}
@@ -446,84 +530,81 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                 </div>
 
                 {/* Profile Fields */}
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">First Name</label>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">First Name</label>
                       {editMode ? (
                         <input
                           type="text"
                           value={profile.firstName}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
-                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                          onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
+                        <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.firstName}</p>
                       )}
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">Last Name</label>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">Last Name</label>
                       {editMode ? (
                         <input
                           type="text"
                           value={profile.lastName}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
-                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                          onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
+                        <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.lastName}</p>
                       )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Phone Number</label>
-                    <p className="text-black font-medium px-4 py-0.5 bg-gray-100 rounded-xl">{profile.phone}</p>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">Phone Number</label>
+                    <p className="text-black font-medium px-4 py-3 bg-gray-100 rounded-xl">{profile.phone}</p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Email</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">Email</label>
                     {editMode ? (
                       <input
                         type="email"
                         value={profile.email}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
-                        className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                       />
                     ) : (
-                      <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
+                      <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.email}</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Address</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">Address</label>
                     {editMode ? (
                       <textarea
                         value={profile.address}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
+                        onChange={(e) => setProfile({ ...profile, address: e.target.value })}
                         rows={3}
-                        className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
                       />
                     ) : (
-                      <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
+                      <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.address}</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Pincode</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">Pincode</label>
                     {editMode ? (
                       <input
                         type="text"
                         value={profile.pincode}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                          setProfile({ ...profile, pincode: value });
-                        }}
+                        onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
                         maxLength={6}
-                        className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                       />
                     ) : (
-                      <p className="text-black font-medium px-4 py-1.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
+                      <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.pincode}</p>
                     )}
                   </div>
                 </div>
@@ -531,8 +612,77 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
             )}
           </div>
         )}
+
+        {/* Complaints Tab */}
+        {activeTab === 'complaints' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
+              <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="font-semibold text-gray-800 mb-2">No Complaints</h3>
+              <p className="text-sm text-gray-600 mb-4">You haven't raised any complaints yet</p>
+              <Button className="bg-[#FF8C42] text-white">
+                Raise a Complaint
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Saved Items Tab */}
+        {activeTab === 'saved' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
+              <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="font-semibold text-gray-800 mb-2">No Saved Items</h3>
+              <p className="text-sm text-gray-600">Save your favorite products and services</p>
+            </div>
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="space-y-3">
+            <button className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-blue-600" />
+                </div>
+                <span className="font-medium text-gray-800">Notifications</span>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </button>
+
+            <button className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center">
+                  <CreditCard className="w-5 h-5 text-green-600" />
+                </div>
+                <span className="font-medium text-gray-800">Payment Methods</span>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </button>
+
+            <button className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-purple-200 rounded-full flex items-center justify-center">
+                  <HelpCircle className="w-5 h-5 text-purple-600" />
+                </div>
+                <span className="font-medium text-gray-800">Help & Support</span>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </button>
+
+            <button className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center">
+                  <LogOut className="w-5 h-5 text-red-600" />
+                </div>
+                <span className="font-medium text-red-600">Logout</span>
+              </div>
+              <ChevronRight className="w-5 h-5 text-red-400" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-

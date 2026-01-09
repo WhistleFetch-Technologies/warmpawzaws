@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, Camera, Edit2, Save, X, User } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, Camera, Edit2, Save, X } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface UserProfile {
   firstName: string;
@@ -22,7 +22,6 @@ interface CustomerProfileViewProps {
 
 export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [originalProfile, setOriginalProfile] = useState<UserProfile | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,24 +35,18 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<{ profile: UserProfile }>(`/customer/profile/${phone}`);
-      if (response.profile) {
-        setProfile(response.profile);
-        setPhotoPreview(response.profile.photo || '');
-        setOriginalProfile(response.profile);
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setProfile(result.profile);
+        setPhotoPreview(result.profile.photo || '');
       }
     } catch (error) {
       console.error('Error loading profile:', error);
-      // Set default profile if not found
-      setProfile({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: phone,
-        address: '',
-        pincode: '',
-        photo: ''
-      });
     } finally {
       setLoading(false);
     }
@@ -93,13 +86,24 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
     setSaving(true);
     try {
-      await apiClient.post('/customer/profile', {
-        phone: phone,
-        profile: profile,
-      });
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({
+            phone: phone,
+            profile: profile,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
 
       setEditMode(false);
-      await loadProfile();
       alert('Profile updated successfully! 🎉');
     } catch (error) {
       console.error('Error saving profile:', error);
@@ -109,19 +113,11 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     }
   };
 
-  const handleCancelEdit = () => {
-    if (originalProfile) {
-      setProfile(originalProfile);
-      setPhotoPreview(originalProfile.photo || '');
-    }
-    setEditMode(false);
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading profile...</p>
         </div>
       </div>
@@ -131,14 +127,11 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   if (!profile) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
-        <div className="text-center px-0">
+        <div className="text-center px-6">
           <p className="text-gray-600 mb-4">Profile not found</p>
-          <button 
-            onClick={onBack} 
-            className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-          >
+          <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
             Go Back
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -147,9 +140,9 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
-      <div className="px-0 pt-0 pb-0 flex justify-between items-center">
+      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-0.5 items-center">
+        <div className="flex gap-1.5 items-center">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
             <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
             <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
@@ -168,175 +161,204 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       </div>
 
       {/* Header */}
-      <div className="px-0 py-4 flex items-center gap-0 border-b border-gray-200">
-        <button
-          onClick={editMode ? handleCancelEdit : onBack}
-          className="p-0 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <ChevronLeft className="w-5 h-5 text-gray-700" />
+      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-200">
+        <button onClick={onBack} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
+          <ChevronLeft className="w-6 h-6 text-gray-700" />
         </button>
-        <h1 className="text-lg font-bold text-gray-900 flex-1">My Profile</h1>
-        {!editMode && (
-          <button
-            onClick={() => setEditMode(true)}
-            className="p-0 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <Edit2 className="w-5 h-5 text-primary" />
-          </button>
-        )}
+        <h1 className="text-black">My Profile</h1>
+        <button 
+          onClick={() => editMode ? setEditMode(false) : setEditMode(true)}
+          className="p-2 -mr-2 hover:bg-gray-100 rounded-full"
+        >
+          {editMode ? (
+            <X className="w-6 h-6 text-gray-700" />
+          ) : (
+            <Edit2 className="w-5 h-5 text-[#FF8C42]" />
+          )}
+        </button>
       </div>
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
-        <div className="px-0 py-0">
-          {/* Photo */}
+        <div className="px-6 py-6">
+          {/* Profile Photo */}
           <div className="flex flex-col items-center mb-8">
-            <div className="relative">
-              <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
-                {photoPreview ? (
-                  <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <User className="w-16 h-16 text-gray-400" />
-                  </div>
-                )}
-              </div>
-              {editMode && (
+            <div 
+              onClick={() => editMode && fileInputRef.current?.click()}
+              className={`w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg mb-3 relative group ${editMode ? 'cursor-pointer' : ''}`}
+            >
+              {photoPreview ? (
                 <>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-0 right-0 w-12 h-12 bg-primary rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-                  >
-                    <Camera className="w-6 h-6 text-white" />
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                  />
+                  <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                  {editMode && (
+                    <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Camera className="w-8 h-8 text-white" />
+                    </div>
+                  )}
                 </>
+              ) : (
+                <div className="flex flex-col items-center text-white">
+                  <span className="text-4xl font-bold">
+                    {profile.firstName?.charAt(0)}{profile.lastName?.charAt(0)}
+                  </span>
+                </div>
               )}
             </div>
-            <p className="text-sm text-gray-500 mt-0">
-              {profile.firstName} {profile.lastName}
-            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoUpload}
+              className="hidden"
+            />
+            {editMode && (
+              <p className="text-xs text-gray-500 text-center">
+                Click photo to change
+              </p>
+            )}
           </div>
 
-          {/* Profile Fields */}
-          <div className="space-y-5">
+          {/* Profile Information */}
+          <div className="space-y-4">
+            {/* Name */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-0.5">First Name</label>
+                <label className="block text-xs font-medium text-gray-500 mb-2">
+                  First Name
+                </label>
                 {editMode ? (
                   <input
                     type="text"
                     value={profile.firstName}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
-                    className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
+                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                    {profile.firstName}
+                  </p>
                 )}
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-0.5">Last Name</label>
+                <label className="block text-xs font-medium text-gray-500 mb-2">
+                  Last Name
+                </label>
                 {editMode ? (
                   <input
                     type="text"
                     value={profile.lastName}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
-                    className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
+                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                    {profile.lastName}
+                  </p>
                 )}
               </div>
             </div>
 
+            {/* Email */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-0.5">Phone Number</label>
-              <p className="text-black font-medium px-4 py-0.5 bg-gray-100 rounded-xl">{profile.phone}</p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-0.5">Email</label>
+              <label className="block text-xs font-medium text-gray-500 mb-2">
+                Email Address
+              </label>
               {editMode ? (
                 <input
                   type="email"
                   value={profile.email}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
-                  className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
+                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  {profile.email}
+                </p>
               )}
             </div>
 
+            {/* Phone (Read-only) */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-0.5">Address</label>
+              <label className="block text-xs font-medium text-gray-500 mb-2">
+                Phone Number
+              </label>
+              <p className="text-black font-medium px-4 py-3 bg-gray-100 rounded-xl cursor-not-allowed">
+                {profile.phone}
+              </p>
+            </div>
+
+            {/* Address */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-2">
+                Address
+              </label>
               {editMode ? (
                 <textarea
                   value={profile.address}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
+                  onChange={(e) => setProfile({ ...profile, address: e.target.value })}
                   rows={3}
-                  className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
+                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  {profile.address}
+                </p>
               )}
             </div>
 
+            {/* Pincode */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-0.5">Pincode</label>
+              <label className="block text-xs font-medium text-gray-500 mb-2">
+                Pincode
+              </label>
               {editMode ? (
                 <input
                   type="text"
                   value={profile.pincode}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  onChange={(e) => {
                     const value = e.target.value.replace(/\D/g, '').slice(0, 6);
                     setProfile({ ...profile, pincode: value });
                   }}
                   maxLength={6}
-                  className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
+                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  {profile.pincode}
+                </p>
               )}
+            </div>
+          </div>
+
+          {/* Account Info */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <h3 className="text-sm font-medium text-gray-700 mb-4">Account Information</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2">
+                <span className="text-sm text-gray-600">Member Since</span>
+                <span className="text-sm font-medium text-black">
+                  {new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-sm text-gray-600">Profile Status</span>
+                <span className="text-sm font-medium text-green-600">✓ Verified</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Fixed Bottom Navigation */}
+      {/* Fixed Bottom Button */}
       {editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-0 py-4 max-w-[430px] mx-auto w-full">
-          <div className="flex gap-0">
-            <button
-              onClick={handleCancelEdit}
-              className="flex-1 h-12 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 h-12 bg-primary hover:bg-primary-dark rounded-xl text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-0"
-            >
-              {saving ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-5 h-5" />
-                  Save
-                </>
-              )}
-            </button>
-          </div>
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
 
           {/* Home Indicator */}
           <div className="flex justify-center mt-4">
@@ -344,7 +366,15 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
           </div>
         </div>
       )}
+
+      {/* Home Indicator (when not in edit mode) */}
+      {!editMode && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-[430px] mx-auto w-full">
+          <div className="flex justify-center">
+            <div className="w-32 h-1 bg-black rounded-full"></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

@@ -38,7 +38,7 @@ import { toast, Toaster } from "sonner";
 import { apiClient } from "@/lib/api-client";
 
 interface AdvancedPromotionsEngineProps {
-	onBack: () => void;
+	onBack?: () => void;
 }
 
 interface Promotion {
@@ -287,9 +287,11 @@ export function AdvancedPromotionsEngine({
 				<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 					<div className="flex items-center justify-between h-16">
 						<div className="flex items-center gap-4">
-							<Button variant="ghost" size="sm" onClick={onBack}>
-								<ArrowLeft className="w-4 h-4" />
-							</Button>
+							{onBack && (
+								<Button variant="ghost" size="sm" onClick={onBack}>
+									<ArrowLeft className="w-4 h-4" />
+								</Button>
+							)}
 							<div>
 								<h1 className="text-xl font-semibold">Promotions Engine</h1>
 								<p className="text-sm text-gray-500">

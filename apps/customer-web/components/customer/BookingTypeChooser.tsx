@@ -5,7 +5,11 @@ import {
   Home, Video, Building2, Search, ChevronRight, MapPin, Clock,
   Heart, AlertCircle, Filter, Stethoscope, Shield, Sparkles
 } from 'lucide-react';
-import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 
 interface BookingTypeChooserProps {
   onTypeSelected: (type: 'at_home' | 'tele' | 'at_center', context?: any) => void;
@@ -27,12 +31,13 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
   const [suggestedProblems, setSuggestedProblems] = useState<ProblemMapping[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  // TASK 1: Problem-to-ServiceStyle mapping
   const problemMappings: ProblemMapping[] = [
     {
       id: 'emergency_urgent',
       problem: 'Emergency / Urgent Care',
       keywords: ['emergency', 'urgent', 'bleeding', 'accident', 'poison', 'critical'],
-      mappedServiceStyles: ['tele', 'at_center'],
+      mappedServiceStyles: ['tele', 'at_center'], // No home for emergencies
       urgency: 'high',
       description: 'Immediate attention needed. We recommend tele consultation first or visit nearest centre.'
     },
@@ -120,11 +125,14 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
     setProblemQuery(problem.problem);
     setShowSuggestions(false);
     
+    // If only one service style is mapped, auto-select it
     if (problem.mappedServiceStyles.length === 1) {
+      toast.success(`Redirecting to ${problem.mappedServiceStyles[0].replace('_', ' ')} services`);
       setTimeout(() => {
         onTypeSelected(problem.mappedServiceStyles[0], { problem: problem.problem });
       }, 500);
     } else {
+      // Show service style options specific to this problem
       onProblemSearch(problem.problem);
     }
   };
@@ -138,156 +146,223 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="max-w-4xl mx-auto p-6">
       {/* Mode Toggle */}
-      <div className="bg-white border-b px-4 py-4">
-        <div className="flex gap-0 bg-gray-100 p-0 rounded-xl max-w-md mx-auto">
+      <div className="mb-6">
+        <div className="flex gap-2 bg-gray-100 p-1 rounded-lg max-w-md mx-auto">
           <button
             onClick={() => setSearchMode('type')}
-            className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
+            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
               searchMode === 'type'
-                ? 'bg-white text-primary shadow-sm'
+                ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Choose Type
+            Browse by Type
           </button>
           <button
             onClick={() => setSearchMode('problem')}
-            className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
+            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
               searchMode === 'problem'
-                ? 'bg-white text-primary shadow-sm'
+                ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Search Problem
+            Search by Problem
           </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 py-0">
-        {searchMode === 'type' ? (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">How would you like to book?</h2>
-            
-            {/* Service Type Cards */}
-            <button
-              onClick={() => onTypeSelected('at_home')}
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center">
-                  <Home className="w-8 h-8 text-green-600" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 text-lg mb-0">At Home Service</h3>
-                  <p className="text-sm text-gray-600">Professional service at your doorstep</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
-              </div>
-            </button>
+      {/* Type Selection Mode */}
+      {searchMode === 'type' && (
+        <div className="space-y-6">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">How would you like your service?</h1>
+            <p className="text-gray-600">Choose your preferred booking type</p>
+          </div>
 
-            <button
-              onClick={() => onTypeSelected('tele')}
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Home Service */}
+            <Card
+              onClick={() => onTypeSelected('at_home')}
+              className="p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-[#FF8C42]"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Home className="w-8 h-8 text-[#FF8C42]" />
+                </div>
+                <h3 className="font-bold text-lg mb-2">Home Service</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Professional visits to your doorstep. Convenient and comfortable for your pet.
+                </p>
+                <div className="space-y-2 text-xs text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <MapPin className="w-3 h-3" />
+                    <span>GPS tracked visits</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    <span>Scheduled appointments</span>
+                  </div>
+                </div>
+                <Button className="w-full mt-4 bg-[#FF8C42] hover:bg-[#FF7A2E]">
+                  Choose Home Service
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </Card>
+
+            {/* Tele Consultation */}
+            <Card
+              onClick={() => onTypeSelected('tele')}
+              className="p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-blue-500"
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Video className="w-8 h-8 text-blue-600" />
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 text-lg mb-0">Tele Consultation</h3>
-                  <p className="text-sm text-gray-600">Video consultation with experts</p>
+                <h3 className="font-bold text-lg mb-2">Tele Consultation</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Quick video call with experts. Get instant advice from anywhere.
+                </p>
+                <div className="space-y-2 text-xs text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <Sparkles className="w-3 h-3" />
+                    <span>Instant or scheduled</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Shield className="w-3 h-3" />
+                    <span>Secure video call</span>
+                  </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <Button className="w-full mt-4 bg-blue-600 hover:bg-blue-700">
+                  Choose Tele
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
               </div>
-            </button>
+            </Card>
 
-            <button
+            {/* Centre Visit */}
+            <Card
               onClick={() => onTypeSelected('at_center')}
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
+              className="p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-green-500"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center">
-                  <Building2 className="w-8 h-8 text-purple-600" />
+              <div className="text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Building2 className="w-8 h-8 text-green-600" />
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 text-lg mb-0">Visit Center</h3>
-                  <p className="text-sm text-gray-600">Book appointment at our facility</p>
+                <h3 className="font-bold text-lg mb-2">Visit Centre</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Full-service care at our equipped centres. Comprehensive facilities.
+                </p>
+                <div className="space-y-2 text-xs text-gray-500">
+                  <div className="flex items-center justify-center gap-2">
+                    <Stethoscope className="w-3 h-3" />
+                    <span>Advanced equipment</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Heart className="w-3 h-3" />
+                    <span>Full medical suite</span>
+                  </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <Button className="w-full mt-4 bg-green-600 hover:bg-green-700">
+                  Choose Centre
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
               </div>
-            </button>
+            </Card>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">What's the problem?</h2>
-            
-            {/* Problem Search */}
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
+
+          {/* Info Banner */}
+          <Card className="p-4 bg-blue-50 border-blue-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 text-sm text-blue-800">
+                <p className="font-medium mb-1">Not sure which to choose?</p>
+                <p>Switch to "Search by Problem" to get personalized recommendations based on your pet's needs.</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Problem Search Mode */}
+      {searchMode === 'problem' && (
+        <div className="space-y-6">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">What's troubling your pet?</h1>
+            <p className="text-gray-600">Describe the problem and we'll recommend the best service type</p>
+          </div>
+
+          {/* Search Input */}
+          <div className="max-w-2xl mx-auto relative">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Input
                 value={problemQuery}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProblemQuery(e.target.value)}
-                placeholder="Search for a problem or symptom..."
-                className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                onChange={(e) => setProblemQuery(e.target.value)}
+                placeholder="e.g., skin rash, emergency, vaccination, grooming..."
+                className="pl-12 h-14 text-lg"
+                autoFocus
               />
             </div>
 
-            {/* Suggestions */}
-            {showSuggestions && suggestedProblems.length > 0 && (
-              <div className="space-y-2">
-                {suggestedProblems.map((problem) => (
-                  <button
-                    key={problem.id}
-                    onClick={() => handleProblemSelect(problem)}
-                    className="w-full bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
-                  >
-                    <div className="flex items-start justify-between mb-0">
-                      <h3 className="font-semibold text-gray-900">{problem.problem}</h3>
-                      <span className={`px-0 py-0 rounded-full text-xs font-semibold border ${getUrgencyColor(problem.urgency)}`}>
-                        {problem.urgency}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-0">{problem.description}</p>
-                    <div className="flex flex-wrap gap-0">
-                      {problem.mappedServiceStyles.map((style) => (
-                        <span key={style} className="px-0 py-0 bg-gray-100 text-gray-700 rounded-full text-xs">
-                          {style.replace('_', ' ')}
-                        </span>
-                      ))}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* All Problems List */}
-            {!showSuggestions && (
-              <div className="space-y-2">
-                {problemMappings.map((problem) => (
-                  <button
-                    key={problem.id}
-                    onClick={() => handleProblemSelect(problem)}
-                    className="w-full bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
-                  >
-                    <div className="flex items-start justify-between mb-0">
-                      <h3 className="font-semibold text-gray-900">{problem.problem}</h3>
-                      <span className={`px-0 py-0 rounded-full text-xs font-semibold border ${getUrgencyColor(problem.urgency)}`}>
-                        {problem.urgency}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600">{problem.description}</p>
-                  </button>
-                ))}
-              </div>
+            {/* Suggestions Dropdown */}
+            {showSuggestions && (
+              <Card className="absolute top-full left-0 right-0 mt-2 z-10 shadow-xl">
+                <div className="divide-y">
+                  {suggestedProblems.map((problem) => (
+                    <button
+                      key={problem.id}
+                      onClick={() => handleProblemSelect(problem)}
+                      className="w-full p-4 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold text-gray-900">{problem.problem}</h4>
+                            <Badge className={`text-xs ${getUrgencyColor(problem.urgency)}`}>
+                              {problem.urgency}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">{problem.description}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {problem.mappedServiceStyles.map((style) => (
+                              <Badge key={style} variant="outline" className="text-xs">
+                                {style === 'at_home' && <Home className="w-3 h-3 mr-1" />}
+                                {style === 'tele' && <Video className="w-3 h-3 mr-1" />}
+                                {style === 'at_center' && <Building2 className="w-3 h-3 mr-1" />}
+                                {style.replace('_', ' ')}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </Card>
             )}
           </div>
-        )}
-      </div>
+
+          {/* Common Problems Quick Access */}
+          <div className="max-w-2xl mx-auto">
+            <h3 className="font-semibold text-gray-700 mb-3">Common Problems</h3>
+            <div className="flex flex-wrap gap-2">
+              {problemMappings.slice(0, 6).map((problem) => (
+                <button
+                  key={problem.id}
+                  onClick={() => handleProblemSelect(problem)}
+                  className="px-4 py-2 bg-white border-2 border-gray-200 rounded-lg hover:border-[#FF8C42] transition-colors text-sm"
+                >
+                  {problem.problem}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

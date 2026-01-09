@@ -2,8 +2,12 @@
 
 import { useState } from 'react';
 import { Calendar, X, AlertCircle, Clock, RefreshCw, XCircle, IndianRupee } from 'lucide-react';
-import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 interface BookingActionsProps {
   booking: any;
@@ -25,16 +29,14 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
   
   const [cancellationReason, setCancellationReason] = useState('');
 
+  // Check if booking can be modified
   const canModify = booking.status === 'active' || booking.status === 'scheduled' || booking.status === 'pending';
   
+  // Calculate refund preview when cancel modal opens
   const fetchRefundPreview = async () => {
     try {
-      const response = await apiClient.post<{ refund: any }>('/bookings/calculate-refund', {
-        bookingId: booking.id
-      });
-      if (response.refund) {
-        setRefundPreview(response.refund);
-      }
+      const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.id }) as any;
+      setRefundPreview(result.refund);
     } catch (error) {
       console.error('Error fetching refund preview:', error);
     }
@@ -42,27 +44,26 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
   const handleReschedule = async () => {
     if (!rescheduleData.newDate) {
-      alert('Please select a new date');
+      toast.error('Please select a new date');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await apiClient.post(`/bookings/${booking.id}/reschedule`, {
+      await apiClient.post('/customer/bookings/reschedule', {
+        bookingId: booking.id,
         newDate: rescheduleData.newDate,
         newTimeSlot: rescheduleData.newTimeSlot,
         reason: rescheduleData.reason,
         phone
       });
 
-      if (response) {
-        alert('Booking rescheduled successfully');
-        setShowRescheduleModal(false);
-        onSuccess();
-      }
+      toast.success('Booking rescheduled successfully');
+      setShowRescheduleModal(false);
+      onSuccess();
     } catch (error) {
       console.error('Error rescheduling booking:', error);
-      alert('Failed to reschedule booking');
+      toast.error('Failed to reschedule booking');
     } finally {
       setLoading(false);
     }
@@ -70,37 +71,24 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
   const handleCancel = async () => {
     if (!cancellationReason.trim()) {
-      alert('Please provide a reason for cancellation');
+      toast.error('Please provide a reason for cancellation');
       return;
     }
 
     setLoading(true);
     try {
-      await fetchRefundPreview();
-      setShowCancelModal(true);
-    } catch (error) {
-      console.error('Error fetching refund preview:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const confirmCancel = async () => {
-    setLoading(true);
-    try {
-      const response = await apiClient.post(`/bookings/${booking.id}/cancel`, {
+      const result = await apiClient.post('/customer/bookings/cancel', {
+        bookingId: booking.id,
         reason: cancellationReason,
         phone
-      });
+      }) as any;
 
-      if (response) {
-        alert('Booking cancelled successfully');
-        setShowCancelModal(false);
-        onSuccess();
-      }
+      toast.success(result.message || 'Booking cancelled successfully');
+      setShowCancelModal(false);
+      onSuccess();
     } catch (error) {
       console.error('Error cancelling booking:', error);
-      alert('Failed to cancel booking');
+      toast.error('Failed to cancel booking');
     } finally {
       setLoading(false);
     }
@@ -112,163 +100,229 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
   return (
     <>
-      <div className="flex gap-0">
-        <button
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setShowRescheduleModal(true)}
-          className="flex-1 px-4 py-0 border-2 border-primary text-primary rounded-xl font-medium hover:bg-primary hover:text-white transition-colors flex items-center justify-center gap-0"
+          className="flex-1 gap-2 border-[#FF8C42] text-[#FF8C42] hover:bg-[#FF8C42] hover:text-white"
         >
           <RefreshCw className="w-4 h-4" />
           Reschedule
-        </button>
-        <button
-          onClick={handleCancel}
-          className="flex-1 px-4 py-0 border-2 border-red-500 text-red-500 rounded-xl font-medium hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-0"
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setShowCancelModal(true);
+            fetchRefundPreview();
+          }}
+          className="flex-1 gap-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
         >
           <XCircle className="w-4 h-4" />
           Cancel
-        </button>
+        </Button>
       </div>
 
       {/* Reschedule Modal */}
-      {showRescheduleModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-0 py-0 flex items-center justify-between z-10">
-              <h2 className="text-white font-bold text-lg">Reschedule Booking</h2>
-              <button
-                onClick={() => setShowRescheduleModal(false)}
-                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-              >
-                <X className="w-5 h-5 text-white" />
-              </button>
+      <Dialog open={showRescheduleModal} onOpenChange={setShowRescheduleModal}>
+        <DialogContent className="max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-[#FF8C42]" />
+              Reschedule Booking
+            </DialogTitle>
+            <DialogDescription>
+              Select a new date and time for your booking.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Current booking details */}
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1">Current Schedule</p>
+              <p className="text-sm">
+                {new Date(booking.startDate || booking.date).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+              {booking.timeSlot && (
+                <p className="text-sm text-gray-600">{booking.timeSlot}</p>
+              )}
             </div>
 
-            <div className="px-0 py-0 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">New Date *</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="date"
-                    value={rescheduleData.newDate}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRescheduleData({...rescheduleData, newDate: e.target.value})}
-                    className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-                    min={new Date().toISOString().split('T')[0]}
-                    required
-                  />
-                </div>
-              </div>
+            {/* New date selection */}
+            <div>
+              <Label htmlFor="newDate">New Date *</Label>
+              <Input
+                id="newDate"
+                type="date"
+                value={rescheduleData.newDate}
+                onChange={(e) => setRescheduleData({ ...rescheduleData, newDate: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+                className="mt-1"
+              />
+            </div>
 
+            {/* New time slot */}
+            {booking.timeSlot && (
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">New Time Slot</label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="time"
-                    value={rescheduleData.newTimeSlot}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRescheduleData({...rescheduleData, newTimeSlot: e.target.value})}
-                    className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-                  />
-                </div>
+                <Label htmlFor="newTimeSlot">New Time Slot</Label>
+                <select
+                  id="newTimeSlot"
+                  value={rescheduleData.newTimeSlot}
+                  onChange={(e) => setRescheduleData({ ...rescheduleData, newTimeSlot: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                >
+                  <option value="">Keep same time slot</option>
+                  <option value="07:00 AM - 08:00 AM">07:00 AM - 08:00 AM</option>
+                  <option value="10:00 AM - 11:00 AM">10:00 AM - 11:00 AM</option>
+                  <option value="02:00 PM - 03:00 PM">02:00 PM - 03:00 PM</option>
+                  <option value="06:00 PM - 07:00 PM">06:00 PM - 07:00 PM</option>
+                </select>
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">Reason (Optional)</label>
-                <textarea
-                  value={rescheduleData.reason}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRescheduleData({...rescheduleData, reason: e.target.value})}
-                  placeholder="Why are you rescheduling?"
-                  rows={3}
-                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
-                />
-              </div>
+            {/* Reason */}
+            <div>
+              <Label htmlFor="rescheduleReason">Reason (Optional)</Label>
+              <Input
+                id="rescheduleReason"
+                placeholder="Why are you rescheduling?"
+                value={rescheduleData.reason}
+                onChange={(e) => setRescheduleData({ ...rescheduleData, reason: e.target.value })}
+                className="mt-1"
+              />
+            </div>
 
-              <button
-                onClick={handleReschedule}
-                disabled={loading || !rescheduleData.newDate}
-                className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Rescheduling...' : 'Confirm Reschedule'}
-              </button>
+            {/* Info message */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex gap-2">
+              <AlertCircle className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-800">
+                You can reschedule this booking up to 12 hours before the scheduled time at no extra charge.
+              </p>
             </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowRescheduleModal(false)}
+              disabled={loading}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleReschedule}
+              disabled={loading}
+              className="flex-1 bg-[#FF8C42] hover:bg-[#FF7A2E]"
+            >
+              {loading ? 'Rescheduling...' : 'Confirm Reschedule'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel Modal */}
-      {showCancelModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-red-500 to-red-600 px-0 py-0 flex items-center justify-between z-10">
-              <h2 className="text-white font-bold text-lg">Cancel Booking</h2>
-              <button
-                onClick={() => setShowCancelModal(false)}
-                className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-              >
-                <X className="w-5 h-5 text-white" />
-              </button>
+      <Dialog open={showCancelModal} onOpenChange={setShowCancelModal}>
+        <DialogContent className="max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-red-500" />
+              Cancel Booking
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel this booking?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Booking details */}
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1">Booking Details</p>
+              <p className="text-sm mb-1">
+                {new Date(booking.startDate || booking.date).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </p>
+              <p className="text-sm">Amount Paid: ₹{booking.price || booking.amount || 0}</p>
             </div>
 
-            <div className="px-0 py-0 space-y-4">
-              {refundPreview && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-center gap-0 mb-0">
-                    <IndianRupee className="w-5 h-5 text-green-600" />
-                    <span className="font-semibold text-green-900">Refund Amount</span>
-                  </div>
-                  <p className="text-2xl font-bold text-green-600">
-                    ₹{refundPreview.amount || 0}
-                  </p>
-                  <p className="text-sm text-green-700 mt-0">
-                    {refundPreview.message || 'Refund will be processed within 5-7 business days'}
+            {/* Refund preview */}
+            {refundPreview && (
+              <div className={`border rounded-lg p-3 ${
+                refundPreview.refundAmount > 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <IndianRupee className={`w-4 h-4 ${
+                    refundPreview.refundAmount > 0 ? 'text-green-600' : 'text-red-600'
+                  }`} />
+                  <p className={`text-sm ${
+                    refundPreview.refundAmount > 0 ? 'text-green-900' : 'text-red-900'
+                  }`}>
+                    Refund Amount: ₹{refundPreview.refundAmount}
                   </p>
                 </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">Reason for Cancellation *</label>
-                <textarea
-                  value={cancellationReason}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCancellationReason(e.target.value)}
-                  placeholder="Please tell us why you're cancelling..."
-                  rows={4}
-                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
-                  required
-                />
+                <p className={`text-xs ${
+                  refundPreview.refundAmount > 0 ? 'text-green-700' : 'text-red-700'
+                }`}>
+                  {refundPreview.refundPolicy}
+                </p>
+                {refundPreview.deductionAmount > 0 && (
+                  <p className="text-xs text-gray-600 mt-1">
+                    Cancellation charges: ₹{refundPreview.deductionAmount}
+                  </p>
+                )}
               </div>
+            )}
 
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-start gap-0">
-                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-red-900 mb-0">Are you sure?</p>
-                    <p className="text-sm text-red-700">
-                      This action cannot be undone. Your booking will be cancelled immediately.
-                    </p>
-                  </div>
-                </div>
-              </div>
+            {/* Cancellation reason */}
+            <div>
+              <Label htmlFor="cancellationReason">Reason for Cancellation *</Label>
+              <textarea
+                id="cancellationReason"
+                placeholder="Please tell us why you're cancelling..."
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 min-h-[80px] resize-none"
+              />
+            </div>
 
-              <div className="flex gap-0">
-                <button
-                  onClick={() => setShowCancelModal(false)}
-                  className="flex-1 px-4 py-0 border-2 border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
-                >
-                  Keep Booking
-                </button>
-                <button
-                  onClick={confirmCancel}
-                  disabled={loading || !cancellationReason.trim()}
-                  className="flex-1 px-4 py-0 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Cancelling...' : 'Confirm Cancel'}
-                </button>
-              </div>
+            {/* Warning message */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                {refundPreview?.refundAmount > 0
+                  ? 'Refunds will be processed within 5-7 business days to your original payment method.'
+                  : 'This cancellation is not eligible for a refund as per our cancellation policy.'}
+              </p>
             </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelModal(false)}
+              disabled={loading}
+              className="flex-1"
+            >
+              Keep Booking
+            </Button>
+            <Button
+              onClick={handleCancel}
+              disabled={loading}
+              className="flex-1 bg-red-500 hover:bg-red-600"
+            >
+              {loading ? 'Cancelling...' : 'Confirm Cancellation'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
-

@@ -1,96 +1,123 @@
 'use client';
 
-import React from 'react';
-import { CheckCircle, Mail, Phone } from 'lucide-react';
+import { CheckCircle2, Clock, FileText, Home } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-interface VendorRegistrationSuccessProps {
-  vendorName?: string;
-  email?: string;
-  phone?: string;
-  onContinue?: () => void;
-}
+const logoImage = '/logo.png';
 
-export function VendorRegistrationSuccess({ 
-  vendorName, 
-  email, 
-  phone,
-  onContinue 
-}: VendorRegistrationSuccessProps) {
+export function VendorRegistrationSuccess({ vendorId }: { vendorId: string }) {
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex flex-col items-center justify-center px-0">
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-32 h-32 bg-green-500 rounded-full flex items-center justify-center shadow-2xl mb-0">
-          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center">
-            <CheckCircle className="w-16 h-16 text-green-500" strokeWidth={3} />
-          </div>
+    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white w-full max-w-[430px] mx-auto">
+      {/* Header */}
+      <div className="px-6 pt-16 pb-8 text-center">
+        {/* Success Icon */}
+        <div className="w-24 h-24 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full mx-auto mb-6 flex items-center justify-center shadow-2xl animate-bounce">
+          <CheckCircle2 className="w-14 h-14 text-white" strokeWidth={3} />
         </div>
-        
-        <h1 className="text-3xl font-bold text-gray-900 text-center mb-4">
-          Registration<br/>Successful!
+
+        <h1 className="text-2xl font-bold text-gray-800 mb-3">
+          Registration Submitted!
         </h1>
+        <p className="text-gray-600 text-sm px-4">
+          Your application has been successfully submitted for review
+        </p>
+      </div>
 
-        <div className="text-center mb-0">
-          <p className="text-lg text-gray-800 mb-0">
-            Thank you for registering with WARMPAWZ
-          </p>
-          {vendorName && (
-            <p className="text-base text-gray-600">
-              Welcome, <strong>{vendorName}</strong>!
+      {/* Reference ID Card */}
+      <div className="px-6 mb-6">
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
+          <p className="text-xs text-gray-600 mb-2 text-center">Your Reference ID</p>
+          <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-xl p-4 mb-3">
+            <p className="text-center text-white font-mono text-lg tracking-wider">
+              {vendorId}
             </p>
-          )}
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            Save this ID for future reference
+          </p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border-2 border-gray-200 p-0 mb-8 w-full">
-        <h3 className="font-semibold text-gray-900 mb-4">What's Next?</h3>
+      {/* Next Steps */}
+      <div className="px-6 mb-8">
+        <h3 className="font-bold text-gray-800 mb-4 text-center">What Happens Next?</h3>
+        
         <div className="space-y-4">
-          <div className="flex items-start gap-0">
-            <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center flex-shrink-0 mt-0">
-              <span className="text-white font-bold text-sm">1</span>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-0">Check Your Email</h4>
-              {email && (
-                <div className="flex items-center gap-0 text-sm text-gray-600">
-                  <Mail className="w-4 h-4" />
-                  <span>{email}</span>
-                </div>
-              )}
-              <p className="text-sm text-gray-600 mt-0">We've sent you a verification email</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-0">
-            <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center flex-shrink-0 mt-0">
-              <span className="text-white font-bold text-sm">2</span>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-0">Complete Your Profile</h4>
-              <p className="text-sm text-gray-600">Add your business details and services</p>
+          {/* Step 1 */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <FileText className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-800 mb-1">Document Verification</h4>
+                <p className="text-sm text-gray-600">
+                  Our team will verify your documents within 24-48 hours
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-start gap-0">
-            <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center flex-shrink-0 mt-0">
-              <span className="text-white font-bold text-sm">3</span>
+          {/* Step 2 */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Clock className="w-6 h-6 text-[#FF8C42]" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-800 mb-1">Review Process</h4>
+                <p className="text-sm text-gray-600">
+                  Admin will review your application and may contact you if needed
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-0">Wait for Approval</h4>
-              <p className="text-sm text-gray-600">Our team will review your application</p>
+          </div>
+
+          {/* Step 3 */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Home className="w-6 h-6 text-green-600" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-800 mb-1">Get Started</h4>
+                <p className="text-sm text-gray-600">
+                  Once approved, you'll receive login credentials to access your vendor dashboard
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {onContinue && (
-        <button
-          onClick={onContinue}
-          className="w-full py-4 bg-orange-600 text-white rounded-xl hover:bg-orange-700 font-semibold"
-        >
-          Continue to Dashboard
-        </button>
-      )}
+      {/* Info Boxes */}
+      <div className="px-6 space-y-4 mb-8">
+        <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+          <p className="text-sm text-blue-800 text-center">
+            📧 You'll receive an email notification once your application is reviewed
+          </p>
+        </div>
+
+        <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+          <p className="text-sm text-amber-800 text-center">
+            ⏱️ Average approval time: 24-48 hours
+          </p>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 pb-8">
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4">
+            <img src={logoImage} alt="Warmpawz" className="w-full h-full" />
+          </div>
+          <p className="text-sm text-gray-600 mb-1">Thank you for joining</p>
+          <p className="font-bold text-gray-800">WARMPAWZ</p>
+          <p className="text-xs text-gray-500 mt-4">
+            For queries: support@warmpawz.com
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
-

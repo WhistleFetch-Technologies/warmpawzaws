@@ -1,8 +1,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCircle, X } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+// Removed Supabase imports - using apiClient instead
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ServiceProvider {
   id: string;
@@ -13,13 +19,13 @@ interface ServiceProvider {
   eta: number;
   basePrice: number;
   rating?: number;
-  vehicleType?: string;
-  testsAvailable?: string[];
+  vehicleType?: string; // for ambulance
+  testsAvailable?: string[]; // for diagnostics
 }
 
 interface IntegratedServicesSelectorProps {
   customerId: string;
-  bookingId?: string;
+  bookingId?: string; // Optional: if tied to an existing vet booking
   initialType?: 'ambulance' | 'diagnostic' | 'pharmacy';
   onServiceSelected: (request: any) => void;
   onClose: () => void;
@@ -39,12 +45,11 @@ export function IntegratedServicesSelector({
   const [userLocation, setUserLocation] = useState({ lat: 0, lng: 0 });
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => console.error(err)
-      );
-    }
+    // Get location mock
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => console.error(err)
+    );
   }, []);
 
   useEffect(() => {
@@ -56,22 +61,18 @@ export function IntegratedServicesSelector({
   const loadServices = async (type: string) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
+      const query = new URLSearchParams({
         lat: userLocation.lat.toString(),
         lng: userLocation.lng.toString(),
         type: type,
         bookingId: bookingId || ''
       });
 
-      const response = await apiClient.get<{ services: ServiceProvider[] }>(
-        `/integrated-services/available?${params}`
-      );
-      
-      if (response.services) {
-        setProviders(response.services);
-      }
+      const data = await apiClient.get(`/customer/services/integrated?bookingId=${bookingId || ''}`) as any;
+      setProviders(data.services || []);
     } catch (error) {
       console.error(error);
+      toast.error('Failed to load services');
     } finally {
       setLoading(false);
     }
@@ -82,152 +83,161 @@ export function IntegratedServicesSelector({
 
     try {
       setLoading(true);
-      const response = await apiClient.post<{ request: any }>(
-        '/integrated-services/request',
-        {
-          customerId,
-          providerId: selectedProvider.providerId,
-          serviceType: activeTab,
-          bookingId,
-          location: { ...userLocation, address: 'Current Location' },
-          details: {
-            providerName: selectedProvider.providerName,
-            price: selectedProvider.basePrice
-          }
+      const data = await apiClient.post('/customer/services/request', {
+        customerId,
+        providerId: selectedProvider.providerId,
+        serviceType: activeTab,
+        bookingId,
+        location: { ...userLocation, address: 'Current Location' },
+        details: {
+          providerName: selectedProvider.providerName,
+          price: selectedProvider.basePrice
         }
-      );
-
-      if (response.request) {
-        onServiceSelected(response.request);
-        onClose();
+      }) as any;
+      toast.success(`${activeTab === 'ambulance' ? 'Ambulance' : 'Service'} requested successfully!`);
+      onServiceSelected(data);
+      onClose();
+      } else {
+        toast.error('Failed to request service');
       }
     } catch (error) {
-      console.error('Error submitting request:', error);
+      toast.error('Error submitting request');
     } finally {
       setLoading(false);
     }
   };
 
   const renderProviderCard = (provider: ServiceProvider) => (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       key={provider.id || provider.providerId}
       onClick={() => setSelectedProvider(provider)}
       className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
         selectedProvider?.id === provider.id
-          ? 'border-primary bg-orange-50'
-          : 'border-gray-100 bg-white hover:border-primary'
+          ? 'border-orange-500 bg-orange-50'
+          : 'border-gray-100 bg-white hover:border-orange-200'
       }`}
     >
-      <div className="flex justify-between items-start mb-0">
+      <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className="font-semibold text-gray-900">{provider.providerName}</h3>
           {provider.isClinicAttached ? (
-            <span className="px-0 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100">
               Clinic Attached
-            </span>
+            </Badge>
           ) : (
-            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs">
+            <Badge variant="outline" className="text-gray-500">
               Independent
-            </span>
+            </Badge>
           )}
         </div>
+        <div className="text-right">
+          <p className="font-bold text-lg text-gray-900">
+            {provider.basePrice === 0 ? 'Free' : `₹${provider.basePrice}`}
+          </p>
+          <p className="text-xs text-gray-500">base fare</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 text-sm text-gray-600">
+        <div className="flex items-center gap-1">
+          <Clock className="w-4 h-4 text-orange-500" />
+          <span className="font-medium">{provider.eta} min</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Navigation className="w-4 h-4 text-blue-500" />
+          <span>{provider.distance.toFixed(1)} km</span>
+        </div>
         {provider.rating && (
-          <div className="flex items-center gap-0">
-            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-            <span className="text-sm font-semibold">{provider.rating.toFixed(1)}</span>
+          <div className="flex items-center gap-1">
+            <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+            <span>{provider.rating}</span>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-4 text-sm text-gray-600 mt-0">
-        <div className="flex items-center gap-0">
-          <MapPin className="w-4 h-4" />
-          <span>{provider.distance.toFixed(1)} km</span>
+      {provider.vehicleType && (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <p className="text-xs text-gray-500 flex items-center gap-1">
+            <Ambulance className="w-3 h-3" />
+            Vehicle: <span className="font-medium text-gray-700">{provider.vehicleType}</span>
+          </p>
         </div>
-        <div className="flex items-center gap-0">
-          <Clock className="w-4 h-4" />
-          <span>ETA: {provider.eta} min</span>
-        </div>
-        <div className="font-semibold text-primary ml-auto">
-          ₹{provider.basePrice}
-        </div>
-      </div>
-    </div>
+      )}
+    </motion.div>
   );
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-0 py-0 flex items-center justify-between z-10">
-          <h2 className="text-white font-bold text-lg">Select Service</h2>
-          <button
-            onClick={onClose}
-            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-          >
-            <X className="w-5 h-5 text-white" />
-          </button>
-        </div>
+    <div className="bg-gray-50 h-full flex flex-col">
+      {/* Header */}
+      <div className="bg-white p-4 shadow-sm z-10">
+        <h2 className="text-lg font-bold text-gray-900">Integrated Services</h2>
+        <p className="text-sm text-gray-500">Select additional services for your pet</p>
+        
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+          <TabsList className="grid grid-cols-3 w-full">
+            <TabsTrigger value="ambulance" className="flex items-center gap-2">
+              <Ambulance className="w-4 h-4" />
+              <span className="hidden sm:inline">Ambulance</span>
+            </TabsTrigger>
+            <TabsTrigger value="diagnostic" className="flex items-center gap-2">
+              <Microscope className="w-4 h-4" />
+              <span className="hidden sm:inline">Diagnostics</span>
+            </TabsTrigger>
+            <TabsTrigger value="pharmacy" className="flex items-center gap-2">
+              <Pill className="w-4 h-4" />
+              <span className="hidden sm:inline">Pharmacy</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
-        {/* Tabs */}
-        <div className="px-0 py-4 border-b border-gray-200">
-          <div className="flex gap-0">
-            {[
-              { id: 'ambulance', label: 'Ambulance', icon: Ambulance },
-              { id: 'diagnostic', label: 'Diagnostic', icon: Microscope },
-              { id: 'pharmacy', label: 'Pharmacy', icon: Pill }
-            ].map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 px-4 py-0 rounded-xl font-medium transition-all ${
-                    activeTab === tab.id
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-center gap-0">
-                    <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
-                  </div>
-                </button>
-              );
-            })}
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {loading ? (
+          <div className="text-center py-12 text-gray-500">Finding nearby providers...</div>
+        ) : providers.length > 0 ? (
+          <>
+             {bookingId && providers.some(p => p.isClinicAttached) && (
+                <div className="mb-4">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2 px-1">Recommended (Your Clinic)</h3>
+                    <div className="space-y-3">
+                        {providers.filter(p => p.isClinicAttached).map(renderProviderCard)}
+                    </div>
+                </div>
+             )}
+             
+             <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2 px-1">
+                    {bookingId ? 'Other Nearby Options' : 'Nearby Options'}
+                </h3>
+                <div className="space-y-3">
+                    {providers.filter(p => !p.isClinicAttached).map(renderProviderCard)}
+                </div>
+             </div>
+          </>
+        ) : (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="font-semibold text-gray-900">No providers found</h3>
+            <p className="text-sm text-gray-500 mt-1">Try changing your location or check back later.</p>
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Providers List */}
-        <div className="px-0 py-0">
-          {loading ? (
-            <div className="flex items-center justify-center py-02">
-              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          ) : providers.length === 0 ? (
-            <div className="text-center py-12">
-              <AlertCircle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p className="text-gray-600">No providers available</p>
-            </div>
-          ) : (
-            <div className="space-y-3 mb-0">
-              {providers.map((provider) => renderProviderCard(provider))}
-            </div>
-          )}
-
-          {/* Request Button */}
-          {selectedProvider && (
-            <button
-              onClick={handleRequest}
-              disabled={loading}
-              className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Requesting...' : `Request ${activeTab === 'ambulance' ? 'Ambulance' : activeTab === 'diagnostic' ? 'Diagnostic' : 'Pharmacy'}`}
-            </button>
-          )}
-        </div>
+      {/* Footer Action */}
+      <div className="p-4 bg-white border-t border-gray-200">
+        <Button 
+          className="w-full py-6 text-lg bg-orange-600 hover:bg-orange-700"
+          disabled={!selectedProvider || loading}
+          onClick={handleRequest}
+        >
+          {loading ? 'Processing...' : `Request ${activeTab === 'ambulance' ? 'Ambulance' : 'Service'}`}
+        </Button>
       </div>
     </div>
   );
 }
-

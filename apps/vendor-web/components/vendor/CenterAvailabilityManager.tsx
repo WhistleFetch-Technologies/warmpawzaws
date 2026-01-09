@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Clock, Calendar, Save, ArrowLeft } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { Clock, Calendar, Ambulance, Home, Pill, Activity, Save, ArrowLeft } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 
 interface CenterAvailabilityManagerProps {
   vendorId: string;
@@ -29,12 +32,19 @@ export function CenterAvailabilityManager({
   const loadAvailability = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/center-availability`);
-      if (response.success) {
-        setAvailability(response.availability);
+      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/center-availability'),
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setAvailability(data.availability);
+      } else {
+        toast.error('Failed to load availability settings');
       }
     } catch (error) {
-      console.error('Error loading availability:', error);
+      console.error('Error:', error);
+      toast.error('Network error');
     } finally {
       setLoading(false);
     }
@@ -43,10 +53,24 @@ export function CenterAvailabilityManager({
   const handleSave = async () => {
     try {
       setSaving(true);
-      await apiClient.put(`/vendor/${vendorId}/center-availability`, availability);
-      alert('✅ Availability settings saved successfully!');
-    } catch (error: any) {
-      alert(error.message || 'Failed to save settings');
+      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/center-availability'),
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(availability)
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Settings saved successfully');
+      } else {
+        toast.error('Failed to save settings');
+      }
+    } catch (error) {
+      toast.error('Network error');
     } finally {
       setSaving(false);
     }
@@ -55,84 +79,368 @@ export function CenterAvailabilityManager({
   if (loading || !availability) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[primary]"></div>
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      <div className="bg-white border-b sticky top-0 z-10 p-4">
-        <div className="flex items-center gap-0 mb-4">
-          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
-          <div className="flex-1">
-            <h1 className="font-semibold text-gray-900">Center Availability</h1>
-            <p className="text-sm text-gray-600">{vendorName}</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="flex-1">
+              <h1 className="font-bold text-gray-900">Center Settings</h1>
+              <p className="text-sm text-gray-600">{vendorName}</p>
+            </div>
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
-        {DAYS.map((day, index) => (
-          <div key={day} className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-0">
-              <span className="font-medium">{DAY_LABELS[index]}</span>
-              <label className="flex items-center gap-0">
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        {/* Operating Hours */}
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-blue-600" />
+            Operating Hours
+          </h2>
+          <div className="space-y-3">
+            {DAYS.map((day, idx) => (
+              <div key={day} className="flex items-center gap-4">
+                <div className="w-32">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={availability.operatingHours[day]?.isOpen || false}
+                      onChange={(e) => setAvailability({
+                        ...availability,
+                        operatingHours: {
+                          ...availability.operatingHours,
+                          [day]: {
+                            ...availability.operatingHours[day],
+                            isOpen: e.target.checked
+                          }
+                        }
+                      })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm font-medium">{DAY_LABELS[idx]}</span>
+                  </label>
+                </div>
+                {availability.operatingHours[day]?.isOpen && (
+                  <>
+                    <input
+                      type="time"
+                      value={availability.operatingHours[day]?.open || '09:00'}
+                      onChange={(e) => setAvailability({
+                        ...availability,
+                        operatingHours: {
+                          ...availability.operatingHours,
+                          [day]: {
+                            ...availability.operatingHours[day],
+                            open: e.target.value
+                          }
+                        }
+                      })}
+                      className="px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-gray-500">to</span>
+                    <input
+                      type="time"
+                      value={availability.operatingHours[day]?.close || '21:00'}
+                      onChange={(e) => setAvailability({
+                        ...availability,
+                        operatingHours: {
+                          ...availability.operatingHours,
+                          [day]: {
+                            ...availability.operatingHours[day],
+                            close: e.target.value
+                          }
+                        }
+                      })}
+                      className="px-3 py-2 border rounded-lg"
+                    />
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Emergency Services */}
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-red-600" />
+            Emergency Services
+          </h2>
+          <div className="space-y-4">
+            <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={availability.emergencyServices?.enabled || false}
+                onChange={(e) => setAvailability({
+                  ...availability,
+                  emergencyServices: {
+                    ...availability.emergencyServices,
+                    enabled: e.target.checked
+                  }
+                })}
+                className="w-5 h-5"
+              />
+              <div className="flex-1">
+                <p className="font-medium">Enable Emergency Services</p>
+                <p className="text-sm text-gray-600">Accept emergency appointments</p>
+              </div>
+            </label>
+
+            {availability.emergencyServices?.enabled && (
+              <label className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={availability[day]?.isOpen || false}
-                  onChange={(e) => setAvailability((prev: any) => ({
-                    ...prev,
-                    [day]: { ...prev[day], isOpen: e.target.checked }
-                  }))}
-                  className="w-4 h-4"
+                  checked={availability.emergencyServices?.is24x7 || false}
+                  onChange={(e) => setAvailability({
+                    ...availability,
+                    emergencyServices: {
+                      ...availability.emergencyServices,
+                      is24x7: e.target.checked
+                    }
+                  })}
+                  className="w-5 h-5"
                 />
-                <span className="text-sm">Open</span>
+                <div className="flex-1">
+                  <p className="font-medium text-red-900">24×7 Emergency</p>
+                  <p className="text-sm text-red-700">Available round the clock</p>
+                </div>
               </label>
-            </div>
-            {availability[day]?.isOpen && (
-              <div className="grid grid-cols-2 gap-0">
+            )}
+          </div>
+        </div>
+
+        {/* Ambulance Service */}
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Ambulance className="w-5 h-5 text-orange-600" />
+            Ambulance Service
+          </h2>
+          <div className="space-y-4">
+            <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={availability.ambulanceService?.enabled || false}
+                onChange={(e) => setAvailability({
+                  ...availability,
+                  ambulanceService: {
+                    ...availability.ambulanceService,
+                    enabled: e.target.checked
+                  }
+                })}
+                className="w-5 h-5"
+              />
+              <div className="flex-1">
+                <p className="font-medium">Enable Ambulance Service</p>
+              </div>
+            </label>
+
+            {availability.ambulanceService?.enabled && (
+              <div className="grid grid-cols-3 gap-4 p-4 bg-orange-50 rounded-lg">
                 <div>
-                  <label className="block text-xs text-gray-600 mb-0">Open</label>
+                  <label className="block text-xs text-gray-700 mb-1">Price per KM (₹)</label>
                   <input
-                    type="time"
-                    value={availability[day]?.open || '09:00'}
-                    onChange={(e) => setAvailability((prev: any) => ({
-                      ...prev,
-                      [day]: { ...prev[day], open: e.target.value }
-                    }))}
-                    className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                    type="number"
+                    value={availability.ambulanceService?.pricePerKm || 50}
+                    onChange={(e) => setAvailability({
+                      ...availability,
+                      ambulanceService: {
+                        ...availability.ambulanceService,
+                        pricePerKm: Number(e.target.value)
+                      }
+                    })}
+                    className="w-full px-3 py-2 border rounded-lg"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-600 mb-0">Close</label>
+                  <label className="block text-xs text-gray-700 mb-1">Min Charge (₹)</label>
                   <input
-                    type="time"
-                    value={availability[day]?.close || '18:00'}
-                    onChange={(e) => setAvailability((prev: any) => ({
-                      ...prev,
-                      [day]: { ...prev[day], close: e.target.value }
-                    }))}
-                    className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                    type="number"
+                    value={availability.ambulanceService?.minCharge || 200}
+                    onChange={(e) => setAvailability({
+                      ...availability,
+                      ambulanceService: {
+                        ...availability.ambulanceService,
+                        minCharge: Number(e.target.value)
+                      }
+                    })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Max Radius (KM)</label>
+                  <input
+                    type="number"
+                    value={availability.ambulanceService?.maxRadius || 25}
+                    onChange={(e) => setAvailability({
+                      ...availability,
+                      ambulanceService: {
+                        ...availability.ambulanceService,
+                        maxRadius: Number(e.target.value)
+                      }
+                    })}
+                    className="w-full px-3 py-2 border rounded-lg"
                   />
                 </div>
               </div>
             )}
           </div>
-        ))}
+        </div>
 
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full px-4 py-0 bg-[primary] text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-0"
-        >
-          <Save className="w-5 h-5" />
-          {saving ? 'Saving...' : 'Save Availability'}
-        </button>
+        {/* Home Sample Collection */}
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Home className="w-5 h-5 text-green-600" />
+            Home Sample Collection
+          </h2>
+          <div className="space-y-4">
+            <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={availability.homeSampleCollection?.enabled || false}
+                onChange={(e) => setAvailability({
+                  ...availability,
+                  homeSampleCollection: {
+                    ...availability.homeSampleCollection,
+                    enabled: e.target.checked
+                  }
+                })}
+                className="w-5 h-5"
+              />
+              <div className="flex-1">
+                <p className="font-medium">Enable Home Collection</p>
+              </div>
+            </label>
+
+            {availability.homeSampleCollection?.enabled && (
+              <div className="p-4 bg-green-50 rounded-lg space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Price per Visit (₹)</label>
+                    <input
+                      type="number"
+                      value={availability.homeSampleCollection?.pricePerVisit || 150}
+                      onChange={(e) => setAvailability({
+                        ...availability,
+                        homeSampleCollection: {
+                          ...availability.homeSampleCollection,
+                          pricePerVisit: Number(e.target.value)
+                        }
+                      })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Max Radius (KM)</label>
+                    <input
+                      type="number"
+                      value={availability.homeSampleCollection?.maxRadius || 15}
+                      onChange={(e) => setAvailability({
+                        ...availability,
+                        homeSampleCollection: {
+                          ...availability.homeSampleCollection,
+                          maxRadius: Number(e.target.value)
+                        }
+                      })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Pharmacy */}
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Pill className="w-5 h-5 text-blue-600" />
+            Pharmacy
+          </h2>
+          <div className="space-y-4">
+            <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={availability.pharmacy?.enabled || false}
+                onChange={(e) => setAvailability({
+                  ...availability,
+                  pharmacy: {
+                    ...availability.pharmacy,
+                    enabled: e.target.checked
+                  }
+                })}
+                className="w-5 h-5"
+              />
+              <div className="flex-1">
+                <p className="font-medium">Enable Pharmacy</p>
+              </div>
+            </label>
+
+            {availability.pharmacy?.enabled && (
+              <div className="space-y-3">
+                <label className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={availability.pharmacy?.deliveryAvailable || false}
+                    onChange={(e) => setAvailability({
+                      ...availability,
+                      pharmacy: {
+                        ...availability.pharmacy,
+                        deliveryAvailable: e.target.checked
+                      }
+                    })}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">Home Delivery Available</span>
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Diagnostics */}
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-purple-600" />
+            Diagnostics
+          </h2>
+          <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+            <input
+              type="checkbox"
+              checked={availability.diagnostics?.enabled || false}
+              onChange={(e) => setAvailability({
+                ...availability,
+                diagnostics: {
+                  ...availability.diagnostics,
+                  enabled: e.target.checked
+                }
+              })}
+              className="w-5 h-5"
+            />
+            <div className="flex-1">
+              <p className="font-medium">Enable Diagnostics Lab</p>
+            </div>
+          </label>
+        </div>
       </div>
     </div>
   );
 }
-

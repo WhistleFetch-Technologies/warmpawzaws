@@ -12,6 +12,7 @@ import {
   ScrollView,
   ActivityIndicator,
   SafeAreaView,
+  Image,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi } from '../../services/api';
@@ -156,7 +157,11 @@ export function VendorRoleSelectionScreen({ onRoleSelect }: VendorRoleSelectionS
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoEmoji}>🐾</Text>
+            <Image 
+              source={require('../../assets/images/logo.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.title}>Choose Your Role</Text>
           <Text style={styles.subtitle}>
@@ -242,8 +247,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
-  logoEmoji: {
-    fontSize: 60,
+  logoImage: {
+    width: 120,
+    height: 120,
   },
   title: {
     fontSize: typography.fontSizes['3xl'],

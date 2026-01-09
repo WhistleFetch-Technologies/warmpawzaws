@@ -1,15 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 
 interface CustomerHavePetJourneyProps {
-  session: {
-    phone: string;
-    customerId?: string;
-  };
+  session: any;
   onComplete: () => void;
 }
 
@@ -67,38 +64,14 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
     preferences: []
   });
 
-  const [tempSelections, setTempSelections] = useState<Record<string, string>>({});
+  const [tempSelections, setTempSelections] = useState<any>({});
 
-  const totalSteps = 5;
+  const totalSteps = 12;
 
   const handleNext = async () => {
+    // Validate selections based on current step
     const isValid = validateStep(currentStep);
     if (!isValid) return;
-
-    // Save temp selections to main data
-    if (currentStep === 1) {
-      setData({
-        ...data,
-        livingSpace: {
-          homeType: tempSelections.homeType || '',
-          outdoorSpace: tempSelections.outdoorSpace || ''
-        }
-      });
-    } else if (currentStep === 2) {
-      setData({
-        ...data,
-        lifestyle: {
-          workSchedule: tempSelections.workSchedule || '',
-          activityLevel: tempSelections.activityLevel || '',
-          travelFrequency: tempSelections.travelFrequency || ''
-        }
-      });
-    } else if (currentStep === 3) {
-      setData({
-        ...data,
-        budget: tempSelections.budget || ''
-      });
-    }
 
     if (currentStep === totalSteps) {
       await saveOnboarding(data);
@@ -117,11 +90,11 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
 
   const validateStep = (step: number): boolean => {
     switch (step) {
-      case 1:
-        return !!(tempSelections.homeType && tempSelections.outdoorSpace);
-      case 2:
-        return !!(tempSelections.workSchedule && tempSelections.activityLevel && tempSelections.travelFrequency);
       case 3:
+        return !!(tempSelections.homeType && tempSelections.outdoorSpace);
+      case 4:
+        return !!(tempSelections.workSchedule && tempSelections.activityLevel && tempSelections.travelFrequency);
+      case 5:
         return !!tempSelections.budget;
       default:
         return Object.keys(tempSelections).length > 0;
@@ -134,11 +107,12 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       console.log('Saving onboarding with phone:', session.phone);
       console.log('Onboarding data:', onboardingData);
       
-      await apiClient.post('/customer/onboarding', {
+      const responseData = await apiClient.post('/customer/onboarding', {
         phone: session.phone,
         type: 'have-pet',
         data: onboardingData,
-      });
+      }) as any;
+      console.log('Response data:', responseData);
 
       console.log('Onboarding data saved successfully');
     } catch (error) {
@@ -151,198 +125,283 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
 
   const renderStep = () => {
     switch (currentStep) {
-      case 1:
+      case 3:
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-02 pb-8 px-0">
-              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-0">
+            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+              <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-6">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M14 20L14 28L18 32L30 32L34 28L34 20L30 16L18 16L14 20Z" stroke="white" strokeWidth="3" fill="none"/>
                   <path d="M24 12L24 16M16 16L18 18M32 16L30 18" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
                   <circle cx="24" cy="24" r="3" fill="white"/>
                 </svg>
               </div>
-              <h1 className="text-black text-center text-2xl font-bold">Your Living<br />Space 🏡</h1>
+              <h1 className="text-black text-center">Your Living<br />Space 🏡</h1>
             </div>
 
             {/* White Bottom Section */}
-            <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto">
-              <p className="text-center text-black mb-0 text-base">
+            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
+              <p className="text-center text-black mb-6 text-base">
                 Tell us about where you live
               </p>
 
-              <div className="mb-0">
-                <h3 className="text-black mb-0 text-sm font-medium">What type of home do you have?</h3>
+              <div className="mb-6">
+                <h3 className="text-black mb-3 text-sm">What type of home do you have?</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: 'apartment', emoji: '🏢', label: 'Apartment' },
-                    { id: 'small-house', emoji: '🏠', label: 'Small House' },
-                    { id: 'large-house', emoji: '🌳', label: 'Large House' },
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setTempSelections({ ...tempSelections, homeType: option.id })}
-                      className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
-                        tempSelections.homeType === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-0">
-                        <span className="text-2xl">{option.emoji}</span>
-                        <h3 className="text-black font-medium">{option.label}</h3>
-                      </div>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, homeType: 'apartment' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.homeType === 'apartment' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏢</span>
+                      <h3 className="text-black">Apartment</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, homeType: 'small-house' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.homeType === 'small-house' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏠</span>
+                      <h3 className="text-black">Small House</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, homeType: 'large-house' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.homeType === 'large-house' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🌳</span>
+                      <h3 className="text-black">Large House</h3>
+                    </div>
+                  </button>
                 </div>
               </div>
 
-              <div className="mb-0">
-                <h3 className="text-black mb-0 text-sm font-medium">Do you have a yard or outdoor space?</h3>
+              <div className="mb-6">
+                <h3 className="text-black mb-3 text-sm">Do you have a yard or outdoor space?</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: 'large-yard', emoji: '🌳', label: 'Yes, large fenced yard' },
-                    { id: 'small-patio', emoji: '🪴', label: 'Yes, small yard/patio' },
-                    { id: 'no-outdoor', emoji: '🏙️', label: 'No outdoor space' },
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setTempSelections({ ...tempSelections, outdoorSpace: option.id })}
-                      className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
-                        tempSelections.outdoorSpace === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-0">
-                        <span className="text-2xl">{option.emoji}</span>
-                        <h3 className="text-black font-medium">{option.label}</h3>
-                      </div>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, outdoorSpace: 'large-yard' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.outdoorSpace === 'large-yard' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🌳</span>
+                      <h3 className="text-black">Yes, large fenced yard</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, outdoorSpace: 'small-patio' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.outdoorSpace === 'small-patio' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🪴</span>
+                      <h3 className="text-black">Yes, small yard/patio</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, outdoorSpace: 'no-outdoor' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.outdoorSpace === 'no-outdoor' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏙️</span>
+                      <h3 className="text-black">No outdoor space</h3>
+                    </div>
+                  </button>
                 </div>
               </div>
             </div>
           </>
         );
 
-      case 2:
+      case 4:
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-0">
-              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-0">
+            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+              <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-6">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <circle cx="24" cy="24" r="18" stroke="white" strokeWidth="3" fill="none"/>
                   <path d="M24 10L24 24L32 28" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <h1 className="text-black text-center text-2xl font-bold">Your<br />Lifestyle ⭐</h1>
+              <h1 className="text-black text-center">Your<br />Lifestyle ⭐</h1>
             </div>
 
             {/* White Bottom Section */}
-            <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto">
-              <p className="text-center text-black mb-0 text-base">
+            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
+              <p className="text-center text-black mb-6 text-base">
                 Help us understand your daily routine
               </p>
 
-              <div className="mb-0">
-                <h3 className="text-black mb-0 text-sm font-medium">What&apos;s your typical work schedule?</h3>
+              <div className="mb-6">
+                <h3 className="text-black mb-3 text-sm">What's your typical work schedule?</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: 'work-from-home', emoji: '🏠', label: 'Work from home' },
-                    { id: 'away-4-6', emoji: '⏰', label: 'Away 4-6 hours/day' },
-                    { id: 'away-8-plus', emoji: '💼', label: 'Away 8+ hours/day' },
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setTempSelections({ ...tempSelections, workSchedule: option.id })}
-                      className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
-                        tempSelections.workSchedule === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-0">
-                        <span className="text-2xl">{option.emoji}</span>
-                        <h3 className="text-black font-medium">{option.label}</h3>
-                      </div>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, workSchedule: 'work-from-home' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.workSchedule === 'work-from-home' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏠</span>
+                      <h3 className="text-black">Work from home</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, workSchedule: 'away-4-6' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.workSchedule === 'away-4-6' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">⏰</span>
+                      <h3 className="text-black">Away 4-6 hours/day</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, workSchedule: 'away-8-plus' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.workSchedule === 'away-8-plus' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">💼</span>
+                      <h3 className="text-black">Away 8+ hours/day</h3>
+                    </div>
+                  </button>
                 </div>
               </div>
 
-              <div className="mb-0">
-                <h3 className="text-black mb-0 text-sm font-medium">How would you describe your activity level?</h3>
+              <div className="mb-6">
+                <h3 className="text-black mb-3 text-sm">How would you describe your activity level?</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: 'very-active', emoji: '🏃', label: 'Very Active (daily exercise/outdoors)' },
-                    { id: 'moderate', emoji: '🚶', label: 'Moderate (regular walks/activities)' },
-                    { id: 'relaxed', emoji: '🛋️', label: 'Relaxed (prefer indoor activities)' },
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setTempSelections({ ...tempSelections, activityLevel: option.id })}
-                      className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
-                        tempSelections.activityLevel === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-0">
-                        <span className="text-2xl">{option.emoji}</span>
-                        <h3 className="text-black font-medium">{option.label}</h3>
-                      </div>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, activityLevel: 'very-active' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.activityLevel === 'very-active' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏃</span>
+                      <h3 className="text-black">Very Active (daily exercise/outdoors)</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, activityLevel: 'moderate' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.activityLevel === 'moderate' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🚶</span>
+                      <h3 className="text-black">Moderate (regular walks/activities)</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, activityLevel: 'relaxed' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.activityLevel === 'relaxed' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🛋️</span>
+                      <h3 className="text-black">Relaxed (prefer indoor activities)</h3>
+                    </div>
+                  </button>
                 </div>
               </div>
 
-              <div className="mb-0">
-                <h3 className="text-black mb-0 text-sm font-medium">How often do you travel?</h3>
+              <div className="mb-6">
+                <h3 className="text-black mb-3 text-sm">How often do you travel?</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: 'rarely', emoji: '🏡', label: 'Rarely or never' },
-                    { id: 'few-times', emoji: '✈️', label: 'A few times a year' },
-                    { id: 'monthly', emoji: '🌍', label: 'Monthly or more' },
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setTempSelections({ ...tempSelections, travelFrequency: option.id })}
-                      className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
-                        tempSelections.travelFrequency === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-0">
-                        <span className="text-2xl">{option.emoji}</span>
-                        <h3 className="text-black font-medium">{option.label}</h3>
-                      </div>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, travelFrequency: 'rarely' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.travelFrequency === 'rarely' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏡</span>
+                      <h3 className="text-black">Rarely or never</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, travelFrequency: 'few-times' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.travelFrequency === 'few-times' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">✈️</span>
+                      <h3 className="text-black">A few times a year</h3>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, travelFrequency: 'monthly' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.travelFrequency === 'monthly' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🌍</span>
+                      <h3 className="text-black">Monthly or more</h3>
+                    </div>
+                  </button>
                 </div>
               </div>
             </div>
           </>
         );
 
-      case 3:
+      case 5:
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-0">
-              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-0">
+            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+              <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-6">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M18 12C18 9 20 7 23 7H25C28 7 30 9 30 12V14H18V12Z" fill="white"/>
                   <path d="M12 14H36C37 14 38 15 38 16V38C38 39 37 40 36 40H12C11 40 10 39 10 38V16C10 15 11 14 12 14Z" stroke="white" strokeWidth="3" fill="none"/>
                   <circle cx="24" cy="26" r="4" fill="white"/>
                 </svg>
               </div>
-              <h1 className="text-black text-center text-2xl font-bold">Budget<br />Planning 💳</h1>
+              <h1 className="text-black text-center">Budget<br />Planning 💳</h1>
             </div>
 
             {/* White Bottom Section */}
-            <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto">
-              <p className="text-center text-black mb-0 text-base">
-                Let&apos;s understand the investment involved ❤️
+            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
+              <p className="text-center text-black mb-6 text-base">
+                Let's understand the investment involved ❤️
               </p>
 
               {/* Typical Costs Overview */}
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-0">
-                <p className="text-sm text-blue-900 mb-0">💡 Typical Costs Overview:</p>
-                <div className="grid grid-cols-2 gap-0 text-sm">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6">
+                <p className="text-sm text-blue-900 mb-3">💡 Typical Costs Overview:</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-blue-700">Initial Setup</p>
                     <p className="font-semibold text-blue-900">₹20,000 - ₹50,000</p>
@@ -352,44 +411,71 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                     <p className="font-semibold text-blue-900">₹3,000 - ₹12,000+</p>
                   </div>
                 </div>
-                <p className="text-xs text-blue-700 mt-0">Includes food, vet care, supplies & grooming</p>
+                <p className="text-xs text-blue-700 mt-2">Includes food, vet care, supplies & grooming</p>
               </div>
 
-              <div className="mb-0">
-                <h3 className="text-black mb-4 text-sm font-medium">What&apos;s your comfortable monthly budget?</h3>
+              <div className="mb-6">
+                <h3 className="text-black mb-4 text-sm">What's your comfortable monthly budget?</h3>
                 <div className="space-y-3">
-                  {[
-                    { id: '3000-6000', emoji: '💚', label: '₹3,000 - ₹6,000/month', desc: 'Essential care & basic needs' },
-                    { id: '6000-12000', emoji: '⭐', label: '₹6,000 - ₹12,000/month', desc: 'Good care with extra comfort' },
-                    { id: '12000-plus', emoji: '👑', label: '₹12,000+/month', desc: 'Comprehensive & premium services' },
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => setTempSelections({ ...tempSelections, budget: option.id })}
-                      className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
-                        tempSelections.budget === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-start gap-0">
-                        <span className="text-2xl">{option.emoji}</span>
-                        <div className="flex-1">
-                          <div className="flex items-baseline gap-0 mb-0">
-                            <h3 className="text-black font-medium">{option.label}</h3>
-                          </div>
-                          <p className="text-xs text-gray-600">{option.desc}</p>
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, budget: '3000-6000' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.budget === '3000-6000' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">💚</span>
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <h3 className="text-black">₹3,000 - ₹6,000/month</h3>
                         </div>
+                        <p className="text-xs text-gray-600">Essential care & basic needs</p>
                       </div>
-                    </button>
-                  ))}
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, budget: '6000-12000' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.budget === '6000-12000' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">⭐</span>
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <h3 className="text-black">₹6,000 - ₹12,000/month</h3>
+                        </div>
+                        <p className="text-xs text-gray-600">Good care with extra comfort</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setTempSelections({ ...tempSelections, budget: '12000-plus' })}
+                    className={`w-full border-2 rounded-2xl p-4 text-left transition-all ${
+                      tempSelections.budget === '12000-plus' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">👑</span>
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <h3 className="text-black">₹12,000+/month</h3>
+                        </div>
+                        <p className="text-xs text-gray-600">Comprehensive & premium services</p>
+                      </div>
+                    </div>
+                  </button>
                 </div>
               </div>
 
               {/* Pro Tip */}
               <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4">
-                <div className="flex items-start gap-0">
+                <div className="flex items-start gap-3">
                   <span className="text-xl">💡</span>
                   <div>
-                    <p className="text-sm font-semibold text-orange-900 mb-0">Pro Tip: Keep an emergency fund</p>
+                    <p className="text-sm font-semibold text-orange-900 mb-1">Pro Tip: Keep an emergency fund</p>
                     <p className="text-xs text-orange-800 leading-relaxed">
                       Save ₹15,000 - ₹50,000 for unexpected vet emergencies
                     </p>
@@ -410,11 +496,11 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
   };
 
   return (
-    <div className="min-h-screen bg-primary flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
-      <div className="px-0 pt-1 pb-0 flex justify-between items-center">
-        <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-0.5 items-center">
+      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+        <span className="text-black">09:41</span>
+        <div className="flex gap-1.5 items-center">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
             <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
             <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
@@ -435,20 +521,20 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       {renderStep()}
 
       {/* Progress and Navigation - Fixed at bottom */}
-      <div className="bg-white px-0 pb-8">
+      <div className="bg-white px-6 pb-8">
         {/* Progress Bar */}
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
-            className="p-0 disabled:opacity-30"
+            className="p-2 disabled:opacity-30"
           >
             <ChevronLeft className="w-5 h-5 text-black" />
           </button>
           
           <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
             <div 
-              className="h-full bg-primary transition-all duration-300"
+              className="h-full bg-[#FF8C42] transition-all duration-300"
               style={{ width: `${(currentStep / totalSteps) * 100}%` }}
             />
           </div>
@@ -459,20 +545,45 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         </div>
 
         {/* Continue Button */}
-        <button
-          onClick={handleNext}
+        <Button
+          onClick={() => {
+            // Save temp selections to main data
+            if (currentStep === 3) {
+              setData({
+                ...data,
+                livingSpace: {
+                  homeType: tempSelections.homeType,
+                  outdoorSpace: tempSelections.outdoorSpace
+                }
+              });
+            } else if (currentStep === 4) {
+              setData({
+                ...data,
+                lifestyle: {
+                  workSchedule: tempSelections.workSchedule,
+                  activityLevel: tempSelections.activityLevel,
+                  travelFrequency: tempSelections.travelFrequency
+                }
+              });
+            } else if (currentStep === 5) {
+              setData({
+                ...data,
+                budget: tempSelections.budget
+              });
+            }
+            handleNext();
+          }}
           disabled={!validateStep(currentStep) || loading}
-          className="w-full h-14 bg-primary hover:bg-primary-dark rounded-2xl text-black font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-2xl text-black disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Saving...' : 'Continue'}
-        </button>
+        </Button>
 
         {/* Home Indicator */}
-        <div className="flex justify-center mt-0">
+        <div className="flex justify-center mt-6">
           <div className="w-32 h-1 bg-black rounded-full"></div>
         </div>
       </div>
     </div>
   );
 }
-

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus, MapPin, Save, Edit2, Trash2, Navigation, Calculator } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { X, Plus, MapPin, DollarSign, Save, Edit2, Trash2, Navigation, Calculator } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 
-interface VendorDistancePricingProps {
+interface DistancePricingProps {
   vendorId: string;
   onClose: () => void;
 }
@@ -13,23 +14,28 @@ interface PricingRule {
   id: string;
   serviceName: string;
   basePrice: number;
-  baseDist: number;
+  baseDist: number; // km
   pricePerKm: number;
   maxDistance?: number;
   minCharge?: number;
   surgeMultiplier?: number;
   peakHourMultiplier?: number;
+  zoneSpecific?: {
+    zoneName: string;
+    multiplier: number;
+  }[];
   isActive: boolean;
   createdAt: string;
 }
 
-export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePricingProps) {
+export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProps) {
   const [rules, setRules] = useState<PricingRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedRule, setSelectedRule] = useState<PricingRule | null>(null);
   const [showCalculator, setShowCalculator] = useState(false);
 
+  // Form state
   const [formData, setFormData] = useState({
     serviceName: '',
     basePrice: '',
@@ -41,8 +47,11 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
     peakHourMultiplier: '1'
   });
 
+  // Calculator state
   const [calcDistance, setCalcDistance] = useState('');
   const [calcResult, setCalcResult] = useState<any>(null);
+
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchRules();
@@ -51,12 +60,20 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
   const fetchRules = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/distance-pricing`);
-      if (response.success) {
-        setRules(response.rules || []);
+      const response = await fetch(
+        `${API_BASE}/vendor/distance-pricing/${vendorId}`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        setRules(data.rules || []);
       }
     } catch (error) {
       console.error('Error fetching pricing rules:', error);
+      toast.error('Failed to load pricing rules');
     } finally {
       setLoading(false);
     }
@@ -64,30 +81,41 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
 
   const saveRule = async () => {
     try {
-      const payload = {
-        ...formData,
-        basePrice: parseFloat(formData.basePrice),
-        baseDist: parseFloat(formData.baseDist),
-        pricePerKm: parseFloat(formData.pricePerKm),
-        maxDistance: formData.maxDistance ? parseFloat(formData.maxDistance) : undefined,
-        minCharge: formData.minCharge ? parseFloat(formData.minCharge) : undefined,
-        surgeMultiplier: parseFloat(formData.surgeMultiplier),
-        peakHourMultiplier: parseFloat(formData.peakHourMultiplier),
-        isActive: true
-      };
+      const response = await fetch(
+        `${API_BASE}/vendor/distance-pricing/${vendorId}${selectedRule ? `/${selectedRule.id}` : ''}`,
+        {
+          method: selectedRule ? 'PUT' : 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...formData,
+            basePrice: parseFloat(formData.basePrice),
+            baseDist: parseFloat(formData.baseDist),
+            pricePerKm: parseFloat(formData.pricePerKm),
+            maxDistance: formData.maxDistance ? parseFloat(formData.maxDistance) : undefined,
+            minCharge: formData.minCharge ? parseFloat(formData.minCharge) : undefined,
+            surgeMultiplier: parseFloat(formData.surgeMultiplier),
+            peakHourMultiplier: parseFloat(formData.peakHourMultiplier),
+            isActive: true
+          })
+        }
+      );
 
-      if (selectedRule) {
-        await apiClient.put(`/vendor/${vendorId}/distance-pricing/${selectedRule.id}`, payload);
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Pricing rule ${selectedRule ? 'updated' : 'created'} successfully`);
+        setShowCreateModal(false);
+        setSelectedRule(null);
+        resetForm();
+        fetchRules();
       } else {
-        await apiClient.post(`/vendor/${vendorId}/distance-pricing`, payload);
+        toast.error(data.error || 'Failed to save pricing rule');
       }
-      
-      setShowCreateModal(false);
-      setSelectedRule(null);
-      resetForm();
-      fetchRules();
-    } catch (error: any) {
-      alert(error.message || 'Failed to save pricing rule');
+    } catch (error) {
+      console.error('Error saving pricing rule:', error);
+      toast.error('Failed to save pricing rule');
     }
   };
 
@@ -95,19 +123,47 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
     if (!confirm('Are you sure you want to delete this pricing rule?')) return;
 
     try {
-      await apiClient.delete(`/vendor/${vendorId}/distance-pricing/${ruleId}`);
-      fetchRules();
-    } catch (error: any) {
-      alert(error.message || 'Failed to delete rule');
+      const response = await fetch(
+        `${API_BASE}/vendor/distance-pricing/${vendorId}/${ruleId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Pricing rule deleted');
+        fetchRules();
+      }
+    } catch (error) {
+      console.error('Error deleting rule:', error);
+      toast.error('Failed to delete rule');
     }
   };
 
   const toggleRuleStatus = async (ruleId: string, isActive: boolean) => {
     try {
-      await apiClient.put(`/vendor/${vendorId}/distance-pricing/${ruleId}/toggle`, { isActive });
-      fetchRules();
-    } catch (error: any) {
-      alert(error.message || 'Failed to update rule status');
+      const response = await fetch(
+        `${API_BASE}/vendor/distance-pricing/${vendorId}/${ruleId}/toggle`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ isActive })
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Pricing rule ${isActive ? 'activated' : 'deactivated'}`);
+        fetchRules();
+      }
+    } catch (error) {
+      console.error('Error toggling rule:', error);
+      toast.error('Failed to update rule status');
     }
   };
 
@@ -119,10 +175,12 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
       price += extraKm * rule.pricePerKm;
     }
 
+    // Apply multipliers
     if (rule.surgeMultiplier && rule.surgeMultiplier > 1) {
       price *= rule.surgeMultiplier;
     }
 
+    // Ensure minimum charge
     if (rule.minCharge && price < rule.minCharge) {
       price = rule.minCharge;
     }
@@ -170,57 +228,51 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-0 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-yellow-50">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-yellow-50">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-0">
+              <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                 <Navigation className="w-7 h-7 text-orange-600" />
                 Distance-Based Pricing
               </h2>
-              <p className="text-sm text-gray-600 mt-0">Configure pricing based on distance traveled</p>
+              <p className="text-sm text-gray-600 mt-1">Configure pricing based on distance traveled</p>
             </div>
-            <button onClick={onClose} className="p-0 hover:bg-white rounded-full transition-colors">
+            <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
               <X className="w-6 h-6 text-gray-500" />
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-0">
-            <div className="bg-white rounded-lg p-0 text-center">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white rounded-lg p-3 text-center">
               <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
               <div className="text-xs text-gray-600">Pricing Rules</div>
             </div>
-            <div className="bg-green-50 rounded-lg p-0 text-center border border-green-200">
+            <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
               <div className="text-2xl font-bold text-green-700">{stats.active}</div>
               <div className="text-xs text-green-700">Active</div>
             </div>
-            <div className="bg-orange-50 rounded-lg p-0 text-center border border-orange-200">
+            <div className="bg-orange-50 rounded-lg p-3 text-center border border-orange-200">
               <div className="text-2xl font-bold text-orange-700">₹{stats.avgPricePerKm}</div>
               <div className="text-xs text-orange-700">Avg per KM</div>
             </div>
           </div>
         </div>
 
+        {/* Actions */}
         <div className="p-4 border-b border-gray-200 bg-gray-50">
-          <div className="flex gap-0">
+          <div className="flex gap-3">
             <button
-              onClick={() => {
-                setSelectedRule(null);
-                resetForm();
-                setShowCreateModal(true);
-              }}
-              className="px-4 py-0 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center gap-0"
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               New Pricing Rule
             </button>
             <button
-              onClick={() => {
-                if (rules.length > 0) {
-                  setSelectedRule(rules[0]);
-                  setShowCalculator(true);
-                }
-              }}
-              className="px-4 py-0 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-0"
+              onClick={() => setShowCalculator(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
             >
               <Calculator className="w-4 h-4" />
               Price Calculator
@@ -228,23 +280,20 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-0">
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="text-center py-0">
-              <div className="inline-block w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mb-0" />
+            <div className="text-center py-12">
+              <div className="inline-block w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mb-2" />
               <p className="text-gray-600">Loading pricing rules...</p>
             </div>
           ) : rules.length === 0 ? (
-            <div className="text-center py-02">
-              <Navigation className="w-16 h-16 text-gray-300 mx-auto mb-0" />
+            <div className="text-center py-12">
+              <Navigation className="w-16 h-16 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-600">No pricing rules configured</p>
               <button
-                onClick={() => {
-                  setSelectedRule(null);
-                  resetForm();
-                  setShowCreateModal(true);
-                }}
-                className="mt-4 px-0 py-0 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors"
+                onClick={() => setShowCreateModal(true)}
+                className="mt-4 px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors"
               >
                 Create First Rule
               </button>
@@ -258,47 +307,39 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
                     rule.isActive ? 'border-green-200 hover:border-green-300' : 'border-gray-200 opacity-60'
                   }`}
                 >
-                  <div className="flex items-start justify-between mb-0">
+                  <div className="flex items-start justify-between mb-3">
                     <div>
                       <h3 className="font-semibold text-gray-900">{rule.serviceName}</h3>
-                      <div className={`inline-block mt-0 px-0 py-1 rounded-full text-xs font-medium ${
+                      <div className={`inline-block mt-2 px-2 py-1 rounded-full text-xs font-medium ${
                         rule.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                       }`}>
                         {rule.isActive ? 'ACTIVE' : 'INACTIVE'}
                       </div>
                     </div>
-                    <div className="flex gap-0">
+                    <div className="flex gap-1">
                       <button
                         onClick={() => {
                           setSelectedRule(rule);
-                          setFormData({
-                            serviceName: rule.serviceName,
-                            basePrice: rule.basePrice.toString(),
-                            baseDist: rule.baseDist.toString(),
-                            pricePerKm: rule.pricePerKm.toString(),
-                            maxDistance: rule.maxDistance?.toString() || '',
-                            minCharge: rule.minCharge?.toString() || '',
-                            surgeMultiplier: (rule.surgeMultiplier || 1).toString(),
-                            peakHourMultiplier: (rule.peakHourMultiplier || 1).toString()
-                          });
+                          setFormData(rule as any);
                           setShowCreateModal(true);
                         }}
-                        className="p-0 hover:bg-gray-100 rounded-lg"
+                        className="p-2 hover:bg-gray-100 rounded-lg"
                       >
                         <Edit2 className="w-4 h-4 text-gray-600" />
                       </button>
                       <button
                         onClick={() => deleteRule(rule.id)}
-                        className="p-0 hover:bg-red-50 rounded-lg"
+                        className="p-2 hover:bg-red-50 rounded-lg"
                       >
                         <Trash2 className="w-4 h-4 text-red-600" />
                       </button>
                     </div>
                   </div>
 
+                  {/* Pricing Details */}
                   <div className="space-y-2">
-                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-0">
-                      <div className="flex items-center justify-between mb-0">
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
                         <span className="text-sm text-orange-700">Base Price</span>
                         <span className="font-semibold text-orange-900">₹{rule.basePrice}</span>
                       </div>
@@ -307,14 +348,14 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-0">
-                      <div className="bg-gray-50 rounded-lg p-0">
-                        <div className="text-xs text-gray-600 mb-0">Per KM</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-gray-50 rounded-lg p-2">
+                        <div className="text-xs text-gray-600 mb-1">Per KM</div>
                         <div className="text-sm font-medium text-gray-900">₹{rule.pricePerKm}/km</div>
                       </div>
                       {rule.minCharge && (
-                        <div className="bg-gray-50 rounded-lg p-0">
-                          <div className="text-xs text-gray-600 mb-0">Min Charge</div>
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <div className="text-xs text-gray-600 mb-1">Min Charge</div>
                           <div className="text-sm font-medium text-gray-900">₹{rule.minCharge}</div>
                         </div>
                       )}
@@ -322,13 +363,13 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
 
                     {rule.maxDistance && (
                       <div className="text-xs text-gray-500">
-                        <MapPin className="w-3 h-3 inline mr-0" />
+                        <MapPin className="w-3 h-3 inline mr-1" />
                         Max distance: {rule.maxDistance} km
                       </div>
                     )}
 
                     {(rule.surgeMultiplier && rule.surgeMultiplier > 1) && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-0">
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-2">
                         <div className="text-xs text-red-700">
                           Surge: {rule.surgeMultiplier}x multiplier
                         </div>
@@ -336,10 +377,11 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
                     )}
                   </div>
 
-                  <div className="flex gap-0 mt-0">
+                  {/* Actions */}
+                  <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => toggleRuleStatus(rule.id, !rule.isActive)}
-                      className={`flex-1 py-0 px-4 rounded-lg font-medium transition-colors ${
+                      className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                         rule.isActive
                           ? 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                           : 'bg-green-600 hover:bg-green-700 text-white'
@@ -352,7 +394,7 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
                         setSelectedRule(rule);
                         setShowCalculator(true);
                       }}
-                      className="flex-1 py-0 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium transition-colors"
+                      className="flex-1 py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium transition-colors"
                     >
                       Calculate
                     </button>
@@ -363,110 +405,111 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
           )}
         </div>
 
+        {/* Create/Edit Modal */}
         {showCreateModal && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl p-0 max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 {selectedRule ? 'Edit' : 'Create'} Pricing Rule
               </h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-0">Service Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Name</label>
                   <input
                     type="text"
                     value={formData.serviceName}
                     onChange={(e) => setFormData({ ...formData, serviceName: e.target.value })}
-                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., Pet Pickup & Drop"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-0">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-0">Base Price (₹)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (₹)</label>
                     <input
                       type="number"
                       value={formData.basePrice}
                       onChange={(e) => setFormData({ ...formData, basePrice: e.target.value })}
-                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                       placeholder="200"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-0">Base Dist (km)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Base Dist (km)</label>
                     <input
                       type="number"
                       value={formData.baseDist}
                       onChange={(e) => setFormData({ ...formData, baseDist: e.target.value })}
-                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                       placeholder="5"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-0">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-0">Price per KM (₹)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Price per KM (₹)</label>
                     <input
                       type="number"
                       value={formData.pricePerKm}
                       onChange={(e) => setFormData({ ...formData, pricePerKm: e.target.value })}
-                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                       placeholder="20"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-0">Min Charge (₹)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Min Charge (₹)</label>
                     <input
                       type="number"
                       value={formData.minCharge}
                       onChange={(e) => setFormData({ ...formData, minCharge: e.target.value })}
-                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                       placeholder="150"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-0">Max Distance (km) - Optional</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Distance (km) - Optional</label>
                   <input
                     type="number"
                     value={formData.maxDistance}
                     onChange={(e) => setFormData({ ...formData, maxDistance: e.target.value })}
-                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="50"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-0">Surge Multiplier</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Surge Multiplier</label>
                   <input
                     type="number"
                     step="0.1"
                     value={formData.surgeMultiplier}
                     onChange={(e) => setFormData({ ...formData, surgeMultiplier: e.target.value })}
-                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="1.5"
                   />
-                  <p className="text-xs text-gray-500 mt-0">1.0 = no surge, 1.5 = 50% increase</p>
+                  <p className="text-xs text-gray-500 mt-1">1.0 = no surge, 1.5 = 50% increase</p>
                 </div>
               </div>
 
-              <div className="flex gap-0 mt-0">
+              <div className="flex gap-2 mt-6">
                 <button
                   onClick={() => {
                     setShowCreateModal(false);
                     setSelectedRule(null);
                     resetForm();
                   }}
-                  className="flex-1 py-0 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+                  className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveRule}
-                  className="flex-1 py-0 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-0"
+                  className="flex-1 py-2 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                 >
                   <Save className="w-4 h-4" />
                   {selectedRule ? 'Update' : 'Create'}
@@ -476,9 +519,10 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
           </div>
         )}
 
+        {/* Calculator Modal */}
         {showCalculator && selectedRule && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl p-0 max-w-md w-full">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 Price Calculator
               </h3>
@@ -487,19 +531,19 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
               </p>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-0">Enter Distance (km)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Enter Distance (km)</label>
                 <input
                   type="number"
                   value={calcDistance}
                   onChange={(e) => setCalcDistance(e.target.value)}
-                  className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   placeholder="15"
                 />
               </div>
 
               <button
                 onClick={runCalculator}
-                className="w-full py-0 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors mb-4"
+                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors mb-4"
               >
                 Calculate Price
               </button>
@@ -520,7 +564,7 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
                       <span className="font-medium">₹{Math.round(calcResult.extraCharge)}</span>
                     </div>
                   )}
-                  <div className="border-t border-blue-300 pt-0 mt-0">
+                  <div className="border-t border-blue-300 pt-2 mt-2">
                     <div className="flex justify-between">
                       <span className="font-semibold text-blue-900">Final Price:</span>
                       <span className="text-xl font-bold text-blue-600">₹{calcResult.finalPrice}</span>
@@ -536,7 +580,7 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
                   setCalcDistance('');
                   setCalcResult(null);
                 }}
-                className="w-full mt-4 py-0 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+                className="w-full mt-4 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
               >
                 Close
               </button>
@@ -547,4 +591,3 @@ export function VendorDistancePricing({ vendorId, onClose }: VendorDistancePrici
     </div>
   );
 }
-
