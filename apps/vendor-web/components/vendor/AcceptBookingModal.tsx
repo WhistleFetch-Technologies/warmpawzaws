@@ -1,8 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, CheckCircle, User } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CheckCircle, User } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 
 interface AcceptBookingModalProps {
   booking: any;
@@ -13,19 +18,28 @@ interface AcceptBookingModalProps {
 
 export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: AcceptBookingModalProps) {
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
-  const [selectedStaffId, setSelectedStaffId] = useState(booking.staff_id || '');
+  const [selectedStaffId, setSelectedStaffId] = useState(booking.staffId || '');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   useEffect(() => {
     loadStaffMembers();
-  }, [vendorId]);
+  }, []);
 
   const loadStaffMembers = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/staff?active=true`);
-      setStaffMembers(response.staff || []);
+      const response = await fetch(
+        `${API_BASE}/vendor/${vendorId}/staff?active=true`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setStaffMembers(data.staff || []);
+      }
     } catch (error) {
       console.error('Error loading staff:', error);
     } finally {
@@ -35,135 +49,150 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
 
   const handleAccept = async () => {
     if (!selectedStaffId && staffMembers.length > 0) {
-      alert('Please assign a staff member');
+      toast.error('Please assign a staff member');
       return;
     }
 
     try {
       setLoading(true);
-      await apiClient.put(`/bookings/${booking.id}/status`, {
-        status: 'confirmed',
-        vendorId,
-        staffId: selectedStaffId || undefined,
-        notes
-      });
-      alert('✅ Booking accepted successfully!');
-      onSuccess();
-    } catch (error: any) {
-      alert(error.message || 'Failed to accept booking');
+
+      const response = await fetch(
+        `${API_BASE}/bookings/${booking.id}/accept`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            vendorId,
+            staffId: selectedStaffId || undefined,
+            notes
+          })
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Booking accepted successfully!');
+        onSuccess();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to accept booking');
+      }
+    } catch (error) {
+      console.error('Error accepting booking:', error);
+      toast.error('Network error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="p-0">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-0 text-green-600">
-              <CheckCircle className="w-5 h-5" />
-              <h2 className="text-xl font-bold">Accept Booking</h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <p className="text-sm text-gray-600 mb-4">
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-green-600">
+            <CheckCircle className="w-5 h-5" />
+            Accept Booking
+          </DialogTitle>
+          <DialogDescription>
             Confirm this booking request and assign a staff member
-          </p>
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="grid grid-cols-2 gap-0 text-sm">
-                <div>
-                  <p className="text-gray-600">Customer</p>
-                  <p className="font-semibold">{booking.customer?.name || booking.customer_name}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Amount</p>
-                  <p className="font-semibold">₹{booking.total_amount || booking.price || 0}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Date</p>
-                  <p className="font-semibold">
-                    {new Date(booking.booking_date).toLocaleDateString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Time</p>
-                  <p className="font-semibold">{booking.booking_time || 'Flexible'}</p>
-                </div>
-              </div>
-            </div>
-
-            {staffMembers.length > 0 && (
+        <div className="space-y-4 py-4">
+          {/* Booking Summary */}
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-0">
-                  Assign Staff Member <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={selectedStaffId}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedStaffId(e.target.value)}
-                  className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select staff member</option>
-                  {staffMembers.map((staff) => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.name} {staff.specialization && `- ${staff.specialization}`}
-                    </option>
-                  ))}
-                </select>
+                <p className="text-gray-600">Customer</p>
+                <p className="font-semibold">{booking.customerName}</p>
               </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Confirmation Message (Optional)
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
-                placeholder="E.g., Looking forward to serving you! Please arrive 5 minutes early."
-                rows={3}
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-              />
-              <p className="text-xs text-gray-500 mt-0">
-                This message will be sent to the customer
-              </p>
-            </div>
-
-            <div className="p-0 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-800">
-                <strong>Next Steps:</strong> After accepting, the customer will be notified. 
-                You can start the service using the OTP on the scheduled date.
-              </p>
+              <div>
+                <p className="text-gray-600">Amount</p>
+                <p className="font-semibold">₹{booking.totalAmount || booking.price}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Date</p>
+                <p className="font-semibold">
+                  {new Date(booking.scheduledDate).toLocaleDateString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-600">Time</p>
+                <p className="font-semibold">{booking.scheduledTime || 'Flexible'}</p>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-0 mt-0">
-            <button
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 px-4 py-0 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleAccept}
-              disabled={loading || (staffMembers.length > 0 && !selectedStaffId)}
-              className="flex-1 px-4 py-0 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {loading ? 'Accepting...' : 'Accept Booking'}
-            </button>
+          {/* Staff Assignment */}
+          {staffMembers.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Assign Staff Member <span className="text-red-500">*</span>
+              </label>
+              <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select staff member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffMembers.map((staff) => (
+                    <SelectItem key={staff.id} value={staff.id}>
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4" />
+                        {staff.name}
+                        {staff.specialization && (
+                          <span className="text-xs text-gray-500">
+                            - {staff.specialization}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Confirmation Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Confirmation Message (Optional)
+            </label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="E.g., Looking forward to serving you! Please arrive 5 minutes early."
+              rows={3}
+              className="resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This message will be sent to the customer
+            </p>
+          </div>
+
+          {/* Info Box */}
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-sm text-green-800">
+              <strong>Next Steps:</strong> After accepting, the customer will be notified. 
+              You can start the service using the OTP on the scheduled date.
+            </p>
           </div>
         </div>
-      </div>
-    </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAccept}
+            disabled={loading || (staffMembers.length > 0 && !selectedStaffId)}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {loading ? 'Accepting...' : 'Accept Booking'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
-

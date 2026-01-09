@@ -163,8 +163,8 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
   if (showUserProfile) {
     return (
       <CustomerUserProfile 
-        phone={session.phone}
-        journeyStage={journeyStage}
+        session={session}
+        journeyStage={journeyStage || undefined}
         onComplete={handleUserProfileComplete}
       />
     );
@@ -174,7 +174,7 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
   if (showPetProfile) {
     return (
       <CustomerPetProfile 
-        phone={session.phone}
+        session={session}
         onComplete={handlePetProfileComplete}
         onBack={() => setShowUserProfile(true)}
       />

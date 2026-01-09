@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Filter, X, Star, MapPin, DollarSign, Briefcase } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface SearchFiltersProps {
   query?: string;
@@ -45,9 +47,16 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
       if (query) params.append('q', query);
       if (type) params.append('type', type);
 
-      const response = await apiClient.get<{ facets: Facets }>(`/search/facets?${params}`);
-      if (response.facets) {
-        setFacets(response.facets);
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setFacets(data.data?.facets || data.facets || null);
       }
     } catch (error) {
       console.error('Error fetching facets:', error);
@@ -79,184 +88,231 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
   if (!facets && !loading) return null;
 
   return (
-    <div className={className}>
+    <div className={`${className}`}>
       {/* Filter Toggle Button */}
-      <div className="flex items-center gap-0 mb-4">
-        <button
+      <div className="flex items-center gap-3 mb-4">
+        <Button
+          variant="outline"
           onClick={() => setIsOpen(!isOpen)}
-          className="px-4 py-0 border-2 border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-0"
+          className="gap-2"
         >
           <Filter className="w-4 h-4" />
           Filters
           {activeFilterCount > 0 && (
-            <span className="px-0 py-0.5 bg-primary text-white rounded-full text-xs font-bold">
+            <Badge className="bg-orange-500 text-white ml-1">
               {activeFilterCount}
-            </span>
+            </Badge>
           )}
-        </button>
+        </Button>
 
         {activeFilterCount > 0 && (
-          <button
+          <Button
+            variant="ghost"
             onClick={clearAllFilters}
-            className="text-primary hover:text-primary-dark text-sm font-medium"
+            className="text-orange-600 hover:text-orange-700"
           >
             Clear all
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Active Filters */}
       {activeFilterCount > 0 && (
-        <div className="flex flex-wrap gap-0 mb-4">
+        <div className="flex flex-wrap gap-2 mb-4">
           {filters.city && (
-            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm flex items-center gap-0">
+            <Badge variant="secondary" className="gap-2 px-3 py-1.5">
               <MapPin className="w-3 h-3" />
               {filters.city}
               <button
                 onClick={() => clearFilter('city')}
-                className="ml-0 hover:text-red-600"
+                className="ml-1 hover:text-red-600"
               >
                 <X className="w-3 h-3" />
               </button>
-            </span>
+            </Badge>
           )}
           {filters.specialization && (
-            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm flex items-center gap-0">
+            <Badge variant="secondary" className="gap-2 px-3 py-1.5">
               <Briefcase className="w-3 h-3" />
               {filters.specialization}
               <button
                 onClick={() => clearFilter('specialization')}
-                className="ml-0 hover:text-red-600"
+                className="ml-1 hover:text-red-600"
               >
                 <X className="w-3 h-3" />
               </button>
-            </span>
+            </Badge>
           )}
           {filters.serviceType && (
-            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm flex items-center gap-0">
+            <Badge variant="secondary" className="gap-2 px-3 py-1.5">
               {filters.serviceType}
               <button
                 onClick={() => clearFilter('serviceType')}
-                className="ml-0 hover:text-red-600"
+                className="ml-1 hover:text-red-600"
               >
                 <X className="w-3 h-3" />
               </button>
-            </span>
+            </Badge>
           )}
           {filters.minRating && (
-            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm flex items-center gap-0">
+            <Badge variant="secondary" className="gap-2 px-3 py-1.5">
               <Star className="w-3 h-3" />
-              {filters.minRating}+ Stars
+              {filters.minRating}+ stars
               <button
                 onClick={() => clearFilter('minRating')}
-                className="ml-0 hover:text-red-600"
+                className="ml-1 hover:text-red-600"
               >
                 <X className="w-3 h-3" />
               </button>
-            </span>
-          )}
-          {filters.priceRange && (
-            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm flex items-center gap-0">
-              <DollarSign className="w-3 h-3" />
-              ₹{filters.priceRange.min || 0} - ₹{filters.priceRange.max || '∞'}
-              <button
-                onClick={() => clearFilter('priceRange')}
-                className="ml-0 hover:text-red-600"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
+            </Badge>
           )}
         </div>
       )}
 
       {/* Filter Panel */}
-      {isOpen && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-0 shadow-lg mb-4">
-          <h3 className="font-bold text-gray-900 mb-4">Filter Results</h3>
-          
-          <div className="space-y-4">
-            {/* City Filter */}
-            {facets?.cities && facets.cities.length > 0 && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">City</label>
-                <select
-                  value={filters.city || ''}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('city', e.target.value || undefined)}
-                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-                >
-                  <option value="">All Cities</option>
-                  {facets.cities.map((city) => (
-                    <option key={city} value={city}>{city}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Specialization Filter */}
-            {facets?.specializations && facets.specializations.length > 0 && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">Specialization</label>
-                <select
-                  value={filters.specialization || ''}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('specialization', e.target.value || undefined)}
-                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-                >
-                  <option value="">All Specializations</option>
-                  {facets.specializations.map((spec) => (
-                    <option key={spec} value={spec}>{spec}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Rating Filter */}
+      {isOpen && facets && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6 space-y-6">
+          {/* Cities */}
+          {facets.cities && facets.cities.length > 0 && (
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-0">Minimum Rating</label>
-              <select
-                value={filters.minRating || ''}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('minRating', e.target.value ? parseFloat(e.target.value) : undefined)}
-                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
-              >
-                <option value="">All Ratings</option>
-                <option value="4">4+ Stars</option>
-                <option value="4.5">4.5+ Stars</option>
-                <option value="5">5 Stars</option>
-              </select>
+              <h3 className="flex items-center gap-2 mb-3">
+                <MapPin className="w-4 h-4 text-orange-500" />
+                <span>Location</span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {facets.cities.slice(0, 12).map((city) => (
+                  <button
+                    key={city}
+                    onClick={() => handleFilterChange('city', filters.city === city ? undefined : city)}
+                    className={`px-3 py-2 rounded-lg border text-sm transition-colors ${
+                      filters.city === city
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                    }`}
+                  >
+                    {city}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
 
-            {/* Price Range Filter */}
-            {facets?.priceRange && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-0">Price Range</label>
-                <div className="grid grid-cols-2 gap-0">
+          {/* Specializations */}
+          {facets.specializations && facets.specializations.length > 0 && (
+            <div>
+              <h3 className="flex items-center gap-2 mb-3">
+                <Briefcase className="w-4 h-4 text-orange-500" />
+                <span>Specialization</span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {facets.specializations.slice(0, 12).map((spec) => (
+                  <button
+                    key={spec}
+                    onClick={() => handleFilterChange('specialization', filters.specialization === spec ? undefined : spec)}
+                    className={`px-3 py-2 rounded-lg border text-sm transition-colors capitalize ${
+                      filters.specialization === spec
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                    }`}
+                  >
+                    {spec}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Service Types */}
+          {facets.serviceTypes && facets.serviceTypes.length > 0 && (
+            <div>
+              <h3 className="flex items-center gap-2 mb-3">
+                <Filter className="w-4 h-4 text-orange-500" />
+                <span>Service Type</span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {facets.serviceTypes.map((serviceType) => (
+                  <button
+                    key={serviceType}
+                    onClick={() => handleFilterChange('serviceType', filters.serviceType === serviceType ? undefined : serviceType)}
+                    className={`px-3 py-2 rounded-lg border text-sm transition-colors capitalize ${
+                      filters.serviceType === serviceType
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                    }`}
+                  >
+                    {serviceType}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ratings */}
+          {facets.ratings && facets.ratings.length > 0 && (
+            <div>
+              <h3 className="flex items-center gap-2 mb-3">
+                <Star className="w-4 h-4 text-orange-500" />
+                <span>Minimum Rating</span>
+              </h3>
+              <div className="flex gap-2">
+                {[5, 4, 3].map((rating) => (
+                  <button
+                    key={rating}
+                    onClick={() => handleFilterChange('minRating', filters.minRating === rating ? undefined : rating)}
+                    className={`px-4 py-2 rounded-lg border text-sm transition-colors flex items-center gap-1 ${
+                      filters.minRating === rating
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                    }`}
+                  >
+                    <Star className="w-4 h-4 fill-current text-yellow-400" />
+                    {rating}+
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Price Range */}
+          {facets.priceRange && (
+            <div>
+              <h3 className="flex items-center gap-2 mb-3">
+                <DollarSign className="w-4 h-4 text-orange-500" />
+                <span>Price Range</span>
+              </h3>
+              <div className="flex gap-4 items-center">
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 mb-1 block">Min</label>
                   <input
                     type="number"
-                    placeholder="Min"
                     value={filters.priceRange?.min || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFilterChange('priceRange', {
+                    onChange={(e) => handleFilterChange('priceRange', {
                       ...filters.priceRange,
-                      min: e.target.value ? parseFloat(e.target.value) : undefined
+                      min: e.target.value ? parseInt(e.target.value) : undefined
                     })}
-                    className="px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    placeholder={`₹${facets.priceRange.min}`}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
+                </div>
+                <span className="text-gray-400 mt-5">-</span>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 mb-1 block">Max</label>
                   <input
                     type="number"
-                    placeholder="Max"
                     value={filters.priceRange?.max || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFilterChange('priceRange', {
+                    onChange={(e) => handleFilterChange('priceRange', {
                       ...filters.priceRange,
-                      max: e.target.value ? parseFloat(e.target.value) : undefined
+                      max: e.target.value ? parseInt(e.target.value) : undefined
                     })}
-                    className="px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    placeholder={`₹${facets.priceRange.max}`}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-

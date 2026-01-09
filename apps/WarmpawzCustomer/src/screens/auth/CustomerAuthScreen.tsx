@@ -167,19 +167,11 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
         {/* Orange Top Section (2/3) */}
         <View style={styles.orangeSection}>
           <View style={styles.logoContainer}>
-            {/* Logo - Using placeholder until SVG support is added */}
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoPaw}>🐾</Text>
-              <View style={styles.logoAnimals}>
-                <Text style={styles.logoDog}>🐕</Text>
-                <Text style={styles.logoCat}>🐈</Text>
-              </View>
-              <Text style={styles.logoText}>Warmpawz</Text>
-            </View>
-            {/* TODO: When react-native-svg is added, use:
-            <SvgXml xml={logoSvg} width={120} height={120} />
-            Logo file available at: src/assets/images/logo.svg
-            */}
+            <Image 
+              source={require('../../assets/images/logo.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.verifyTitle}>Verify Your Number</Text>
         </View>
@@ -293,19 +285,11 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
       {/* Orange Top Section (2/3) */}
       <View style={styles.orangeSection}>
         <View style={styles.logoContainer}>
-          {/* Logo - Using placeholder until SVG support is added */}
-          <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoPaw}>🐾</Text>
-            <View style={styles.logoAnimals}>
-              <Text style={styles.logoDog}>🐕</Text>
-              <Text style={styles.logoCat}>🐈</Text>
-            </View>
-            <Text style={styles.logoText}>Warmpawz</Text>
-          </View>
-          {/* TODO: When react-native-svg is added, use:
-          <SvgXml xml={logoSvg} width={120} height={120} />
-          Logo file available at: src/assets/images/logo.svg
-          */}
+          <Image 
+            source={require('../../assets/images/logo.png')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         <Text style={styles.welcomeText}>Welcome to</Text>
         <Text style={styles.welcomeTitle}>WARMPAWZ!</Text>
@@ -436,33 +420,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  logoPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoPaw: {
-    fontSize: 60,
-    marginBottom: spacing.xs,
-  },
-  logoAnimals: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  logoDog: {
-    fontSize: 24,
-  },
-  logoCat: {
-    fontSize: 24,
-  },
-  logoText: {
-    fontSize: typography.fontSizes['2xl'],
-    fontWeight: typography.fontWeights.bold,
-    color: '#FFD700',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
-    fontStyle: 'italic',
+  logoImage: {
+    width: 120,
+    height: 120,
   },
   welcomeText: {
     fontSize: typography.fontSizes.lg,

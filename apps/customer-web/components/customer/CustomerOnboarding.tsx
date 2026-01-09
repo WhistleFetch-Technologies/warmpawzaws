@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
 
 interface CustomerOnboardingProps {
@@ -11,31 +12,65 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   return (
-    <div className="min-h-screen bg-primary flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+      {/* Status Bar */}
+      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+        <span className="text-black">09:41</span>
+        <div className="flex gap-1.5 items-center">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
+            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
+            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
+            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
+            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
+          </svg>
+        </div>
+      </div>
+
       {/* Orange Top Section */}
-      <div className="flex flex-col items-center pt-16 pb-8 px-0">
+      <div className="flex flex-col items-center pt-12 pb-8 px-6">
         {/* Paw Logo with Heart */}
-        <div className="mb-8 w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-xl">
-          <img src="/logo.png" alt="Warmpawz" className="w-24 h-24 object-contain" />
+        <div className="mb-8 w-32 h-32 flex items-center justify-center">
+          <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+            {/* Main paw pad */}
+            <ellipse cx="60" cy="75" rx="22" ry="26" fill="black"/>
+            {/* Heart in center */}
+            <path d="M60 70C58 68 54 68 52 70C50 72 50 75 52 77L60 85L68 77C70 75 70 72 68 70C66 68 62 68 60 70Z" fill="#FF8C42"/>
+            {/* Top left toe */}
+            <ellipse cx="40" cy="45" rx="10" ry="14" transform="rotate(-15 40 45)" fill="black"/>
+            {/* Top center-left toe */}
+            <ellipse cx="50" cy="35" rx="10" ry="14" transform="rotate(-5 50 35)" fill="black"/>
+            {/* Top center-right toe */}
+            <ellipse cx="70" cy="35" rx="10" ry="14" transform="rotate(5 70 35)" fill="black"/>
+            {/* Top right toe */}
+            <ellipse cx="80" cy="45" rx="10" ry="14" transform="rotate(15 80 45)" fill="black"/>
+          </svg>
         </div>
         
-        <h1 className="text-3xl font-bold text-black text-center">Choose Your<br />Stage</h1>
+        <h1 className="text-black text-center">Choose Your<br />Stage</h1>
       </div>
 
       {/* White Bottom Section */}
-      <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+      <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
         <p className="text-center text-gray-700 mb-8 text-sm leading-relaxed">
           Choose your journey to get<br />
           personalized support 💖🐕🐈
         </p>
 
         {/* Journey Stage Cards */}
-        <div className="space-y-4 mb-0">
+        <div className="space-y-4 mb-6">
           {/* Planning to Get a Pet */}
           <button
             onClick={() => setSelectedStage('planning')}
             className={`w-full bg-white border-2 rounded-2xl p-4 transition-all text-left ${
-              selectedStage === 'planning' ? 'border-blue-500 bg-blue-50 shadow-lg' : 'border-gray-200 hover:border-gray-300'
+              selectedStage === 'planning' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
             }`}
           >
             <div className="flex items-start gap-4">
@@ -49,17 +84,17 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-0">
-                  <h3 className="font-semibold text-gray-900">Planning to Get a Pet</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-black">Planning to Get a Pet</h3>
                   <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-600 mb-0 leading-relaxed">
+                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
                   Find your perfect match! Get expert guidance on breeds, adoption, preparation, and bringing home your new best friend 🐾💙
                 </p>
                 
                 {/* Button */}
                 <div className="inline-flex">
-                  <span className="text-xs px-4 py-0.5 rounded-full border-2 border-blue-300 bg-blue-100 text-blue-700 font-medium">
+                  <span className="text-xs px-4 py-1.5 rounded-full border-2 border-blue-300 bg-blue-100 text-blue-700">
                     Start Your Journey
                   </span>
                 </div>
@@ -71,7 +106,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
           <button
             onClick={() => setSelectedStage('have-pet')}
             className={`w-full bg-white border-2 rounded-2xl p-4 transition-all text-left ${
-              selectedStage === 'have-pet' ? 'border-green-500 bg-green-50 shadow-lg' : 'border-gray-200 hover:border-gray-300'
+              selectedStage === 'have-pet' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
             }`}
           >
             <div className="flex items-start gap-4">
@@ -88,11 +123,11 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-0">
-                  <h3 className="font-semibold text-gray-900">Already Have a Pet</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-black">Already Have a Pet</h3>
                   <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-600 mb-0 leading-relaxed">
+                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
                   Complete pet care hub! Track health records, schedule vet visits, manage medications, log activities, and celebrate your bond 💚🐾
                 </p>
                 
@@ -108,7 +143,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
           <button
             onClick={() => setSelectedStage('end-of-life')}
             className={`w-full bg-white border-2 rounded-2xl p-4 transition-all text-left ${
-              selectedStage === 'end-of-life' ? 'border-purple-500 bg-purple-50 shadow-lg' : 'border-gray-200 hover:border-gray-300'
+              selectedStage === 'end-of-life' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
             }`}
           >
             <div className="flex items-start gap-4">
@@ -123,17 +158,17 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-0">
-                  <h3 className="font-semibold text-gray-900">End of Life Care</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-black">End of Life Care</h3>
                   <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-600 mb-0 leading-relaxed">
+                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
                   Compassionate support with quality of life guidance, hospice care, sunset services, memorial options, and grief counseling 🌈💜
                 </p>
                 
                 {/* Button */}
                 <div className="inline-flex">
-                  <span className="text-xs px-4 py-0.5 rounded-full border-2 border-purple-300 bg-purple-100 text-purple-700 font-medium">
+                  <span className="text-xs px-4 py-1.5 rounded-full border-2 border-purple-300 bg-purple-100 text-purple-700">
                     Manage care
                   </span>
                 </div>
@@ -143,7 +178,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
         </div>
 
         {/* Footer Message */}
-        <div className="text-center mb-0">
+        <div className="text-center mb-6">
           <p className="text-sm text-gray-700">
             🐾💕🐾<br />
             Every pet deserves love and the best care
@@ -151,13 +186,13 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
         </div>
 
         {/* Continue Button */}
-        <button
+        <Button
           onClick={() => selectedStage && onComplete(selectedStage)}
           disabled={!selectedStage}
-          className="w-full h-14 bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary/30 mb-0"
+          className="w-full h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-2xl text-black disabled:opacity-50 disabled:cursor-not-allowed mb-6"
         >
           Continue
-        </button>
+        </Button>
 
         {/* Footer Text */}
         <p className="text-center text-xs text-gray-500 leading-relaxed">
@@ -165,7 +200,11 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
           © 2025 WARMPAWZ Inc. All rights reserved
         </p>
       </div>
+
+      {/* Home Indicator */}
+      <div className="flex justify-center py-4 bg-white">
+        <div className="w-32 h-1 bg-black rounded-full"></div>
+      </div>
     </div>
   );
 }
-

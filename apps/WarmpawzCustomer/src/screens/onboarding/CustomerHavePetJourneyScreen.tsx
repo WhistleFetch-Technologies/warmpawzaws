@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Image,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { API_BASE_URL } from '../../config/aws';
@@ -250,7 +251,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -279,7 +284,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -319,7 +328,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -445,7 +458,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -625,7 +642,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -732,7 +753,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -758,7 +783,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -790,7 +819,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -828,7 +861,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -854,7 +891,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -980,7 +1021,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -1031,7 +1076,11 @@ export function CustomerHavePetJourneyScreen({
         return (
           <>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.iconSection}>
               <View style={styles.orangeCircle}>
@@ -1152,8 +1201,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     marginBottom: spacing.md,
   },
-  logoEmoji: {
-    fontSize: 48,
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   iconSection: {
     alignItems: 'center',

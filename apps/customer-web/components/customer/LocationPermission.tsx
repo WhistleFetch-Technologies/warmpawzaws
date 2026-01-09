@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { MapPin, AlertCircle, Loader } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 interface LocationPermissionProps {
   onLocationGranted: (location: { latitude: number; longitude: number; address?: string }) => void;
@@ -30,9 +32,6 @@ export function LocationPermission({
         if (result.state === 'granted') {
           requestLocation();
         }
-      }).catch(() => {
-        // Some browsers don't support permission query for geolocation
-        console.log('Permission query not supported');
       });
     }
   }, []);
@@ -97,7 +96,8 @@ export function LocationPermission({
   };
 
   const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
-    // Using OpenStreetMap Nominatim for reverse geocoding
+    // Using a simple reverse geocoding service
+    // In production, you might want to use Google Maps Geocoding API
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
@@ -114,10 +114,10 @@ export function LocationPermission({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/10 to-white max-w-[430px] mx-auto flex items-center justify-center p-0">
-      <div className="w-full bg-white rounded-3xl shadow-lg p-8 text-center">
-        <div className="mb-0">
-          <div className="w-20 h-20 bg-gradient-to-br from-primary to-primary-dark rounded-full mx-auto flex items-center justify-center mb-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#FF8C42]/10 to-white max-w-[430px] mx-auto flex items-center justify-center p-6">
+      <Card className="w-full p-8 text-center">
+        <div className="mb-6">
+          <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-full mx-auto flex items-center justify-center mb-4">
             {loading ? (
               <Loader className="w-10 h-10 text-white animate-spin" />
             ) : (
@@ -125,29 +125,29 @@ export function LocationPermission({
             )}
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 mb-0">{title}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>
           <p className="text-gray-600">{message}</p>
         </div>
 
         {error && (
-          <div className="mb-0 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-0">
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="text-left">
-              <p className="text-sm text-red-800 font-medium mb-0">Location Access Error</p>
+              <p className="text-sm text-red-800 font-medium mb-1">Location Access Error</p>
               <p className="text-xs text-red-700">{error}</p>
             </div>
           </div>
         )}
 
         <div className="space-y-3">
-          <button
+          <Button
             onClick={requestLocation}
             disabled={loading}
-            className="w-full bg-gradient-to-r from-primary to-primary-dark hover:shadow-lg text-white font-medium py-0 px-0 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-0"
+            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] hover:shadow-lg"
           >
             {loading ? (
               <>
-                <Loader className="w-4 h-4 animate-spin" />
+                <Loader className="w-4 h-4 mr-2 animate-spin" />
                 Getting Location...
               </>
             ) : permissionState === 'denied' ? (
@@ -155,36 +155,36 @@ export function LocationPermission({
             ) : (
               'Enable Location'
             )}
-          </button>
+          </Button>
 
           {onSkip && (
-            <button
+            <Button
               onClick={onSkip}
-              className="w-full border-2 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium py-0 px-0 rounded-xl disabled:opacity-50 transition-all"
+              variant="outline"
+              className="w-full"
               disabled={loading}
             >
               Skip for Now
-            </button>
+            </Button>
           )}
         </div>
 
         {permissionState === 'denied' && (
-          <div className="mt-0 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-xs text-blue-800 mb-0 font-medium">How to enable location:</p>
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-800 mb-2 font-medium">How to enable location:</p>
             <ol className="text-xs text-blue-700 text-left space-y-1 ml-4">
-              <li>1. Click the lock/info icon in your browser&apos;s address bar</li>
-              <li>2. Find &quot;Location&quot; or &quot;Permissions&quot;</li>
+              <li>1. Click the lock/info icon in your browser's address bar</li>
+              <li>2. Find "Location" or "Permissions"</li>
               <li>3. Allow location access for this site</li>
               <li>4. Refresh this page</li>
             </ol>
           </div>
         )}
 
-        <div className="mt-0 text-xs text-gray-500">
+        <div className="mt-6 text-xs text-gray-500">
           🔒 Your location is only used to find nearby services and is never shared without your permission
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
-

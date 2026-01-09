@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Plus, Camera } from 'lucide-react';
-import { apiClient, isUatMode } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
+// ImageWithFallback component not found - using img tag instead
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface Pet {
   id: string;
@@ -13,6 +15,7 @@ interface Pet {
   gender: string;
   weight: string;
   photo?: string;
+  color?: string;
   microchipId?: string;
   healthRecords?: {
     lastCheckup?: string;
@@ -20,38 +23,50 @@ interface Pet {
     medications?: string;
     conditions?: string;
   };
+  vaccinations?: {
+    rabies?: string;
+    distemper?: string;
+    parvovirus?: string;
+    other?: string;
+  };
 }
 
 interface CustomerPetProfileProps {
-  phone: string;
+  session: any;
+  prefillData?: any;
   onComplete: (pets: Pet[]) => void;
   onBack?: () => void;
 }
 
-export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetProfileProps) {
-  const [currentStep, setCurrentStep] = useState<'list' | 'basic' | 'health'>('list');
+export function CustomerPetProfile({ session, prefillData, onComplete, onBack }: CustomerPetProfileProps) {
+  const [currentStep, setCurrentStep] = useState<'list' | 'basic' | 'health' | 'vaccination'>('list');
   const [pets, setPets] = useState<Pet[]>([]);
   const [currentPet, setCurrentPet] = useState<Pet>({
     id: '',
-    name: '',
-    type: 'Dog',
-    breed: '',
-    age: '',
-    gender: '',
-    weight: '',
+    name: prefillData?.petName || '',
+    type: prefillData?.petType || 'Dog',
+    breed: prefillData?.breed || '',
+    age: prefillData?.age || prefillData?.petAge || '',
+    gender: prefillData?.gender || '',
+    weight: prefillData?.weight || '',
     photo: '',
     microchipId: '',
     healthRecords: {
       lastCheckup: '',
-      allergies: '',
-      medications: '',
+      allergies: prefillData?.healthInfo?.allergies || '',
+      medications: prefillData?.healthInfo?.medications || '',
       conditions: ''
+    },
+    vaccinations: {
+      rabies: '',
+      distemper: '',
+      parvovirus: '',
+      other: ''
     }
   });
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,7 +91,18 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
       weight: '',
       photo: '',
       microchipId: '',
-      healthRecords: {}
+      healthRecords: {
+        lastCheckup: '',
+        allergies: '',
+        medications: '',
+        conditions: ''
+      },
+      vaccinations: {
+        rabies: '',
+        distemper: '',
+        parvovirus: '',
+        other: ''
+      }
     });
     setPhotoPreview('');
     setCurrentStep('basic');
@@ -90,7 +116,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
 
   const handleSavePet = () => {
     if (!currentPet.name || !currentPet.type || !currentPet.breed || !currentPet.age) {
-      setError('Please fill in all required fields (Name, Type, Breed, Age)');
+      alert('Please fill in all required fields (Name, Type, Breed, Age)');
       return;
     }
 
@@ -98,16 +124,14 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
     const updatedPet = { ...currentPet, id: petId };
 
     if (currentPet.id) {
+      // Update existing pet
       setPets(pets.map(p => p.id === currentPet.id ? updatedPet : p));
     } else {
+      // Add new pet
       setPets([...pets, updatedPet]);
     }
 
     setCurrentStep('list');
-    resetCurrentPet();
-  };
-
-  const resetCurrentPet = () => {
     setCurrentPet({
       id: '',
       name: '',
@@ -118,10 +142,10 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
       weight: '',
       photo: '',
       microchipId: '',
-      healthRecords: {}
+      healthRecords: {},
+      vaccinations: {}
     });
     setPhotoPreview('');
-    setError(null);
   };
 
   const handleDeletePet = (petId: string) => {
@@ -130,42 +154,27 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
 
   const handleComplete = async () => {
     if (pets.length === 0) {
-      setError('Please add at least one pet profile');
+      alert('Please add at least one pet profile');
       return;
     }
     
     setLoading(true);
-    setError(null);
-    
     try {
-      // UAT Mode: Skip API call
-      if (isUatMode()) {
-        console.log('🔧 [UAT Mode] Pets saved locally:', pets);
-        localStorage.setItem('customerPets', JSON.stringify(pets));
-        onComplete(pets);
-        return;
-      }
-
-      await apiClient.post('/customer/pets', {
-        phone: phone,
+      // Save pets data to backend - AWS Serverless compatible
+      const responseData = await apiClient.post('/customer/pets', {
+        phone: session.phone,
         pets: pets,
       });
-
-      console.log('✅ Pets saved successfully');
-      localStorage.setItem('customerPets', JSON.stringify(pets));
-      onComplete(pets);
-    } catch (err: any) {
-      console.error('Error saving pets:', err);
       
-      // UAT Fallback
-      if (isUatMode()) {
-        console.log('🔧 [UAT Fallback] Saving pets locally');
-        localStorage.setItem('customerPets', JSON.stringify(pets));
-        onComplete(pets);
-        return;
+      if (!response.ok) {
+        throw new Error(`Failed to save pets: ${responseData.error || response.statusText}`);
       }
-      
-      setError(err.message || 'Failed to save pets');
+
+      console.log('Pets saved successfully');
+      onComplete(pets);
+    } catch (error) {
+      console.error('Error saving pets:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -174,46 +183,39 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
   const renderPetList = () => (
     <>
       {/* Logo */}
-      <div className="flex justify-center pt-8 mb-0">
-        <img src="/logo.png" alt="Warmpawz" className="w-16 h-16 object-contain" />
+      <div className="flex justify-center pt-8 mb-6">
+        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
       </div>
 
-      {/* Header */}
-      <div className="flex flex-col items-center mb-8 px-0">
-        <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4 shadow-lg shadow-primary/30">
+      {/* Orange Circle Icon */}
+      <div className="flex flex-col items-center mb-8 px-6">
+        <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
             <ellipse cx="24" cy="30" rx="11" ry="13" fill="white"/>
-            <path d="M24 28C22.5 26.5 20 26.5 18.5 28C17 29.5 17 32 18.5 33.5L24 39L29.5 33.5C31 32 31 29.5 29.5 28C28 26.5 25.5 26.5 24 28Z" fill="#F97316"/>
+            <path d="M24 28C22.5 26.5 20 26.5 18.5 28C17 29.5 17 32 18.5 33.5L24 39L29.5 33.5C31 32 31 29.5 29.5 28C28 26.5 25.5 26.5 24 28Z" fill="#FF8C42"/>
             <ellipse cx="16" cy="16" rx="5" ry="7" transform="rotate(-15 16 16)" fill="white"/>
             <ellipse cx="22" cy="12" rx="5" ry="7" transform="rotate(-5 22 12)" fill="white"/>
             <ellipse cx="26" cy="12" rx="5" ry="7" transform="rotate(5 26 12)" fill="white"/>
             <ellipse cx="32" cy="16" rx="5" ry="7" transform="rotate(15 32 16)" fill="white"/>
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-gray-900 text-center">Create Pet<br />Profile(s) 🐾</h1>
+        <h1 className="text-black text-center">Create Pet<br />Profile(s) 🐾</h1>
       </div>
 
       {/* Content */}
-      <div className="px-0 mb-0">
-        <p className="text-center text-gray-600 mb-0 text-sm">
+      <div className="px-6 mb-6">
+        <p className="text-center text-gray-700 mb-6 text-sm">
           Add your furry family members 💕<br />
           You can add multiple pets
         </p>
 
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-0">
-            <span className="text-red-500 text-xl">⚠️</span>
-            <p className="text-red-600 text-sm flex-1">{error}</p>
-          </div>
-        )}
-
         {/* Pet Cards */}
         {pets.length > 0 ? (
-          <div className="space-y-4 mb-0">
+          <div className="space-y-4 mb-6">
             {pets.map((pet) => (
-              <div key={pet.id} className="bg-white border-2 border-gray-200 rounded-2xl p-4 shadow-sm">
+              <div key={pet.id} className="bg-white border-2 border-gray-200 rounded-2xl p-4">
                 <div className="flex items-start gap-4">
+                  {/* Pet Photo */}
                   <div className="w-20 h-20 bg-orange-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center">
                     {pet.photo ? (
                       <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
@@ -223,21 +225,23 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
                       </span>
                     )}
                   </div>
+
+                  {/* Pet Info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 mb-0">{pet.name}</h3>
-                    <p className="text-sm text-gray-600 mb-0">
+                    <h3 className="text-black font-semibold mb-1">{pet.name}</h3>
+                    <p className="text-sm text-gray-600 mb-2">
                       {pet.breed} • {pet.age} {pet.age === '1' ? 'year' : 'years'} • {pet.gender}
                     </p>
-                    <div className="flex gap-0">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => handleEditPet(pet)}
-                        className="text-xs px-0 py-0 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
+                        className="text-xs px-3 py-1 bg-blue-50 text-blue-600 rounded-lg"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDeletePet(pet.id)}
-                        className="text-xs px-0 py-0 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
+                        className="text-xs px-3 py-1 bg-red-50 text-red-600 rounded-lg"
                       >
                         Remove
                       </button>
@@ -248,8 +252,8 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
             ))}
           </div>
         ) : (
-          <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-0 mb-0 text-center">
-            <span className="text-4xl mb-0 block">🐾</span>
+          <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 mb-6 text-center">
+            <span className="text-4xl mb-3 block">🐾</span>
             <p className="text-sm text-gray-700">
               No pets added yet.<br />
               Click below to add your first pet!
@@ -260,14 +264,14 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
         {/* Add Pet Button */}
         <button
           onClick={handleAddPet}
-          className="w-full border-2 border-dashed border-primary bg-orange-50 rounded-2xl p-4 flex items-center justify-center gap-0 text-primary hover:bg-orange-100 transition-all mb-0"
+          className="w-full border-2 border-dashed border-[#FF8C42] bg-orange-50 rounded-2xl p-4 flex items-center justify-center gap-2 text-[#FF8C42] hover:bg-orange-100 transition-all mb-6"
         >
           <Plus className="w-5 h-5" />
           <span className="font-medium">Add Pet</span>
         </button>
 
         {/* Info Card */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-0">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
           <p className="text-xs text-blue-900 text-center">
             💡 You can add as many pets as you have!<br />
             Each pet gets their own health & booking history.
@@ -280,32 +284,22 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
   const renderBasicInfo = () => (
     <>
       {/* Logo */}
-      <div className="flex justify-center pt-8 mb-0">
-        <img src="/logo.png" alt="Warmpawz" className="w-16 h-16 object-contain" />
+      <div className="flex justify-center pt-8 mb-6">
+        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
       </div>
 
       {/* Header */}
-      <div className="flex flex-col items-center mb-0 px-0">
-        <h1 className="text-2xl font-bold text-gray-900 text-center">
-          {currentPet.id ? 'Edit' : 'Add'} Pet<br />Basic Info 📝
-        </h1>
+      <div className="flex flex-col items-center mb-6 px-6">
+        <h1 className="text-black text-center">{currentPet.id ? 'Edit' : 'Add'} Pet<br />Basic Info 📝</h1>
       </div>
 
       {/* Content */}
-      <div className="px-0 mb-0">
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-0">
-            <span className="text-red-500 text-xl">⚠️</span>
-            <p className="text-red-600 text-sm flex-1">{error}</p>
-          </div>
-        )}
-
+      <div className="px-6 mb-6">
         {/* Photo Upload */}
-        <div className="flex flex-col items-center mb-0">
+        <div className="flex flex-col items-center mb-6">
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-0 relative group"
+            className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-3 relative group"
           >
             {photoPreview ? (
               <>
@@ -316,8 +310,8 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
               </>
             ) : (
               <div className="flex flex-col items-center">
-                <Camera className="w-10 h-10 text-primary mb-0" />
-                <span className="text-xs text-primary">Add Photo</span>
+                <Camera className="w-10 h-10 text-[#FF8C42] mb-2" />
+                <span className="text-xs text-[#FF8C42]">Add Photo</span>
               </div>
             )}
           </div>
@@ -335,33 +329,32 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
 
         {/* Pet Name */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Pet Name <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={currentPet.name}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, name: e.target.value })}
+            onChange={(e) => setCurrentPet({ ...currentPet, name: e.target.value })}
             placeholder="e.g., Oreo, Max, Bella"
-            className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
           />
         </div>
 
         {/* Pet Type */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Pet Type <span className="text-red-500">*</span>
           </label>
-          <div className="grid grid-cols-3 gap-0">
+          <div className="grid grid-cols-3 gap-3">
             {['Dog', 'Cat', 'Other'].map((type) => (
               <button
                 key={type}
-                type="button"
                 onClick={() => setCurrentPet({ ...currentPet, type })}
-                className={`py-0 px-4 border-2 rounded-xl transition-all font-medium ${
+                className={`py-3 px-4 border-2 rounded-xl transition-all ${
                   currentPet.type === type
-                    ? 'border-primary bg-orange-50 text-primary'
-                    : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
+                    : 'border-gray-200 text-gray-700'
                 }`}
               >
                 {type === 'Dog' ? '🐕' : type === 'Cat' ? '🐈' : '🐾'} {type}
@@ -372,40 +365,40 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
 
         {/* Breed */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Breed <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={currentPet.breed}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, breed: e.target.value })}
+            onChange={(e) => setCurrentPet({ ...currentPet, breed: e.target.value })}
             placeholder="e.g., Golden Retriever, Persian"
-            className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
           />
         </div>
 
         {/* Age and Gender Row */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Age (years) <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
               value={currentPet.age}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, age: e.target.value })}
+              onChange={(e) => setCurrentPet({ ...currentPet, age: e.target.value })}
               placeholder="e.g., 3"
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Gender
             </label>
             <select
               value={currentPet.gender}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCurrentPet({ ...currentPet, gender: e.target.value })}
-              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+              onChange={(e) => setCurrentPet({ ...currentPet, gender: e.target.value })}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             >
               <option value="">Select</option>
               <option value="Male">Male</option>
@@ -416,35 +409,301 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
 
         {/* Weight */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Weight (kg)
           </label>
           <input
             type="number"
             step="0.1"
             value={currentPet.weight}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, weight: e.target.value })}
+            onChange={(e) => setCurrentPet({ ...currentPet, weight: e.target.value })}
             placeholder="e.g., 12.5"
-            className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          />
+        </div>
+
+        {/* Microchip ID */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Microchip ID (Optional)
+          </label>
+          <input
+            type="text"
+            value={currentPet.microchipId}
+            onChange={(e) => setCurrentPet({ ...currentPet, microchipId: e.target.value })}
+            placeholder="e.g., 123456789012345"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
           />
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-0 mt-0">
-          <button
-            type="button"
-            onClick={() => { setCurrentStep('list'); resetCurrentPet(); }}
-            className="flex-1 h-12 border-2 border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-all"
+        <div className="flex gap-3">
+          <Button
+            onClick={() => setCurrentStep('health')}
+            className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white"
           >
-            Cancel
-          </button>
-          <button
-            type="button"
+            Next: Health Records
+          </Button>
+        </div>
+
+        <button
+          onClick={() => {
+            setCurrentStep('list');
+            setCurrentPet({
+              id: '',
+              name: '',
+              type: 'Dog',
+              breed: '',
+              age: '',
+              gender: '',
+              weight: '',
+              photo: '',
+              microchipId: '',
+              healthRecords: {},
+              vaccinations: {}
+            });
+            setPhotoPreview('');
+          }}
+          className="w-full mt-3 py-3 text-gray-600 text-sm"
+        >
+          Cancel
+        </button>
+      </div>
+    </>
+  );
+
+  const renderHealthRecords = () => (
+    <>
+      {/* Logo */}
+      <div className="flex justify-center pt-8 mb-6">
+        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+      </div>
+
+      {/* Header */}
+      <div className="flex flex-col items-center mb-6 px-6">
+        <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <rect x="14" y="10" width="20" height="28" rx="2" stroke="white" strokeWidth="3" fill="none"/>
+            <path d="M20 18H28M20 24H28M20 30H25" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <h1 className="text-black text-center">Health<br />Records 🏥</h1>
+      </div>
+
+      {/* Content */}
+      <div className="px-6 mb-6">
+        <p className="text-center text-gray-700 mb-6 text-sm">
+          Keep track of {currentPet.name}'s health<br />
+          (You can skip and add later)
+        </p>
+
+        {/* Last Checkup */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Last Checkup Date
+          </label>
+          <input
+            type="date"
+            value={currentPet.healthRecords?.lastCheckup || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              healthRecords: { ...currentPet.healthRecords, lastCheckup: e.target.value }
+            })}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          />
+        </div>
+
+        {/* Allergies */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Known Allergies
+          </label>
+          <textarea
+            value={currentPet.healthRecords?.allergies || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              healthRecords: { ...currentPet.healthRecords, allergies: e.target.value }
+            })}
+            placeholder="e.g., Chicken, Pollen"
+            rows={2}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+          />
+        </div>
+
+        {/* Medications */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Current Medications
+          </label>
+          <textarea
+            value={currentPet.healthRecords?.medications || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              healthRecords: { ...currentPet.healthRecords, medications: e.target.value }
+            })}
+            placeholder="e.g., Antibiotics, Supplements"
+            rows={2}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+          />
+        </div>
+
+        {/* Medical Conditions */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Medical Conditions
+          </label>
+          <textarea
+            value={currentPet.healthRecords?.conditions || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              healthRecords: { ...currentPet.healthRecords, conditions: e.target.value }
+            })}
+            placeholder="e.g., Diabetes, Hip Dysplasia"
+            rows={2}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+          />
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-3 mb-3">
+          <Button
+            onClick={() => setCurrentStep('basic')}
+            variant="outline"
+            className="flex-1 h-12 border-2 border-gray-300 rounded-xl"
+          >
+            Back
+          </Button>
+          <Button
+            onClick={() => setCurrentStep('vaccination')}
+            className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white"
+          >
+            Next: Vaccinations
+          </Button>
+        </div>
+
+        <button
+          onClick={handleSavePet}
+          className="w-full py-3 text-blue-600 text-sm"
+        >
+          Skip & Save Pet
+        </button>
+      </div>
+    </>
+  );
+
+  const renderVaccinations = () => (
+    <>
+      {/* Logo */}
+      <div className="flex justify-center pt-8 mb-6">
+        <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+      </div>
+
+      {/* Header */}
+      <div className="flex flex-col items-center mb-6 px-6">
+        <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="14" stroke="white" strokeWidth="3" fill="none"/>
+            <path d="M18 24L22 28L30 20" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <h1 className="text-black text-center">Vaccination<br />Records 💉</h1>
+      </div>
+
+      {/* Content */}
+      <div className="px-6 mb-6">
+        <p className="text-center text-gray-700 mb-6 text-sm">
+          Track {currentPet.name}'s vaccination dates<br />
+          (Optional - add when available)
+        </p>
+
+        {/* Rabies */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Rabies Vaccine Date
+          </label>
+          <input
+            type="date"
+            value={currentPet.vaccinations?.rabies || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              vaccinations: { ...currentPet.vaccinations, rabies: e.target.value }
+            })}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          />
+        </div>
+
+        {/* Distemper */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Distemper Vaccine Date
+          </label>
+          <input
+            type="date"
+            value={currentPet.vaccinations?.distemper || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              vaccinations: { ...currentPet.vaccinations, distemper: e.target.value }
+            })}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          />
+        </div>
+
+        {/* Parvovirus */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Parvovirus Vaccine Date
+          </label>
+          <input
+            type="date"
+            value={currentPet.vaccinations?.parvovirus || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              vaccinations: { ...currentPet.vaccinations, parvovirus: e.target.value }
+            })}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          />
+        </div>
+
+        {/* Other Vaccinations */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Other Vaccinations
+          </label>
+          <textarea
+            value={currentPet.vaccinations?.other || ''}
+            onChange={(e) => setCurrentPet({
+              ...currentPet,
+              vaccinations: { ...currentPet.vaccinations, other: e.target.value }
+            })}
+            placeholder="e.g., Bordetella - Jan 2024"
+            rows={2}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+          />
+        </div>
+
+        {/* Info Card */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+          <p className="text-xs text-blue-900 text-center">
+            💡 Keeping vaccination records updated helps<br />
+            veterinarians provide better care!
+          </p>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-3">
+          <Button
+            onClick={() => setCurrentStep('health')}
+            variant="outline"
+            className="flex-1 h-12 border-2 border-gray-300 rounded-xl"
+          >
+            Back
+          </Button>
+          <Button
             onClick={handleSavePet}
-            className="flex-1 h-12 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-all shadow-lg shadow-primary/30"
+            className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white"
           >
             Save Pet
-          </button>
+          </Button>
         </div>
       </div>
     </>
@@ -452,44 +711,61 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
 
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+      {/* Status Bar */}
+      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+        <span className="text-black text-sm">09:41</span>
+        <div className="flex gap-1.5 items-center">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
+            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
+            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
+            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
+            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
+          </svg>
+        </div>
+      </div>
+
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
         {currentStep === 'list' && renderPetList()}
         {currentStep === 'basic' && renderBasicInfo()}
+        {currentStep === 'health' && renderHealthRecords()}
+        {currentStep === 'vaccination' && renderVaccinations()}
       </div>
 
-      {/* Fixed Bottom Navigation - Only show on list view */}
+      {/* Fixed Bottom Navigation */}
       {currentStep === 'list' && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-0 py-4 max-w-[430px] mx-auto w-full">
-          <button
-            onClick={handleComplete}
-            disabled={loading || pets.length === 0}
-            className="w-full h-14 bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl disabled:opacity-50 transition-all shadow-lg shadow-primary/30"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-0">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Saving...
-              </span>
-            ) : (
-              `Continue with ${pets.length} Pet${pets.length !== 1 ? 's' : ''}`
-            )}
-          </button>
-          
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
           {onBack && (
-            <button
+            <Button
               onClick={onBack}
-              className="w-full mt-0 py-0 text-gray-600 text-sm hover:text-gray-800 transition"
+              variant="outline"
+              className="w-full h-12 border-2 border-gray-300 rounded-xl mb-3"
             >
-              Go Back
-            </button>
+              Back
+            </Button>
           )}
+          <Button
+            onClick={handleComplete}
+            disabled={pets.length === 0 || loading}
+            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white disabled:opacity-50"
+          >
+            {loading ? 'Saving...' : `Continue with ${pets.length} ${pets.length === 1 ? 'Pet' : 'Pets'}`}
+          </Button>
+
+          {/* Home Indicator */}
+          <div className="flex justify-center mt-4">
+            <div className="w-32 h-1 bg-black rounded-full"></div>
+          </div>
         </div>
       )}
     </div>
   );
 }
-

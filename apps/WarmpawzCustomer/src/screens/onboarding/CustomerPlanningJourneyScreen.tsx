@@ -14,6 +14,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
@@ -188,7 +189,11 @@ export function CustomerPlanningJourneyScreen({
           <>
             {/* Logo */}
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Orange Circle Icon */}
@@ -266,7 +271,11 @@ export function CustomerPlanningJourneyScreen({
           <>
             {/* Logo */}
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Orange Circle Icon */}
@@ -409,7 +418,11 @@ export function CustomerPlanningJourneyScreen({
           <>
             {/* Logo */}
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Orange Circle Icon */}
@@ -539,7 +552,11 @@ export function CustomerPlanningJourneyScreen({
           <>
             {/* Logo */}
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Orange Circle Icon */}
@@ -597,7 +614,11 @@ export function CustomerPlanningJourneyScreen({
           <>
             {/* Logo */}
             <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
+              <Image 
+                source={require('../../assets/images/logo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Orange Circle Icon */}
@@ -854,8 +875,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     marginBottom: spacing.md,
   },
-  logoEmoji: {
-    fontSize: 48,
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   iconSection: {
     alignItems: 'center',

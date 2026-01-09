@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronLeft, Calendar, TrendingUp, Clock, Filter, Search, Package } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
   id: string;
@@ -35,15 +35,15 @@ interface PetProfileDashboardProps {
   phone: string;
   petData: Pet;
   onBack: () => void;
-  onViewBooking?: (bookingId: string, petId: string) => void;
 }
 
-export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: PetProfileDashboardProps) {
+export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashboardProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBooking, setSelectedBooking] = useState<{ bookingId: string; petId: string } | null>(null);
 
   useEffect(() => {
     loadPetBookings();
@@ -56,9 +56,16 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
   const loadPetBookings = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<{ bookings: Booking[] }>(`/bookings/${phone}`);
-      if (response.bookings) {
-        const petBookings = response.bookings.filter((b: Booking) => b.petId === petData.id);
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        // Filter bookings for this specific pet
+        const petBookings = (result.bookings || []).filter((b: Booking) => b.petId === petData.id);
+        // Sort by date (most recent first)
         const sortedBookings = petBookings.sort((a: Booking, b: Booking) => 
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
@@ -123,11 +130,11 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-8 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-8 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button 
             onClick={onBack}
-            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
+            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"
           >
             <ChevronLeft className="w-5 h-5 text-white" />
           </button>
@@ -145,55 +152,55 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-4 gap-0 mb-4">
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-0 text-center">
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
             <p className="text-2xl font-bold text-white">{bookings.length}</p>
-            <p className="text-xs text-white/90 mt-0">Total</p>
+            <p className="text-xs text-white/90 mt-1">Total</p>
           </div>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-0 text-center">
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
             <p className="text-2xl font-bold text-white">{activeBookings.length}</p>
-            <p className="text-xs text-white/90 mt-0">Active</p>
+            <p className="text-xs text-white/90 mt-1">Active</p>
           </div>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-0 text-center">
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
             <p className="text-2xl font-bold text-white">{completedBookings.length}</p>
-            <p className="text-xs text-white/90 mt-0">Done</p>
+            <p className="text-xs text-white/90 mt-1">Done</p>
           </div>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-0 text-center">
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
             <p className="text-2xl font-bold text-white">{totalSessions}</p>
-            <p className="text-xs text-white/90 mt-0">Sessions</p>
+            <p className="text-xs text-white/90 mt-1">Sessions</p>
           </div>
         </div>
 
         {/* Search Bar */}
         <div className="relative">
-          <Search className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             placeholder="Search services or vendors..."
             value={searchQuery}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-            className="w-full pl-0 pr-4 py-0 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-white/50 bg-white/90"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-white/50"
           />
         </div>
       </div>
 
       {/* Content */}
-      <div className="bg-white rounded-t-[32px] -mt-0 px-0 py-0 min-h-screen">
+      <div className="bg-white rounded-t-[32px] -mt-6 px-6 py-6 min-h-screen">
         {/* Filter Tabs */}
-        <div className="flex gap-0 mb-0 overflow-x-auto scrollbar-hide -mx-0 px-0">
+        <div className="flex gap-2 mb-6 overflow-x-auto scrollbar-hide -mx-2 px-2">
           {(['all', 'active', 'completed', 'cancelled'] as const).map((filter) => (
             <button
               key={filter}
               onClick={() => setSelectedFilter(filter)}
-              className={`px-4 py-0 rounded-lg font-medium whitespace-nowrap transition-all ${
+              className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${
                 selectedFilter === filter
-                  ? 'bg-primary text-white'
+                  ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               {filter === 'all' ? 'All Bookings' : filter.charAt(0).toUpperCase() + filter.slice(1)}
               {filter !== 'all' && (
-                <span className="ml-0 text-xs">
+                <span className="ml-2 text-xs">
                   ({bookings.filter(b => b.status === filter).length})
                 </span>
               )}
@@ -203,17 +210,17 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
 
         {/* Total Spent Card */}
         {completedBookings.length > 0 && (
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-0 mb-0">
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-5 mb-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-green-700 mb-0">Total Amount Spent</p>
+                <p className="text-sm text-green-700 mb-1">Total Amount Spent</p>
                 <p className="text-3xl font-bold text-green-800">₹{totalSpent.toLocaleString()}</p>
               </div>
               <div className="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center">
                 <TrendingUp className="w-7 h-7 text-white" />
               </div>
             </div>
-            <p className="text-xs text-green-600 mt-0">
+            <p className="text-xs text-green-600 mt-3">
               From {completedBookings.length} completed booking{completedBookings.length > 1 ? 's' : ''}
             </p>
           </div>
@@ -222,7 +229,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
         {/* Bookings List */}
         {loading ? (
           <div className="text-center py-20">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Loading bookings...</p>
           </div>
         ) : filteredBookings.length === 0 ? (
@@ -234,7 +241,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
                 <Package className="w-10 h-10 text-gray-400" />
               )}
             </div>
-            <h3 className="text-gray-800 font-semibold mb-0">
+            <h3 className="text-gray-800 font-semibold mb-2">
               {searchQuery || selectedFilter !== 'all' ? 'No Matching Bookings' : 'No Bookings Yet'}
             </h3>
             <p className="text-gray-600 text-sm">
@@ -244,8 +251,8 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
             </p>
           </div>
         ) : (
-          <div className="space-y-3 pb-0">
-            <div className="flex items-center justify-between mb-0">
+          <div className="space-y-3 pb-6">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-gray-800">
                 {selectedFilter === 'all' ? 'All Bookings' : 
                  `${selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1)} Bookings`}
@@ -256,8 +263,8 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
             {filteredBookings.map((booking) => (
               <button
                 key={booking.id}
-                onClick={() => onViewBooking?.(booking.id, petData.id)}
-                className="w-full bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all text-left active:scale-[0.98]"
+                onClick={() => setSelectedBooking({ bookingId: booking.id, petId: petData.id })}
+                className="w-full bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all text-left"
               >
                 <div className="flex gap-4">
                   {/* Service Icon */}
@@ -267,15 +274,15 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
 
                   {/* Booking Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-0">
+                    <div className="flex items-start justify-between mb-2">
                       <div>
-                        <h4 className="font-bold text-gray-800 mb-0">
+                        <h4 className="font-bold text-gray-800 mb-1">
                           {booking.serviceName || 
                            (booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1) + ' Service')}
                         </h4>
                         <p className="text-sm text-gray-600">{booking.vendorName}</p>
                       </div>
-                      <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                         {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
                     </div>
@@ -283,7 +290,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
                     {/* OTP Badge for Active/Confirmed Bookings */}
                     {booking.requiresOTP && booking.completionOTP && 
                      booking.status !== 'completed' && booking.status !== 'cancelled' && (
-                      <div className="mb-0 p-0 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg">
+                      <div className="mb-3 p-2 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-semibold text-orange-700">🔐 OTP:</span>
                           <span className="text-xl font-bold text-orange-600 tracking-widest font-mono">
@@ -293,30 +300,55 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
                       </div>
                     )}
 
-                    {/* Progress for Active Bookings */}
+                    {/* Progress Bar for Active Bookings */}
                     {booking.status === 'active' && (
-                      <div className="mb-0">
-                        <div className="flex items-center justify-between text-xs text-gray-600 mb-0.5">
-                          <span>{booking.completedSessions}/{booking.totalSessions} sessions</span>
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                          <span>{booking.completedSessions} of {booking.totalSessions} sessions</span>
                           <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                           <div 
-                            className="h-full bg-gradient-to-r from-primary to-primary-dark"
+                            className="h-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35]"
                             style={{ width: `${(booking.completedSessions / booking.totalSessions) * 100}%` }}
                           />
                         </div>
                       </div>
                     )}
 
-                    {/* Date & Price */}
-                    <div className="flex items-center gap-0 text-sm text-gray-600">
-                      <span className="flex items-center gap-0">
+                    {/* Details */}
+                    <div className="flex items-center gap-3 text-xs text-gray-600">
+                      <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(booking.startDate).toLocaleDateString()}
+                        {new Date(booking.startDate).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        })}
                       </span>
+                      {booking.endDate && (
+                        <>
+                          <span>→</span>
+                          <span className="flex items-center gap-1">
+                            {new Date(booking.endDate).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </span>
+                        </>
+                      )}
                       <span>•</span>
-                      <span className="font-semibold text-primary">₹{booking.price}</span>
+                      <span className="font-semibold text-[#FF8C42]">₹{booking.price}</span>
+                    </div>
+
+                    {/* Booking Date */}
+                    <div className="mt-2 text-xs text-gray-500">
+                      Booked on {new Date(booking.createdAt).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
                     </div>
                   </div>
                 </div>
@@ -325,7 +357,23 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
           </div>
         )}
       </div>
+
+      {/* Booking Detail Modal */}
+      {selectedBooking && (
+        <BookingDetailModal
+          bookingId={selectedBooking.bookingId}
+          petId={selectedBooking.petId}
+          phone={phone}
+          onClose={() => setSelectedBooking(null)}
+        />
+      )}
+
+      {/* Home Indicator */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-[430px] mx-auto">
+        <div className="flex justify-center">
+          <div className="w-32 h-1 bg-gray-300 rounded-full"></div>
+        </div>
+      </div>
     </div>
   );
 }
-

@@ -1,8 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { X, XCircle, AlertTriangle } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { XCircle, AlertTriangle } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 
 interface DeclineBookingModalProps {
   booking: any;
@@ -26,149 +32,156 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
   const [suggestAlternative, setSuggestAlternative] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   const handleDecline = async () => {
     const finalReason = selectedReason === 'Other (please specify)' 
       ? customReason 
       : selectedReason;
 
     if (!finalReason.trim()) {
-      alert('Please select or specify a reason');
+      toast.error('Please select or specify a reason');
       return;
     }
 
     try {
       setLoading(true);
-      await apiClient.put(`/bookings/${booking.id}/status`, {
-        status: 'cancelled',
-        vendorId,
-        notes: `Declined: ${finalReason}${suggestAlternative ? ` | Alternative: ${suggestAlternative}` : ''}`
-      });
-      alert('✅ Booking declined. Customer will be notified.');
-      onSuccess();
-    } catch (error: any) {
-      alert(error.message || 'Failed to decline booking');
+
+      const response = await fetch(
+        `${API_BASE}/bookings/${booking.id}/decline`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            vendorId,
+            reason: finalReason,
+            suggestAlternative: suggestAlternative || null
+          })
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Booking declined. Customer will be notified.');
+        onSuccess();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to decline booking');
+      }
+    } catch (error) {
+      console.error('Error declining booking:', error);
+      toast.error('Network error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="p-0">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-0 text-red-600">
-              <XCircle className="w-5 h-5" />
-              <h2 className="text-xl font-bold">Decline Booking</h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <p className="text-sm text-gray-600 mb-4">
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <XCircle className="w-5 h-5" />
+            Decline Booking
+          </DialogTitle>
+          <DialogDescription>
             Please provide a reason to help the customer understand
-          </p>
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600">Declining booking for:</p>
-              <p className="font-semibold text-gray-900">{booking.customer?.name || booking.customer_name}</p>
-              <p className="text-sm text-gray-600 mt-0">
-                {new Date(booking.booking_date).toLocaleDateString()} at {booking.booking_time}
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Reason for Declining <span className="text-red-500">*</span>
-              </label>
-              <div className="space-y-2">
-                {DECLINE_REASONS.map((reason) => (
-                  <label key={reason} className="flex items-start space-x-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="declineReason"
-                      value={reason}
-                      checked={selectedReason === reason}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedReason(e.target.value)}
-                      className="mt-0.5"
-                    />
-                    <span className="text-sm">{reason}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {selectedReason === 'Other (please specify)' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-0">
-                  Please specify the reason
-                </label>
-                <textarea
-                  value={customReason}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCustomReason(e.target.value)}
-                  placeholder="Explain why you can't accept this booking..."
-                  rows={3}
-                  className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] resize-none"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Suggest Alternative (Optional)
-              </label>
-              <textarea
-                value={suggestAlternative}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setSuggestAlternative(e.target.value)}
-                placeholder="E.g., Try booking for tomorrow at 3 PM, or contact XYZ Grooming nearby"
-                rows={3}
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] resize-none"
-              />
-              <p className="text-xs text-gray-500 mt-0">
-                Help the customer find an alternative solution
-              </p>
-            </div>
-
-            <div className="flex items-start gap-0 p-0 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-yellow-800">
-                <p className="font-medium">Refund Policy</p>
-                <p className="text-xs mt-0">
-                  When you decline a booking, the customer receives a full refund immediately. 
-                  Frequent declines may affect your vendor rating.
-                </p>
-              </div>
-            </div>
+        <div className="space-y-4 py-4">
+          {/* Booking Info */}
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <p className="text-sm text-gray-600">Declining booking for:</p>
+            <p className="font-semibold text-gray-900">{booking.customerName}</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {new Date(booking.scheduledDate).toLocaleDateString()} at {booking.scheduledTime}
+            </p>
           </div>
 
-          <div className="flex gap-0 mt-0">
-            <button
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 px-4 py-0 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleDecline}
-              disabled={
-                loading || 
-                !selectedReason || 
-                (selectedReason === 'Other (please specify)' && !customReason.trim())
-              }
-              className="flex-1 px-4 py-0 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50"
-            >
-              {loading ? 'Declining...' : 'Decline Booking'}
-            </button>
+          {/* Decline Reason */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Reason for Declining <span className="text-red-500">*</span>
+            </label>
+            <RadioGroup value={selectedReason} onValueChange={setSelectedReason}>
+              {DECLINE_REASONS.map((reason) => (
+                <div key={reason} className="flex items-start space-x-2 mb-2">
+                  <RadioGroupItem value={reason} id={reason} className="mt-0.5" />
+                  <Label htmlFor={reason} className="text-sm cursor-pointer font-normal">
+                    {reason}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
+
+          {/* Custom Reason Input */}
+          {selectedReason === 'Other (please specify)' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Please specify the reason
+              </label>
+              <Textarea
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value)}
+                placeholder="Explain why you can't accept this booking..."
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          )}
+
+          {/* Suggest Alternative */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Suggest Alternative (Optional)
+            </label>
+            <Textarea
+              value={suggestAlternative}
+              onChange={(e) => setSuggestAlternative(e.target.value)}
+              placeholder="E.g., Try booking for tomorrow at 3 PM, or contact XYZ Grooming nearby"
+              rows={3}
+              className="resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Help the customer find an alternative solution
+            </p>
+          </div>
+
+          {/* Warning */}
+          <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-yellow-800">
+              <p className="font-medium">Refund Policy</p>
+              <p className="text-xs mt-1">
+                When you decline a booking, the customer receives a full refund immediately. 
+                Frequent declines may affect your vendor rating.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDecline}
+            disabled={
+              loading || 
+              !selectedReason || 
+              (selectedReason === 'Other (please specify)' && !customReason.trim())
+            }
+            variant="destructive"
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {loading ? 'Declining...' : 'Decline Booking'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
-

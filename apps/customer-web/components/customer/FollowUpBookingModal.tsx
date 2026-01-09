@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { X, Calendar, Clock, AlertCircle } from 'lucide-react';
-import Image from 'next/image';
+import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 interface FollowUpBookingModalProps {
   originalBookingId: string;
@@ -36,6 +37,7 @@ export function FollowUpBookingModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Generate next 14 days for date selection
   const getAvailableDates = () => {
     const dates = [];
     const today = new Date();
@@ -47,6 +49,7 @@ export function FollowUpBookingModal({
     return dates;
   };
 
+  // Common time slots
   const timeSlots = [
     '09:00 - 10:00',
     '10:00 - 11:00',
@@ -68,9 +71,22 @@ export function FollowUpBookingModal({
     setError('');
 
     try {
+      console.log('📅 [FOLLOW-UP-BOOKING] Creating follow-up booking:', {
+        originalBookingId,
+        vendorId,
+        petId,
+        customerPhone,
+        serviceType,
+        scheduledDate: selectedDate,
+        scheduledTime: selectedTime,
+        notes
+      });
+
+      // Extract time from slot (e.g., "09:00 - 10:00" -> "09:00")
       const startTime = selectedTime.split(' - ')[0];
 
-      const response = await apiClient.post<any>('/customer/bookings/create', {
+      // Call booking creation API
+      await apiClient.post('/customer/bookings', {
         phone: customerPhone,
         vendorId,
         petId,
@@ -81,18 +97,21 @@ export function FollowUpBookingModal({
         notes,
         isFollowUp: true,
         originalBookingId,
-        paymentMethod: 'cash',
-        amount: 0
+        // Additional required fields
+        paymentMethod: 'cash', // Default for follow-up
+        amount: 0 // Will be set by backend from service
       });
 
-      if (response.success || response.bookingId) {
-        alert('Follow-up booked successfully!');
-        onSuccess();
-      } else {
-        throw new Error(response.error || 'Failed to create follow-up booking');
-      }
+      console.log('✅ [FOLLOW-UP-BOOKING] Booking created');
+
+      toast.success('Follow-up booked successfully!', {
+        description: `Appointment scheduled for ${new Date(selectedDate).toLocaleDateString()} at ${startTime}`
+      });
+
+      onSuccess();
+      
     } catch (err) {
-      console.error('Error:', err);
+      console.error('❌ [FOLLOW-UP-BOOKING] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to create follow-up booking');
       setSaving(false);
     }
@@ -113,51 +132,65 @@ export function FollowUpBookingModal({
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between rounded-t-[32px] z-10">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">Book Follow-Up</h2>
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 text-gray-600" />
           </button>
         </div>
 
-        <div className="p-0 space-y-6">
-          {/* Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="flex items-start gap-0">
-              <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-              <div>
-                <p className="text-sm text-blue-900 font-medium">Follow-up Appointment</p>
-                <p className="text-xs text-blue-700 mt-0">
-                  Schedule a follow-up with {vendorName} for {petName}
-                </p>
+        <div className="p-6 space-y-6 pb-24">
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
+
+          {/* Booking Info */}
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center text-2xl">
+                📅
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-800">Follow-up with {vendorName}</h3>
+                <p className="text-sm text-gray-600">{petName} • {serviceName}</p>
               </div>
             </div>
+            <p className="text-xs text-orange-700">
+              Book a follow-up appointment within the 7-day window
+            </p>
           </div>
 
           {/* Date Selection */}
-          <div>
-            <label className="block text-sm font-medium mb-0 flex items-center gap-0">
-              <Calendar className="w-4 h-4" />
+          <div className="space-y-3">
+            <label className="block font-semibold text-gray-800 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-[#FF8C42]" />
               Select Date
             </label>
-            <div className="grid grid-cols-2 gap-0">
+            <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
               {getAvailableDates().map((date) => {
                 const dateStr = date.toISOString().split('T')[0];
-                const isSelected = selectedDate === dateStr;
                 return (
                   <button
                     key={dateStr}
                     onClick={() => setSelectedDate(dateStr)}
-                    className={`p-0 rounded-lg border-2 transition-all text-sm ${
-                      isSelected
-                        ? 'border-primary bg-orange-50 text-primary'
-                        : 'border-gray-200 hover:border-primary text-gray-900'
+                    className={`p-3 rounded-xl border-2 transition-all ${
+                      selectedDate === dateStr
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-white text-gray-800 border-gray-200 hover:border-orange-300'
                     }`}
                   >
-                    <div className="font-semibold">{formatDate(date)}</div>
+                    <p className={`text-sm font-semibold ${
+                      selectedDate === dateStr ? 'text-white' : 'text-gray-800'
+                    }`}>
+                      {formatDate(date)}
+                    </p>
                   </button>
                 );
               })}
@@ -166,62 +199,85 @@ export function FollowUpBookingModal({
 
           {/* Time Selection */}
           {selectedDate && (
-            <div>
-              <label className="block text-sm font-medium mb-0 flex items-center gap-0">
-                <Clock className="w-4 h-4" />
-                Select Time
+            <div className="space-y-3">
+              <label className="block font-semibold text-gray-800 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-[#FF8C42]" />
+                Select Time Slot
               </label>
-              <div className="grid grid-cols-2 gap-0">
-                {timeSlots.map((slot) => {
-                  const isSelected = selectedTime === slot;
-                  return (
-                    <button
-                      key={slot}
-                      onClick={() => setSelectedTime(slot)}
-                      className={`p-0 rounded-lg border-2 transition-all text-sm ${
-                        isSelected
-                          ? 'border-primary bg-orange-50 text-primary'
-                          : 'border-gray-200 hover:border-primary text-gray-900'
-                      }`}
-                    >
+              <div className="grid grid-cols-2 gap-2">
+                {timeSlots.map((slot) => (
+                  <button
+                    key={slot}
+                    onClick={() => setSelectedTime(slot)}
+                    className={`p-3 rounded-xl border-2 transition-all ${
+                      selectedTime === slot
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-white text-gray-800 border-gray-200 hover:border-orange-300'
+                    }`}
+                  >
+                    <p className={`text-sm font-semibold ${
+                      selectedTime === slot ? 'text-white' : 'text-gray-800'
+                    }`}>
                       {slot}
-                    </button>
-                  );
-                })}
+                    </p>
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium mb-0">Additional Notes (optional)</label>
+          {/* Additional Notes */}
+          <div className="space-y-3">
+            <label className="block font-semibold text-gray-800">
+              Additional Notes (Optional)
+            </label>
             <textarea
               value={notes}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
-              className="w-full p-0 border border-gray-300 rounded-lg"
+              onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              placeholder="Any special instructions or concerns..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Any specific concerns or follow-up reasons..."
             />
           </div>
+        </div>
 
-          {/* Error */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-0">
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button
+        {/* Fixed Bottom Actions */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 space-y-3">
+          <Button
             onClick={handleBookFollowUp}
-            disabled={saving || !selectedDate || !selectedTime}
-            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!selectedDate || !selectedTime || saving}
+            className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-4 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
           >
-            {saving ? 'Booking...' : 'Confirm Follow-Up Booking'}
-          </button>
+            {saving ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Booking...
+              </>
+            ) : (
+              <>
+                <Calendar className="w-5 h-5" />
+                Confirm Follow-Up Booking
+              </>
+            )}
+          </Button>
+
+          {/* Home Indicator */}
+          <div className="flex justify-center">
+            <div className="w-32 h-1 bg-gray-300 rounded-full"></div>
+          </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }
-

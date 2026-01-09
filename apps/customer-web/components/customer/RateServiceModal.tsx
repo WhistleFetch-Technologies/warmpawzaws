@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Star } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+// Removed Supabase imports - using apiClient instead
+import { toast } from 'sonner';
+import { awardReviewPoints } from '@/lib/loyalty-helper'; // ✅ NEW
 
 interface RateServiceModalProps {
   bookingId: string;
@@ -28,6 +30,7 @@ export function RateServiceModal({
   const [submitting, setSubmitting] = useState(false);
   const [wouldRecommend, setWouldRecommend] = useState<boolean | null>(null);
   
+  // Detailed ratings
   const [serviceQuality, setServiceQuality] = useState(0);
   const [punctuality, setPunctuality] = useState(0);
   const [cleanliness, setCleanliness] = useState(0);
@@ -35,7 +38,7 @@ export function RateServiceModal({
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      alert('Please provide a rating');
+      toast.error('Please provide a rating');
       return;
     }
 
@@ -53,20 +56,25 @@ export function RateServiceModal({
         cleanliness: cleanliness || rating,
         valueForMoney: valueForMoney || rating,
         wouldRecommend: wouldRecommend === true,
-        photos: []
+        photos: [] // Photos support can be added later
       };
 
-      const response = await apiClient.post<any>('/reviews', payload);
-
-      if (response.success || response.reviewId) {
-        alert('Review submitted successfully!');
-        onSuccess();
-      } else {
-        alert(response.error || 'Failed to submit review');
-      }
+      // AWS Serverless compatible - use apiClient
+      const result = await apiClient.post('/reviews/create', payload);
+      toast.success('Review submitted successfully!');
+      
+      // ✅ NEW: Award loyalty points for posting review
+      awardReviewPoints({
+        userId: customerId,
+        reviewId: result.reviewId || result.id || bookingId,
+        bookingId,
+        showToast: true
+      });
+      
+      onSuccess();
     } catch (error) {
       console.error('Error submitting review:', error);
-      alert('Failed to submit review');
+      toast.error('Failed to submit review');
     } finally {
       setSubmitting(false);
     }
@@ -86,9 +94,9 @@ export function RateServiceModal({
     const [hover, setHover] = useState(0);
     
     return (
-      <div className="flex flex-col gap-0">
+      <div className="flex flex-col gap-1">
         {label && <span className="text-sm text-gray-600">{label}</span>}
-        <div className="flex gap-0">
+        <div className="flex gap-1">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
@@ -103,7 +111,7 @@ export function RateServiceModal({
                   size === 'lg' ? 'w-8 h-8' : size === 'sm' ? 'w-4 h-4' : 'w-6 h-6'
                 } ${
                   star <= (hover || value) 
-                    ? 'fill-primary text-primary' 
+                    ? 'fill-[#FF8C42] text-[#FF8C42]' 
                     : 'text-gray-300'
                 }`} 
               />
@@ -121,110 +129,159 @@ export function RateServiceModal({
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between rounded-t-[32px] z-10">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">Rate Service</h2>
           <button
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 text-gray-600" />
           </button>
         </div>
 
-        <div className="p-0 space-y-6">
-          {/* Vendor Info */}
+        <div className="p-6 space-y-6">
           <div className="text-center">
-            <h3 className="font-semibold text-lg mb-0">{vendorName}</h3>
-            <p className="text-sm text-gray-600">How was your experience?</p>
-          </div>
-
-          {/* Overall Rating */}
-          <div className="flex flex-col items-center">
-            <StarRating
-              value={rating}
-              onChange={setRating}
-              size="lg"
-            />
-            <p className="text-sm text-gray-600 mt-0">
-              {rating === 0 ? 'Tap to rate' :
-               rating === 1 ? 'Poor' :
-               rating === 2 ? 'Fair' :
-               rating === 3 ? 'Good' :
-               rating === 4 ? 'Very Good' :
-               'Excellent'}
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">How was your service?</h3>
+            <p className="text-sm text-gray-500">with {vendorName}</p>
+            
+            <div className="flex justify-center mt-4 mb-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={() => {
+                    setRating(star);
+                    // Pre-fill detailed ratings if not set
+                    if (!serviceQuality) setServiceQuality(star);
+                    if (!punctuality) setPunctuality(star);
+                    if (!cleanliness) setCleanliness(star);
+                    if (!valueForMoney) setValueForMoney(star);
+                  }}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  className="p-1 focus:outline-none transition-transform hover:scale-110"
+                >
+                  <Star 
+                    className={`w-10 h-10 ${
+                      star <= (hoverRating || rating) 
+                        ? 'fill-[#FF8C42] text-[#FF8C42]' 
+                        : 'text-gray-300'
+                    }`} 
+                  />
+                </button>
+              ))}
+            </div>
+            <p className="text-sm font-medium text-[#FF8C42]">
+              {rating === 1 ? 'Terrible' : 
+               rating === 2 ? 'Bad' : 
+               rating === 3 ? 'Okay' : 
+               rating === 4 ? 'Good' : 
+               rating === 5 ? 'Excellent' : 'Tap to rate'}
             </p>
           </div>
 
-          {/* Detailed Ratings */}
-          <div className="space-y-4">
-            <StarRating
-              value={serviceQuality}
-              onChange={setServiceQuality}
-              label="Service Quality"
-            />
-            <StarRating
-              value={punctuality}
-              onChange={setPunctuality}
-              label="Punctuality"
-            />
-            <StarRating
-              value={cleanliness}
-              onChange={setCleanliness}
-              label="Cleanliness"
-            />
-            <StarRating
-              value={valueForMoney}
-              onChange={setValueForMoney}
-              label="Value for Money"
-            />
-          </div>
+          {/* Detailed Ratings (Only show if main rating is selected) */}
+          {rating > 0 && (
+            <div className="space-y-4 bg-gray-50 p-4 rounded-2xl animate-in fade-in slide-in-from-bottom-4">
+              <h4 className="font-semibold text-gray-900 text-sm">Detailed Feedback</h4>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <StarRating 
+                  label="Service Quality" 
+                  value={serviceQuality} 
+                  onChange={setServiceQuality}
+                  size="sm"
+                />
+                <StarRating 
+                  label="Punctuality" 
+                  value={punctuality} 
+                  onChange={setPunctuality}
+                  size="sm"
+                />
+                <StarRating 
+                  label="Cleanliness" 
+                  value={cleanliness} 
+                  onChange={setCleanliness}
+                  size="sm"
+                />
+                <StarRating 
+                  label="Value for Money" 
+                  value={valueForMoney} 
+                  onChange={setValueForMoney}
+                  size="sm"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Review Text */}
           <div>
-            <label className="block text-sm font-medium mb-0">Write a review (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Share your experience (optional)
+            </label>
             <textarea
               value={review}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReview(e.target.value)}
-              className="w-full p-0 border border-gray-300 rounded-lg"
+              onChange={(e) => setReview(e.target.value)}
+              placeholder="Tell us what you liked or didn't like..."
               rows={4}
-              placeholder="Share your experience..."
+              className="w-full p-3 border border-gray-300 rounded-xl focus:ring-[#FF8C42] focus:border-[#FF8C42] resize-none"
             />
           </div>
 
-          {/* Would Recommend */}
+          {/* Recommendation */}
           <div>
-            <label className="block text-sm font-medium mb-0">Would you recommend this service?</label>
-            <div className="flex gap-0">
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Would you recommend this vendor?
+            </label>
+            <div className="flex gap-4">
               <button
+                type="button"
                 onClick={() => setWouldRecommend(true)}
-                className={`flex-1 px-4 py-0 rounded-lg border-2 ${
-                  wouldRecommend === true ? 'border-primary bg-orange-50' : 'border-gray-200'
+                className={`flex-1 py-3 rounded-xl border-2 flex items-center justify-center gap-2 transition-colors ${
+                  wouldRecommend === true
+                    ? 'border-green-500 bg-green-50 text-green-700'
+                    : 'border-gray-200 hover:border-green-200'
                 }`}
               >
+                <ThumbsUp className="w-5 h-5" />
                 Yes
               </button>
               <button
+                type="button"
                 onClick={() => setWouldRecommend(false)}
-                className={`flex-1 px-4 py-0 rounded-lg border-2 ${
-                  wouldRecommend === false ? 'border-red-500 bg-red-50' : 'border-gray-200'
+                className={`flex-1 py-3 rounded-xl border-2 flex items-center justify-center gap-2 transition-colors ${
+                  wouldRecommend === false
+                    ? 'border-red-500 bg-red-50 text-red-700'
+                    : 'border-gray-200 hover:border-red-200'
                 }`}
               >
+                <ThumbsDown className="w-5 h-5" />
                 No
               </button>
             </div>
           </div>
 
           {/* Submit Button */}
-          <button
+          <Button
             onClick={handleSubmit}
             disabled={submitting || rating === 0}
-            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white py-6 rounded-xl text-lg font-semibold"
           >
             {submitting ? 'Submitting...' : 'Submit Review'}
-          </button>
+          </Button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }
-

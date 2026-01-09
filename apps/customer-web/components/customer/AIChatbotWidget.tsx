@@ -1,3 +1,4 @@
+'use client';
 /**
  * AI Chatbot Widget - Web
  * AWS Bedrock-powered chatbot with symptoms checker, booking assist, and support

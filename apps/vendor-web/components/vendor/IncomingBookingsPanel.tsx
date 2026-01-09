@@ -1,8 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, MapPin, Check, X, AlertCircle } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { 
+  Calendar, Clock, User, Phone, MapPin, DollarSign,
+  Check, X, AlertCircle, ChevronRight, PawPrint
+} from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
 import { AcceptBookingModal } from './AcceptBookingModal';
 import { DeclineBookingModal } from './DeclineBookingModal';
 
@@ -20,21 +28,32 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'today'>('pending');
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   useEffect(() => {
     loadBookings();
+    
+    // Auto-refresh every 30 seconds
     const interval = setInterval(loadBookings, 30000);
     return () => clearInterval(interval);
-  }, [filter, vendorId]);
+  }, [filter]);
 
   const loadBookings = async () => {
     try {
       setLoading(true);
       setError(null);
-      const statusFilter = filter === 'pending' ? 'pending' : filter === 'today' ? 'today' : 'all';
-      const response = await apiClient.get<any>(`/vendor/bookings/${vendorId}?status=${statusFilter}`);
-      setBookings(response.bookings || []);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load bookings');
+
+      const response = await fetch(
+        `${API_BASE}/vendor/${vendorId}/bookings?status=${filter}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (!response.ok) throw new Error('Failed to load bookings');
+
+      const data = await response.json();
+      setBookings(data.bookings || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load bookings');
     } finally {
       setLoading(false);
     }
@@ -61,29 +80,16 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   const pendingCount = bookings.filter(b => b.status === 'pending').length;
 
   if (loading && bookings.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-00">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
-      </div>
-    );
+    return <LoadingState message="Loading booking requests..." />;
   }
 
   if (error) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-red-600 mb-4">{error}</p>
-        <button
-          onClick={loadBookings}
-          className="px-4 py-0 bg-[#FF8C42] text-white rounded-lg"
-        >
-          Retry
-        </button>
-      </div>
-    );
+    return <ErrorState message={error} onRetry={loadBookings} />;
   }
 
   return (
     <div className="space-y-4">
+      {/* Header with Filters */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Booking Requests</h2>
@@ -98,91 +104,57 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
           </p>
         </div>
 
-        <div className="flex gap-0">
-          <button
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant={filter === 'pending' ? 'default' : 'outline'}
             onClick={() => setFilter('pending')}
-            className={`px-0 py-0 rounded-lg text-sm font-medium ${
-              filter === 'pending' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
+            className={filter === 'pending' ? 'bg-orange-500 hover:bg-orange-600' : ''}
           >
             Pending {pendingCount > 0 && `(${pendingCount})`}
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
+            variant={filter === 'today' ? 'default' : 'outline'}
             onClick={() => setFilter('today')}
-            className={`px-0 py-0 rounded-lg text-sm font-medium ${
-              filter === 'today' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
           >
             Today
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
+            variant={filter === 'all' ? 'default' : 'outline'}
             onClick={() => setFilter('all')}
-            className={`px-0 py-0 rounded-lg text-sm font-medium ${
-              filter === 'all' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
           >
             All
-          </button>
+          </Button>
         </div>
       </div>
 
+      {/* Bookings List */}
       {bookings.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <Calendar className="w-12 h-12 mx-auto mb-0 text-gray-400" />
-          <p className="font-medium">No booking requests</p>
-          <p className="text-sm">
-            {filter === 'pending'
+        <EmptyState
+          icon={<Calendar className="w-12 h-12" />}
+          title="No booking requests"
+          description={
+            filter === 'pending'
               ? "You're all caught up! New booking requests will appear here."
-              : "No bookings found for this filter."}
-          </p>
-        </div>
+              : "No bookings found for this filter."
+          }
+        />
       ) : (
         <div className="space-y-3">
           {bookings.map((booking) => (
-            <div key={booking.id} className="border border-gray-200 rounded-xl p-4">
-              <div className="flex items-start justify-between mb-0">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">{booking.customer?.name || booking.customer_name}</h3>
-                  <p className="text-sm text-gray-600">{booking.service?.name || booking.service_name}</p>
-                  <div className="flex items-center gap-0 mt-0 text-xs text-gray-500">
-                    <Calendar className="w-3 h-3" />
-                    <span>{new Date(booking.booking_date).toLocaleDateString()}</span>
-                    <Clock className="w-3 h-3 ml-0" />
-                    <span>{booking.booking_time}</span>
-                  </div>
-                </div>
-                <span className={`px-0 py-0 rounded-full text-xs font-medium ${
-                  booking.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                  booking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
-                  'bg-red-100 text-red-700'
-                }`}>
-                  {booking.status}
-                </span>
-              </div>
-
-              {booking.status === 'pending' && (
-                <div className="flex gap-0">
-                  <button
-                    onClick={() => handleAcceptClick(booking)}
-                    className="flex-1 px-4 py-0 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0"
-                  >
-                    <Check className="w-4 h-4" />
-                    Accept
-                  </button>
-                  <button
-                    onClick={() => handleDeclineClick(booking)}
-                    className="flex-1 px-4 py-0 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0"
-                  >
-                    <X className="w-4 h-4" />
-                    Decline
-                  </button>
-                </div>
-              )}
-            </div>
+            <BookingRequestCard
+              key={booking.id}
+              booking={booking}
+              onAccept={() => handleAcceptClick(booking)}
+              onDecline={() => handleDeclineClick(booking)}
+            />
           ))}
         </div>
       )}
 
+      {/* Modals */}
       {showAcceptModal && selectedBooking && (
         <AcceptBookingModal
           booking={selectedBooking}
@@ -204,3 +176,171 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   );
 }
 
+interface BookingRequestCardProps {
+  booking: any;
+  onAccept: () => void;
+  onDecline: () => void;
+}
+
+function BookingRequestCard({ booking, onAccept, onDecline }: BookingRequestCardProps) {
+  const isPending = booking.status === 'pending';
+  const isUrgent = () => {
+    if (!booking.scheduledDate) return false;
+    const bookingDate = new Date(`${booking.scheduledDate}T${booking.scheduledTime || '00:00'}`);
+    const hoursUntil = (bookingDate.getTime() - new Date().getTime()) / (1000 * 60 * 60);
+    return hoursUntil <= 24;
+  };
+
+  const getStatusBadge = () => {
+    switch (booking.status) {
+      case 'pending':
+        return <Badge className="bg-yellow-100 text-yellow-700">⏳ Pending</Badge>;
+      case 'confirmed':
+        return <Badge className="bg-green-100 text-green-700">✓ Confirmed</Badge>;
+      case 'declined':
+        return <Badge className="bg-red-100 text-red-700">✗ Declined</Badge>;
+      default:
+        return <Badge variant="outline">{booking.status}</Badge>;
+    }
+  };
+
+  return (
+    <Card className={`p-4 ${isPending ? 'border-l-4 border-l-orange-500' : ''}`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <PawPrint className="w-5 h-5 text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900">
+                {booking.customerName || 'Customer'}
+              </h3>
+              {isUrgent() && (
+                <Badge variant="destructive" className="text-xs">
+                  🔥 Urgent
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-gray-600">
+              {booking.serviceName || booking.serviceType}
+            </p>
+          </div>
+        </div>
+        {getStatusBadge()}
+      </div>
+
+      {/* Booking Details Grid */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <DetailItem
+          icon={<Calendar className="w-4 h-4 text-gray-400" />}
+          label="Date"
+          value={new Date(booking.scheduledDate).toLocaleDateString()}
+        />
+        <DetailItem
+          icon={<Clock className="w-4 h-4 text-gray-400" />}
+          label="Time"
+          value={booking.scheduledTime || 'Flexible'}
+        />
+        
+        {booking.petName && (
+          <DetailItem
+            icon={<PawPrint className="w-4 h-4 text-gray-400" />}
+            label="Pet"
+            value={booking.petName}
+          />
+        )}
+        
+        <DetailItem
+          icon={<DollarSign className="w-4 h-4 text-gray-400" />}
+          label="Amount"
+          value={`₹${booking.totalAmount || booking.price}`}
+        />
+      </div>
+
+      {booking.isHomeService && booking.customerAddress && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="flex items-start gap-2">
+            <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+            <div>
+              <p className="text-xs text-gray-600">Service Location</p>
+              <p className="text-sm text-gray-900">{booking.customerAddress}</p>
+              {booking.distance && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {booking.distance} km away
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {booking.customerNotes && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+          <p className="text-xs text-gray-600 mb-1">Customer Notes</p>
+          <p className="text-sm text-gray-800">{booking.customerNotes}</p>
+        </div>
+      )}
+
+      {booking.customerPhone && (
+        <div className="mb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => window.open(`tel:${booking.customerPhone}`)}
+          >
+            <Phone className="w-4 h-4 mr-2" />
+            Call Customer
+          </Button>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      {isPending && (
+        <div className="grid grid-cols-2 gap-2 pt-3 border-t">
+          <Button
+            onClick={onDecline}
+            variant="outline"
+            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+          >
+            <X className="w-4 h-4 mr-2" />
+            Decline
+          </Button>
+          <Button
+            onClick={onAccept}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            <Check className="w-4 h-4 mr-2" />
+            Accept
+          </Button>
+        </div>
+      )}
+
+      {booking.status === 'confirmed' && (
+        <div className="pt-3 border-t">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {/* Navigate to booking details */}}
+          >
+            View Details
+            <ChevronRight className="w-4 h-4 ml-2" />
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function DetailItem({ icon, label, value }: any) {
+  return (
+    <div className="flex items-start gap-2">
+      {icon}
+      <div>
+        <p className="text-xs text-gray-600">{label}</p>
+        <p className="text-sm font-medium text-gray-900">{value}</p>
+      </div>
+    </div>
+  );
+}

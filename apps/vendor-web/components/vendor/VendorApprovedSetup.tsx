@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Check, ArrowRight, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { toast } from 'sonner';
+import { Check, ArrowRight } from 'lucide-react';
 
 interface VendorApprovedSetupProps {
   vendorId: string;
@@ -17,54 +20,79 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
     setIsSubmitting(true);
 
     try {
-      const response = await apiClient.post<any>('/vendor/setup/complete', {
+      // Mark setup as complete without service configuration
+      // The services will be configured in the dashboard or via specific role capabilities
+      const payload = {
         vendorId,
-        setupCompleted: true,
-      });
+        setupCompleted: true
+      };
 
-      if (response.success) {
+      console.log('📤 Completing setup (informative only)...', payload);
+
+      const response = await apiClient.get('/make-server-3dd53475/vendor/setup/complete'),
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ [VendorApprovedSetup] Setup marked complete:', data);
+        toast.success('Welcome to your dashboard!');
+        
+        // Short delay for smooth transition
         setTimeout(() => onComplete(), 800);
       } else {
-        alert('Failed to proceed. Please try again.');
+        const errorData = await response.text();
+        console.error('❌ [VendorApprovedSetup] Failed to complete setup:', errorData);
+        toast.error('Failed to proceed. Please try again.');
         setIsSubmitting(false);
       }
     } catch (error) {
-      console.error('Error completing setup:', error);
-      alert('An error occurred. Please try again.');
+      console.error('❌ [VendorApprovedSetup] Error completing setup:', error);
+      toast.error('An error occurred. Please try again.');
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-4 flex items-center justify-center">
-      <div className="w-full space-y-8">
+    <div className="min-h-screen bg-green-50 p-4 flex items-center justify-center">
+      <div className="w-full max-w-[430px] mx-auto space-y-8">
+        
+        {/* Success Animation/Icon */}
         <div className="text-center">
-          <div className="flex justify-center mb-0">
-            <div className="w-28 h-28 bg-green-500 rounded-full flex items-center justify-center shadow-xl">
+          <div className="flex justify-center mb-6">
+            <div className="w-28 h-28 bg-green-500 rounded-full flex items-center justify-center shadow-xl animate-bounce">
               <div className="w-20 h-20 border-4 border-white rounded-full flex items-center justify-center">
                 <Check className="w-10 h-10 text-white" strokeWidth={4} />
               </div>
             </div>
           </div>
           
-          <div className="flex items-center justify-center gap-0 mb-0">
+          <div className="flex items-center justify-center gap-2 mb-2">
             <span className="text-3xl">🎉</span>
             <h1 className="text-3xl font-bold text-gray-900">You're</h1>
           </div>
-          <h1 className="text-4xl font-extrabold text-gray-900 mb-4">Approved!</h1>
+          <h1 className="text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Approved!</h1>
           
           <div className="space-y-1">
-            <p className="text-lg text-gray-700 font-medium">Welcome to WARMPAWZ!</p>
+            <p className="text-lg text-gray-700 font-medium">Welcome to WARMPAWS!</p>
             <p className="text-gray-600">Your application has been verified.</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-0 shadow-md border-2 border-gray-200">
+        {/* Informative Card */}
+        <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 mx-2">
           <h3 className="font-bold text-gray-900 text-lg mb-4 text-center">What happens next?</h3>
           
           <div className="space-y-5">
             <div className="flex gap-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0 text-orange-600 font-bold">1</div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1 text-[#FF8C42] font-bold">1</div>
               <div>
                 <h4 className="font-semibold text-gray-900">Access your Dashboard</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">
@@ -74,46 +102,40 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
             </div>
             
             <div className="flex gap-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0 text-orange-600 font-bold">2</div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1 text-[#FF8C42] font-bold">2</div>
               <div>
-                <h4 className="font-semibold text-gray-900">Configure Your Services</h4>
+                <h4 className="font-semibold text-gray-900">Configure Services</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  Set up your service offerings, pricing, and availability.
+                  Set up your specific offerings, pricing, and availability from the settings.
                 </p>
               </div>
             </div>
-            
+
             <div className="flex gap-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0 text-orange-600 font-bold">3</div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1 text-[#FF8C42] font-bold">3</div>
               <div>
-                <h4 className="font-semibold text-gray-900">Start Receiving Bookings</h4>
+                <h4 className="font-semibold text-gray-900">Start Earning</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  Once configured, customers can find and book your services.
+                  Once configured, you'll be visible to customers and ready to receive bookings.
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        <button
-          onClick={handleGetStarted}
-          disabled={isSubmitting}
-          className="w-full py-4 bg-orange-600 text-white rounded-xl hover:bg-orange-700 font-semibold flex items-center justify-center gap-0 disabled:opacity-50"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Loading...
-            </>
-          ) : (
-            <>
-              Get Started
-              <ArrowRight className="w-5 h-5" />
-            </>
-          )}
-        </button>
+        {/* Action Button */}
+        <div className="pt-4 px-2">
+          <Button 
+            onClick={handleGetStarted}
+            disabled={isSubmitting}
+            className="w-full bg-[#FF8C42] hover:bg-[#e67a30] text-white h-14 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] disabled:opacity-70 disabled:scale-100"
+          >
+            {isSubmitting ? 'Starting...' : 'Get Started'}
+            {!isSubmitting && <ArrowRight className="w-5 h-5 ml-2" />}
+          </Button>
+        </div>
+
       </div>
     </div>
   );
 }
-

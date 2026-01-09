@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, DollarSign, Info } from 'lucide-react';
-import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { Calendar, Clock, DollarSign, Info } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface RescheduleBookingProps {
   bookingId: string;
@@ -19,6 +21,8 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   useEffect(() => {
     loadData();
   }, [bookingId]);
@@ -26,16 +30,18 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   const loadData = async () => {
     try {
       const [policyRes, slotsRes] = await Promise.all([
-        apiClient.get<any>(`/bookings/${bookingId}/reschedule-policy`),
-        apiClient.get<any>(`/bookings/${bookingId}/reschedule-options`)
+        apiClient.get('/vendor/endpoint'),
+        apiClient.get('/vendor/endpoint')
       ]);
 
-      if (policyRes.success) {
-        setPolicy(policyRes.policy);
+      if (policyRes.ok) {
+        const data = await policyRes.json();
+        if (data.success) setPolicy(data.policy);
       }
 
-      if (slotsRes.success) {
-        setSlots(slotsRes.slots || []);
+      if (slotsRes.ok) {
+        const data = await slotsRes.json();
+        if (data.success) setSlots(data.slots || []);
       }
     } catch (error) {
       console.error('Failed to load reschedule data:', error);
@@ -52,15 +58,25 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
 
     setSubmitting(true);
     try {
-      const response = await apiClient.post<any>(`/bookings/${bookingId}/reschedule`, {
-        newDate: selectedSlot.date,
-        newTimeSlot: selectedSlot.timeSlot,
-        reason
+      const response = await fetch(`${API_BASE}/bookings/${bookingId}/reschedule`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({
+          newDate: selectedSlot.date,
+          newTimeSlot: selectedSlot.timeSlot,
+          reason
+        })
       });
 
-      if (response.success) {
-        alert('Reschedule request submitted!');
-        onSuccess?.();
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          alert('Reschedule request submitted!');
+          onSuccess?.();
+        }
       }
     } catch (error) {
       console.error('Failed to reschedule:', error);
@@ -71,37 +87,21 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+    return <Card className="p-8 text-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div></Card>;
   }
 
   if (!policy?.canReschedule) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0">
-        <div className="bg-white p-8 rounded-xl border border-red-200 text-center max-w-md">
-          <Info className="w-12 h-12 text-red-500 mx-auto mb-0" />
-          <p className="font-semibold text-gray-900 mb-0">Cannot Reschedule</p>
-          <p className="text-gray-700">{policy?.reason}</p>
-          {onCancel && (
-            <button
-              onClick={onCancel}
-              className="mt-4 px-4 py-0 bg-primary text-white rounded-lg"
-            >
-              Go Back
-            </button>
-          )}
-        </div>
-      </div>
+      <Card className="p-8 text-center bg-red-50">
+        <Info className="w-12 h-12 text-red-500 mx-auto mb-3" />
+        <p className="font-semibold text-gray-900 mb-2">Cannot Reschedule</p>
+        <p className="text-gray-700">{policy?.reason}</p>
+      </Card>
     );
   }
 
-  const slotsByDate = slots.reduce((acc: Record<string, any[]>, slot: any) => {
+  // Group slots by date
+  const slotsByDate = slots.reduce((acc, slot) => {
     const date = slot.date;
     if (!acc[date]) acc[date] = [];
     acc[date].push(slot);
@@ -109,99 +109,94 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   }, {} as Record<string, any[]>);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-0 space-y-6">
+    <div className="space-y-6">
       {/* Policy Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-0">
-        <div className="flex items-start gap-0">
+      <Card className="p-6 bg-blue-50 border-blue-200">
+        <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-blue-600 mt-0.5" />
           <div>
-            <h4 className="font-semibold text-gray-900 mb-0">Rescheduling Policy</h4>
+            <h4 className="font-semibold text-gray-900 mb-2">Rescheduling Policy</h4>
             <ul className="space-y-1 text-sm text-gray-700">
               {policy.rules.map((rule: string, idx: number) => (
                 <li key={idx}>• {rule}</li>
               ))}
             </ul>
             {policy.fee > 0 && (
-              <div className="mt-0 flex items-center gap-0 text-orange-700">
+              <div className="mt-3 flex items-center gap-2 text-orange-700">
                 <DollarSign className="w-4 h-4" />
                 <span className="font-semibold">Rescheduling Fee: ₹{policy.fee}</span>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Available Slots */}
-      <div className="bg-white rounded-xl p-0 shadow-sm">
+      <Card className="p-6">
         <h4 className="font-semibold text-gray-900 mb-4">Select New Date & Time</h4>
         {Object.keys(slotsByDate).length === 0 ? (
           <p className="text-gray-600 text-center py-8">No available slots found</p>
         ) : (
           <div className="space-y-4">
-            {Object.entries(slotsByDate).map(([date, dateSlots]: [string, any[]]) => (
+            {Object.entries(slotsByDate).map(([date, dateSlots]) => (
               <div key={date}>
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-2 mb-3">
                   <Calendar className="w-4 h-4 text-gray-600" />
                   <span className="font-semibold text-gray-900">
                     {new Date(date).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-0">
-                  {dateSlots.map((slot) => {
-                    const isSelected = selectedSlot?.date === date && selectedSlot?.timeSlot === slot.timeSlot;
-                    return (
-                      <button
-                        key={slot.timeSlot}
-                        onClick={() => setSelectedSlot({ date, timeSlot: slot.timeSlot })}
-                        className={`p-0 rounded-lg border-2 transition-all ${
-                          isSelected
-                            ? 'border-primary bg-orange-50 text-primary'
-                            : 'border-gray-200 hover:border-primary text-gray-900'
-                        }`}
-                      >
-                        <Clock className="w-4 h-4 mx-auto mb-0" />
-                        <span className="text-sm font-medium">{slot.timeSlot}</span>
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-3 gap-3">
+                  {dateSlots.map((slot, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedSlot(slot)}
+                      className={`p-3 border-2 rounded-lg transition-all ${
+                        selectedSlot?.date === slot.date && selectedSlot?.timeSlot === slot.timeSlot
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4 mx-auto mb-1 text-gray-600" />
+                      <div className="text-sm font-medium">{slot.timeSlot}</div>
+                    </button>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Reason */}
-      <div className="bg-white rounded-xl p-0 shadow-sm">
-        <label className="block text-sm font-medium mb-0">Reason for rescheduling (optional)</label>
-        <textarea
-          value={reason}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
-          className="w-full p-0 border border-gray-300 rounded-lg"
-          rows={3}
-          placeholder="Please provide a reason..."
-        />
-      </div>
+      {selectedSlot && (
+        <Card className="p-6">
+          <h4 className="font-semibold text-gray-900 mb-4">Reason (Optional)</h4>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Why are you rescheduling?"
+            rows={3}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+        </Card>
+      )}
 
       {/* Actions */}
-      <div className="flex gap-0">
-        {onCancel && (
-          <button
-            onClick={onCancel}
-            className="flex-1 px-4 py-0 bg-white border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-        )}
-        <button
+      <div className="flex gap-3">
+        <Button
           onClick={handleSubmit}
           disabled={!selectedSlot || submitting}
-          className="flex-1 px-4 py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1"
         >
           {submitting ? 'Submitting...' : 'Confirm Reschedule'}
-        </button>
+        </Button>
+        {onCancel && (
+          <Button variant="outline" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+        )}
       </div>
     </div>
   );
 }
-

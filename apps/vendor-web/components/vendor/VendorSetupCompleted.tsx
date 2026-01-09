@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { CheckCircle, ArrowRight } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface VendorSetupCompletedProps {
   onContinue: () => void;
@@ -9,63 +9,48 @@ interface VendorSetupCompletedProps {
 
 export function VendorSetupCompleted({ onContinue }: VendorSetupCompletedProps) {
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex flex-col items-center justify-center px-0">
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-32 h-32 bg-green-500 rounded-full flex items-center justify-center shadow-2xl mb-0">
-          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center">
-            <CheckCircle className="w-16 h-16 text-green-500" strokeWidth={3} />
+    <div className="min-h-screen bg-[#E8F5E3] flex items-center justify-center p-4">
+      <div className="w-full max-w-[430px] bg-white rounded-3xl shadow-lg p-8 text-center space-y-6">
+        {/* Green Success Badge */}
+        <div className="flex justify-center">
+          <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center">
+            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center">
+              <CheckCircle2 className="w-10 h-10 text-green-500" strokeWidth={3} />
+            </div>
           </div>
         </div>
-        
-        <h1 className="text-3xl font-bold text-gray-900 text-center mb-4">
-          Setup<br/>Complete!
-        </h1>
 
-        <div className="text-center mb-0">
-          <p className="text-lg text-gray-800 mb-0">
-            🎉 Congratulations!<br/>Your vendor profile is ready
+        {/* Title */}
+        <div className="space-y-2">
+          <h1 className="text-3xl text-gray-900">
+            🎉 Setup Completed !
+          </h1>
+          <p className="text-gray-600">
+            Your Warmpawz profile is now live<br />
+            and ready to receive bookings!
           </p>
-          <p className="text-base text-green-600 font-semibold">
-            You can now start receiving bookings from pet parents
+        </div>
+
+        {/* Success Message */}
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <p className="text-sm text-green-700 font-medium">
+            ✨ Pet Parents can now discover and book<br />
+            your services
           </p>
         </div>
-      </div>
 
-      <div className="bg-white rounded-xl border-2 border-gray-200 p-0 mb-8 w-full">
-        <h3 className="font-semibold text-gray-900 mb-4">What you can do now:</h3>
-        <div className="space-y-3">
-          <div className="flex items-start gap-0">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-gray-900">Manage Bookings</p>
-              <p className="text-sm text-gray-600">View and manage incoming booking requests</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-0">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-gray-900">Update Services</p>
-              <p className="text-sm text-gray-600">Add or modify your service offerings anytime</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-0">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-gray-900">Track Earnings</p>
-              <p className="text-sm text-gray-600">Monitor your revenue and settlements</p>
-            </div>
-          </div>
-        </div>
-      </div>
+        {/* Continue Button */}
+        <Button
+          onClick={onContinue}
+          className="w-full h-12 bg-green-500 hover:bg-green-600 text-white rounded-xl mt-8"
+        >
+          Go to Dashboard
+        </Button>
 
-      <button
-        onClick={onContinue}
-        className="w-full py-4 bg-orange-600 text-white rounded-xl hover:bg-orange-700 font-semibold flex items-center justify-center gap-0"
-      >
-        Go to Dashboard
-        <ArrowRight className="w-5 h-5" />
-      </button>
+        <p className="text-xs text-gray-500">
+          You can manage your profile, services, and bookings from the dashboard
+        </p>
+      </div>
     </div>
   );
 }
-

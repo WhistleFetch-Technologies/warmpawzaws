@@ -1,118 +1,296 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
-import { CheckCircle, Clock, XCircle, AlertCircle, Loader2 } from 'lucide-react';
+/**
+ * Vendor Status Checker Component
+ * Checks vendor application status and routes accordingly
+ */
 
-interface VendorStatusCheckerProps {
-  vendorId: string;
-  onStatusChange?: (status: string) => void;
+import { useEffect, useState } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
+
+interface VendorStatusResponse {
+  status: 'pending' | 'approved' | 'rejected' | 'more_info_required' | 'resubmitted' | 'not_found';
+  hasApplication: boolean;
+  vendorId?: string;
+  applicationId?: string;
+  fullName?: string;
+  roleId?: string;
+  roleName?: string;
+  submittedAt?: string;
+  canAccessDashboard?: boolean;
+  rejectionReason?: string;
+  canReapply?: boolean;
+  infoRequestMessage?: string;
+  infoRequiredFields?: string[];
+  canEdit?: boolean;
+  canResubmit?: boolean;
+  approvedAt?: string;
+  approvedBy?: string;
 }
 
-export function VendorStatusChecker({ vendorId, onStatusChange }: VendorStatusCheckerProps) {
-  const [status, setStatus] = useState<string | null>(null);
+interface VendorStatusCheckerProps {
+  phone: string;
+  onStatusChecked: (status: VendorStatusResponse) => void;
+  onNavigateToDashboard?: () => void;
+  onNavigateToEdit?: (vendorId: string) => void;
+}
+
+export function VendorStatusChecker({ 
+  phone, 
+  onStatusChecked,
+  onNavigateToDashboard,
+  onNavigateToEdit
+}: VendorStatusCheckerProps) {
+  const [status, setStatus] = useState<VendorStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 30000); // Check every 30 seconds
-    return () => clearInterval(interval);
-  }, [vendorId]);
+  }, [phone]);
 
   const checkStatus = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/status/${vendorId}`);
-      if (response.success && response.status) {
-        setStatus(response.status);
-        setLastChecked(new Date());
-        if (onStatusChange) {
-          onStatusChange(response.status);
+      setLoading(true);
+      setError(null);
+
+      console.log('🔍 Checking vendor status for phone:', phone);
+      
+      const response = await apiClient.get('/make-server-3dd53475/vendor/status/${phone}'),
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
         }
+      );
+
+      if (response.ok) {
+        const data: VendorStatusResponse = await response.json();
+        console.log('✅ Status response:', data);
+        setStatus(data);
+        onStatusChecked(data);
+
+        // Auto-navigate based on status
+        if (data.status === 'approved' && data.canAccessDashboard) {
+          // Vendor approved - navigate to dashboard
+          setTimeout(() => {
+            onNavigateToDashboard?.();
+          }, 2000);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to check status:', errorText);
+        setError('Failed to check application status');
       }
-    } catch (error) {
-      console.error('Error checking vendor status:', error);
+    } catch (err) {
+      console.error('Error checking status:', err);
+      setError('An error occurred while checking status');
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusConfig = (currentStatus: string | null) => {
-    switch (currentStatus) {
-      case 'approved':
-      case 'active':
-        return {
-          icon: <CheckCircle className="w-8 h-8 text-green-600" />,
-          color: 'text-green-600',
-          bgColor: 'bg-green-50',
-          borderColor: 'border-green-200',
-          message: 'Your account is active and ready to use',
-        };
-      case 'pending':
-      case 'under_review':
-        return {
-          icon: <Clock className="w-8 h-8 text-yellow-600" />,
-          color: 'text-yellow-600',
-          bgColor: 'bg-yellow-50',
-          borderColor: 'border-yellow-200',
-          message: 'Your application is under review',
-        };
-      case 'rejected':
-        return {
-          icon: <XCircle className="w-8 h-8 text-red-600" />,
-          color: 'text-red-600',
-          bgColor: 'bg-red-50',
-          borderColor: 'border-red-200',
-          message: 'Your application was rejected',
-        };
-      case 'clarification_requested':
-        return {
-          icon: <AlertCircle className="w-8 h-8 text-orange-600" />,
-          color: 'text-orange-600',
-          bgColor: 'bg-orange-50',
-          borderColor: 'border-orange-200',
-          message: 'Additional information is required',
-        };
-      default:
-        return {
-          icon: <AlertCircle className="w-8 h-8 text-gray-600" />,
-          color: 'text-gray-600',
-          bgColor: 'bg-gray-50',
-          borderColor: 'border-gray-200',
-          message: 'Status unknown',
-        };
-    }
-  };
-
-  if (loading && !status) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-[#FF8C42] border-t-transparent mx-auto mb-4"></div>
+          <h3 className="text-xl mb-2">Checking Application Status</h3>
+          <p className="text-sm text-gray-600">Please wait...</p>
+        </div>
       </div>
     );
   }
 
-  const config = getStatusConfig(status);
-
-  return (
-    <div className={`rounded-xl border-2 ${config.borderColor} ${config.bgColor} p-0`}>
-      <div className="flex items-center gap-4">
-        <div className="flex-shrink-0">
-          {config.icon}
+  if (error || !status) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <XCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-xl text-center mb-2">Error</h3>
+          <p className="text-sm text-gray-600 text-center mb-6">{error || 'Unknown error occurred'}</p>
+          <button
+            onClick={checkStatus}
+            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-5 h-5" />
+            Retry
+          </button>
         </div>
-        <div className="flex-1">
-          <h3 className={`font-semibold ${config.color} mb-0`}>
-            {status ? status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ') : 'Unknown Status'}
-          </h3>
-          <p className="text-sm text-gray-700">{config.message}</p>
-          {lastChecked && (
-            <p className="text-xs text-gray-500 mt-0">
-              Last checked: {lastChecked.toLocaleTimeString()}
+      </div>
+    );
+  }
+
+  // Render status-specific UI
+  if (status.status === 'not_found') {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-gray-600" />
+          </div>
+          <h3 className="text-xl text-center mb-2">No Application Found</h3>
+          <p className="text-sm text-gray-600 text-center mb-6">
+            We couldn't find any application associated with this phone number. Please complete the onboarding process first.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.status === 'pending' || status.status === 'resubmitted') {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 relative">
+            <Clock className="w-8 h-8 text-orange-600" />
+            <div className="absolute top-0 right-0 w-3 h-3 bg-orange-500 rounded-full animate-pulse"></div>
+          </div>
+          <h3 className="text-xl text-center mb-2">Application Under Review</h3>
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Hi {status.fullName}! Your application for <strong>{status.roleName}</strong> is currently being reviewed by our team.
+          </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-blue-900 mb-1">What happens next?</p>
+                <ul className="text-xs text-blue-800 space-y-1">
+                  <li>• Our team will review your documents</li>
+                  <li>• You'll receive an SMS notification</li>
+                  <li>• Approval usually takes 24-48 hours</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-500">
+              Submitted on {new Date(status.submittedAt || '').toLocaleDateString()}
             </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Application ID: {status.applicationId}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.status === 'approved') {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-green-600" />
+          </div>
+          <h3 className="text-xl text-center mb-2">🎉 Congratulations!</h3>
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Your application has been <strong className="text-green-600">approved</strong>!
+          </p>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-green-900 mb-1">You can now:</p>
+                <ul className="text-xs text-green-800 space-y-1">
+                  <li>• Access your vendor dashboard</li>
+                  <li>• Manage your services and bookings</li>
+                  <li>• Start earning with Warmpawz</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div className="text-center text-xs text-gray-500 mb-6">
+            <p>Approved on {new Date(status.approvedAt || '').toLocaleDateString()}</p>
+            <p className="mt-1">Redirecting to dashboard...</p>
+          </div>
+          <button
+            onClick={() => onNavigateToDashboard?.()}
+            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.status === 'rejected') {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <XCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-xl text-center mb-2">Application Not Approved</h3>
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Unfortunately, your application for <strong>{status.roleName}</strong> was not approved at this time.
+          </p>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+            <p className="text-sm text-red-900 mb-1">Reason:</p>
+            <p className="text-sm text-red-800">{status.rejectionReason}</p>
+          </div>
+          {status.canReapply && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm text-blue-900">You can apply again</p>
+                  <p className="text-xs text-blue-800 mt-1">
+                    Please address the issues mentioned above and submit a new application.
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
+  if (status.status === 'more_info_required') {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-orange-600" />
+          </div>
+          <h3 className="text-xl text-center mb-2">Additional Information Required</h3>
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Our team needs some additional information to process your application.
+          </p>
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
+            <p className="text-sm text-orange-900 mb-2">Admin's message:</p>
+            <p className="text-sm text-orange-800">{status.infoRequestMessage}</p>
+            
+            {status.infoRequiredFields && status.infoRequiredFields.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs text-orange-900 mb-1">Fields requiring attention:</p>
+                <ul className="text-xs text-orange-800 space-y-1">
+                  {status.infoRequiredFields.map((field, idx) => (
+                    <li key={idx}>• {field}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => status.vendorId && onNavigateToEdit?.(status.vendorId)}
+            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl mb-3"
+          >
+            Edit & Resubmit Application
+          </button>
+          <p className="text-xs text-center text-gray-500">
+            Application ID: {status.applicationId}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}

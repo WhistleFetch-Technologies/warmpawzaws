@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Star, MapPin, Clock, Phone, ChevronRight, ArrowLeft, Filter } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface Service {
   serviceId: string;
@@ -42,6 +44,7 @@ export function ServicesByProblem({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
+    // Get user location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -70,12 +73,14 @@ export function ServicesByProblem({
         params.append('lng', userLocation.lng.toString());
       }
 
-      const response = await apiClient.get<{ services: Service[] }>(
-        `/customer/services-by-problem/${problemId}?${params}`
+      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
       );
-      
-      if (response.services) {
-        setServices(response.services);
+
+      if (response.ok) {
+        const data = await response.json();
+        setServices(data.data?.services || data.services || []);
       }
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -100,13 +105,16 @@ export function ServicesByProblem({
 
   if (loading) {
     return (
-      <div className={className}>
-        <div className="flex items-center gap-0 mb-0">
+      <div className={`${className}`}>
+        {/* Header Skeleton */}
+        <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-gray-200 rounded-full animate-pulse"></div>
           <div className="flex-1">
             <div className="h-6 bg-gray-200 rounded w-48 animate-pulse"></div>
           </div>
         </div>
+
+        {/* Services Skeleton */}
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-32 bg-gray-100 rounded-xl animate-pulse"></div>
@@ -117,9 +125,9 @@ export function ServicesByProblem({
   }
 
   return (
-    <div className={className}>
+    <div className={`${className}`}>
       {/* Header */}
-      <div className="flex items-center gap-0 mb-0">
+      <div className="flex items-center gap-3 mb-6">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -127,13 +135,13 @@ export function ServicesByProblem({
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>
         <div className="flex-1">
-          <h2 className="text-gray-900 font-bold">{problemTitle}</h2>
+          <h2 className="text-gray-900">{problemTitle}</h2>
           <p className="text-sm text-gray-500">{services.length} services available</p>
         </div>
       </div>
 
       {/* Sort Options */}
-      <div className="flex gap-0 overflow-x-auto pb-0 mb-4 scrollbar-hide">
+      <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-hide">
         {[
           { value: 'relevance', label: 'Most Relevant' },
           { value: 'rating', label: 'Top Rated' },
@@ -143,10 +151,10 @@ export function ServicesByProblem({
           <button
             key={option.value}
             onClick={() => setSortBy(option.value as any)}
-            className={`px-4 py-0 rounded-xl font-medium whitespace-nowrap transition-all ${
+            className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
               sortBy === option.value
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             {option.label}
@@ -155,57 +163,100 @@ export function ServicesByProblem({
       </div>
 
       {/* Services List */}
-      {sortedServices.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-2xl">
-          <p className="text-gray-600">No services available for this problem</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {sortedServices.map((service) => (
-            <div
-              key={service.serviceId}
-              onClick={() => onServiceSelect(service)}
-              className="bg-white rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-shadow active:scale-[0.98] cursor-pointer"
-            >
+      <div className="space-y-4">
+        {sortedServices.map((service) => (
+          <Card
+            key={service.serviceId}
+            className="rounded-xl hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => onServiceSelect(service)}
+          >
+            <CardContent className="p-4">
               <div className="flex gap-4">
+                {/* Service Image */}
                 {service.imageUrl && (
-                  <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-200 flex-shrink-0">
-                    <img src={service.imageUrl} alt={service.name} className="w-full h-full object-cover" />
+                  <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+                    <img 
+                      src={service.imageUrl} 
+                      alt={service.name}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 )}
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 mb-0">{service.name}</h3>
-                  <p className="text-sm text-gray-600 mb-0 line-clamp-0">{service.description}</p>
-                  
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
-                    <div className="flex items-center gap-0">
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                      <span className="font-semibold">{service.vendorRating.toFixed(1)}</span>
-                      <span className="text-gray-400">({service.vendorReviews})</span>
-                    </div>
-                    {service.distance && (
-                      <div className="flex items-center gap-0">
-                        <MapPin className="w-4 h-4" />
-                        <span>{service.distance.toFixed(1)} km</span>
-                      </div>
+
+                {/* Service Details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h3 className="text-gray-900 line-clamp-1">{service.name}</h3>
+                    {sortBy === 'relevance' && service.relevanceScore && service.relevanceScore > 80 && (
+                      <Badge className="bg-green-100 text-green-700 text-xs">
+                        Best Match
+                      </Badge>
                     )}
-                    <div className="flex items-center gap-0">
-                      <Clock className="w-4 h-4" />
-                      <span>{service.duration} min</span>
-                    </div>
                   </div>
 
+                  <p className="text-sm text-gray-600 line-clamp-2 mb-3">
+                    {service.description}
+                  </p>
+
+                  {/* Vendor Info */}
+                  <div className="flex items-center gap-4 mb-2 text-sm text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                      {service.vendorRating?.toFixed(1) || 'N/A'}
+                      <span className="text-xs">({service.vendorReviews || 0})</span>
+                    </span>
+
+                    {service.distance !== undefined && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-4 h-4" />
+                        {service.distance.toFixed(1)} km
+                      </span>
+                    )}
+
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      {service.duration} min
+                    </span>
+                  </div>
+
+                  {/* Footer */}
                   <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-primary">₹{service.price}</span>
+                    <div>
+                      <span className="text-gray-900">₹{service.price}</span>
+                      {service.availability && (
+                        <span className="ml-2 text-xs text-green-600">
+                          {service.availability}
+                        </span>
+                      )}
+                    </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Empty State */}
+      {sortedServices.length === 0 && (
+        <div className="text-center py-12">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Filter className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-gray-900 mb-2">No services found</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            We couldn't find any services for this problem in your area.
+          </p>
+          <Button
+            variant="outline"
+            onClick={onBack}
+            className="border-orange-500 text-orange-500 hover:bg-orange-50"
+          >
+            Try Another Problem
+          </Button>
         </div>
       )}
     </div>
   );
 }
-

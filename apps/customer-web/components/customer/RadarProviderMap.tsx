@@ -1,121 +1,196 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { MapPin, Navigation, List, Map } from 'lucide-react';
-import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { MapPin, Navigation, User, Briefcase, Star, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface Provider {
   id: string;
   name: string;
-  location: { lat: number; lng: number };
-  distance?: number;
-  rating?: number;
-  type: 'vendor' | 'staff' | 'center';
+  photo?: string;
+  rating: number;
+  specialization?: string;
+  coordinates: { lat: number; lng: number };
+  distance: number;
+  price: number;
+  commuteTime?: number;
 }
 
 interface RadarProviderMapProps {
-  providers: Provider[];
-  userLocation?: { lat: number; lng: number };
-  onProviderSelect?: (provider: Provider) => void;
-  className?: string;
+  userLocation: { lat: number; lng: number };
+  radius: number; // in km
+  serviceType: string;
+  onSelectProvider: (provider: Provider) => void;
 }
 
-export function RadarProviderMap({
-  providers,
-  userLocation,
-  onProviderSelect,
-  className = ''
-}: RadarProviderMapProps) {
-  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+export function RadarProviderMap({ userLocation, radius, serviceType, onSelectProvider }: RadarProviderMapProps) {
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(true);
+  const [selectedPin, setSelectedPin] = useState<string | null>(null);
 
-  const handleProviderClick = (provider: Provider) => {
-    setSelectedProvider(provider);
-    onProviderSelect?.(provider);
+  useEffect(() => {
+    // In production, this calls the backend geospatial query
+    fetchProviders();
+  }, [userLocation, radius, serviceType]);
+
+  const fetchProviders = async () => {
+    setLoading(true);
+    setScanning(true);
+    try {
+        // Fetch from the new radar endpoint
+        const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
+                headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            }
+        );
+        
+        if (response.ok) {
+            const data = await response.json();
+            // Transform backend data to frontend Provider interface
+            const mappedProviders = (data.providers || []).map((p: any) => ({
+                id: p.id,
+                name: p.name,
+                photo: p.photo,
+                rating: p.rating,
+                specialization: p.serviceType,
+                coordinates: p.location || p.coordinates, // Backend might return either
+                distance: parseFloat(p.distance),
+                price: p.basePrice || 500, // Fallback price
+                commuteTime: p.commuteTime
+            }));
+            setProviders(mappedProviders);
+        } else {
+            // Fallback for demo if backend returns empty or error
+            console.warn("Radar endpoint failed, using mock data for demo");
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
+            const mockProviders = Array.from({ length: 5 }).map((_, i) => ({
+                id: `p-${i}`,
+                name: `Provider ${i + 1}`,
+                rating: 4.5 + (Math.random() * 0.5),
+                coordinates: {
+                    lat: userLocation.lat + (Math.random() - 0.5) * 0.05,
+                    lng: userLocation.lng + (Math.random() - 0.5) * 0.05
+                },
+                distance: Math.random() * 5,
+                price: 500 + Math.floor(Math.random() * 500),
+                specialization: serviceType
+            }));
+            setProviders(mockProviders);
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setLoading(false);
+        setTimeout(() => setScanning(false), 2000); // Keep scanning effect a bit longer
+    }
   };
 
   return (
-    <div className={className}>
-      {/* View Toggle */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-gray-900">Nearby Providers</h3>
-        <div className="flex items-center bg-gray-100 rounded-lg p-0">
-          <button
-            onClick={() => setViewMode('map')}
-            className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
-              viewMode === 'map'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <Map className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
-              viewMode === 'list'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <List className="w-4 h-4" />
-          </button>
-        </div>
+    <div className="relative w-full h-[400px] bg-slate-900 rounded-xl overflow-hidden shadow-inner border border-slate-700">
+      {/* Radar Effect Layer */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        {/* Radar Rings */}
+        <div className="absolute w-[100px] h-[100px] border border-green-500/20 rounded-full" />
+        <div className="absolute w-[200px] h-[200px] border border-green-500/20 rounded-full" />
+        <div className="absolute w-[300px] h-[300px] border border-green-500/20 rounded-full" />
+        
+        {/* Scanning Line */}
+        {scanning && (
+            <motion.div 
+                className="absolute w-[300px] h-[300px] bg-gradient-to-r from-transparent via-green-500/10 to-transparent rounded-full"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                style={{ transformOrigin: 'center' }}
+            />
+        )}
       </div>
 
-      {viewMode === 'map' ? (
-        <div className="bg-gray-200 rounded-2xl h-96 flex items-center justify-center relative overflow-hidden">
-          {/* Map Placeholder - In production, integrate with Google Maps or Mapbox */}
-          <div className="text-center">
-            <MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">Map view coming soon</p>
-            <p className="text-sm text-gray-500 mt-0">{providers.length} providers nearby</p>
-          </div>
-          
-          {/* User Location Marker */}
-          {userLocation && (
-            <div className="absolute top-0/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {providers.map((provider) => (
-            <div
-              key={provider.id}
-              onClick={() => handleProviderClick(provider)}
-              className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
+      {/* User Location Pin */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+        <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg shadow-blue-500/50 animate-pulse" />
+      </div>
+
+      {/* Provider Pins */}
+      {providers.map((provider) => {
+        // Calculate relative position based on lat/lng diff (Simplified projection)
+        // 1 deg lat approx 111km. Map view approx 10km radius.
+        const latDiff = (provider.coordinates.lat - userLocation.lat) * 2000; 
+        const lngDiff = (provider.coordinates.lng - userLocation.lng) * 2000;
+        
+        // Clamp to container bounds (simplified)
+        const x = Math.min(Math.max(lngDiff, -180), 180);
+        const y = Math.min(Math.max(latDiff, -180), 180); 
+
+        return (
+            <motion.div
+                key={provider.id}
+                className="absolute top-1/2 left-1/2 cursor-pointer group"
+                style={{ x, y: -y }} // -y because lat goes up (screen Y goes down)
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: Math.random() * 0.5 }}
+                onClick={() => setSelectedPin(provider.id)}
             >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-primary to-primary-dark rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0">
-                  {provider.name.charAt(0)}
+                <div className={`relative flex flex-col items-center ${selectedPin === provider.id ? 'z-20' : 'z-10'}`}>
+                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shadow-lg transition-all ${
+                        selectedPin === provider.id 
+                        ? 'bg-orange-500 border-white scale-125' 
+                        : 'bg-white border-orange-500 hover:scale-110'
+                    }`}>
+                        <User className={`w-4 h-4 ${selectedPin === provider.id ? 'text-white' : 'text-orange-500'}`} />
+                    </div>
+                    
+                    {/* Tooltip on Hover/Select */}
+                    <AnimatePresence>
+                        {(selectedPin === provider.id) && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 5 }}
+                                className="absolute bottom-10 bg-white p-3 rounded-lg shadow-xl w-48 text-left pointer-events-auto z-30"
+                            >
+                                <h4 className="font-bold text-gray-900 text-sm">{provider.name}</h4>
+                                <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
+                                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                                    <span>{provider.rating.toFixed(1)}</span>
+                                    <span>•</span>
+                                    <span>{provider.distance.toFixed(1)} km</span>
+                                </div>
+                                <div className="mt-2 flex justify-between items-center">
+                                    <span className="font-bold text-orange-600">₹{provider.price}</span>
+                                    <Button 
+                                        size="sm" 
+                                        className="h-7 text-xs bg-slate-900 hover:bg-slate-800 text-white"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectProvider(provider);
+                                        }}
+                                    >
+                                        Select
+                                    </Button>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold text-gray-900">{provider.name}</h4>
-                  <div className="flex items-center gap-0 text-sm text-gray-600 mt-0">
-                    {provider.distance && (
-                      <div className="flex items-center gap-0">
-                        <Navigation className="w-4 h-4" />
-                        <span>{provider.distance.toFixed(1)} km</span>
-                      </div>
-                    )}
-                    {provider.rating && (
-                      <div className="flex items-center gap-0">
-                        <span className="font-semibold">{provider.rating.toFixed(1)}</span>
-                        <span>⭐</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <MapPin className="w-5 h-5 text-primary flex-shrink-0" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            </motion.div>
+        );
+      })}
+
+      {/* Controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
+        <Button size="icon" variant="secondary" className="rounded-full shadow-lg" onClick={fetchProviders}>
+            <Navigation className={`w-4 h-4 ${scanning ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+      
+      {/* Legend */}
+      <div className="absolute top-4 left-4 bg-black/50 backdrop-blur px-3 py-1.5 rounded-full text-xs text-white flex items-center gap-2 z-20">
+        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" /> You
+        <div className="w-2 h-2 bg-white border border-orange-500 rounded-full ml-2" /> Provider
+      </div>
     </div>
   );
 }
-
