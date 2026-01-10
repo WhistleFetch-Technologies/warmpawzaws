@@ -124,7 +124,22 @@ jobs:
 
       - name: Install app dependencies
         working-directory: apps/${{ matrix.app }}
-        run: npm ci --legacy-peer-deps
+        run: |
+          # Install app dependencies (npm ci uses exact versions from package-lock.json)
+          # This ensures packages/ui file dependency is properly linked
+          npm ci --legacy-peer-deps
+          # Verify critical dependencies exist (they should be in app's node_modules)
+          if [ ! -d "node_modules/@radix-ui/react-accordion" ]; then
+            echo "⚠ @radix-ui/react-accordion not found in app node_modules, checking packages/ui"
+            if [ -d "../../packages/ui/node_modules/@radix-ui/react-accordion" ]; then
+              echo "✓ Found in packages/ui/node_modules (webpack config should resolve this)"
+            else
+              echo "❌ Not found anywhere - this will cause build failure"
+              exit 1
+            fi
+          else
+            echo "✓ @radix-ui/react-accordion found in app node_modules"
+          fi
 
       - name: Build ${{ matrix.app }}
         working-directory: apps/${{ matrix.app }}
