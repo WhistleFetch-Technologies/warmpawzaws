@@ -73,10 +73,11 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
       );
 
       if (response.ok) {
+        const data = await response.json();
         toast.success('Booking accepted successfully!');
         onSuccess();
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
         toast.error(error.error || 'Failed to accept booking');
       }
     } catch (error) {

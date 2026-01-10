@@ -76,21 +76,18 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     const loadFacilityData = async () => {
       try {
         setLoading(true);
-        const response = await apiClient.get('/vendor/endpoint');
+        const data = await apiClient.get('/vendor/endpoint') as any;
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.facility) {
-            setFacility({
-              description: data.facility.description || '',
-              address: data.facility.address || '',
-              operatingHours: data.facility.operatingHours || 'Mon-Fri: 9AM-6PM',
-              amenities: data.facility.amenities || [],
-              customAmenities: data.facility.customAmenities || [],
-              photos: data.facility.photos || [],
-              specializations: data.facility.specializations || []
-            });
-          }
+        if (data && data.success && data.facility) {
+          setFacility({
+            description: data.facility.description || '',
+            address: data.facility.address || '',
+            operatingHours: data.facility.operatingHours || 'Mon-Fri: 9AM-6PM',
+            amenities: data.facility.amenities || [],
+            customAmenities: data.facility.customAmenities || [],
+            photos: data.facility.photos || [],
+            specializations: data.facility.specializations || []
+          });
         }
       } catch (error) {
         console.error('Error loading facility data:', error);
@@ -213,9 +210,13 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         })
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error('Failed to save facility data');
+      }
 
-      if (data.success) {
+      const saveData = await response.json();
+
+      if (saveData.success) {
         toast.success('Facility photos and description saved successfully!');
         
         // Clear the new photos and update existing
@@ -225,7 +226,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
           photos: allPhotos
         }));
       } else {
-        toast.error(data.error || 'Failed to save facility information');
+        toast.error(saveData.error || 'Failed to save facility information');
       }
     } catch (error) {
       console.error('Error saving facility data:', error);
@@ -479,7 +480,6 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                 <div className="grid grid-cols-1 gap-2">
                   {categoryAmenities.map(amenity => {
                     const isSelected = facility.amenities.includes(amenity.id);
-                    const IconComponent = amenity.icon;
 
                     return (
                       <button
@@ -494,9 +494,15 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
                           isSelected ? 'bg-[#FF8C42]' : 'bg-gray-100'
                         }`}>
-                          <IconComponent className={`w-5 h-5 ${
-                            isSelected ? 'text-white' : 'text-gray-600'
-                          }`} />
+                          {amenity.icon ? (
+                            <span className={`text-lg ${isSelected ? 'text-white' : 'text-gray-600'}`}>
+                              {amenity.icon}
+                            </span>
+                          ) : (
+                            <span className={`text-xs font-medium ${isSelected ? 'text-white' : 'text-gray-600'}`}>
+                              {amenity.name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-medium text-gray-900">

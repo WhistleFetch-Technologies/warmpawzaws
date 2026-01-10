@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState } from 'react';
-import { AdminLayout } from '@/components/AdminLayout';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label, Badge, Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@warmpawz/ui';
 import { Image, Plus, Edit, Trash2, Calendar, Link as LinkIcon } from 'lucide-react';
 import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';

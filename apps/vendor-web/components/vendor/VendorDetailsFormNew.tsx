@@ -105,8 +105,8 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
 
   const fetchGoogleMapsApiKey = async () => {
     try {
-      const data = await apiClient.get('/config/google-maps-key');
-      if (data.apiKey && !/^\d+$/.test(data.apiKey)) {
+      const data = await apiClient.get('/config/google-maps-key') as any;
+      if (data?.apiKey && !/^\d+$/.test(data.apiKey)) {
         setGoogleMapsApiKey(data.apiKey);
         loadGoogleMapsScript(data.apiKey);
       } 
@@ -137,8 +137,8 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
           const data = await apiClient.post('/verify/gst', {
               gstNumber: formData.gstNumber,
               businessName: formData.businessName
-          });
-          if (data.success && data.valid) {
+          }) as any;
+          if (data?.success && data?.valid) {
               setFormData(prev => ({ ...prev, gstVerified: true }));
               toast.success("GST Verified Successfully!");
           } else {
@@ -160,8 +160,8 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
               accountNumber: bankDetails.accountNumber,
               ifsc: bankDetails.ifscCode,
               accountHolderName: formData.fullName
-          });
-          if (data.success && data.valid) {
+          }) as any;
+          if (data?.success && data?.valid) {
               setBankDetails(prev => ({ ...prev, verified: true }));
               toast.success("Bank Account Verified (Penny Drop Success)!");
           } else {

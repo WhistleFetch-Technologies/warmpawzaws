@@ -38,7 +38,7 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
       console.log('🔍 Loading application status for vendorId:', vendorId);
       
       // AWS Serverless compatible - use apiClient
-      const data = await apiClient.get(`/vendor/application/status/${vendorId}`);
+      const data = await apiClient.get(`/vendor/application/status/${vendorId}`) as any;
 
       console.log('📦 Application data received:', data);
       
@@ -58,8 +58,8 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
     } catch (error) {
       console.error('💥 Error loading application status:', error);
       console.error('💥 Error details:', {
-        message: error.message,
-        stack: error.stack
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     } finally {
       setLoading(false);

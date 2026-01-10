@@ -6,7 +6,7 @@ import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import VendorUtils from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
@@ -46,11 +46,12 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
-import { CommunicationHub } from './CommunicationHub';
+import { CommunicationHub } from '../communication/CommunicationHub';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
 import { AIChatBot } from '../customer/AIChatBot';
+import { copyTextToClipboard } from '@/lib/shareUtils';
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -209,9 +210,9 @@ export function VendorDashboard({
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
 
   // 🔌 CORE: Load dynamic capabilities
-  const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
+  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // ✅ AWS Serverless: Using apiClient instead of direct Supabase URLs
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
   const isVet = VendorUtils.isVet(vendorData?.roleId);
@@ -225,7 +226,7 @@ export function VendorDashboard({
       isSoloProvider: true,
       ownerName: vendorData.ownerName,
       businessName: vendorData.businessName,
-      roleName: vendorData.roleName || 'Service Provider',
+      roleName: vendorData?.roleName || vendorData?.roleId || 'Service Provider',
       defaultMode: 'CENTER' as const
     };
     
@@ -489,7 +490,7 @@ export function VendorDashboard({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 ${colorScheme.primary} rounded-lg flex items-center justify-center`}>
-                <RoleIconComponent className="w-6 h-6 text-white" />
+                <span className="text-2xl">{RoleIconComponent}</span>
               </div>
               <div>
                 <h1 className="font-semibold text-gray-900">
@@ -503,15 +504,15 @@ export function VendorDashboard({
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
               
-              {capabilities.chat && (
-                <iconTheme.actions.messages className="w-5 h-5 text-gray-400" />
+              {capabilities?.chat && (
+                <span className="text-gray-400">💬</span>
               )}
 
               <button 
                 className="relative"
                 onClick={() => setNotificationModalOpen(true)}
               >
-                <iconTheme.actions.notifications className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
+                <span className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors">🔔</span>
                 {unreadNotificationCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
@@ -908,8 +909,8 @@ export function VendorDashboard({
           <div className="grid grid-cols-3 gap-3">
             {/* Appointments Stat */}
             {capabilities.booking && (
-              <div key="stat-appointments" className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
-                <iconTheme.stats.bookings className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
+              <div key="stat-appointments" className={`text-center p-3 ${colorScheme.secondary} rounded-lg`}>
+                <span className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`}>📅</span>
                 <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
                 <div className="text-xs text-gray-500">Appointments</div>
               </div>
@@ -926,8 +927,8 @@ export function VendorDashboard({
 
             {/* Consultations Stat */}
             {(capabilities.tele || capabilities.booking) && (
-              <div key="stat-consultations" className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
-                <iconTheme.stats.customers className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
+              <div key="stat-consultations" className={`text-center p-3 ${colorScheme.secondary} rounded-lg`}>
+                <span className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`}>👥</span>
                 <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
                 <div className="text-xs text-gray-500">Consultations</div>
               </div>
@@ -935,7 +936,7 @@ export function VendorDashboard({
 
             {/* Earnings Stat - Always show */}
             <div key="stat-earnings" className="text-center p-3 bg-green-50 rounded-lg">
-              <iconTheme.stats.revenue className="w-5 h-5 text-green-600 mx-auto mb-1" />
+              <span className="w-5 h-5 text-green-600 mx-auto mb-1">💰</span>
               <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
               <div className="text-xs text-gray-500">Earnings</div>
             </div>
@@ -1298,7 +1299,7 @@ export function VendorDashboard({
       {/* Capability Debug Overlay (Dev Only) */}
       <CapabilityDebugOverlay
         roleId={vendorData?.roleId || 'unknown'}
-        roleName={roleName}
+        roleName={vendorData?.roleName || vendorData?.roleId || 'Service Provider'}
         capabilities={capabilities}
         vendorData={vendorData}
       />

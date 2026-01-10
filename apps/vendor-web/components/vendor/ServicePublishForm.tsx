@@ -78,9 +78,7 @@ export function ServicePublishForm({
 
   useEffect(() => {
     loadAllowedCategories();
-    if (hasCentres) {
-      loadCentres();
-    }
+    // loadCentres() removed - centres functionality not needed
   }, [vendorId]);
 
   useEffect(() => {
@@ -95,9 +93,7 @@ export function ServicePublishForm({
 
   useEffect(() => {
     // Load centre services when a centre is selected
-    if (formData.selectedCentreId) {
-      loadCentreServices(formData.selectedCentreId);
-    }
+    // loadCentreServices() removed - centres functionality not needed
   }, [formData.selectedCentreId]);
 
   const loadAllowedCategories = async () => {
@@ -105,14 +101,10 @@ export function ServicePublishForm({
       setLoading(true);
       
       // Load role configuration to determine allowed service categories
-      const roleRes = await apiClient.get('/make-server-3dd53475/config/roles'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const roleData = await apiClient.get(`/make-server-3dd53475/config/roles`) as any;
 
-      if (roleRes.ok) {
-        const rolesData = await roleRes.json();
+      if (roleData) {
+        const rolesData = roleData;
         const currentRole = rolesData.roles?.find((r: any) => 
           r.id === vendorData.roleId || r.name.toLowerCase() === vendorData.roleId?.toLowerCase()
         );
@@ -207,14 +199,9 @@ export function ServicePublishForm({
 
   const loadCentres = async () => {
     try {
-      const res = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/centres'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/centres`) as any;
 
-      if (res.ok) {
-        const data = await res.json();
+      if (data && data.centres) {
         setCentres(data.centres || []);
       }
     } catch (error) {
@@ -224,14 +211,9 @@ export function ServicePublishForm({
 
   const loadCentreServices = async (centreId: string) => {
     try {
-      const res = await apiClient.get('/make-server-3dd53475/centre/${centreId}/services'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/centre/${centreId}/services`) as any;
 
-      if (res.ok) {
-        const data = await res.json();
+      if (data && data.services) {
         setCentreServices(data.services || []);
       }
     } catch (error) {
@@ -284,19 +266,9 @@ export function ServicePublishForm({
           : undefined
       };
 
-      const res = await apiClient.get('/make-server-3dd53475/vendor/services/publish'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        }
-      );
+      const data = await apiClient.post('/make-server-3dd53475/vendor/services/publish', payload) as any;
 
-      if (res.ok) {
-        const data = await res.json();
+      if (data && data.success) {
         toast.success(
           formData.publishLevel === 'centre' 
             ? `Service published at ${centres.find(c => c.id === formData.selectedCentreId)?.name}` 
@@ -304,8 +276,7 @@ export function ServicePublishForm({
         );
         onSuccess();
       } else {
-        const error = await res.json();
-        toast.error(error.error || 'Failed to publish service');
+        toast.error(data?.error || 'Failed to publish service');
       }
     } catch (error) {
       console.error('Error publishing service:', error);

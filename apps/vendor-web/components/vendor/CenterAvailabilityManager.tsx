@@ -32,12 +32,9 @@ export function CenterAvailabilityManager({
   const loadAvailability = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/center-availability'),
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/center-availability`) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.availability) {
         setAvailability(data.availability);
       } else {
         toast.error('Failed to load availability settings');
@@ -53,22 +50,8 @@ export function CenterAvailabilityManager({
   const handleSave = async () => {
     try {
       setSaving(true);
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/center-availability'),
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(availability)
-        }
-      );
-
-      if (response.ok) {
-        toast.success('Settings saved successfully');
-      } else {
-        toast.error('Failed to save settings');
-      }
+      await apiClient.put(`/make-server-3dd53475/vendor/${vendorId}/center-availability`, { availability }) as any;
+      toast.success('Settings saved successfully');
     } catch (error) {
       toast.error('Network error');
     } finally {

@@ -325,5 +325,152 @@ export function registerAnalyticsEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  // ============================================
+  // ADMIN ANALYTICS ENDPOINTS (Admin UI compatibility)
+  // ============================================
+
+  /**
+   * GET /admin/analytics/overview
+   * Admin analytics overview (alias for /analytics/platform/overview)
+   */
+  app.get("/admin/analytics/overview", async (c) => {
+    try {
+      // Reuse platform overview logic
+      const vendorStats = await query(
+        `SELECT 
+           COUNT(*) as total_vendors,
+           COUNT(*) FILTER (WHERE status = 'approved' AND is_active = true) as active_vendors,
+           COUNT(*) FILTER (WHERE status = 'pending') as pending_vendors
+         FROM vendors`
+      );
+
+      const customerStats = await query(
+        `SELECT COUNT(*) as total_customers FROM customers`
+      );
+
+      const bookingStats = await query(
+        `SELECT 
+           COUNT(*) as total_bookings,
+           COUNT(*) FILTER (WHERE status = 'completed') as completed_bookings,
+           COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0) as total_revenue,
+           COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed' AND booking_date >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
+         FROM bookings`
+      );
+
+      const orderStats = await query(
+        `SELECT 
+           COUNT(*) as total_orders,
+           COALESCE(SUM(total_amount) FILTER (WHERE order_status = 'delivered'), 0) as total_revenue
+         FROM orders`
+      );
+
+      return c.json({
+        success: true,
+        stats: {
+          vendors: {
+            total: parseInt(vendorStats.rows[0]?.total_vendors || '0', 10),
+            active: parseInt(vendorStats.rows[0]?.active_vendors || '0', 10),
+            pending: parseInt(vendorStats.rows[0]?.pending_vendors || '0', 10),
+          },
+          customers: {
+            total: parseInt(customerStats.rows[0]?.total_customers || '0', 10),
+          },
+          bookings: {
+            total: parseInt(bookingStats.rows[0]?.total_bookings || '0', 10),
+            completed: parseInt(bookingStats.rows[0]?.completed_bookings || '0', 10),
+          },
+          revenue: {
+            total: parseFloat(bookingStats.rows[0]?.total_revenue || '0') + parseFloat(orderStats.rows[0]?.total_revenue || '0'),
+            thisMonth: parseFloat(bookingStats.rows[0]?.this_month_revenue || '0'),
+            fromBookings: parseFloat(bookingStats.rows[0]?.total_revenue || '0'),
+            fromOrders: parseFloat(orderStats.rows[0]?.total_revenue || '0'),
+          },
+          orders: {
+            total: parseInt(orderStats.rows[0]?.total_orders || '0', 10),
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('Error getting admin analytics overview:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/analytics/vendors
+   * Get vendor analytics for admin
+   */
+  app.get("/admin/analytics/vendors", async (c) => {
+    try {
+      const period = c.req.query('period') || '30';
+      const days = parseInt(period, 10);
+
+      const vendorStats = await query(
+        `SELECT 
+           v.id,
+           v.business_name,
+           v.city,
+           COUNT(b.id) as total_bookings,
+           COUNT(b.id) FILTER (WHERE b.status = 'completed') as completed_bookings,
+           COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) as revenue,
+           COALESCE(AVG(r.rating), 0) as avg_rating
+         FROM vendors v
+         LEFT JOIN bookings b ON v.id = b.vendor_id AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+         LEFT JOIN reviews r ON v.id = r.vendor_id
+         WHERE v.status = 'approved' AND v.is_active = true
+         GROUP BY v.id, v.business_name, v.city
+         ORDER BY revenue DESC
+         LIMIT 50`
+      );
+
+      return c.json({
+        success: true,
+        vendors: vendorStats.rows,
+        total: vendorStats.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error getting vendor analytics:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/analytics/customers
+   * Get customer analytics for admin
+   */
+  app.get("/admin/analytics/customers", async (c) => {
+    try {
+      const period = c.req.query('period') || '30';
+      const days = parseInt(period, 10);
+
+      const customerStats = await query(
+        `SELECT 
+           c.id,
+           c.full_name as name,
+           c.phone,
+           c.city,
+           COUNT(b.id) as total_bookings,
+           COUNT(o.id) as total_orders,
+           COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) as booking_spend,
+           COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0) as order_spend
+         FROM customers c
+         LEFT JOIN bookings b ON c.id = b.customer_id AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+         LEFT JOIN orders o ON c.id = o.customer_id AND o.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+         GROUP BY c.id, c.full_name, c.phone, c.city
+         ORDER BY (booking_spend + order_spend) DESC
+         LIMIT 50`
+      );
+
+      return c.json({
+        success: true,
+        customers: customerStats.rows,
+        total: customerStats.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error getting customer analytics:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

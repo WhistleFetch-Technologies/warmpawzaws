@@ -30,8 +30,9 @@ import { query, select, update, insert } from '../database/rds-connection';
 
 class VendorStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    // ✅ SQL: Get all vendors
-    const vendors = await select('vendors', {});
+    try {
+      // ✅ SQL: Get all vendors
+      const vendors = await select('vendors', {});
 
     const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
     const pendingApplications = vendors.filter(v => 
@@ -77,6 +78,10 @@ class VendorStatsHandler extends BaseHandler {
       distributionByCategory,
       total: vendors.length,
     });
+    } catch (error: any) {
+      console.error('Error in VendorStatsHandler:', error);
+      return this.error(error.message || 'Failed to fetch vendor stats', 500);
+    }
   }
 }
 
@@ -201,41 +206,46 @@ class RejectVendorHandler extends BaseHandler {
 
 class ListVendorsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const status = context.event.queryStringParameters?.status;
-    const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
-    const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
+    try {
+      const status = context.event.queryStringParameters?.status;
+      const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
+      const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
 
-    // ✅ SQL: Get vendors with filters
-    let vendors;
-    if (status) {
-      vendors = await select('vendors', { status }, {
-        limit,
-        offset,
-        orderBy: 'created_at',
-        orderDirection: 'DESC',
+      // ✅ SQL: Get vendors with filters
+      let vendors;
+      if (status) {
+        vendors = await select('vendors', { status }, {
+          limit,
+          offset,
+          orderBy: 'created_at',
+          orderDirection: 'DESC',
+        });
+      } else {
+        vendors = await select('vendors', {}, {
+          limit,
+          offset,
+          orderBy: 'created_at',
+          orderDirection: 'DESC',
+        });
+      }
+
+      return this.success({
+        vendors: vendors.map(v => ({
+          id: v.id,
+          businessName: v.business_name,
+          ownerName: v.owner_name,
+          phone: v.phone,
+          email: v.email,
+          status: v.status,
+          tier: v.tier,
+          createdAt: v.created_at,
+        })),
+        total: vendors.length,
       });
-    } else {
-      vendors = await select('vendors', {}, {
-        limit,
-        offset,
-        orderBy: 'created_at',
-        orderDirection: 'DESC',
-      });
+    } catch (error: any) {
+      console.error('Error in ListVendorsHandler:', error);
+      return this.error(error.message || 'Failed to fetch vendors', 500);
     }
-
-    return this.success({
-      vendors: vendors.map(v => ({
-        id: v.id,
-        businessName: v.business_name,
-        ownerName: v.owner_name,
-        phone: v.phone,
-        email: v.email,
-        status: v.status,
-        tier: v.tier,
-        createdAt: v.created_at,
-      })),
-      total: vendors.length,
-    });
   }
 }
 

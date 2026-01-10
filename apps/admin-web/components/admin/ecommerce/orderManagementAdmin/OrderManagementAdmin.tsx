@@ -18,8 +18,13 @@ export function OrderManagementAdmin() {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/orders');
       setOrders((data as any).data?.orders || (data as any).orders || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading orders:', error);
+      // In UAT mode, show empty state instead of error
+      if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
+        console.warn('⚠️ API returned 401 - showing empty state (UAT mode)');
+        setOrders([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -33,16 +38,17 @@ export function OrderManagementAdmin() {
     );
   });
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 relative">
+      {/* Loading overlay - only show when actively loading */}
+      {loading && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading orders...</p>
+          </div>
+        </div>
+      )}
       <div>
         <h2 className="text-black text-xl font-semibold">Order Management</h2>
         <p className="text-gray-500 text-sm mt-1">

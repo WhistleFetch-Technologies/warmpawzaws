@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiClient } from '@/lib/api-client';
 import { X, Plus, MapPin, DollarSign, Save, Edit2, Trash2, Navigation, Calculator } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { toast } from 'sonner';
 
 interface DistancePricingProps {
@@ -51,7 +52,7 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
   const [calcDistance, setCalcDistance] = useState('');
   const [calcResult, setCalcResult] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // ✅ AWS Serverless: Using apiClient instead of direct fetch
 
   useEffect(() => {
     fetchRules();
@@ -60,15 +61,9 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
   const fetchRules = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `${API_BASE}/vendor/distance-pricing/${vendorId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      const data = await response.json();
-      if (data.success) {
+      const data = await apiClient.get(`/vendor/distance-pricing/${vendorId}`) as any;
+      
+      if (data?.success) {
         setRules(data.rules || []);
       }
     } catch (error) {
@@ -81,30 +76,23 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
 
   const saveRule = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/distance-pricing/${vendorId}${selectedRule ? `/${selectedRule.id}` : ''}`,
-        {
-          method: selectedRule ? 'PUT' : 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            ...formData,
-            basePrice: parseFloat(formData.basePrice),
-            baseDist: parseFloat(formData.baseDist),
-            pricePerKm: parseFloat(formData.pricePerKm),
-            maxDistance: formData.maxDistance ? parseFloat(formData.maxDistance) : undefined,
-            minCharge: formData.minCharge ? parseFloat(formData.minCharge) : undefined,
-            surgeMultiplier: parseFloat(formData.surgeMultiplier),
-            peakHourMultiplier: parseFloat(formData.peakHourMultiplier),
-            isActive: true
-          })
-        }
-      );
+      const payload = {
+        ...formData,
+        basePrice: parseFloat(formData.basePrice),
+        baseDist: parseFloat(formData.baseDist),
+        pricePerKm: parseFloat(formData.pricePerKm),
+        maxDistance: formData.maxDistance ? parseFloat(formData.maxDistance) : undefined,
+        minCharge: formData.minCharge ? parseFloat(formData.minCharge) : undefined,
+        surgeMultiplier: parseFloat(formData.surgeMultiplier),
+        peakHourMultiplier: parseFloat(formData.peakHourMultiplier),
+        isActive: true
+      };
 
-      const data = await response.json();
-      if (data.success) {
+      const data = selectedRule
+        ? await apiClient.put(`/vendor/distance-pricing/${vendorId}/${selectedRule.id}`, payload) as any
+        : await apiClient.post(`/vendor/distance-pricing/${vendorId}`, payload) as any;
+
+      if (data?.success) {
         toast.success(`Pricing rule ${selectedRule ? 'updated' : 'created'} successfully`);
         setShowCreateModal(false);
         setSelectedRule(null);
@@ -123,18 +111,13 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
     if (!confirm('Are you sure you want to delete this pricing rule?')) return;
 
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/distance-pricing/${vendorId}/${ruleId}`,
-        {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.delete(`/vendor/distance-pricing/${vendorId}/${ruleId}`) as any;
 
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         toast.success('Pricing rule deleted');
         fetchRules();
+      } else {
+        toast.error(data?.error || 'Failed to delete rule');
       }
     } catch (error) {
       console.error('Error deleting rule:', error);
@@ -144,22 +127,13 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
 
   const toggleRuleStatus = async (ruleId: string, isActive: boolean) => {
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/distance-pricing/${vendorId}/${ruleId}/toggle`,
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ isActive })
-        }
-      );
-
-      const data = await response.json();
-      if (data.success) {
-        toast.success(`Pricing rule ${isActive ? 'activated' : 'deactivated'}`);
+      const data = await apiClient.put(`/vendor/distance-pricing/${vendorId}/${ruleId}/toggle`, { isActive }) as any;
+      
+      if (data?.success) {
+        toast.success(`Rule ${isActive ? 'activated' : 'deactivated'}`);
         fetchRules();
+      } else {
+        toast.error(data?.error || 'Failed to update rule status');
       }
     } catch (error) {
       console.error('Error toggling rule:', error);

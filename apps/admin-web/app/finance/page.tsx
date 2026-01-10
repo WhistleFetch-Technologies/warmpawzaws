@@ -30,6 +30,7 @@ import {
 } from "@/components/admin/finance";
 
 import { Button } from "@warmpawz/ui";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
 type TabType =
 	| "dashboard"
@@ -68,7 +69,7 @@ export default function FinanceManagement() {
 	];
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
+		<AdminLayout>
 			<div className="flex-1 flex flex-col">
 				{/* Header */}
 				<div className="bg-white border-b border-gray-200 px-20">
@@ -291,6 +292,6 @@ export default function FinanceManagement() {
 					)}
 				</div>
 			</div>
-		</div>
+		</AdminLayout>
 	);
 }

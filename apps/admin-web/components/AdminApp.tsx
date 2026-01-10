@@ -512,10 +512,18 @@ export function AdminApp() {
       <UnifiedAdminSidebar 
         activeView={getActiveView()} 
         onNavigate={(view) => {
-          // Map UnifiedAdminSidebar view IDs back to activeTab
-          if (view === 'vendor-admin') setActiveTab('vendors');
-          else if (view === 'dashboard') setActiveTab('dashboard');
-          else setActiveTab(view);
+          // IMPORTANT: Navigate to dedicated pages instead of changing tabs
+          // Only handle dashboard and vendors (which have content in AdminApp)
+          // All other views should navigate to dedicated pages
+          if (view === 'dashboard') {
+            setActiveTab('dashboard');
+          } else if (view === 'vendor-admin' || view === 'vendors') {
+            setActiveTab('vendors');
+          } else {
+            // Navigate to dedicated page for all other views
+            const route = view === 'dashboard' ? '/' : `/${view}`;
+            window.location.href = route;
+          }
         }} 
       />
 
@@ -594,8 +602,27 @@ export function AdminApp() {
           )}
 
           {/* Dashboard Tab */}
-          {activeTab === 'dashboard' && stats && (
+          {activeTab === 'dashboard' && (
           <div className="space-y-8">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Loading dashboard...</p>
+                </div>
+              </div>
+            ) : error ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                <p className="text-red-700">{error}</p>
+                <button
+                  onClick={loadDashboard}
+                  className="mt-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : stats ? (
+            <>
             {/* Stats Grid */}
             <div className="grid grid-cols-4 gap-0">
               <StatCard icon="✅" value={stats.activeVendors.count} label="Active Vendors" sublabel={`${stats.activeVendors.percentage}% of total`} color="green" />
@@ -654,6 +681,20 @@ export function AdminApp() {
                 </div>
               )}
             </section>
+            </>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+                <div className="text-5xl mb-4">📊</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Dashboard</h3>
+                <p className="text-gray-500 mb-4">No data available. Click Refresh to load dashboard data.</p>
+                <button
+                  onClick={loadDashboard}
+                  className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+                >
+                  🔄 Refresh Dashboard
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -915,77 +956,8 @@ export function AdminApp() {
           </div>
         )}
 
-        {/* Redirect to dedicated pages */}
-        {activeTab === 'banners' && (
-          <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
-            <div className="text-5xl mb-4">🖼️</div>
-            <h3 className="text-xl font-semibold text-gray-900">Banner Management</h3>
-            <p className="text-gray-500 mt-0 mb-4">Redirecting to Banner Management page...</p>
-            <button
-              onClick={() => window.location.href = '/banners'}
-              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
-            >
-              Go to Banner Management
-            </button>
-          </div>
-        )}
-
-        {activeTab === 'loyalty' && (
-          <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
-            <div className="text-5xl mb-4">🎁</div>
-            <h3 className="text-xl font-semibold text-gray-900">Loyalty & Rewards</h3>
-            <p className="text-gray-500 mt-0 mb-4">Redirecting to Loyalty Management page...</p>
-            <button
-              onClick={() => window.location.href = '/loyalty'}
-              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
-            >
-              Go to Loyalty Management
-            </button>
-          </div>
-        )}
-
-        {/* Redirect to dedicated pages */}
-        {activeTab === 'catalog' && (
-          <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
-            <div className="text-5xl mb-4">📚</div>
-            <h3 className="text-xl font-semibold text-gray-900">Service Catalog</h3>
-            <p className="text-gray-500 mt-0 mb-4">Redirecting to Service Catalog page...</p>
-            <button
-              onClick={() => window.location.href = '/catalog'}
-              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
-            >
-              Go to Service Catalog
-            </button>
-          </div>
-        )}
-
-        {activeTab === 'reports' && (
-          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-            <div className="text-5xl mb-4">📈</div>
-            <h3 className="text-xl font-semibold text-gray-900">Reports</h3>
-            <p className="text-gray-500 mt-0 mb-4">Redirecting to Reports page...</p>
-            <button
-              onClick={() => window.location.href = '/reports'}
-              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
-            >
-              Go to Reports
-            </button>
-          </div>
-        )}
-
-        {activeTab === 'integrations' && (
-          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-            <div className="text-5xl mb-4">🔗</div>
-            <h3 className="text-xl font-semibold text-gray-900">Integrations</h3>
-            <p className="text-gray-500 mt-0 mb-4">Redirecting to Integrations page...</p>
-            <button
-              onClick={() => window.location.href = '/integrations'}
-              className="px-1 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
-            >
-              Go to Integrations
-            </button>
-          </div>
-        )}
+        {/* NOTE: All these tabs now have dedicated pages - navigation handled by AdminLayout/UnifiedAdminSidebar */}
+        {/* Removed placeholder redirects - they were causing issues when CloudFront served index.html */}
 
         {/* Other tabs placeholder */}
         {activeTab === 'taxes' && (

@@ -4,14 +4,14 @@
  */
 
 export interface VendorCapabilities {
-  capabilities: any[];
+  capabilities: any;
   loading: boolean;
   error: any;
 }
 
 export function useVendorCapabilities(vendorId: string): VendorCapabilities {
   return {
-    capabilities: [],
+    capabilities: {},
     loading: false,
     error: null
   };

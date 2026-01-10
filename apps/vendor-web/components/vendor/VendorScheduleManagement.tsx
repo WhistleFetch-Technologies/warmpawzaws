@@ -126,20 +126,20 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       console.log('📥 Loading schedule data for vendor:', vendorId);
 
       // Fetch vendor status
-      const statusRes = await apiClient.get('/vendor/endpoint');
+      const statusData = await apiClient.get('/vendor/endpoint') as any;
 
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
+      if (statusData) {
+        const statusData = statusRes;
         if (statusData.success) {
           setIsOnline(statusData.status.isOnline);
         }
       }
 
       // Fetch availability (new format)
-      const availRes = await apiClient.get('/vendor/endpoint');
+      const availData = await apiClient.get('/vendor/endpoint') as any;
 
-      if (availRes.ok) {
-        const availData = await availRes.json();
+      if (availData) {
+        const availData = availRes;
         console.log('📊 Availability API response:', availData);
         if (availData.success && availData.availability && Array.isArray(availData.availability) && availData.availability.length > 0) {
           console.log('✅ Setting availability from API:', availData.availability);
@@ -168,16 +168,16 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
       // Fetch vendor's service styles - handle 404 gracefully
       try {
-        const vendorRes = await apiClient.get('/vendor/endpoint');
+        const vendorData = await apiClient.get('/vendor/endpoint') as any;
 
-        if (vendorRes.ok) {
-          const vendorData = await vendorRes.json();
+        if (vendorData) {
+          const vendorData = vendorRes;
           if (vendorData.vendor) {
             // Get service styles from vendor profile
-            const servicesRes = await apiClient.get('/vendor/endpoint');
+            const servicesData = await apiClient.get('/vendor/endpoint') as any;
 
-            if (servicesRes.ok) {
-              const servicesData = await servicesRes.json();
+            if (servicesData) {
+              const servicesData = servicesRes;
               // Services are returned as an object with keys: at_home, at_center, tele
               // Each containing { services: [], publishedCount: 0 }
               const allServices: string[] = [];
@@ -236,7 +236,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = res;
         if (data.success) {
           setIsOnline(newStatus);
         }
@@ -266,7 +266,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       console.log('📡 Save API response status:', res.status);
       
       if (res.ok) {
-        const data = await res.json();
+        const data = res;
         console.log('📊 Save API response data:', data);
         if (data.success) {
           alert('✅ Schedule saved and published to customer app!');

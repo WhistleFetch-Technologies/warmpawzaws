@@ -26,3 +26,20 @@ export async function authenticatedFetch(
   });
 }
 
+/**
+ * Store session data securely
+ */
+export function storeSession(sessionData: any): void {
+  if (typeof window !== 'undefined') {
+    if (sessionData.vendorId) {
+      localStorage.setItem('vendorId', sessionData.vendorId);
+    }
+    if (sessionData.sessionToken) {
+      localStorage.setItem('vendorSessionToken', sessionData.sessionToken);
+    }
+    if (sessionData.phone) {
+      localStorage.setItem('vendorPhone', sessionData.phone);
+    }
+  }
+}
+

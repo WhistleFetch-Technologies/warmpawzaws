@@ -123,14 +123,10 @@ export function VendorCustomServiceCreation({
     const loadCatalogCategories = async () => {
       try {
         console.log('📚 [CUSTOM-SERVICE] Loading catalog categories...');
-        const response = await apiClient.get('/make-server-3dd53475/admin/service-catalog'),
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
-        );
+        const data = await apiClient.get('/make-server-3dd53475/admin/service-catalog') as any;
 
-        if (response.ok) {
-          const data = await response.json();
+        if (data && data.success) {
+          // data already available
           console.log('📚 [CUSTOM-SERVICE] Loaded catalog services:', data.services?.length || 0);
           
           // Extract unique categories from services
@@ -168,7 +164,7 @@ export function VendorCustomServiceCreation({
   // When category changes, load relevant micro-categories
   useEffect(() => {
     if (categoryName && vendorData?.roleId) {
-      const micros = getMicroCategoriesForRole(categoryName, vendorData.roleId);
+      const micros = getMicroCategoriesForRole(vendorData.roleId);
       setAvailableMicroCategories(micros);
       console.log('🎨 Loaded micro-categories for category:', categoryName, micros);
     } else {
@@ -180,9 +176,9 @@ export function VendorCustomServiceCreation({
   const applyMicroCategoryTemplate = (micro: MicroCategory) => {
     setSelectedMicroCategory(micro);
     setServiceName(micro.name);
-    setDescription(micro.description);
-    setDuration(micro.commonDuration);
-    setPrice(Math.floor((micro.priceRange.min + micro.priceRange.max) / 2)); // Average price
+    setDescription(micro.description || '');
+    setDuration(micro.commonDuration || 60);
+    setPrice(micro.priceRange ? Math.floor((micro.priceRange.min + micro.priceRange.max) / 2) : 0); // Average price
     setSubCategoryName(micro.name);
     toast.success(`✨ Applied template: ${micro.name}`);
   };
@@ -217,20 +213,15 @@ export function VendorCustomServiceCreation({
       setLoading(true);
       console.log(`📋 Loading custom services for vendor: ${vendorId}`);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/custom-services'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/custom-services`) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         console.log('✅ Custom services loaded:', data);
         setCustomServices(data.services || []);
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to load custom services:', error);
-        toast.error(error.error || 'Failed to load custom services');
+        console.error('❌ Failed to load custom services:', data);
+        toast.error(data?.error || 'Failed to load custom services');
       }
     } catch (error) {
       console.error('❌ Error loading custom services:', error);
@@ -348,19 +339,10 @@ export function VendorCustomServiceCreation({
       
       console.log('📤 Sending custom service:', customService);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/custom-services'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(customService)
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/custom-services`, customService) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         console.log('✅ Custom service created:', data);
         toast.success('Custom service created successfully!');
         
@@ -372,9 +354,8 @@ export function VendorCustomServiceCreation({
         await loadCustomServices();
         onServiceCreated();
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to create custom service:', error);
-        toast.error(error.error || 'Failed to create custom service');
+        console.error('❌ Failed to create custom service:', data);
+        toast.error(data?.error || 'Failed to create custom service');
       }
     } catch (error) {
       console.error('❌ Error creating custom service:', error);
@@ -388,22 +369,16 @@ export function VendorCustomServiceCreation({
     try {
       console.log(`📤 Publishing custom service: ${serviceId}`);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}/publish'),
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}/publish`, {}) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         console.log('✅ Service published:', data);
         toast.success('Service submitted for admin approval!');
         await loadCustomServices();
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to publish service:', error);
-        toast.error(error.error || 'Failed to publish service');
+        console.error('❌ Failed to publish service:', data);
+        toast.error(data?.error || 'Failed to publish service');
       }
     } catch (error) {
       console.error('❌ Error publishing service:', error);
@@ -417,21 +392,15 @@ export function VendorCustomServiceCreation({
     try {
       console.log(`🗑️ Deleting custom service: ${serviceId}`);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}'),
-        {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.delete(`/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}`) as any;
 
-      if (response.ok) {
+      if (data && data.success) {
         console.log('✅ Service deleted');
         toast.success('Service deleted successfully');
         await loadCustomServices();
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to delete service:', error);
-        toast.error(error.error || 'Failed to delete service');
+        console.error('❌ Failed to delete service:', data);
+        toast.error(data?.error || 'Failed to delete service');
       }
     } catch (error) {
       console.error('❌ Error deleting service:', error);
@@ -741,7 +710,7 @@ export function VendorCustomServiceCreation({
                       }`}
                     >
                       <div className="flex items-start gap-2">
-                        <span className="text-xl">{micro.icon}</span>
+                        {micro.icon && <span className="text-xl">{micro.icon}</span>}
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-sm text-gray-900 truncate">
                             {micro.name}
@@ -756,7 +725,7 @@ export function VendorCustomServiceCreation({
                             </span>
                             <span className="flex items-center gap-1">
                               <DollarSign className="w-3 h-3" />
-                              ₹{micro.priceRange.min}-₹{micro.priceRange.max}
+                              {micro.priceRange ? `₹${micro.priceRange.min}-₹${micro.priceRange.max}` : 'Price not set'}
                             </span>
                           </div>
                         </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { AdminApp } from '@/components/AdminApp';
 
 // Prevent prerendering - this page uses localStorage and React context
@@ -16,6 +17,8 @@ const UAT_CREDENTIALS = {
 };
 
 export default function AdminHomePage() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -42,6 +45,8 @@ export default function AdminHomePage() {
       if (UAT_MODE) {
         if (email === UAT_CREDENTIALS.email && password === UAT_CREDENTIALS.password) {
           console.log('🔧 [UAT Mode] Admin login successful (hardcoded)');
+          // Store UAT token (note: this is not a real Cognito token, but allows UI to render)
+          // API calls will still fail with 401, but components handle this gracefully
           localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
           localStorage.setItem('adminEmail', email);
           setIsAuthenticated(true);
@@ -84,17 +89,28 @@ export default function AdminHomePage() {
   }
 
   // Show admin dashboard if authenticated
+  // IMPORTANT: Redirect to Analytics & Insight page instead of showing AdminApp dashboard
+  // For all other routes, Next.js will handle routing to dedicated pages
   if (isAuthenticated) {
+    // If we're on a non-root route, don't render AdminApp - let Next.js route to dedicated pages
+    // This prevents AdminApp from intercepting routes and showing placeholder content
+    if (pathname && pathname !== '/') {
+      // Return null to let Next.js handle the route to dedicated pages
+      return null;
+    }
+    
+    // Redirect to Analytics & Insight page (landing page for admin)
+    useEffect(() => {
+      router.push('/analytics');
+    }, [router]);
+    
+    // Show loading state during redirect
     return (
-      <div>
-        {/* Logout Button - Fixed Position */}
-        <button
-          onClick={handleLogout}
-          className="fixed top-4 right-4 z-50 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition shadow-lg"
-        >
-          Logout
-        </button>
-        <AdminApp />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-gray-600">Redirecting to Analytics & Insight...</p>
+        </div>
       </div>
     );
   }

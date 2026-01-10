@@ -47,7 +47,7 @@ import {
 	ResponsiveContainer,
 } from "recharts";
 import { apiClient } from "@/lib/api-client";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { useRouter } from "next/navigation";
 
 interface PetStats {
@@ -202,12 +202,8 @@ export default function PetIntelligenceSystem() {
 	}
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
-			<UnifiedAdminSidebar
-				activeView="pet-info"
-				onNavigate={(view) => router.push(`/${view}`)}
-			/>
-			<div className="flex-1">
+		<AdminLayout>
+			<div className="flex-1 bg-gray-50">
 				{/* Header */}
 				<div className="bg-white border-b sticky top-0 z-10 px-20">
 					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -630,7 +626,7 @@ export default function PetIntelligenceSystem() {
 					</Tabs>
 				</div>
 			</div>
-		</div>
+		</AdminLayout>
 	);
 }
 

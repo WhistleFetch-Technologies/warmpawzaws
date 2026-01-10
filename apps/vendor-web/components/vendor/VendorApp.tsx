@@ -231,7 +231,14 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   if (showOnboarding && selectedRole) {
     // Store role for onboarding flow to read
     localStorage.setItem('vendorSelectedRole', selectedRole);
-    return <VendorOnboardingFlow />;
+    return (
+      <VendorOnboardingFlow 
+        vendorId={vendorData?.id || session.vendorId || ''}
+        vendorType={vendorData?.vendorType || 'solo'}
+        serviceStyle={vendorData?.serviceStyle || 'both'}
+        onComplete={() => setShowOnboarding(false)}
+      />
+    );
   }
 
   // New Vendor - Role Selection

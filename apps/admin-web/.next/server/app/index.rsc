@@ -1,10 +1,46 @@
 2:I[19107,[],"ClientPageRoot"]
-3:I[37390,["5220","static/chunks/5220-142cf6fe5fe63738.js","347","static/chunks/347-a96c609e83f27bd7.js","5424","static/chunks/5424-c0cc5b6049440963.js","120","static/chunks/120-b4bbadfe40a65d6e.js","1931","static/chunks/app/page-0031dca92f7eda9b.js"],"default",1]
-4:I[49294,["4438","static/chunks/4438-0e8dc65c983aaff8.js","5816","static/chunks/5816-74d03631bfffea4a.js","3185","static/chunks/app/layout-e29abcbc86be90f6.js"],"Providers"]
-5:I[4707,[],""]
-6:I[13490,["7648","static/chunks/7648-1aee0b3c375994ab.js","7601","static/chunks/app/error-abcf4c29ab6eeff0.js"],"default"]
-7:I[36423,[],""]
-8:I[85447,["7648","static/chunks/7648-1aee0b3c375994ab.js","9160","static/chunks/app/not-found-c2b2570f3d55d27f.js"],"default"]
-0:["6rh9M8xPeRL192__4O0cG",[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/c15fd5f235b7e9ed.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"src":"/runtime-config.js"}],["$","$L4",null,{"children":["$","$L5",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$6","errorStyles":[],"errorScripts":[],"template":["$","$L7",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L8",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$L9",null]]]]
-9:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}],["$","meta","4",{"name":"next-size-adjust"}]]
+3:I[57340,["1931","static/chunks/app/page-f7d2f7158aeb5f2f.js"],"default",1]
+5:I[49294,["4438","static/chunks/4438-0e8dc65c983aaff8.js","9220","static/chunks/9220-0be12aa100a8fdba.js","3185","static/chunks/app/layout-3ac9f3540e612bed.js"],"Providers"]
+6:I[4707,[],""]
+7:I[13490,["7648","static/chunks/7648-1aee0b3c375994ab.js","7601","static/chunks/app/error-abcf4c29ab6eeff0.js"],"default"]
+8:I[36423,[],""]
+9:I[85447,["7648","static/chunks/7648-1aee0b3c375994ab.js","9160","static/chunks/app/not-found-c2b2570f3d55d27f.js"],"default"]
+4:T75d,
+              // Inline fallback config (ensures API URL is always available)
+              if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+                  apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+                  uatMode: true
+                };
+                console.log('🔧 Runtime config loaded (inline fallback):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+              }
+              // Load external runtime-config.js to override if needed (deploy-time)
+              (function() {
+                var script = document.createElement('script');
+                script.src = '/runtime-config.js';
+                script.async = false;
+                script.defer = false;
+                script.onload = function() {
+                  console.log('🔧 External runtime-config.js loaded');
+                };
+                script.onerror = function() {
+                  console.warn('⚠️ Failed to load runtime-config.js, using fallback');
+                };
+                document.head.appendChild(script);
+              })();
+              // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
+              (function() {
+                var config = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+                var isUatMode = config.uatMode === true;
+                if (isUatMode && typeof localStorage !== 'undefined') {
+                  var token = localStorage.getItem('adminAuthToken');
+                  if (!token) {
+                    localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
+                    localStorage.setItem('adminEmail', 'admin@warmpawz.com');
+                    console.log('🔧 [UAT Mode] Auto-logged in for direct page access');
+                  }
+                }
+              })();
+            0:["Yg1oSohFbVWQP9acMegP1",[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/d35c0a4bed4b95fd.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$4"}}],["$","$L5",null,{"children":["$","$L6",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$7","errorStyles":[],"errorScripts":[],"template":["$","$L8",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L9",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$La",null]]]]
+a:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}],["$","meta","4",{"name":"next-size-adjust"}]]
 1:null

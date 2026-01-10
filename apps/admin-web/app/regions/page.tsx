@@ -37,9 +37,9 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
+import { RegionActivePackagesTab } from "@/components/admin/regions/regionManager/regionActivePackagesTab/RegionActivePackagesTab";
 import { useRouter } from "next/navigation";
-import { RegionActivePackagesTab } from "@/components/admin/regions/RegionActivePackagesTab";
 
 interface Region {
 	regionId: string;
@@ -399,12 +399,8 @@ export default function RegionManager() {
 	);
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
-			<UnifiedAdminSidebar
-				activeView="regions"
-				onNavigate={(view) => router.push(`/${view}`)}
-			/>
-			<div className="flex-1">
+		<AdminLayout>
+			<div className="flex-1 bg-gray-50">
 				{/* Header */}
 				<div className="bg-white border-b px-20 border-gray-200">
 					<div className="max-w-7xl mx-auto px-6 py-4">
@@ -1129,6 +1125,6 @@ export default function RegionManager() {
 					)}
 				</div>
 			</div>
-		</div>
+		</AdminLayout>
 	);
 }

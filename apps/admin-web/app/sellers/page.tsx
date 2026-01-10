@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { apiClient } from '@/lib/api-client';
 
 interface Seller {
@@ -100,7 +101,8 @@ export default function SellersPage() {
   );
 
   return (
-    <div className="p-6">
+    <AdminLayout>
+      <div className="flex-1 p-6 bg-slate-50">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Seller Approval</h1>
@@ -311,7 +313,8 @@ export default function SellersPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </AdminLayout>
   );
 }
 

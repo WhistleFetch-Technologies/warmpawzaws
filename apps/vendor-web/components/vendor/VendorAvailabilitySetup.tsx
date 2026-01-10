@@ -124,25 +124,16 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
 
     setIsSubmitting(true);
     try {
-      const response = await apiClient.get('/make-server-3dd53475/vendor/setup/availability'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({
-            vendorId,
-            availability
-          }),
-        }
-      );
+      const payload = {
+        vendorId,
+        availability
+      };
+      
+      const data = await apiClient.post('/make-server-3dd53475/vendor/setup/availability', payload) as any;
 
-      if (!response.ok) {
-        throw new Error('Failed to save availability');
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Failed to save availability');
       }
-
-      const data = await response.json();
       console.log('✅ Availability saved:', data);
       
       // Move to completion screen

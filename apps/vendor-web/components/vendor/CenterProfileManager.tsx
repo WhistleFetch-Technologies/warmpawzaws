@@ -103,21 +103,18 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       setLoading(true);
       
       // Load facility data
-      const facilityRes = await apiClient.get('/vendor/endpoint');
+      const facilityData = await apiClient.get('/vendor/endpoint') as any;
 
-      if (facilityRes.ok) {
-        const facilityData = await facilityRes.json();
-        if (facilityData.success && facilityData.facility) {
-          setProfile(prev => ({
-            ...prev,
-            description: facilityData.facility.description || '',
-            address: facilityData.facility.address || prev.address,
-            amenities: facilityData.facility.amenities || [],
-            customAmenities: facilityData.facility.customAmenities || [],
-            photos: facilityData.facility.photos || [],
-            specializations: facilityData.facility.specializations || []
-          }));
-        }
+      if (facilityData && facilityData.success && facilityData.facility) {
+        setProfile(prev => ({
+          ...prev,
+          description: facilityData.facility.description || '',
+          address: facilityData.facility.address || prev.address,
+          amenities: facilityData.facility.amenities || [],
+          customAmenities: facilityData.facility.customAmenities || [],
+          photos: facilityData.facility.photos || [],
+          specializations: facilityData.facility.specializations || []
+        }));
       }
 
       // Load center availability (timings)
@@ -688,7 +685,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
                     onChange={() => toggleAmenity(amenity.id)}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm">{amenity.label}</span>
+                  <span className="text-sm">{amenity.name}</span>
                 </label>
               ))}
             </div>

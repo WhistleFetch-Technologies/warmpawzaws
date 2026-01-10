@@ -45,7 +45,7 @@ import {
 	AddVendorModal,
 } from "@/components/admin";
 import { toast, Toaster } from "sonner";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -87,11 +87,6 @@ interface QualityAlert {
 
 export default function AdminVendorManagement() {
 	const router = useRouter();
-	
-	// Handle navigation using Next.js router
-	const handleNavigate = (view: string) => {
-		router.push(`/${view}`);
-	};
 	const [activeTab, setActiveTab] = useState<
 		| "applications"
 		| "deactivation"
@@ -814,14 +809,8 @@ export default function AdminVendorManagement() {
 	}
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
+		<AdminLayout>
 			<Toaster position="top-right" richColors />
-
-			{/* Unified Sidebar */}
-			<UnifiedAdminSidebar
-				activeView="vendors"
-				onNavigate={handleNavigate}
-			/>
 
 			{/* Main Content */}
 			<div className="flex-1 flex flex-col overflow-hidden">
@@ -1222,7 +1211,7 @@ export default function AdminVendorManagement() {
 					setRequestingInfoApplication(null);
 				}}
 			/>
-		</div>
+		</AdminLayout>
 	);
 }
 

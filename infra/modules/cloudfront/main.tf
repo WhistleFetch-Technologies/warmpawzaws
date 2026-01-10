@@ -90,6 +90,18 @@ resource "aws_s3_bucket_policy" "frontend" {
   })
 }
 
+# CloudFront Function: URL Rewrite for Next.js Static Export
+# Rewrites /ecommerce to /ecommerce.html, /catalog to /catalog.html, etc.
+resource "aws_cloudfront_function" "url_rewrite" {
+  for_each = var.frontend_apps
+
+  name    = "warmpawz-${var.environment}-${each.key}-url-rewrite"
+  runtime = "cloudfront-js-1.0"
+  comment = "URL rewrite function for ${each.key} - adds .html extension for Next.js static export"
+  publish = true
+  code    = file("${path.module}/url-rewrite-function.js")
+}
+
 # CloudFront Distribution
 resource "aws_cloudfront_distribution" "frontend" {
   for_each = var.frontend_apps
@@ -124,6 +136,12 @@ resource "aws_cloudfront_distribution" "frontend" {
     default_ttl            = 3600
     max_ttl                = 86400
     compress               = true
+    
+    # CloudFront Function for URL rewriting (Next.js static export)
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.url_rewrite[each.key].arn
+    }
   }
 
   # Handle SPA routing - return index.html for 404s

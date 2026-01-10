@@ -7,9 +7,9 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
-import { StaffManagement } from './StaffManagement';
+import { VendorStaffPage } from './VendorStaffPage';
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from './clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from './resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
@@ -262,27 +262,17 @@ export function VendorLandingPage({
       setLoading(true);
       
       // Try to load vendor profile
-      const profileResponse = await apiClient.get('/make-server-3dd53475/vendor/profile/${vendorId}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const profileData = await apiClient.get(`/vendor/profile`) as any;
 
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
+      if (profileData && profileData.vendor) {
         setVendorData(profileData.vendor);
 
         // Check if they have an application
         if (profileData.vendor?.applicationId) {
           // Load application status
-          const appResponse = await apiClient.get('/make-server-3dd53475/vendor/application/status/${vendorId}'),
-            {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-            }
-          );
+          const appData = await apiClient.get(`/vendor/application/status/${profileData.vendor.applicationId}`) as any;
 
-          if (appResponse.ok) {
-            const appData = await appResponse.json();
+          if (appData && appData.application) {
             setApplicationData(appData.application);
 
             // Determine status based on application status
@@ -393,24 +383,15 @@ export function VendorLandingPage({
       
       // Upload all documents
       console.log('☁️ Uploading documents to storage...');
-      const uploadResponse = await apiClient.get('/make-server-3dd53475/storage/upload-multiple'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: formData
-        }
-      );
+      const uploadResponse = await apiClient.post('/storage/upload-multiple', formData) as any;
       
-      if (!uploadResponse.ok) {
-        const error = await uploadResponse.text();
-        console.error('❌ Upload failed:', error);
+      if (!uploadResponse || !uploadResponse.success) {
+        console.error('❌ Upload failed:', uploadResponse?.error);
         toast.error('Failed to upload documents');
         return;
       }
       
-      const uploadResult = await uploadResponse.json();
+      const uploadResult = uploadResponse;
       console.log('✅ Documents uploaded:', uploadResult);
       
       // Map upload results to documents array
@@ -457,18 +438,9 @@ export function VendorLandingPage({
         createdAt: new Date().toISOString()
       };
 
-      const profileResponse = await apiClient.get('/make-server-3dd53475/vendor/profile/save'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify(vendorProfile)
-        }
-      );
+      const profileResponse = await apiClient.post('/vendor/profile/save', vendorProfile) as any;
 
-      if (!profileResponse.ok) {
+      if (!profileResponse || !profileResponse.success) {
         toast.error('Failed to save profile');
         return;
       }
@@ -507,19 +479,9 @@ export function VendorLandingPage({
         documents: applicationPayload.documents
       });
 
-      const appResponse = await apiClient.get('/make-server-3dd53475/vendor/application/submit'),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify(applicationPayload)
-        }
-      );
+      const result = await apiClient.post('/vendor/application/submit', applicationPayload) as any;
 
-      if (appResponse.ok) {
-        const result = await appResponse.json();
+      if (result && result.success) {
         console.log('✅ Application submitted successfully:', result.applicationId);
         
         // Update local state
@@ -532,9 +494,8 @@ export function VendorLandingPage({
         setStatus('submitted');
         toast.success('Application submitted successfully!');
       } else {
-        const error = await appResponse.json();
-        console.error('❌ Failed to submit application:', error);
-        toast.error('Failed to submit application. Please try again.');
+        console.error('❌ Failed to submit application:', result);
+        toast.error(result?.error || 'Failed to submit application. Please try again.');
       }
     } catch (error) {
       console.error('Error submitting profile and application:', error);
@@ -555,14 +516,9 @@ export function VendorLandingPage({
     
     // Refetch vendor data to get updated status
     try {
-      const profileResponse = await apiClient.get('/make-server-3dd53475/vendor/profile/${vendorId}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const profileData = await apiClient.get(`/vendor/profile`) as any;
 
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
+      if (profileData && profileData.vendor) {
         const vendor = profileData.vendorProfile || profileData.vendor;
         console.log('✅ [VendorLandingPage] Vendor data refreshed:', {
           setupCompleted: vendor?.setupCompleted,
@@ -593,14 +549,12 @@ export function VendorLandingPage({
       setLoading(true);
       
       // Load existing application data
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/application'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const data = await apiClient.get(`/make-server-3dd53475/vendor//application`) as any; }
         }
       );
       
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         console.log('✅ Loaded existing application data:', data.application);
         
         setExistingApplicationData(data.application);
@@ -610,7 +564,7 @@ export function VendorLandingPage({
         
         toast.success('Application loaded. Please update the required information.');
       } else {
-        const error = await response.json();
+        const error = response;
         console.error('❌ Failed to load application:', error);
         toast.error('Failed to load application data. Please try again.');
         setLoading(false);
@@ -881,16 +835,19 @@ export function VendorLandingPage({
       // Show staff management screen if requested
       if (showStaffManagement) {
         return (
-          <StaffManagement
-            vendorId={vendorId}
-            vendorData={vendorData}
-            onBack={() => setShowStaffManagement(false)}
-            onNavigateToServices={() => {
-              setShowStaffManagement(false); // ✅ Close staff management
-              setShowServiceManagement(true); // ✅ Open service management
-              setReturnToStaffManagement(true); // ✅ NEW: Track that we came from staff management
-            }}
-          />
+          <div className="min-h-screen bg-gray-50">
+            <VendorStaffPage
+              vendorId={vendorId}
+            />
+            <div className="fixed bottom-4 left-4">
+              <button
+                onClick={() => setShowStaffManagement(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                ← Back
+              </button>
+            </div>
+          </div>
         );
       }
 

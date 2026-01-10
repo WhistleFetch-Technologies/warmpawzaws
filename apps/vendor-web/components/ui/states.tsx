@@ -29,13 +29,30 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-export function EmptyState({ message, action }: { message: string; action?: React.ReactNode }) {
+export function EmptyState({ 
+  message, 
+  action, 
+  icon, 
+  title, 
+  description 
+}: { 
+  message?: string; 
+  action?: React.ReactNode;
+  icon?: React.ReactNode;
+  title?: string;
+  description?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
       <div className="bg-gray-100 p-4 rounded-full mb-4">
-        <Search className="h-8 w-8 text-gray-400" />
+        {icon || <Search className="h-8 w-8 text-gray-400" />}
       </div>
-      <p className="text-gray-600 font-medium mb-4 max-w-md">{message}</p>
+      {title && <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>}
+      {(description || message) && (
+        <p className="text-gray-600 font-medium mb-4 max-w-md">
+          {typeof description === 'string' ? description : description || message}
+        </p>
+      )}
       {action}
     </div>
   );
