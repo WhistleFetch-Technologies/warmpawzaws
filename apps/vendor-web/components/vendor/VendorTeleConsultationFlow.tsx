@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 interface VendorTeleConsultationFlowProps {
   vendorId: string;
   vendorData?: any;
-  bookingData: any;
+  bookingData?: any; // Optional - may not always be provided
   onBack: () => void;
 }
 

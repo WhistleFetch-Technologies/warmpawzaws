@@ -128,18 +128,14 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       // Fetch vendor status
       const statusData = await apiClient.get('/vendor/endpoint') as any;
 
-      if (statusData) {
-        const statusData = statusRes;
-        if (statusData.success) {
-          setIsOnline(statusData.status.isOnline);
-        }
+      if (statusData && statusData.success) {
+        setIsOnline(statusData.status?.isOnline || false);
       }
 
       // Fetch availability (new format)
       const availData = await apiClient.get('/vendor/endpoint') as any;
 
       if (availData) {
-        const availData = availRes;
         console.log('📊 Availability API response:', availData);
         if (availData.success && availData.availability && Array.isArray(availData.availability) && availData.availability.length > 0) {
           console.log('✅ Setting availability from API:', availData.availability);
@@ -168,38 +164,34 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
       // Fetch vendor's service styles - handle 404 gracefully
       try {
-        const vendorData = await apiClient.get('/vendor/endpoint') as any;
+        const vendorData = await apiClient.get(`/vendor/${vendorId}/profile`) as any;
 
-        if (vendorData) {
-          const vendorData = vendorRes;
-          if (vendorData.vendor) {
-            // Get service styles from vendor profile
-            const servicesData = await apiClient.get('/vendor/endpoint') as any;
+        if (vendorData && vendorData.vendor) {
+          // Get service styles from vendor profile
+          const servicesData = await apiClient.get(`/vendor/${vendorId}/services`) as any;
 
-            if (servicesData) {
-              const servicesData = servicesRes;
-              // Services are returned as an object with keys: at_home, at_center, tele
-              // Each containing { services: [], publishedCount: 0 }
-              const allServices: string[] = [];
-              
-              if (servicesData.services && typeof servicesData.services === 'object') {
-                // Extract service styles from the services object
-                Object.keys(servicesData.services).forEach(style => {
-                  const styleData = servicesData.services[style];
-                  if (styleData && styleData.services && Array.isArray(styleData.services) && styleData.services.length > 0) {
-                    allServices.push(style);
-                  }
-                });
-              }
-              
-              // If no services configured, default to all service types for demo purposes
-              if (allServices.length === 0) {
-                console.log('⚠️ No services configured for vendor, enabling all service types for schedule management');
-                allServices.push('at_center', 'at_home', 'tele');
-              }
-              
-              setVendorServiceStyles(allServices);
+          if (servicesData) {
+            // Services are returned as an object with keys: at_home, at_center, tele
+            // Each containing { services: [], publishedCount: 0 }
+            const allServices: string[] = [];
+            
+            if (servicesData.services && typeof servicesData.services === 'object') {
+              // Extract service styles from the services object
+              Object.keys(servicesData.services).forEach(style => {
+                const styleData = servicesData.services[style];
+                if (styleData && styleData.services && Array.isArray(styleData.services) && styleData.services.length > 0) {
+                  allServices.push(style);
+                }
+              });
             }
+            
+            // If no services configured, default to all service types for demo purposes
+            if (allServices.length === 0) {
+              console.log('⚠️ No services configured for vendor, enabling all service types for schedule management');
+              allServices.push('at_center', 'at_home', 'tele');
+            }
+            
+            setVendorServiceStyles(allServices);
           }
         } else {
           // Vendor not found, default to all service types
@@ -236,7 +228,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       });
 
       if (res.ok) {
-        const data = res;
+        const data = await res.json();
         if (data.success) {
           setIsOnline(newStatus);
         }
@@ -266,7 +258,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       console.log('📡 Save API response status:', res.status);
       
       if (res.ok) {
-        const data = res;
+        const data = await res.json();
         console.log('📊 Save API response data:', data);
         if (data.success) {
           alert('✅ Schedule saved and published to customer app!');

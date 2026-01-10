@@ -101,14 +101,9 @@ export function VendorServiceConfigurationScreen({
       console.log(`🔄 Loading services for vendor ${vendorId}, style: ${serviceStyle}`);
       
       // First check catalog status
-      const debugResponse = await apiClient.get('/make-server-3dd53475/vendor/debug/catalog-status'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const debugData = await apiClient.get('/make-server-3dd53475/vendor/debug/catalog-status') as any;
       
-      if (debugResponse.ok) {
-        const debugData = await debugResponse.json();
+      if (debugData) {
         console.log('📊 Catalog Status:', debugData);
         
         if (debugData.catalogCount === 0) {

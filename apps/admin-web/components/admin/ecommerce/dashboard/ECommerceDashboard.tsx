@@ -16,35 +16,31 @@ import { apiClient } from '@/lib/api-client';
 export function ECommerceDashboard() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const loadAnalytics = async () => {
+      try {
+        setLoading(true);
+        const data = await apiClient.get<any>('/admin/ecommerce/analytics/platform');
+        setAnalytics((data as any).data || data);
+      } catch (error: any) {
+        console.error('Error loading analytics:', error);
+        // In UAT mode, show empty state instead of error
+        // This allows the UI to render even if API fails
+        if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
+          console.warn('⚠️ API returned 401 - showing empty state (UAT mode)');
+          setAnalytics({}); // Empty object allows UI to render with 0 values
+        } else {
+          // For other errors, also show empty state to allow UI to render
+          setAnalytics({});
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadAnalytics();
   }, []);
-
-  // For static export, render UI immediately - don't wait for mounted
-
-  const loadAnalytics = async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.get<any>('/admin/ecommerce/analytics/platform');
-      setAnalytics((data as any).data || data);
-    } catch (error: any) {
-      console.error('Error loading analytics:', error);
-      // In UAT mode, show empty state instead of error
-      // This allows the UI to render even if API fails
-      if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-        console.warn('⚠️ API returned 401 - showing empty state (UAT mode)');
-        setAnalytics({}); // Empty object allows UI to render with 0 values
-      } else {
-        // For other errors, also show empty state to allow UI to render
-        setAnalytics({});
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Always render the UI - show loading overlay only when actively loading after mount
   // For static export, render the full UI structure immediately

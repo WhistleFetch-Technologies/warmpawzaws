@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   BarChart3,
   TrendingUp,
@@ -48,11 +48,7 @@ export function ECommerceAnalytics() {
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState('30'); // days
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, [dateRange]);
-
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -72,7 +68,11 @@ export function ECommerceAnalytics() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateRange]);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
   const exportReport = () => {
     if (!analytics) return;

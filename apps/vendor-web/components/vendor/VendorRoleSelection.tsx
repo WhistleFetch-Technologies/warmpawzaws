@@ -41,9 +41,9 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
     try {
       setLoading(true);
       // AWS Serverless compatible - use apiClient
-      const data = await apiClient.get('/config/roles');
+      const data = await apiClient.get('/config/roles') as any;
       // Filter only active roles and Deduplicate
-      const activeRoles = data.roles.filter((role: Role) => role.isActive);
+      const activeRoles = (data?.roles || []).filter((role: Role) => role.isActive);
       
       // Deduplicate by ID
       const uniqueRoles = Array.from(new Map(activeRoles.map((r: Role) => [r.id, r])).values());

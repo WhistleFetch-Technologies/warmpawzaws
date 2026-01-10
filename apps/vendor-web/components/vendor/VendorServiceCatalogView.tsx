@@ -99,33 +99,28 @@ export function VendorServiceCatalogView({
 
       // Load all services from admin catalog API
       const servicesData = await apiClient.get('/make-server-3dd53475/admin/service-catalog') as any;
-        }
-      );
 
       if (servicesData) {
-        const data = servicesRes;
-        console.log('📚 [CATALOG] Loaded services:', data);
-        console.log('📚 [CATALOG] Total services:', data.services?.length || 0);
+        console.log('📚 [CATALOG] Loaded services:', servicesData);
+        console.log('📚 [CATALOG] Total services:', servicesData.services?.length || 0);
         
-        if (data.services && data.services.length > 0) {
-          console.log('📚 [CATALOG] Sample service:', data.services[0]);
-          setServices(data.services);
+        if (servicesData.services && servicesData.services.length > 0) {
+          console.log('📚 [CATALOG] Sample service:', servicesData.services[0]);
+          setServices(servicesData.services);
         } else {
           console.warn('⚠️ [CATALOG] No services in catalog!');
           toast.error('No services found in catalog. Please contact admin.');
         }
       } else {
-        console.error('❌ [CATALOG] Failed to load:', servicesRes.status, await servicesRes.text());
+        console.error('❌ [CATALOG] Failed to load service catalog');
         toast.error('Failed to load service catalog');
       }
 
       // Load vendor's enabled services
-      const vendorServicesRes = await apiClient.get(`/make-server-3dd53475/vendor/services/`) as any; }
-        }
-      );
+      const vendorServicesData = await apiClient.get(`/make-server-3dd53475/vendor/services/`) as any;
 
-      if (vendorServicesRes.ok) {
-        const data = vendorServicesRes;
+      if (vendorServicesData) {
+        const data = vendorServicesData;
         console.log('✅ [VENDOR] Loaded vendor services:', data);
         
         let vendorServicesList: any[] = [];
@@ -152,13 +147,10 @@ export function VendorServiceCatalogView({
       }
 
       // Load roles
-      const rolesRes = await apiClient.get('/make-server-3dd53475/config/roles') as any;
-        }
-      );
+      const rolesData = await apiClient.get('/make-server-3dd53475/config/roles') as any;
 
-      if (rolesRes.ok) {
-        const data = rolesRes;
-        setRoles(data.roles || []);
+      if (rolesData && rolesData.roles) {
+        setRoles(rolesData.roles || []);
       }
 
     } catch (error) {
@@ -269,14 +261,18 @@ export function VendorServiceCatalogView({
 
     // Check if vendor's role is in the service's applicable roles
     // Handle both string and array cases
-    let applicableRoles = service.applicableRoles;
-    if (typeof applicableRoles === 'string') {
-      try {
-        applicableRoles = JSON.parse(applicableRoles);
-      } catch {
-        applicableRoles = [applicableRoles];
-      }
-    }
+    let applicableRoles: string[] = Array.isArray(service.applicableRoles) 
+      ? service.applicableRoles 
+      : typeof service.applicableRoles === 'string' 
+        ? (() => {
+            try {
+              const parsed = JSON.parse(service.applicableRoles as string);
+              return Array.isArray(parsed) ? parsed : [service.applicableRoles as string];
+            } catch {
+              return [service.applicableRoles as string];
+            }
+          })()
+        : [];
 
     const isApplicable = applicableRoles.includes(vendorRoleId);
     
@@ -344,33 +340,27 @@ export function VendorServiceCatalogView({
     try {
       setAdding(true);
 
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            vendorId,
-            catalogId: service.catalogId,
-            categoryId: service.categoryId,
-            categoryName: service.categoryName,
-            subCategoryId: service.subCategoryId,
-            subCategoryName: service.subCategoryName,
-            serviceGroupId: service.serviceGroupId,
-            serviceGroupName: service.serviceGroupName,
-            serviceName: service.serviceName,
-            serviceStyle: service.serviceStyle,
-            basePrice: service.basePrice,
-            isPackage: service.isPackage,
-            packageDetails: service.packageDetails,
-            description: service.description,
-            duration: service.duration,
-            isActive: true
-          })
-        }
-      );
+      const data = await apiClient.post('/make-server-3dd53475/vendor/services/add', {
+        vendorId,
+        catalogId: service.catalogId,
+        categoryId: service.categoryId,
+        categoryName: service.categoryName,
+        subCategoryId: service.subCategoryId,
+        subCategoryName: service.subCategoryName,
+        serviceGroupId: service.serviceGroupId,
+        serviceGroupName: service.serviceGroupName,
+        serviceName: service.serviceName,
+        serviceStyle: service.serviceStyle,
+        basePrice: service.basePrice,
+        isPackage: service.isPackage,
+        packageDetails: service.packageDetails,
+        description: service.description,
+        duration: service.duration,
+        isActive: true
+      }) as any;
 
       if (data && data.success) {
-        const result = response;
+        const result = data;
         console.log('✅ Service added:', result);
         toast.success(`Added ${service.serviceName}`);
         
@@ -383,8 +373,7 @@ export function VendorServiceCatalogView({
           onSelectService(service);
         }
       } else {
-        const error = response;
-        toast.error(error.error || 'Failed to add service');
+        toast.error(data?.error || 'Failed to add service');
       }
     } catch (error) {
       console.error('Error adding service:', error);

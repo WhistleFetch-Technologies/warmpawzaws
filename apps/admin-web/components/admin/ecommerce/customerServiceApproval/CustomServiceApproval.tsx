@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Package, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -9,11 +9,7 @@ export function CustomServiceApproval() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadPendingServices();
-  }, []);
-
-  const loadPendingServices = async () => {
+  const loadPendingServices = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/services?status=pending_approval');
@@ -23,7 +19,11 @@ export function CustomServiceApproval() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadPendingServices();
+  }, [loadPendingServices]);
 
   const handleApprove = async (serviceId: string) => {
     try {

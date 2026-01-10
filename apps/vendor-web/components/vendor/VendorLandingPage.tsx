@@ -96,6 +96,12 @@ interface VendorData {
   wasApprovedBefore?: boolean;
   reapprovalReason?: string;
   roleId?: string; // ✅ Add roleId to VendorData
+  submittedAt?: string; // Application submission timestamp
+  createdAt?: string; // Record creation timestamp
+  infoRequestMessage?: string; // Clarification/info request message
+  rejectionReason?: string; // Rejection reason if application was rejected
+  fullName?: string; // Vendor full name
+  businessName?: string; // Business name
 }
 
 interface ApplicationData {
@@ -508,7 +514,7 @@ export function VendorLandingPage({
   };
 
   const handleApproved = () => {
-    setStatus('approved');
+    setStatus('approved_services'); // Approved status means services setup is needed
   };
 
   const handleSetupComplete = async () => {
@@ -549,9 +555,7 @@ export function VendorLandingPage({
       setLoading(true);
       
       // Load existing application data
-      const data = await apiClient.get(`/make-server-3dd53475/vendor//application`) as any; }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/application`) as any;
       
       if (data && data.success) {
         // data already available
@@ -564,8 +568,7 @@ export function VendorLandingPage({
         
         toast.success('Application loaded. Please update the required information.');
       } else {
-        const error = response;
-        console.error('❌ Failed to load application:', error);
+        console.error('❌ Failed to load application:', data?.error);
         toast.error('Failed to load application data. Please try again.');
         setLoading(false);
       }
@@ -878,7 +881,7 @@ export function VendorLandingPage({
         return (
           <NutritionistMealManager
             vendorId={vendorId}
-            vendorName={vendorData?.fullName || vendorData?.businessName || 'Nutritionist'}
+            vendorData={vendorData}
             onBack={() => setShowNutritionistMealManager(false)}
           />
         );
@@ -967,7 +970,12 @@ export function VendorLandingPage({
           <VendorCustomServiceCreation
             vendorId={vendorId}
             vendorData={vendorData}
-            onBack={() => setShowCustomServices(false)}
+            serviceStyle={vendorData?.serviceStyle === 'both' ? 'both' : 'at_center'}
+            onClose={() => setShowCustomServices(false)}
+            onServiceCreated={() => {
+              setShowCustomServices(false);
+              // Refresh services if needed
+            }}
           />
         );
       }
@@ -1054,7 +1062,8 @@ export function VendorLandingPage({
         return (
           <VendorPrescriptionVerification
             vendorId={vendorId}
-            onClose={() => setShowPrescriptionVerification(false)}
+            vendorData={vendorData}
+            onBack={() => setShowPrescriptionVerification(false)}
           />
         );
       }
@@ -1064,7 +1073,8 @@ export function VendorLandingPage({
         return (
           <VendorDeliveryManagement
             vendorId={vendorId}
-            onClose={() => setShowDeliveryManagement(false)}
+            vendorData={vendorData}
+            onBack={() => setShowDeliveryManagement(false)}
           />
         );
       }
@@ -1074,7 +1084,8 @@ export function VendorLandingPage({
         return (
           <VendorDietCharts
             vendorId={vendorId}
-            onClose={() => setShowDietCharts(false)}
+            vendorData={vendorData}
+            onBack={() => setShowDietCharts(false)}
           />
         );
       }
@@ -1084,7 +1095,8 @@ export function VendorLandingPage({
         return (
           <VendorCounseling
             vendorId={vendorId}
-            onClose={() => setShowCounseling(false)}
+            vendorData={vendorData}
+            onBack={() => setShowCounseling(false)}
           />
         );
       }
@@ -1094,12 +1106,13 @@ export function VendorLandingPage({
         return (
           <VendorPolicyManagement
             vendorId={vendorId}
-            onClose={() => setShowPolicyManagement(false)}
+            vendorData={vendorData}
+            onBack={() => setShowPolicyManagement(false)}
           />
         );
       }
       
-      // ✅ NEW: Distance Pricing
+      // ✅ NEW: Distance Pricing (uses onClose)
       if (showDistancePricing) {
         return (
           <VendorDistancePricing
@@ -1146,7 +1159,7 @@ export function VendorLandingPage({
         return (
           <NutritionistMealManager
             vendorId={vendorId}
-            vendorName={vendorData.fullName || vendorData.businessName || 'Nutritionist'}
+            vendorData={vendorData}
             onBack={() => {
               // Handle logout
             }}
