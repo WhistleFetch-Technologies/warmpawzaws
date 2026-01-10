@@ -115,19 +115,13 @@ export function VendorServiceConfigurationScreen({
         }
       }
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/services/${serviceStyle}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceStyle}`) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data) {
         console.log('✅ Services loaded:', data);
         setServices(data.services || []);
       } else {
-        const error = await response.text();
-        console.error('❌ Failed to load services:', error);
+        console.error('❌ Failed to load services:', data);
         toast.error('Failed to load services');
         setServices([]);
       }
