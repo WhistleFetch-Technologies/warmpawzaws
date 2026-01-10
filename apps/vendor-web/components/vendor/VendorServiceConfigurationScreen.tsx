@@ -206,13 +206,12 @@ export function VendorServiceConfigurationScreen({
     try {
       const data = await apiClient.delete(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}`) as any;
 
-      if (response.ok) {
+      if (data && data.success) {
         toast.success('Service deleted successfully');
         setServices(services.filter(s => s.id !== serviceId));
         setShowDeleteDialog(null);
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to delete service');
+        toast.error(data?.error || 'Failed to delete service');
       }
     } catch (error) {
       console.error('Error deleting service:', error);
@@ -223,19 +222,13 @@ export function VendorServiceConfigurationScreen({
   // ✅ NEW: Unpublish Service
   const unpublishService = async (serviceId: string) => {
     try {
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/unpublish'),
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/unpublish`, {}) as any;
 
-      if (response.ok) {
+      if (data && data.success) {
         toast.success('Service unpublished successfully');
         await loadServices(); // Reload to get updated status
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to unpublish service');
+        toast.error(data?.error || 'Failed to unpublish service');
       }
     } catch (error) {
       console.error('Error unpublishing service:', error);
@@ -259,30 +252,19 @@ export function VendorServiceConfigurationScreen({
         isNewService: s.isCustomService || false
       }));
 
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/services/configure'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            serviceStyle,
-            services: servicesToSave
-          })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/configure`, {
+        serviceStyle,
+        services: servicesToSave
+      }) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
         console.log('✅ Configuration saved:', data);
         toast.success('Services saved successfully');
         setHasChanges(false);
         return true;
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to save configuration:', error);
-        toast.error(error.error || 'Failed to save configuration');
+        console.error('❌ Failed to save configuration:', data);
+        toast.error(data?.error || 'Failed to save configuration');
         return false;
       }
     } catch (error) {
@@ -304,19 +286,9 @@ export function VendorServiceConfigurationScreen({
       
       console.log('🚀 Publishing services...');
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/services/publish'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ serviceStyle })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/publish`, { serviceStyle }) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
         console.log('✅ Services published:', data);
         
         if (data.status === 'published') {
@@ -328,9 +300,8 @@ export function VendorServiceConfigurationScreen({
         // Reload services to show updated status
         await loadServices();
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to publish:', error);
-        toast.error(error.error || 'Failed to publish services');
+        console.error('❌ Failed to publish:', data);
+        toast.error(data?.error || 'Failed to publish services');
       }
     } catch (error) {
       console.error('❌ Error publishing services:', error);
@@ -349,100 +320,78 @@ export function VendorServiceConfigurationScreen({
         // Route to package creation endpoint
         console.log('📦 Creating package via package endpoints...');
         
-        const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/packages'),
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              packageName: packageData.serviceName,
-              packageType: packageData.packageType, // 'combo', 'subscription', 'membership', 'unlimited'
-              description: packageData.description,
-              category: roleConfig?.label || 'General',
-              
-              // Pricing
-              originalPrice: packageData.originalPrice || 0,
-              packagePrice: packageData.packagePrice,
-              discount: packageData.originalPrice > 0 ? packageData.originalPrice - packageData.packagePrice : 0,
-              discountPercentage: packageData.originalPrice > 0 ? 
-                ((packageData.originalPrice - packageData.packagePrice) / packageData.originalPrice * 100) : 0,
-              
-              // Validity
-              validityType: 'days',
-              validityPeriod: packageData.validityDays,
-              
-              // Usage
-              usageType: packageData.maxUsageCount === -1 ? 'unlimited' : 'sessions',
-              totalSessions: packageData.maxUsageCount === -1 ? 0 : packageData.maxUsageCount,
-              unlimitedUsage: packageData.maxUsageCount === -1,
-              
-              // Included Services
-              includedServices: packageData.includedServices || [],
-              includedServicesDetails: packageData.includedServices || [],
-              
-              // Benefits
-              benefits: packageData.specialBenefits || [],
-              membershipPerks: {
-                priorityBooking: false,
-                discountOnServices: packageData.discountPercentage || 0,
-                freeAddOns: [],
-                dedicatedSupport: false,
-                exclusiveOffers: false
-              },
-              
-              // Terms
-              terms: packageData.termsAndConditions ? [packageData.termsAndConditions] : [],
-              refundPolicy: '',
-              cancellationPolicy: packageData.cancellationPolicy || '',
-              
-              // Subscription
-              isRecurring: packageData.packageType === 'subscription',
-              billingCycle: 'monthly'
-            })
-          }
-        );
+        const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/packages`, {
+          packageName: packageData.serviceName,
+          packageType: packageData.packageType, // 'combo', 'subscription', 'membership', 'unlimited'
+          description: packageData.description,
+          category: roleConfig?.label || 'General',
+          
+          // Pricing
+          originalPrice: packageData.originalPrice || 0,
+          packagePrice: packageData.packagePrice,
+          discount: packageData.originalPrice > 0 ? packageData.originalPrice - packageData.packagePrice : 0,
+          discountPercentage: packageData.originalPrice > 0 ? 
+            ((packageData.originalPrice - packageData.packagePrice) / packageData.originalPrice * 100) : 0,
+          
+          // Validity
+          validityType: 'days',
+          validityPeriod: packageData.validityDays,
+          
+          // Usage
+          usageType: packageData.maxUsageCount === -1 ? 'unlimited' : 'sessions',
+          totalSessions: packageData.maxUsageCount === -1 ? 0 : packageData.maxUsageCount,
+          unlimitedUsage: packageData.maxUsageCount === -1,
+          
+          // Included Services
+          includedServices: packageData.includedServices || [],
+          includedServicesDetails: packageData.includedServices || [],
+          
+          // Benefits
+          benefits: packageData.specialBenefits || [],
+          membershipPerks: {
+            priorityBooking: false,
+            discountOnServices: packageData.discountPercentage || 0,
+            freeAddOns: [],
+            dedicatedSupport: false,
+            exclusiveOffers: false
+          },
+          
+          // Terms
+          terms: packageData.termsAndConditions ? [packageData.termsAndConditions] : [],
+          refundPolicy: '',
+          cancellationPolicy: packageData.cancellationPolicy || '',
+          
+          // Subscription
+          isRecurring: packageData.packageType === 'subscription',
+          billingCycle: 'monthly'
+        }) as any;
         
-        if (response.ok) {
-          const data = await response.json();
+        if (data && data.success) {
           console.log('✅ Package created:', data);
           toast.success('Package created successfully! Pending admin approval.');
           return;
         } else {
-          const error = await response.json();
-          console.error('❌ Failed to create package:', error);
-          toast.error(error.error || 'Failed to create package');
+          console.error('❌ Failed to create package:', data);
+          toast.error(data?.error || 'Failed to create package');
           return;
         }
       }
       
       // Single custom service (not package)
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/services/add-custom'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            serviceStyle,
-            ...packageData
-          })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/add-custom`, {
+        serviceStyle,
+        ...packageData
+      }) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
         console.log('✅ Custom service added:', data);
         toast.success('Custom service added successfully!');
         
         // Reload services
         await loadServices();
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to add custom service:', error);
-        toast.error(error.error || 'Failed to add custom service');
+        console.error('❌ Failed to add custom service:', data);
+        toast.error(data?.error || 'Failed to add custom service');
       }
     } catch (error) {
       console.error('❌ Error adding custom service:', error);
