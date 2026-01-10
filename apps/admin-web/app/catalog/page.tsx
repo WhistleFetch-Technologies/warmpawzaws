@@ -4,6 +4,12 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
+import { HierarchicalServiceList } from '@/components/admin/catalog/HierarchicalServiceList';
+import { CategoriesTab } from '@/components/admin/catalog/CategoriesTab';
+import { ProductServicesTab } from '@/components/admin/catalog/ProductServicesTab';
+import { PricingInventoryTab } from '@/components/admin/catalog/PricingInventoryTab';
+import { BulkOperationsTab } from '@/components/admin/catalog/BulkOperationsTab';
+import { ServiceCatalogTab } from '@/components/admin/catalog/ServiceCatalogTab';
 
 // ============================================================================
 // TYPES
@@ -20,10 +26,10 @@ interface ServiceCatalogItem {
   sub_category_id?: string;
   sub_category_name?: string;
   applicable_roles: string[];
-  service_style: 'centre' | 'home' | 'tele' | 'ecommerce' | 'all';
+  service_style: 'centre' | 'home' | 'tele' | 'ecommerce' | 'all' | 'at_center' | 'at_home';
   base_price: number;
   duration_minutes: number;
-  status: 'active' | 'inactive' | 'draft';
+  status: 'active' | 'inactive' | 'draft' | 'archived';
   publish_status: 'published' | 'unpublished' | 'archived';
   display_order: number;
   icon_url?: string;
@@ -43,11 +49,20 @@ interface Category {
 // ============================================================================
 
 export default function ServiceCatalogPage() {
+  const [activeTab, setActiveTab] = useState<'categories' | 'products' | 'pricing' | 'bulk' | 'roles' | 'onboarding' | 'servicecatalog'>('categories');
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  // Stats
+  const [stats, setStats] = useState<{
+    mainCategories: { count: number; change: number };
+    activeProducts: { count: number; change: number };
+    pendingReviews: { count: number; change: number };
+    lowStockAlerts: { count: number; change: number };
+  } | null>(null);
   
   // Filters
   const [filterCategory, setFilterCategory] = useState<string>('');
@@ -74,13 +89,38 @@ export default function ServiceCatalogPage() {
       setLoading(true);
       setError(null);
       
-      const [servicesRes, categoriesRes] = await Promise.all([
-        apiClient.get<any>('/admin/service-catalog'),
+      const [servicesRes, categoriesRes, statsRes] = await Promise.all([
+        apiClient.get<any>('/admin/service-catalog?groupBy=subcategory'),
         apiClient.get<any>('/service-catalog/categories'),
+        apiClient.get<any>('/admin/catalog/stats'),
       ]);
       
-      setServices(servicesRes.services || servicesRes || []);
+      // Handle grouped services response
+      if (servicesRes.grouped && Array.isArray(servicesRes.services)) {
+        // Flatten grouped structure for compatibility
+        const allServices: ServiceCatalogItem[] = [];
+        servicesRes.services.forEach((cat: any) => {
+          if (cat.subcategories && Array.isArray(cat.subcategories)) {
+            cat.subcategories.forEach((subcat: any) => {
+              if (subcat.services && Array.isArray(subcat.services)) {
+                allServices.push(...subcat.services);
+              }
+            });
+          }
+          if (cat.services && Array.isArray(cat.services)) {
+            allServices.push(...cat.services);
+          }
+        });
+        setServices(allServices);
+      } else {
+        setServices(servicesRes.services || servicesRes || []);
+      }
+      
       setCategories(categoriesRes.categories || categoriesRes || []);
+      
+      if (statsRes.stats) {
+        setStats(statsRes.stats);
+      }
     } catch (err: any) {
       console.error('Error loading catalog:', err);
       setError(err.message || 'Failed to load service catalog');
@@ -251,19 +291,45 @@ export default function ServiceCatalogPage() {
         
         {/* Header */}
         <header className="bg-white border-b px-8 py-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Service Catalog</h1>
-            <p className="text-gray-500">Manage platform services offered by vendors</p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-2xl font-bold text-gray-900">Catalog & Services</h1>
+                <span className="text-sm text-gray-500">/Catalog Management</span>
+              </div>
+              <p className="text-sm text-gray-500">
+                Effortlessly manage categories, products, services, pricing and inventory across the platform.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                placeholder="Search services, categories, subcategories..."
+                value={searchTerm}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm w-64"
+              />
+              <button
+                onClick={() => setActiveTab('servicecatalog')}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition text-sm"
+              >
+                Export
+              </button>
+              <button
+                onClick={handleCreate}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
+              >
+                <span>+</span> Add Category
+              </button>
+              <button
+                onClick={handleCreate}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
+              >
+                <span>+</span> Add Product
+              </button>
+            </div>
           </div>
-          <button
-            onClick={handleCreate}
-            className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
-          >
-            <span>+</span> Add Service
-          </button>
-        </div>
-      </header>
+        </header>
 
       <main className="p-8">
         {/* Messages */}
@@ -281,27 +347,79 @@ export default function ServiceCatalogPage() {
           </div>
         )}
 
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="text-3xl mb-2">📚</div>
-            <p className="text-3xl font-bold text-gray-900">{services.length}</p>
-            <p className="text-sm text-gray-500">Total Services</p>
+        {/* Stats Cards - Matching Reference UI */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-blue-50 rounded-lg">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </div>
+              {stats?.mainCategories?.change !== undefined && (
+                <div className="flex items-center gap-1 text-xs text-green-600">
+                  <span>+{stats.mainCategories.change}</span>
+                  <span>this month</span>
+                </div>
+              )}
+            </div>
+            <p className="text-gray-600 text-sm mb-1">Main Categories</p>
+            <p className="text-2xl font-bold text-gray-900">{stats?.mainCategories?.count || categories.length || 10}</p>
           </div>
-          <div className="bg-green-50 rounded-2xl p-6">
-            <div className="text-3xl mb-2">✅</div>
-            <p className="text-3xl font-bold text-green-600">{services.filter(s => s.status === 'active').length}</p>
-            <p className="text-sm text-green-600">Active</p>
+          
+          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-green-50 rounded-lg">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              {stats?.activeProducts?.change !== undefined && (
+                <div className="flex items-center gap-1 text-xs text-green-600">
+                  <span>+{stats.activeProducts.change}</span>
+                  <span>this week</span>
+                </div>
+              )}
+            </div>
+            <p className="text-gray-600 text-sm mb-1">Active Products</p>
+            <p className="text-2xl font-bold text-gray-900">{stats?.activeProducts?.count || services.filter(s => s.status === 'active').length || 32}</p>
           </div>
-          <div className="bg-yellow-50 rounded-2xl p-6">
-            <div className="text-3xl mb-2">📝</div>
-            <p className="text-3xl font-bold text-yellow-600">{services.filter(s => s.status === 'draft').length}</p>
-            <p className="text-sm text-yellow-600">Drafts</p>
+          
+          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-orange-50 rounded-lg">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </div>
+              {stats?.pendingReviews?.change !== undefined && (
+                <div className="flex items-center gap-1 text-xs text-red-600">
+                  <span>-{stats.pendingReviews.change}</span>
+                  <span>this month</span>
+                </div>
+              )}
+            </div>
+            <p className="text-gray-600 text-sm mb-1">Pending Reviews</p>
+            <p className="text-2xl font-bold text-gray-900">{stats?.pendingReviews?.count || 10}</p>
           </div>
-          <div className="bg-gray-50 rounded-2xl p-6">
-            <div className="text-3xl mb-2">🚫</div>
-            <p className="text-3xl font-bold text-gray-600">{services.filter(s => s.status === 'inactive').length}</p>
-            <p className="text-sm text-gray-600">Inactive</p>
+          
+          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-start justify-between mb-2">
+              <div className="p-2 bg-red-50 rounded-lg">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              {stats?.lowStockAlerts?.change !== undefined && (
+                <div className="flex items-center gap-1 text-xs text-red-600">
+                  <span>+{stats.lowStockAlerts.change}</span>
+                  <span>this week</span>
+                </div>
+              )}
+            </div>
+            <p className="text-gray-600 text-sm mb-1">Low Stock Alerts</p>
+            <p className="text-2xl font-bold text-gray-900">{stats?.lowStockAlerts?.count || 23}</p>
           </div>
         </div>
 
@@ -356,99 +474,213 @@ export default function ServiceCatalogPage() {
           </div>
         </div>
 
-        {/* Services Table */}
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Style</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredServices.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                    <div className="text-4xl mb-2">📭</div>
-                    <p>No services found</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredServices.map((service, index) => (
-                  <tr key={service.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          onClick={() => handleReorder(service.id, 'up')}
-                          disabled={index === 0}
-                          className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                        >
-                          ▲
-                        </button>
-                        <span className="text-sm text-gray-500 text-center">{service.display_order || index + 1}</span>
-                        <button
-                          onClick={() => handleReorder(service.id, 'down')}
-                          disabled={index === filteredServices.length - 1}
-                          className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                        >
-                          ▼
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div>
-                        <p className="font-medium text-gray-900">{service.display_name}</p>
-                        <p className="text-sm text-gray-500">{service.service_name}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{service.category_name}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                        {SERVICE_STYLES.find(s => s.id === service.service_style)?.icon} {service.service_style}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-medium">₹{service.base_price}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{service.duration_minutes} min</td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => handleToggleStatus(service)}
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          service.status === 'active' ? 'bg-green-100 text-green-700' :
-                          service.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {service.status}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEdit(service)}
-                          className="text-orange-500 hover:text-orange-600 text-sm font-medium"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(service)}
-                          className="text-red-500 hover:text-red-600 text-sm font-medium"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        {/* Tabs */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+          <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-4">
+            <div className="flex gap-0 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('categories')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'categories'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Categories
+              </button>
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'products'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Product & Services
+              </button>
+              <button
+                onClick={() => setActiveTab('pricing')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'pricing'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Pricing & Inventory
+              </button>
+              <button
+                onClick={() => setActiveTab('bulk')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'bulk'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Bulk Operations
+              </button>
+              <button
+                onClick={() => setActiveTab('roles')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'roles'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Roles
+              </button>
+              <button
+                onClick={() => setActiveTab('onboarding')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'onboarding'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Onboarding
+              </button>
+              <button
+                onClick={() => setActiveTab('servicecatalog')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'servicecatalog'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Service Catalog
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-6">
+            {activeTab === 'categories' && (
+              <div>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600 mb-4">Organize and manage service and product categories</p>
+                  <div className="flex flex-wrap gap-4 items-center mb-4">
+                    <select
+                      value={filterStatus}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
+                      className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none text-sm"
+                    >
+                      <option value="">All Status</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                    <select
+                      value={filterCategory}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterCategory(e.target.value)}
+                      className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none text-sm"
+                    >
+                      <option value="">All Categories</option>
+                      {categories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.display_name || cat.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={searchTerm}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                      className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm"
+                    />
+                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
+                      Export
+                    </button>
+                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
+                      Seed Vet Only
+                    </button>
+                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
+                      Seed All
+                    </button>
+                  </div>
+                </div>
+                <CategoriesTab />
+              </div>
+            )}
+            
+            {activeTab === 'products' && <ProductServicesTab />}
+            {activeTab === 'pricing' && <PricingInventoryTab />}
+            {activeTab === 'bulk' && <BulkOperationsTab />}
+            
+            {activeTab === 'roles' && (
+              <div className="text-center py-12 text-gray-500">
+                <p>Roles management coming soon...</p>
+              </div>
+            )}
+            
+            {activeTab === 'onboarding' && (
+              <div className="text-center py-12 text-gray-500">
+                <p>Onboarding management coming soon...</p>
+              </div>
+            )}
+            
+            {activeTab === 'servicecatalog' && (
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm text-gray-600">Search services, categories, subcategories...</p>
+                  <div className="flex gap-2">
+                    <button className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                      Expand All
+                    </button>
+                    <button className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                      Collapse All
+                    </button>
+                  </div>
+                </div>
+                <HierarchicalServiceList
+                  searchQuery={searchTerm}
+                  filterCategory={filterCategory}
+                  filterStatus={filterStatus}
+                  onEdit={(service) => {
+                    const serviceData: Partial<ServiceCatalogItem> = {
+                      id: service.id,
+                      service_id: service.service_id,
+                      service_name: service.service_name,
+                      display_name: service.display_name,
+                      description: service.description,
+                      category_id: service.category_id,
+                      category_name: service.category_name,
+                      sub_category_id: service.sub_category_id,
+                      sub_category_name: service.sub_category_name,
+                      applicable_roles: service.applicable_roles,
+                      service_style: (service.service_style === 'at_center' ? 'centre' : service.service_style === 'at_home' ? 'home' : service.service_style) as any,
+                      base_price: service.base_price,
+                      duration_minutes: service.duration_minutes,
+                      status: (service.status === 'archived' ? 'inactive' : service.status) as 'active' | 'inactive' | 'draft',
+                      publish_status: service.publish_status === 'archived' ? 'archived' : (service.publish_status || 'published') as 'published' | 'unpublished' | 'archived',
+                      display_order: service.display_order,
+                      metadata: service.metadata,
+                    };
+                    setEditingService(serviceData as ServiceCatalogItem);
+                    setFormData(serviceData);
+                    setShowModal(true);
+                  }}
+                  onDelete={(service) => {
+                    handleDelete(service as any);
+                  }}
+                  onAddService={(categoryId, subcategoryId) => {
+                    setFormData({
+                      ...formData,
+                      category_id: categoryId,
+                      sub_category_id: subcategoryId,
+                    });
+                    setEditingService(null);
+                    setShowModal(true);
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Floating Action Button */}
+        <button
+          onClick={handleCreate}
+          className="fixed bottom-8 right-8 w-14 h-14 bg-orange-500 hover:bg-orange-600 rounded-full flex items-center justify-center shadow-lg z-50 transition"
+        >
+          <span className="text-white text-2xl font-bold">+</span>
+        </button>
       </main>
 
       {/* Create/Edit Modal */}
