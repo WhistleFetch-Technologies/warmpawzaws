@@ -387,7 +387,7 @@ class GetBannersHandler extends BaseHandler {
       let paramIndex = 1;
 
       if (position) {
-        queryStr += ` AND position = $${paramIndex}`;
+        queryStr += ` AND type = $${paramIndex}`;
         params.push(position);
         paramIndex++;
       }
@@ -398,14 +398,19 @@ class GetBannersHandler extends BaseHandler {
         paramIndex++;
       }
 
-      queryStr += ` ORDER BY priority DESC, created_at DESC`;
+      queryStr += ` ORDER BY display_order ASC, created_at DESC`;
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
 
-      return this.success({ banners: rows });
+      return this.success({ banners: rows, total: rows.length });
     } catch (error: any) {
       console.error('Error fetching banners:', error);
+      // If table doesn't exist, return empty array instead of error
+      if (error.message && error.message.includes('does not exist')) {
+        console.warn('⚠️ banners table does not exist - returning empty array');
+        return this.success({ banners: [], total: 0, message: 'Banners table not initialized. Run migrations first.' });
+      }
       return this.error(`Failed to fetch banners: ${error.message}`, 500);
     }
   }
@@ -601,11 +606,20 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
 
   // Banner management
   app.get('/admin/banners', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
-    const context = createLambdaContext();
-    const result = await getBannersHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const event = createApiGatewayEvent(c.req);
+      event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+      const context = createLambdaContext();
+      const result = await getBannersHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      // If table doesn't exist, return empty array instead of error (for graceful degradation)
+      if (error.message && error.message.includes('does not exist')) {
+        console.warn('⚠️ banners table does not exist - returning empty array');
+        return c.json({ success: true, banners: [], total: 0, message: 'Banners table not initialized. Run migrations first.' });
+      }
+      return c.json({ error: error.message }, 500);
+    }
   });
 
   app.post('/admin/banners', async (c) => {

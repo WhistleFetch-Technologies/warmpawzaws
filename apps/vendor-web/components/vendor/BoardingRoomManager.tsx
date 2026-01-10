@@ -18,7 +18,6 @@ import {
   Users,
   Home as HomeIcon
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';

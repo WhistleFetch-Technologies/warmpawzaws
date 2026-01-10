@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 import {
 	Dialog,
@@ -49,6 +49,8 @@ import {
 	AdvancedPromotionsEngine,
 	BannerAdmin,
 } from "@/components/admin/marketing";
+
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 export default function MarketingPromotionsTab() {
 	const [activeTab, setActiveTab] = useState<
@@ -330,8 +332,9 @@ export default function MarketingPromotionsTab() {
 	};
 
 	return (
-		<div className="p-6">
-			<Toaster position="top-right" richColors />
+		<AdminLayout>
+			<div className="flex-1 flex flex-col p-6">
+				<Toaster position="top-right" richColors />
 			<div className="flex justify-between items-center px-20 bg-gray-100 rounded-md">
 				<div>
 					<h2 className="text-2xl font-bold text-gray-900">
@@ -965,6 +968,7 @@ export default function MarketingPromotionsTab() {
 
 			{/* ADVANCED TAB */}
 			{activeTab === "advanced" && <AdvancedPromotionsEngine />}
-		</div>
+			</div>
+		</AdminLayout>
 	);
 }

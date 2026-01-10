@@ -492,7 +492,7 @@ export function registerLoyaltyEndpoints(app: Hono) {
       const transactions = await query(
         `SELECT 
           lt.*,
-          c.name as customer_name
+          c.full_name as customer_name
          FROM loyalty_transactions lt
          LEFT JOIN customers c ON lt.customer_id = c.id
          ORDER BY lt.created_at DESC

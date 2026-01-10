@@ -62,17 +62,10 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
       setLoading(true);
       console.log('🏥 [MEDICAL-HISTORY] Loading history for pet:', petId);
       
-      const response = await apiClient.get('/make-server-3dd53475/prescription/pet/${petId}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('✅ [MEDICAL-HISTORY] Loaded:', result.prescriptions?.length || 0, 'records');
-        setPrescriptions(result.prescriptions || []);
-      }
+      const result = await apiClient.get(`/make-server-3dd53475/prescription/pet/${petId}`) as any;
+      
+      console.log('✅ [MEDICAL-HISTORY] Loaded:', result.prescriptions?.length || 0, 'records');
+      setPrescriptions(result.prescriptions || []);
     } catch (error) {
       console.error('❌ [MEDICAL-HISTORY] Error:', error);
     } finally {

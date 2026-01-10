@@ -111,7 +111,7 @@ export function ServicePublishFormWithGPS({
                   <Navigation className="w-3 h-3 mr-1" />
                   GPS Required
                 </Badge>
-                <Lock className="w-4 h-4 text-blue-600" title="Cannot be disabled" />
+                <Lock className="w-4 h-4 text-blue-600" />
               </div>
             )}
           </div>

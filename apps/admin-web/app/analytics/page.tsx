@@ -62,7 +62,7 @@ import { RevenueChart, VendorPerformanceTable } from '@/components/admin/analyti
 import { useAnalyticsData } from '@/hooks/analytics/useAnalyticsData';
 import { apiClient } from '@/lib/api-client';
 import { toast, Toaster } from 'sonner';
-import { AdminLayout } from '@/components/AdminLayout';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 interface KPICard {
   title: string;
@@ -408,7 +408,10 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Tabs for Different Views */}
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={(value) => {
+            console.log('🔧 Analytics tab clicked:', value);
+            setActiveTab(value);
+          }}>
             <TabsList className="mb-6 flex-wrap">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="revenue">Revenue</TabsTrigger>

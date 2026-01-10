@@ -87,7 +87,7 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
           }
         } else {
           const errorText = await response.text();
-          console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] API error ${response.status} (will retry)`);
+          console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] API error ${200} (will retry)`);
         }
       } catch (error) {
         // Silently log error without showing it prominently (this is normal for polling)

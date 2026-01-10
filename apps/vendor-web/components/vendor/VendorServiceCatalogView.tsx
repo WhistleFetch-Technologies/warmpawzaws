@@ -98,14 +98,12 @@ export function VendorServiceCatalogView({
       console.log('📚 [CATALOG] Loading service catalog...');
 
       // Load all services from admin catalog API
-      const servicesRes = await apiClient.get('/make-server-3dd53475/admin/service-catalog'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const servicesData = await apiClient.get('/make-server-3dd53475/admin/service-catalog') as any;
         }
       );
 
-      if (servicesRes.ok) {
-        const data = await servicesRes.json();
+      if (servicesData) {
+        const data = servicesRes;
         console.log('📚 [CATALOG] Loaded services:', data);
         console.log('📚 [CATALOG] Total services:', data.services?.length || 0);
         
@@ -122,14 +120,12 @@ export function VendorServiceCatalogView({
       }
 
       // Load vendor's enabled services
-      const vendorServicesRes = await apiClient.get('/make-server-3dd53475/vendor/services/${vendorId}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const vendorServicesRes = await apiClient.get(`/make-server-3dd53475/vendor/services/`) as any; }
         }
       );
 
       if (vendorServicesRes.ok) {
-        const data = await vendorServicesRes.json();
+        const data = vendorServicesRes;
         console.log('✅ [VENDOR] Loaded vendor services:', data);
         
         let vendorServicesList: any[] = [];
@@ -156,14 +152,12 @@ export function VendorServiceCatalogView({
       }
 
       // Load roles
-      const rolesRes = await apiClient.get('/make-server-3dd53475/config/roles'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const rolesRes = await apiClient.get('/make-server-3dd53475/config/roles') as any;
         }
       );
 
       if (rolesRes.ok) {
-        const data = await rolesRes.json();
+        const data = rolesRes;
         setRoles(data.roles || []);
       }
 
@@ -375,8 +369,8 @@ export function VendorServiceCatalogView({
         }
       );
 
-      if (response.ok) {
-        const result = await response.json();
+      if (data && data.success) {
+        const result = response;
         console.log('✅ Service added:', result);
         toast.success(`Added ${service.serviceName}`);
         
@@ -389,7 +383,7 @@ export function VendorServiceCatalogView({
           onSelectService(service);
         }
       } else {
-        const error = await response.json();
+        const error = response;
         toast.error(error.error || 'Failed to add service');
       }
     } catch (error) {

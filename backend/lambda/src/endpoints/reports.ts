@@ -107,7 +107,7 @@ async function generateCustomersReport(startDate: string, endDate: string, group
   const customersQuery = `
     SELECT 
       c.id,
-      c.name,
+      c.full_name as name,
       c.phone,
       c.city,
       COUNT(DISTINCT b.id) as total_bookings,
@@ -115,7 +115,7 @@ async function generateCustomersReport(startDate: string, endDate: string, group
       MAX(b.booking_date) as last_booking_date
     FROM customers c
     LEFT JOIN bookings b ON c.id = b.customer_id AND b.booking_date >= $1 AND b.booking_date <= $2
-    GROUP BY c.id, c.name, c.phone, c.city
+    GROUP BY c.id, c.full_name, c.phone, c.city
     HAVING COUNT(DISTINCT b.id) > 0
     ORDER BY total_spent DESC NULLS LAST
   `;

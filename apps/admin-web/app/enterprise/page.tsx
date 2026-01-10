@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
 interface RevenueStats {
 	totalRevenue: number;
@@ -85,13 +85,8 @@ export default function EnterpriseRevenue() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
-			<UnifiedAdminSidebar
-				activeView="enterprise"
-				onNavigate={(view) => router.push(`/${view}`)}
-			/>
-
-			<div className="flex-1">
+		<AdminLayout>
+			<div className="flex-1 bg-gray-50">
 				{/* Header */}
 				<div className="bg-white border-b border-gray-200 px-20 py-4">
 					<div className="flex items-center justify-between">
@@ -368,7 +363,7 @@ export default function EnterpriseRevenue() {
 					) : null}
 				</div>
 			</div>
-		</div>
+		</AdminLayout>
 	);
 }
 

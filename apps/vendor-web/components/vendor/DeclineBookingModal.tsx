@@ -62,12 +62,12 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
           })
         }
       );
-
       if (response.ok) {
+        const data = await response.json();
         toast.success('Booking declined. Customer will be notified.');
         onSuccess();
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ error: "Unknown error" }));
         toast.error(error.error || 'Failed to decline booking');
       }
     } catch (error) {

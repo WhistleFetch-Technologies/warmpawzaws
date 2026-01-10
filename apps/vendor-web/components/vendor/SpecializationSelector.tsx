@@ -14,7 +14,7 @@ import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 
 interface SpecializationSelectorProps {
-  roleId: string;
+  roleId?: string;
   selected: string[];
   onChange: (specs: string[]) => void;
 }
@@ -29,10 +29,18 @@ export function SpecializationSelector({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSpecializations();
+    if (roleId) {
+      loadSpecializations();
+    }
   }, [roleId]);
 
   const loadSpecializations = async () => {
+    if (!roleId) {
+      setError('Role ID is required');
+      setLoading(false);
+      return;
+    }
+    
     try {
       setLoading(true);
       setError(null);
@@ -40,16 +48,9 @@ export function SpecializationSelector({
       const cleanRoleId = roleId.replace('role_', '');
       console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
 
-      const response = await apiClient.get('/make-server-3dd53475/vendor/problem-grid-specializations/${cleanRoleId}'),
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/problem-grid-specializations/${cleanRoleId}`) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.specializations) {
         console.log('[CENTER SPEC] Loaded specializations:', data);
         setSpecializations(data.specializations || []);
         
@@ -57,8 +58,6 @@ export function SpecializationSelector({
           setError('No specializations available for this vendor type');
         }
       } else {
-        const errorText = await response.text();
-        console.error('[CENTER SPEC] Failed to load:', errorText);
         setError('Failed to load specializations');
         toast.error('Could not load specializations');
       }

@@ -47,16 +47,7 @@ export function VendorBookingCard({
     
     // Mark messages as read
     try {
-      await apiClient.get('/make-server-3dd53475/chat/mark-read/${bookingId}'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ vendorId })
-        }
-      );
+      await apiClient.post(`/make-server-3dd53475/chat/mark-read/${bookingId}`, { vendorId });
     } catch (error) {
       console.error('Error marking messages as read:', error);
     }
@@ -78,14 +69,9 @@ export function VendorBookingCard({
     if (booking.hasPrescription) {
       // View existing prescription
       try {
-        const response = await apiClient.get('/make-server-3dd53475/vendor/prescription/${bookingId}'),
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
-        );
+        const data = await apiClient.get(`/make-server-3dd53475/vendor/prescription/${bookingId}`) as any;
         
-        if (response.ok) {
-          const data = await response.json();
+        if (data && data.prescription) {
           alert(`📋 Prescription Details\n\n${data.prescription.notes}\n\nUploaded: ${new Date(data.prescription.uploadedAt).toLocaleString()}`);
         } else {
           alert('❌ Failed to load prescription');
@@ -100,28 +86,20 @@ export function VendorBookingCard({
       if (!notes) return;
       
       try {
-        const response = await apiClient.get('/make-server-3dd53475/vendor/prescription/upload'),
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              bookingId,
-              vendorId,
-              prescriptionNotes: notes,
-              prescriptionFile: null // TODO: Add file upload
-            })
-          }
-        );
+        const payload = {
+          bookingId,
+          vendorId,
+          prescriptionNotes: notes,
+          prescriptionFile: null // TODO: Add file upload
+        };
         
-        if (response.ok) {
+        const data = await apiClient.post('/make-server-3dd53475/vendor/prescription/upload', payload) as any;
+        
+        if (data && data.success) {
           alert('✅ Prescription uploaded successfully!');
           onRefresh(); // Reload to show prescription badge
         } else {
-          const data = await response.json();
-          alert('❌ Failed to upload prescription: ' + (data.error || 'Unknown error'));
+          alert('❌ Failed to upload prescription: ' + (data?.error || 'Unknown error'));
         }
       } catch (error) {
         console.error('Error uploading prescription:', error);

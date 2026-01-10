@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger, Button } from "@warmpawz/ui";
+import React, { useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@warmpawz/ui";
 import {
 	AWSIntegrationsSettings,
 	PaymentGatewayIntegration,
@@ -12,24 +12,16 @@ import {
 	CreditCard,
 	Truck,
 	Cloud,
-	ArrowLeft,
 	Settings,
 	Gift,
 } from "lucide-react";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
 export default function PlatformSettings() {
+	const [activeTab, setActiveTab] = useState("cloud");
+
 	return (
-		<div className="flex min-h-screen bg-slate-50/50 pb-20">
-			<UnifiedAdminSidebar
-				activeView="platform-settings"
-				onNavigate={(view) => {
-					if (view === "platform-settings") {
-						return;
-					}
-					window.location.href = `/${view}`;
-				}}
-			/>
+		<AdminLayout>
 			<div className="flex-1">
 				{/* Header Section */}
 				<div className="bg-white border-b sticky top-0 z-10">
@@ -55,7 +47,10 @@ export default function PlatformSettings() {
 
 				{/* Main Content */}
 				<div className="container mx-auto max-w-6xl px-6 py-8">
-					<Tabs defaultValue="cloud" className="space-y-8">
+					<Tabs value={activeTab} onValueChange={(value) => {
+						console.log('🔧 Platform Settings tab clicked:', value);
+						setActiveTab(value);
+					}} className="space-y-8">
 						<TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-white border rounded-xl shadow-sm">
 							<TabsTrigger
 								value="cloud"
@@ -158,7 +153,6 @@ export default function PlatformSettings() {
 					</Tabs>
 				</div>
 			</div>
-		</div>
+		</AdminLayout>
 	);
 }
-

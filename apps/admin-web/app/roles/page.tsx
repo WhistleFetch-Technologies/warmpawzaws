@@ -34,7 +34,7 @@ import {
 	CheckCircle,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -129,12 +129,8 @@ export default function RBACDashboard() {
 	}, {});
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
-			<UnifiedAdminSidebar
-				activeView="roles"
-				onNavigate={(view) => router.push(`/${view}`)}
-			/>
-			<div className="flex-1">
+		<AdminLayout>
+			<div className="flex-1 bg-gray-50">
 				{/* Header */}
 				<div className="bg-white border-b sticky top-0 z-10">
 					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -476,6 +472,6 @@ export default function RBACDashboard() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		</div>
+		</AdminLayout>
 	);
 }

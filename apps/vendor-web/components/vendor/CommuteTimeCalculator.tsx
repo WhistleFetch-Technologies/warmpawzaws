@@ -3,7 +3,12 @@
 import React, { useState } from 'react';
 import { Navigation, MapPin, Clock } from 'lucide-react';
 
-export function CommuteTimeCalculator({ providerId, apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api' }) {
+interface CommuteTimeCalculatorProps {
+  providerId: string;
+  apiUrl?: string;
+}
+
+export function CommuteTimeCalculator({ providerId, apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api' }: CommuteTimeCalculatorProps) {
   const [fromLat, setFromLat] = useState('');
   const [fromLng, setFromLng] = useState('');
   const [toLat, setToLat] = useState('');

@@ -39,7 +39,7 @@ import {
 } from "@warmpawz/ui";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
-import { UnifiedAdminSidebar } from "@/components/admin/layout/UnifiedAdminSidebar";
+import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { useRouter } from "next/navigation";
 
 // Types
@@ -431,11 +431,7 @@ export default function SupportCRM() {
 	);
 
 	return (
-		<div className="min-h-screen bg-gray-50 flex">
-			<UnifiedAdminSidebar
-				activeView="support"
-				onNavigate={(view) => router.push(`/${view}`)}
-			/>
+		<AdminLayout>
 			<div className="flex-1 flex h-[calc(100vh-64px)] bg-gray-50">
 				{/* Sidebar List */}
 				<div className="w-1/3 border-r border-gray-200 bg-white flex flex-col">
@@ -1023,7 +1019,7 @@ export default function SupportCRM() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		</div>
+		</AdminLayout>
 	);
 }
 

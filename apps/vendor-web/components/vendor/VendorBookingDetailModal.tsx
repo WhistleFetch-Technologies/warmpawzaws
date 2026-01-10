@@ -6,7 +6,7 @@ import { X, Calendar, Clock, User, Phone, FileText, MessageCircle, History, Aler
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { copyTextToClipboard } from '@/lib/shareUtils';
-import { VendorPrescriptionForm } from './VendorPrescriptionForm';
+import { VendorPrescriptionModal } from './modals/VendorPrescriptionModal';
 import { VendorChatModal } from './VendorChatModal';
 import { PetMedicalHistoryModal } from './PetMedicalHistoryModal';
 
@@ -40,14 +40,10 @@ export function VendorBookingDetailModal({
       setLoading(true);
       console.log('🔍 [VENDOR-BOOKING-DETAIL] Loading booking:', bookingId);
       
-      const response = await apiClient.get('/make-server-3dd53475/bookings/${bookingId}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/bookings/${bookingId}`) as any;
 
-      if (response.ok) {
-        const result = await response.json();
+      if (data && data.success) {
+        const result = data;
         console.log('✅ [VENDOR-BOOKING-DETAIL] Loaded:', result.booking);
         setBooking(result.booking);
         
@@ -63,12 +59,8 @@ export function VendorBookingDetailModal({
 
   const checkPrescription = async (bookingId: string) => {
     try {
-      const response = await apiClient.get('/make-server-3dd53475/prescription/booking/${bookingId}'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-      setHasPrescription(response.ok);
+      const data = await apiClient.get(`/make-server-3dd53475/prescription/booking/${bookingId}`) as any;
+      setHasPrescription(data && data.prescription ? true : false);
     } catch (error) {
       setHasPrescription(false);
     }
@@ -402,10 +394,12 @@ export function VendorBookingDetailModal({
 
       {/* Prescription Form Modal */}
       {showPrescriptionForm && booking && (
-        <VendorPrescriptionForm
+        <VendorPrescriptionModal
           bookingId={bookingId}
-          booking={booking}
-          vendorPhone={vendorPhone}
+          petName={booking.petName || 'Pet'}
+          customerName={booking.customerName || 'Customer'}
+          vendorId={booking.vendorId || ''}
+          vendorName={booking.vendorName || 'Vendor'}
           onClose={() => {
             setShowPrescriptionForm(false);
             checkPrescription(bookingId); // Refresh prescription status

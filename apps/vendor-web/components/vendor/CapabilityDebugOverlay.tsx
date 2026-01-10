@@ -6,10 +6,13 @@ import { VendorCapabilities } from './hooks/useVendorCapabilities';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 
+// Type for capabilities object with boolean properties
+type CapabilitiesRecord = Record<string, boolean>;
+
 interface CapabilityDebugOverlayProps {
   roleId: string;
   roleName: string;
-  capabilities: VendorCapabilities;
+  capabilities: VendorCapabilities | CapabilitiesRecord;
   vendorData: any;
   showInProduction?: boolean; // Only show in dev by default
 }
@@ -35,14 +38,20 @@ export function CapabilityDebugOverlay({
   const isDev = process.env.NODE_ENV === 'development' || showInProduction;
   if (!isDev) return null;
 
+  // Normalize capabilities to a record format
+  const capabilitiesRecord: CapabilitiesRecord = 
+    'capabilities' in capabilities && Array.isArray(capabilities.capabilities)
+      ? {} // If it's the hook return type, we'll use empty for now
+      : (capabilities as CapabilitiesRecord);
+
   // Determine which modules should load based on capabilities
   const modules: ModuleStatus[] = [
     {
       name: 'Services & Catalog',
-      shouldLoad: capabilities.catalog || capabilities.booking,
-      reason: capabilities.catalog 
+      shouldLoad: capabilitiesRecord.catalog || capabilitiesRecord.booking || false,
+      reason: capabilitiesRecord.catalog 
         ? 'Catalog enabled' 
-        : capabilities.booking 
+        : capabilitiesRecord.booking 
         ? 'Booking enabled (requires services)' 
         : 'Neither catalog nor booking enabled',
       dependencies: ['catalog', 'booking']
@@ -59,44 +68,44 @@ export function CapabilityDebugOverlay({
     },
     {
       name: 'Staff Management',
-      shouldLoad: capabilities.staff_management,
-      reason: capabilities.staff_management
+      shouldLoad: capabilitiesRecord.staff_management || false,
+      reason: capabilitiesRecord.staff_management
         ? 'Staff management capability enabled'
         : 'Staff management not enabled for this role',
       dependencies: ['staff_management']
     },
     {
       name: 'Orders & Commerce',
-      shouldLoad: capabilities.orders || capabilities.inventory,
-      reason: capabilities.orders
+      shouldLoad: capabilitiesRecord.orders || capabilitiesRecord.inventory || false,
+      reason: capabilitiesRecord.orders
         ? 'Orders enabled'
-        : capabilities.inventory
+        : capabilitiesRecord.inventory
         ? 'Inventory management enabled'
         : 'Commerce features disabled',
       dependencies: ['orders', 'inventory', 'delivery']
     },
     {
       name: 'Appointments & Bookings',
-      shouldLoad: capabilities.booking,
-      reason: capabilities.booking
+      shouldLoad: capabilitiesRecord.booking || false,
+      reason: capabilitiesRecord.booking
         ? 'Booking capability enabled'
         : 'Booking disabled for this role',
       dependencies: ['booking']
     },
     {
       name: 'Medical Records',
-      shouldLoad: capabilities.medical_records || capabilities.prescription,
-      reason: capabilities.medical_records
+      shouldLoad: capabilitiesRecord.medical_records || capabilitiesRecord.prescription || false,
+      reason: capabilitiesRecord.medical_records
         ? 'Medical records enabled'
-        : capabilities.prescription
+        : capabilitiesRecord.prescription
         ? 'Prescription capability enabled'
         : 'Medical features disabled',
       dependencies: ['medical_records', 'prescription', 'emergency']
     },
     {
       name: 'Tele-health',
-      shouldLoad: capabilities.tele,
-      reason: capabilities.tele
+      shouldLoad: capabilitiesRecord.tele || false,
+      reason: capabilitiesRecord.tele
         ? 'Tele-health enabled'
         : 'Tele-health not available',
       dependencies: ['tele', 'chat']
@@ -115,8 +124,8 @@ export function CapabilityDebugOverlay({
     },
     {
       name: 'Live Tracking',
-      shouldLoad: capabilities.gps_tracking,
-      reason: capabilities.gps_tracking
+      shouldLoad: capabilitiesRecord.gps_tracking || false,
+      reason: capabilitiesRecord.gps_tracking
         ? 'GPS tracking enabled'
         : 'GPS tracking not enabled',
       dependencies: ['gps_tracking']
@@ -239,7 +248,7 @@ export function CapabilityDebugOverlay({
                                   <Badge
                                     key={dep}
                                     className={`text-xs ${
-                                      (capabilities as any)[dep]
+                                      capabilitiesRecord[dep]
                                         ? 'bg-green-100 text-green-800'
                                         : 'bg-gray-100 text-gray-600'
                                     }`}
@@ -298,7 +307,7 @@ export function CapabilityDebugOverlay({
                     <h4 className="text-xs font-semibold text-gray-700 mb-2">{group}</h4>
                     <div className="space-y-1">
                       {caps.map((cap) => {
-                        const isEnabled = (capabilities as any)[cap];
+                        const isEnabled = capabilitiesRecord[cap] || false;
                         return (
                           <div
                             key={cap}

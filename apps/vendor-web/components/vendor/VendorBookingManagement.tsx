@@ -131,14 +131,10 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       
       // Don't pass activeFilter (today/week/month) as status filter - it's just for UI display
       // Pass empty string to get all statuses
-      const response = await apiClient.get('/make-server-3dd53475/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/make-server-3dd53475/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         
         console.log('📦 [VENDOR-UI] Raw booking data from API:', data);
         console.log('📊 [VENDOR-UI] Debug info:', data.debug);
@@ -177,7 +173,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
       } else {
-        console.error('Failed to load bookings:', response.statusText);
+        console.error('Failed to load bookings:', data);
         setBookings([]);
       }
     } catch (error) {
@@ -192,17 +188,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     if (!confirm('Are you sure you want to cancel this booking?')) return;
 
     try {
-      const response = await apiClient.get('/make-server-3dd53475/vendor/bookings/${bookingId}/cancel'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${bookingId}/cancel`, {}) as any;
 
-      if (response.ok) {
+      if (data && data.success) {
         loadBookings(); // Reload bookings
       }
     } catch (error) {
@@ -219,23 +207,14 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   const handleAcceptBooking = async (booking: Booking) => {
     try {
       setCompletingBooking(true);
-      const response = await apiClient.get('/make-server-3dd53475/bookings/${booking.id}/accept'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ vendorId })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/bookings/${booking.id}/accept`, { vendorId }) as any;
 
-      if (response.ok) {
+      if (data && data.success) {
         alert('✅ Booking accepted!');
         loadBookings();
       } else {
-        const err = await response.json();
-        alert(`❌ Failed to accept: ${err.error}`);
+        console.error('Failed to accept booking:', data);
+        alert(`❌ Failed to accept: ${data?.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error accepting booking:', error);
@@ -280,23 +259,14 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       setOtpError('');
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/start-session'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            vendorId,
-            otp: otpInput
-          })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/start-session`, {
+        vendorId,
+        otp: otpInput
+      }) as any;
       
-      const data = await response.json();
+      // data already available
       
-      if (response.ok) {
+      if (data && data.success) {
         setShowOTPModal(false);
         alert('✅ Session started! Customer can now track your location.');
         loadBookings(); // Reload bookings
@@ -318,22 +288,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/bookings/${booking.id}/end-session'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            vendorId
-          })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${booking.id}/end-session`, { vendorId }) as any;
       
-      const data = await response.json();
+      // data already available
       
-      if (response.ok) {
+      if (data && data.success) {
         alert('✅ Session ended and booking completed!');
         loadBookings(); // Reload bookings
       } else {
@@ -352,23 +311,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/bookings/${booking.id}/complete'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            vendorId,
-            otp: null
-          })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${booking.id}/complete`, { vendorId, otp: null }) as any;
       
-      const data = await response.json();
+      // data already available
       
-      if (response.ok) {
+      if (data && data.success) {
         alert('✅ Booking completed successfully!');
         loadBookings(); // Reload bookings
       } else {
@@ -395,23 +342,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       setOtpError('');
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/complete'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            vendorId,
-            otp: otpInput
-          })
-        }
-      );
+      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/complete`, { vendorId, otp: otpInput }) as any;
       
-      const data = await response.json();
+      // data already available
       
-      if (response.ok) {
+      if (data && data.success) {
         setShowOTPModal(false);
         alert('✅ Booking completed successfully!');
         loadBookings(); // Reload bookings
@@ -453,14 +388,10 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     if (booking.hasPrescription) {
       // View existing prescription
       try {
-        const response = await apiClient.get('/make-server-3dd53475/vendor/prescription/${bookingId}'),
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
-        );
+        const data = await apiClient.get(`/make-server-3dd53475/vendor/prescription/${bookingId}`) as any;
         
-        if (response.ok) {
-          const data = await response.json();
+        if (data && data.success) {
+          // data already available
           const prescription = data.prescription;
           alert(`📋 Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes:\n${prescription.notes}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
         } else {
@@ -476,27 +407,18 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       if (!notes || notes.trim() === '') return;
       
       try {
-        const response = await apiClient.get('/make-server-3dd53475/vendor/prescription/upload'),
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              bookingId,
-              vendorId,
-              prescriptionNotes: notes.trim(),
-              prescriptionFile: null // TODO: Add file upload
-            })
-          }
-        );
+        const data = await apiClient.post('/make-server-3dd53475/vendor/prescription/upload', {
+          bookingId,
+          vendorId,
+          prescriptionNotes: notes.trim(),
+          prescriptionFile: null // TODO: Add file upload
+        }) as any;
         
-        if (response.ok) {
+        if (data && data.success) {
           alert('✅ Prescription uploaded successfully!');
           loadBookings(); // Reload to show prescription badge
         } else {
-          const data = await response.json();
+          // data already available
           alert('❌ Failed to upload prescription:\n' + (data.error || 'Unknown error'));
         }
       } catch (error) {

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { AdminLayout } from '@/components/AdminLayout';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 // ============================================================================
 // TYPES
@@ -219,16 +219,8 @@ export default function ServiceCatalogPage() {
   // RENDER
   // ============================================================================
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading service catalog...</p>
-        </div>
-      </div>
-    );
-  }
+  // Don't block rendering - show UI immediately with loading overlay
+  // This ensures static export always has the full UI structure
 
   const SERVICE_STYLES = [
     { id: 'centre', label: 'Centre Visit', icon: '🏢' },
@@ -246,7 +238,17 @@ export default function ServiceCatalogPage() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-slate-50 relative">
+        {/* Loading overlay - only show when actively loading */}
+        {loading && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading service catalog...</p>
+            </div>
+          </div>
+        )}
+        
         {/* Header */}
         <header className="bg-white border-b px-8 py-6">
         <div className="flex items-center justify-between">

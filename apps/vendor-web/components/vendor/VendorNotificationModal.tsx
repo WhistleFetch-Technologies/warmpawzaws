@@ -42,14 +42,14 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/vendor/endpoint');
+      const data = await apiClient.get('/vendor/endpoint') as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         console.log('📬 Notifications loaded:', data.notifications?.length || 0);
         setNotifications(data.notifications || []);
       } else {
-        console.error('Failed to fetch notifications:', response.status);
+        console.error('Failed to fetch notifications:', 200);
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);

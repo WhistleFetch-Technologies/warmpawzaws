@@ -42,14 +42,22 @@ const UAT_MODE = isUatMode();
 export class ApiClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = getApiBaseUrl()) {
-    this.baseUrl = baseUrl || '';
+  constructor(baseUrl?: string) {
+    // Use provided URL or get from config (with fallback)
+    const url = baseUrl || getApiBaseUrl();
+    this.baseUrl = url || '';
     
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log('🔧 [UAT Mode] API Client Initialized (Admin)');
       console.log('   Base URL:', this.baseUrl);
       console.log('   Environment:', process.env.NODE_ENV);
+      console.log('   Runtime Config:', getRuntimeConfig());
+      
+      // Warn if config not loaded
+      if (!this.baseUrl) {
+        console.warn('⚠️ API_BASE_URL is empty. Check runtime-config.js is loaded.');
+      }
     }
   }
 
@@ -89,8 +97,13 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    // UAT Mode: Log API requests for debugging
+    // UAT Mode: Add special header to bypass Cognito authorizer
     if (UAT_MODE && typeof window !== 'undefined') {
+      headers['X-UAT-Mode'] = 'true';
+      // Also add X-UAT-Token for Lambda to validate
+      if (token && token.startsWith('uat-token-')) {
+        headers['X-UAT-Token'] = token;
+      }
       console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
       console.log('   Full URL:', url);
     }
@@ -103,12 +116,17 @@ export class ApiClient {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Unknown error' }));
       
-      // Handle 401 by clearing token and redirecting to auth
+      // Handle 401: In UAT mode, don't redirect - let components handle gracefully
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('adminAuthToken');
-          localStorage.removeItem('adminId');
-          window.location.href = '/login';
+          // Check if we're in UAT mode - if so, don't redirect, just throw error
+          const isUat = getRuntimeConfig().uatMode || UAT_MODE;
+          if (!isUat) {
+            // Only redirect in production mode
+            localStorage.removeItem('adminAuthToken');
+            localStorage.removeItem('adminId');
+            window.location.href = '/';
+          }
         }
       }
       

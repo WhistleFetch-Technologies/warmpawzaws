@@ -114,16 +114,32 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
       },
     });
 
+    // Build message attributes
+    const messageAttributes: Record<string, any> = {
+      'AWS.SNS.SMS.SMSType': {
+        DataType: 'String',
+        StringValue: 'Transactional',
+      },
+    };
+
+    // Add sender ID if configured (for India DLT compliance)
+    if (awsSettings.sns?.smsOriginationNumber) {
+      // For alphanumeric sender IDs (6 chars max), use as-is
+      // For phone numbers, ensure proper format
+      const senderId = awsSettings.sns.smsOriginationNumber.trim();
+      if (senderId.length > 0) {
+        messageAttributes['AWS.SNS.SMS.SenderID'] = {
+          DataType: 'String',
+          StringValue: senderId,
+        };
+      }
+    }
+
     await snsClient.send(
       new PublishCommand({
         PhoneNumber: phone,
         Message: message,
-        MessageAttributes: {
-          'AWS.SNS.SMS.SMSType': {
-            DataType: 'String',
-            StringValue: 'Transactional',
-          },
-        },
+        MessageAttributes: messageAttributes,
       })
     );
 

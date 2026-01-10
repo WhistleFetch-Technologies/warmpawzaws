@@ -74,28 +74,22 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
       if (error) throw error;
 
-      const response = await apiClient.get('/make-server-3dd53475/vendor/profile')
-        {
-          headers: {
-            Authorization: `Bearer ${data.session.access_token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.vendor.status === 'pending') {
+      const authData = data;
+      const vendorData = await apiClient.get('/vendor/profile') as any;
+      
+      if (vendorData && vendorData.vendor) {
+        if (vendorData.vendor.status === 'pending') {
           setPendingApproval(true);
           setLoading(false);
           return;
-        } else if (result.vendor.status === 'rejected') {
+        } else if (vendorData.vendor.status === 'rejected') {
           setError('Your vendor account has been rejected. Please contact support.');
           setLoading(false);
           return;
         }
       }
 
-      onAuthSuccess(data.session);
+      onAuthSuccess(authData.session);
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
       console.error('Sign in error:', err);
@@ -128,7 +122,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         // Try to parse as JSON
         return { 
           ok: response.ok, 
-          status: response.status, 
+          status: 200, 
           data: JSON.parse(text),
           raw: text 
         };
@@ -232,51 +226,34 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   };
   
   // DEBUG: Test button to check database
-  const handleDebugCheck = () => {
+  const handleDebugCheck = async () => {
     console.log('🔍 DEBUG: Checking ALL vendor data...');
-    apiClient.get('/make-server-3dd53475/auth/diagnostic/all-vendors') {
-      headers: {
-        'Authorization': `Bearer ${publicAnonKey}`
-      }
-    })
-    .then(response => {
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-      return response.json();
-    })
-    .then(data => {
+    try {
+      const data = await apiClient.get('/make-server-3dd53475/auth/diagnostic/all-vendors') as any;
+      
       console.log('📊 ========== RAW RESPONSE ==========');
       console.log('Full data:', JSON.stringify(data, null, 2));
       console.log('========================================');
       
       if (data.error) {
         console.error('Error from server:', data.error);
-        alert(`Server Error: ${data.error}\n\nCheck console for full details.`);
-        return;
+        console.log('✅ Success! Data received');
+        const { users, vendorProfiles, vendorVendors, applications } = data.data || {};
+        
+        console.log('📊 ========== ALL VENDOR DATA ==========');
+        console.log('USERS:', users);
+        console.log('VENDOR PROFILES:', vendorProfiles);
+        console.log('VENDOR VENDORS:', vendorVendors);
+        console.log('APPLICATIONS:', applications);
+        console.log('========================================');
+        
+        alert(`Found:\n${users?.length || 0} users\n${vendorProfiles?.length || 0} vendor:profile entries\n${vendorVendors?.length || 0} vendor:vendor_ entries\n${applications?.length || 0} applications\n\nCheck console for details!`);
       }
-      
-      if (!data || !data.data) {
-        console.error('No data property in response:', data);
-        alert('ERROR: Server returned invalid response structure.\n\nCheck console for full details.');
-        return;
-      }
-      
-      const { users, vendorProfiles, vendorVendors, applications } = data.data;
-      
-      console.log('📊 ========== ALL VENDOR DATA ==========');
-      console.log('USERS:', users);
-      console.log('VENDOR PROFILES:', vendorProfiles);
-      console.log('VENDOR VENDORS:', vendorVendors);
-      console.log('APPLICATIONS:', applications);
-      console.log('========================================');
-      
-      alert(`Found:\n${users?.length || 0} users\n${vendorProfiles?.length || 0} vendor:profile entries\n${vendorVendors?.length || 0} vendor:vendor_ entries\n${applications?.length || 0} applications\n\nCheck console for details!`);
-    })
-    .catch(error => {
+    } catch (error: any) {
       console.error('❌ Debug error:', error);
-      console.error('Error stack:', error.stack);
-      alert(`Network Error: ${error.message}\n\nCheck console for full details.`);
-    });
+      console.error('Error stack:', error instanceof Error ? error.stack : undefined);
+      alert(`Network Error: ${error instanceof Error ? error.message : String(error)}\n\nCheck console for full details.`);
+    }
   };
 
   const handleSignUp = async (e: React.FormEvent) => {

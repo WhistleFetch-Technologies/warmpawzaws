@@ -51,15 +51,17 @@ export function CustomServiceApproval() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
-      </div>
-    );
-  }
-
   return (
+    <div className="relative">
+      {/* Loading overlay - only show when actively loading */}
+      {loading && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading services...</p>
+          </div>
+        </div>
+      )}
     <div className="p-6 space-y-6">
       <div>
         <h2 className="text-black text-xl font-semibold">Service Approval</h2>
@@ -129,6 +131,7 @@ export function CustomServiceApproval() {
           </table>
         </div>
       </div>
+    </div>
     </div>
   );
 }

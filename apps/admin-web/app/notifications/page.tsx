@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { AdminLayout } from '@/components/AdminLayout';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 // ============================================================================
 // TYPES

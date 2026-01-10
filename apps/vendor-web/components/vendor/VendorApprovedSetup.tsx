@@ -29,28 +29,17 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
 
       console.log('📤 Completing setup (informative only)...', payload);
 
-      const response = await apiClient.get('/make-server-3dd53475/vendor/setup/complete'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        }
-      );
+      const data = await apiClient.post('/make-server-3dd53475/vendor/setup/complete', payload) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
         console.log('✅ [VendorApprovedSetup] Setup marked complete:', data);
         toast.success('Welcome to your dashboard!');
         
         // Short delay for smooth transition
         setTimeout(() => onComplete(), 800);
       } else {
-        const errorData = await response.text();
-        console.error('❌ [VendorApprovedSetup] Failed to complete setup:', errorData);
-        toast.error('Failed to proceed. Please try again.');
+        console.error('❌ [VendorApprovedSetup] Failed to complete setup:', data);
+        toast.error(data?.error || 'Failed to proceed. Please try again.');
         setIsSubmitting(false);
       }
     } catch (error) {

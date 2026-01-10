@@ -115,15 +115,33 @@ import { registerAIChatbotEndpoints } from '../endpoints/ai-chatbot';
 import { registerSupportCrmEndpoints } from '../endpoints/support-crm';
 import { registerLocationSharingEndpoints } from '../endpoints/location-sharing';
 import { registerVendorSecurityEndpoints } from '../endpoints/vendor-security';
+import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-distance-pricing';
 
 // Create Hono app
 const app = new Hono();
 
-// Configure CORS
+// Configure CORS - Match API Gateway CORS settings
+const allowedOrigins = [
+  'https://dfof7mguaa0a5.cloudfront.net',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://dev.admin.warmpawz.com',
+  'https://dev.vendor.warmpawz.com',
+  'https://dev.customer.warmpawz.com',
+];
+
 app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  origin: (origin) => {
+    // Allow requests from allowed origins or if no origin (same-origin)
+    if (!origin || allowedOrigins.includes(origin)) {
+      return origin || allowedOrigins[0];
+    }
+    return allowedOrigins[0]; // Default to CloudFront
+  },
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
+  allowCredentials: true,
+  maxAge: 86400,
 }));
 
 // Health check
@@ -226,6 +244,7 @@ registerAIChatbotEndpoints(app);
 registerSupportCrmEndpoints(app);
 registerLocationSharingEndpoints(app);
 registerVendorSecurityEndpoints(app);
+registerVendorDistancePricingEndpoints(app);
 
 // 404 handler
 app.notFound((c) => {
@@ -246,6 +265,63 @@ export const handler = async (
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
   try {
+    // UAT Mode: Check if request has UAT header and bypass authorizer validation
+    // This allows UAT tokens to pass through even though they're not valid Cognito JWTs
+    const uatMode = event.headers?.['x-uat-mode'] === 'true' || 
+                    event.headers?.['X-UAT-Mode'] === 'true';
+    const uatToken = event.headers?.['x-uat-token'] || 
+                     event.headers?.['X-UAT-Token'];
+    
+    // If UAT mode is enabled, inject a mock authorizer context to bypass Cognito validation
+    if (uatMode && uatToken && uatToken.startsWith('uat-token-')) {
+      // Inject mock authorizer claims for UAT mode
+      if (!event.requestContext.authorizer) {
+        (event.requestContext as any).authorizer = {};
+      }
+      if (!event.requestContext.authorizer.claims) {
+        (event.requestContext.authorizer as any).claims = {
+          sub: 'uat-admin-user',
+          'cognito:username': 'admin@warmpawz.com',
+          email: 'admin@warmpawz.com',
+          'custom:user_type': 'admin',
+        };
+      }
+      console.log('🔧 [UAT Mode] Bypassing Cognito authorizer validation');
+    }
+    
+    // Handle OPTIONS (CORS preflight) requests early - before processing
+    const httpMethod = event.requestContext?.http?.method || 'GET';
+    if (httpMethod === 'OPTIONS') {
+      const origin = event.headers?.origin || 
+                     event.headers?.Origin || 
+                     event.multiValueHeaders?.origin?.[0] ||
+                     event.multiValueHeaders?.Origin?.[0] ||
+                     'https://dfof7mguaa0a5.cloudfront.net';
+      
+      const allowedOrigins = [
+        'https://dfof7mguaa0a5.cloudfront.net',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'https://dev.admin.warmpawz.com',
+        'https://dev.vendor.warmpawz.com',
+        'https://dev.customer.warmpawz.com',
+      ];
+      
+      const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+      
+      return {
+        statusCode: 204, // 204 No Content is standard for successful preflight
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token',
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+        },
+      };
+    }
+
     // Convert API Gateway HTTP API (v2) event to Request
     // domainName is only present when using custom domains
     // For default endpoints, construct from apiId or use relative URL
@@ -280,7 +356,7 @@ export const handler = async (
       : event.body || undefined;
 
     const request = new Request(url, {
-      method: event.requestContext?.http?.method || 'GET',
+      method: httpMethod,
       headers,
       body: requestBody,
     });
@@ -295,22 +371,63 @@ export const handler = async (
       responseHeaders[key] = value;
     });
 
+    // Ensure CORS headers are present in all responses
+    const origin = event.headers?.origin || 
+                   event.headers?.Origin || 
+                   event.multiValueHeaders?.origin?.[0] ||
+                   event.multiValueHeaders?.Origin?.[0];
+    
+    const allowedOrigins = [
+      'https://dfof7mguaa0a5.cloudfront.net',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://dev.admin.warmpawz.com',
+      'https://dev.vendor.warmpawz.com',
+      'https://dev.customer.warmpawz.com',
+    ];
+    
+    const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    
+    // Merge CORS headers with response headers
     return {
       statusCode: response.status,
       body: responseBody,
-      headers: responseHeaders,
+      headers: {
+        ...responseHeaders,
+        'Access-Control-Allow-Origin': responseHeaders['access-control-allow-origin'] || allowedOrigin,
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key',
+      },
     };
   } catch (error) {
     console.error('Lambda handler error:', error);
+    
+    // Ensure CORS headers in error responses too
+    const origin = event.headers?.origin || 
+                   event.headers?.Origin || 
+                   'https://dfof7mguaa0a5.cloudfront.net';
+    
+    const allowedOrigins = [
+      'https://dfof7mguaa0a5.cloudfront.net',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://dev.admin.warmpawz.com',
+      'https://dev.vendor.warmpawz.com',
+      'https://dev.customer.warmpawz.com',
+    ];
+    
+    const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        // CORS headers must be present even in error responses
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Allow-Origin': allowedOrigin,
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key',
+        'Access-Control-Allow-Credentials': 'true',
       },
     };
   }

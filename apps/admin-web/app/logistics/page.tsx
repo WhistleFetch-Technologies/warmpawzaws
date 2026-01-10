@@ -2,8 +2,13 @@
 export const dynamic = 'force-dynamic';
 
 import { AdminLogisticsPage } from '@/components/admin/AdminLogisticsPage';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 
 export default function LogisticsPage() {
-  return <AdminLogisticsPage />;
+  return (
+    <AdminLayout>
+      <AdminLogisticsPage />
+    </AdminLayout>
+  );
 }
 

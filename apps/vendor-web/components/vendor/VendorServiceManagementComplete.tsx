@@ -44,14 +44,12 @@ export function VendorServiceManagementComplete({
       console.log('🔧 [ROLE-CONFIG] Loading allowed service styles for vendor:', vendorId);
       
       // Use the new dedicated endpoint
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/allowed-service-styles'),
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const data = await apiClient.get(`/make-server-3dd53475/vendor//allowed-service-styles`) as any; }
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
+        // data already available
         console.log('✅ [ROLE-CONFIG] API Response:', data);
         
         if (data.success && Array.isArray(data.allowedStyles)) {
@@ -63,8 +61,8 @@ export function VendorServiceManagementComplete({
           setAllowedServiceStyles([]);
         }
       } else {
-        const errorData = await response.json();
-        console.error('❌ [ROLE-CONFIG] API request failed:', response.status, errorData);
+        const errorData = response;
+        console.error('❌ [ROLE-CONFIG] API request failed:', 200, errorData);
         toast.error(errorData.error || 'Failed to load role configuration');
         setAllowedServiceStyles([]);
       }

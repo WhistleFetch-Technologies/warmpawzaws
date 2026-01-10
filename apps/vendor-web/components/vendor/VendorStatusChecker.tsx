@@ -58,16 +58,9 @@ export function VendorStatusChecker({
 
       console.log('🔍 Checking vendor status for phone:', phone);
       
-      const response = await apiClient.get('/make-server-3dd53475/vendor/status/${phone}'),
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
+      const data = await apiClient.get(`/vendor/status/${phone}`) as any;
 
-      if (response.ok) {
-        const data: VendorStatusResponse = await response.json();
+      if (data && data.success) {
         console.log('✅ Status response:', data);
         setStatus(data);
         onStatusChecked(data);
@@ -80,9 +73,8 @@ export function VendorStatusChecker({
           }, 2000);
         }
       } else {
-        const errorText = await response.text();
-        console.error('❌ Failed to check status:', errorText);
-        setError('Failed to check application status');
+        console.error('❌ Failed to check status:', data);
+        setError(data?.error || 'Failed to check application status');
       }
     } catch (err) {
       console.error('Error checking status:', err);

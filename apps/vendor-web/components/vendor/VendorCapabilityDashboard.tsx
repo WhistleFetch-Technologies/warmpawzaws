@@ -474,8 +474,8 @@ function ServicesSection({ vendorId }: { vendorId: string }) {
 
   const loadServices = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
-      setServices(response.services || []);
+      const data = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      setServices(data?.services || []);
     } catch (err) {
       console.error('Error loading services:', err);
     } finally {
@@ -532,8 +532,8 @@ function StaffSection({ vendorId }: { vendorId: string }) {
 
   const loadStaff = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/staff`);
-      setStaff(response.staff || []);
+      const data = await apiClient.get<any>(`/vendor/${vendorId}/staff`);
+      setStaff(data?.staff || []);
     } catch (err) {
       console.error('Error loading staff:', err);
     } finally {
@@ -591,8 +591,8 @@ function BookingsSection({ vendorId }: { vendorId: string }) {
 
   const loadBookings = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=${filter}`);
-      setBookings(response.bookings || []);
+      const data = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=${filter}`);
+      setBookings(data?.bookings || []);
     } catch (err) {
       console.error('Error loading bookings:', err);
     } finally {
@@ -646,8 +646,8 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const loadEarnings = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/earnings`);
-      setEarnings(response);
+      const data = await apiClient.get<any>(`/vendor/${vendorId}/earnings`);
+      setEarnings(data);
     } catch (err) {
       console.error('Error loading earnings:', err);
     } finally {

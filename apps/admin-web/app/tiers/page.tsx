@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
-import { AdminLayout } from '@/components/AdminLayout';
+import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';
 import { validateRequired } from '@/lib/utils';
 
