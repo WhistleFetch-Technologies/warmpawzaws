@@ -263,11 +263,11 @@ export default function ServiceCatalogPage() {
   // This ensures static export always has the full UI structure
 
   const SERVICE_STYLES = [
-    { id: 'centre', label: 'Centre Visit', icon: '🏢' },
-    { id: 'home', label: 'Home Service', icon: '🏠' },
-    { id: 'tele', label: 'Tele-consultation', icon: '📱' },
-    { id: 'ecommerce', label: 'E-commerce', icon: '🛒' },
-    { id: 'all', label: 'All Styles', icon: '✨' },
+    { id: 'centre', label: 'Centre Visit', icon: 'Building' },
+    { id: 'home', label: 'Home Service', icon: 'Home' },
+    { id: 'tele', label: 'Tele-consultation', icon: 'Phone' },
+    { id: 'ecommerce', label: 'E-commerce', icon: 'Shopping' },
+    { id: 'all', label: 'All Styles', icon: 'All' },
   ];
 
   const ROLES = [
@@ -336,14 +336,14 @@ export default function ServiceCatalogPage() {
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
             <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600" aria-label="Close">X</button>
           </div>
         )}
         
         {success && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
             <span>{success}</span>
-            <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
+            <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600" aria-label="Close">X</button>
           </div>
         )}
 
@@ -469,7 +469,7 @@ export default function ServiceCatalogPage() {
               onClick={loadData}
               className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
             >
-              🔄 Refresh
+              Refresh
             </button>
           </div>
         </div>
@@ -692,7 +692,7 @@ export default function ServiceCatalogPage() {
                 <h3 className="text-xl font-semibold text-gray-900">
                   {editingService ? 'Edit Service' : 'Create Service'}
                 </h3>
-                <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
+                <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold" aria-label="Close">X</button>
               </div>
             </div>
             
@@ -753,7 +753,7 @@ export default function ServiceCatalogPage() {
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     {SERVICE_STYLES.map(style => (
-                      <option key={style.id} value={style.id}>{style.icon} {style.label}</option>
+                      <option key={style.id} value={style.id}>{style.label}</option>
                     ))}
                   </select>
                 </div>
@@ -761,12 +761,13 @@ export default function ServiceCatalogPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (₹)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (INR)</label>
                   <input
                     type="number"
                     value={formData.base_price || 0}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, base_price: Number(e.target.value) }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                    placeholder="0.00"
                   />
                 </div>
                 <div>

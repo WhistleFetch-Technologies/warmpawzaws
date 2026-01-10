@@ -194,7 +194,7 @@ export function HierarchicalServiceList({
                 {service.service_style?.replace('_', ' ').toUpperCase() || 'AT CENTER'}
               </span>
               <span className="text-xs text-gray-500">{service.duration_minutes} mins</span>
-              <span className="text-xs text-gray-500">₹{service.base_price}</span>
+              <span className="text-xs text-gray-500">INR {service.base_price}</span>
               <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
                 {service.applicable_roles?.length || 0} Roles
               </span>
