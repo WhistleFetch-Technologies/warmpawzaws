@@ -47,17 +47,13 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
         setLoading(true);
         
         // Fetch facility data
-        const response = await apiClient.get('/vendor/endpoint');
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success) {
-            setVendor(data.vendor);
-            setFacility(data.facility);
-            setServices(data.services);
-            setRating(data.rating);
-            setReviews(data.recentReviews);
-          }
+        const data = await apiClient.get<{ success?: boolean, vendor?: any, facility?: any, services?: any[], rating?: any, recentReviews?: any[] }>(`/vendor/${vendorId}/facility`);
+        if (data.success) {
+          setVendor(data.vendor);
+          setFacility(data.facility);
+          setServices(data.services || []);
+          setRating(data.rating);
+          setReviews(data.recentReviews || []);
         }
       } catch (error) {
         console.error('Error loading facility data:', error);

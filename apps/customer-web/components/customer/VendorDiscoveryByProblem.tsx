@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, Clock, Building2, ChevronRight, User, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -137,19 +138,11 @@ export function VendorDiscoveryByProblem({
 
       console.log('🌐 Calling universal-problem-discovery API:', problemParams.toString());
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Discovered vendors via universal API:', data);
+      const data = await apiClient.get<{ vendors?: any[]; specialists?: any[]; data?: { vendors?: any[]; specialists?: any[] } }>(`/customer/vendors/by-problem?${problemParams.toString()}`);
+      console.log('✅ Discovered vendors via universal API:', data);
         
         // ✅ Map specialists response to vendor format
-        const specialists = data.specialists || [];
+        const specialists = data.data?.specialists || data.specialists || [];
         
         // Group by vendor/clinic
         const vendorMap = new Map();
@@ -176,16 +169,10 @@ export function VendorDiscoveryByProblem({
         setCenters([]);
         setIndividuals(mappedVendors);
         setDisplayMode('staff_only');
-      } else {
-        // Try to parse error response, fallback to text if JSON parsing fails
-        try {
-          const errorData = await response.json();
-          console.error('❌ Vendor discovery failed:', errorData);
-        } catch (parseError) {
-          const errorText = await response.text();
-          console.error('❌ Vendor discovery failed (text response):', errorText);
+        
+        if (specialists.length === 0) {
+          console.warn('⚠️ No specialists found in response');
         }
-      }
     } catch (error) {
       console.error('Error discovering vendors:', error);
     } finally {

@@ -5,6 +5,7 @@ import { Search, MapPin, Star, Filter, ChevronRight, Clock, Phone, Award } from 
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { apiClient } from '@/lib/api-client';
 
 interface ServiceDiscoveryProps {
   onSelectVendor: (vendorId: string) => void;
@@ -48,15 +49,8 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
         sortBy: filters.sortBy
       });
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setVendors(data.vendors || []);
-      } else {
-        toast.error('Failed to load services');
-      }
+      const data = await apiClient.get<{ vendors?: any[] }>(`/customer/vendors/search?${params.toString()}`);
+      setVendors(data.vendors || []);
     } catch (error) {
       console.error('Error:', error);
       toast.error('Network error');

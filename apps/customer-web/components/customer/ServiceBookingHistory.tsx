@@ -46,30 +46,22 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
       setLoading(true);
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${cleanPhone}&serviceType=${serviceType}`);
+      
+      // Filter bookings by service type
+      const serviceBookings = (data.bookings || []).filter((b: Booking) => 
+        b.serviceType === serviceType
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        // Filter bookings by service type
-        const serviceBookings = (data.bookings || []).filter((b: Booking) => 
-          b.serviceType === serviceType
-        );
-        
-        // Sort by date (newest first)
-        serviceBookings.sort((a: Booking, b: Booking) => {
-          const dateA = new Date(a.scheduledDate || a.createdAt);
-          const dateB = new Date(b.scheduledDate || b.createdAt);
-          return dateB.getTime() - dateA.getTime();
-        });
-        
-        setBookings(serviceBookings);
-        console.log(`✅ Loaded ${serviceBookings.length} ${serviceType} bookings`);
-      } else {
-        console.error('Failed to load bookings');
-      }
+      
+      // Sort by date (newest first)
+      serviceBookings.sort((a: Booking, b: Booking) => {
+        const dateA = new Date(a.scheduledDate || a.createdAt);
+        const dateB = new Date(b.scheduledDate || b.createdAt);
+        return dateB.getTime() - dateA.getTime();
+      });
+      
+      setBookings(serviceBookings);
+      console.log(`✅ Loaded ${serviceBookings.length} ${serviceType} bookings`);
     } catch (error) {
       console.error('Error loading service bookings:', error);
     } finally {

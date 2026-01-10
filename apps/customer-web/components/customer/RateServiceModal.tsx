@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 // Removed Supabase imports - using apiClient instead
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { awardReviewPoints } from '@/lib/loyalty-helper'; // ✅ NEW
 
@@ -60,16 +61,14 @@ export function RateServiceModal({
       };
 
       // AWS Serverless compatible - use apiClient
-      const result = await apiClient.post('/reviews/create', payload);
+      const result = await apiClient.post<{ reviewId?: string; id?: string }>('/reviews/create', payload);
       toast.success('Review submitted successfully!');
       
       // ✅ NEW: Award loyalty points for posting review
-      awardReviewPoints({
-        userId: customerId,
-        reviewId: result.reviewId || result.id || bookingId,
-        bookingId,
-        showToast: true
-      });
+      await awardReviewPoints(
+        customerId,
+        result.reviewId || result.id || bookingId
+      );
       
       onSuccess();
     } catch (error) {

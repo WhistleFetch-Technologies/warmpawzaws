@@ -94,18 +94,21 @@ export function PetQuickView({
       // Load sessions for each booking
       const bookingsWithSessions = await Promise.all(
         petBookings.map(async (booking: any) => {
-          const sessionResult = await apiClient.get(`/tracking/session/${booking.id}`) as any;
-          
-          if ((sessionResult as any).success) {
-              const sessionResult = await sessionResponse.json();
-              return sessionResult.booking;
+          try {
+            const sessionResult = await apiClient.get(`/tracking/session/${booking.id}`) as any;
+            
+            if (sessionResult && sessionResult.success && sessionResult.sessions) {
+              return { ...booking, sessions: sessionResult.sessions };
             }
             return booking;
-          })
-        );
-        
-        setBookings(bookingsWithSessions);
-      }
+          } catch (error) {
+            console.error(`Error loading sessions for booking ${booking.id}:`, error);
+            return booking;
+          }
+        })
+      );
+      
+      setBookings(bookingsWithSessions);
     } catch (error) {
       console.error('Error loading pet data:', error);
     } finally {

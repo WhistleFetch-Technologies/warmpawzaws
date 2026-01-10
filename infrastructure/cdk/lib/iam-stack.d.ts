@@ -36,3 +36,4 @@ export declare class IamStack extends Construct {
     readonly lambdaExecutionRole: iam.Role;
     constructor(scope: Construct, id: string, props: IamStackProps);
 }
+//# sourceMappingURL=iam-stack.d.ts.map

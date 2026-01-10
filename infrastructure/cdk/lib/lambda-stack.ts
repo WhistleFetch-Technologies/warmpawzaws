@@ -4,131 +4,161 @@
  * ============================================================================
  * 
  * Defines Lambda functions for all API endpoints
+ * Uses single Lambda function with Hono routing for all endpoints
  * 
- * Date: 2025-01-28
+ * Date: 2026-01-08
  * ============================================================================
  */
 
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
+import { AuroraStack } from './aurora-stack';
+import { S3Stack } from './s3-stack';
+import { CognitoStack } from './cognito-stack';
+import { IamStack } from './iam-stack';
+import { SecurityStack } from './security-stack';
+import { SqsStack } from './sqs-stack';
+import { SnsStack } from './sns-stack';
+import { DynamoDbStack } from './dynamodb-stack';
 
-export interface LambdaStackProps extends cdk.StackProps {
-  rdsEndpoint: string;
-  rdsDatabase: string;
-  rdsUsername: string;
-  rdsPassword: string;
+export interface LambdaStackProps {
+  auroraStack: AuroraStack;
+  s3Stack: S3Stack;
+  cognitoStack: CognitoStack;
+  iamStack: IamStack;
+  securityStack: SecurityStack;
+  sqsStack: SqsStack;
+  snsStack: SnsStack;
+  dynamoDbStack: DynamoDbStack;
+  vpc: ec2.IVpc;
+  environment?: string;
 }
 
-export class LambdaStack extends cdk.Stack {
-  public readonly apiHandler: lambda.Function;
+export class LambdaStack extends Construct {
+  public readonly apiFunction: lambda.Function;
+  public readonly functions: Map<string, lambda.Function>;
 
   constructor(scope: Construct, id: string, props: LambdaStackProps) {
-    super(scope, id, props);
+    super(scope, id);
 
-    // Main API Lambda function
-    this.apiHandler = new lambda.Function(this, 'ApiHandler', {
+    const environment = props.environment || 'dev';
+
+    // Lambda Layer for shared code (optional)
+    let sharedLayer: lambda.LayerVersion | undefined;
+    try {
+      sharedLayer = new lambda.LayerVersion(this, 'SharedLayer', {
+        code: lambda.Code.fromAsset('../../backend/shared'),
+        compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+        description: 'Shared utilities and database clients',
+      });
+    } catch (error) {
+      // Layer is optional - Lambda will work without it
+      console.warn('Shared layer not available, Lambda will use bundled code only');
+    }
+
+    // Main API Lambda Function
+    // Note: Code must be built before deployment (npm run build in backend/lambda)
+    this.apiFunction = new lambda.Function(this, 'ApiFunction', {
+      functionName: `warmpawz-api-${environment}`,
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'handler.handler',
-      code: lambda.Code.fromAsset('../backend/lambda/dist'),
+      handler: 'dist/src/handler.handler',
+      code: lambda.Code.fromAsset('../../backend/lambda', {
+        // Exclude source files - only include dist and node_modules
+        exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
+      }),
+      layers: sharedLayer ? [sharedLayer] : undefined,
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
-      environment: {
-        DB_HOST: props.rdsEndpoint,
-        DB_NAME: props.rdsDatabase,
-        DB_USER: props.rdsUsername,
-        DB_PASSWORD: props.rdsPassword,
-        DB_PORT: '5432',
-        NODE_ENV: 'production',
-        RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
-        COGNITO_USER_POOL_ID: process.env.COGNITO_USER_POOL_ID || '',
-        COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID || '',
-        COGNITO_PASSWORD_SECRET: process.env.COGNITO_PASSWORD_SECRET || '',
-        AWS_REGION: process.env.AWS_REGION || 'ap-south-1',
+      role: props.iamStack.lambdaExecutionRole,
+      vpc: props.vpc, // Single VPC used for all resources
+      vpcSubnets: {
+        // Use public subnets (default VPC typically only has public subnets)
+        // Lambda can access RDS Proxy from public subnets if security groups allow
+        subnetType: ec2.SubnetType.PUBLIC,
       },
+      allowPublicSubnet: true, // Required for Lambda in public subnets
+      securityGroups: [props.securityStack.lambdaSecurityGroup],
+      environment: {
+        NODE_ENV: environment === 'prod' ? 'production' : 'development',
+        // Database (using RDS Proxy)
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
+        AURORA_DATABASE: 'warmpawz',
+        // Cognito
+        COGNITO_CUSTOMER_POOL_ID: props.cognitoStack.customerPool.userPoolId,
+        COGNITO_CUSTOMER_CLIENT_ID: props.cognitoStack.customerPoolClient.userPoolClientId,
+        COGNITO_VENDOR_POOL_ID: props.cognitoStack.vendorPool.userPoolId,
+        COGNITO_VENDOR_CLIENT_ID: props.cognitoStack.vendorPoolClient.userPoolClientId,
+        COGNITO_ADMIN_POOL_ID: props.cognitoStack.adminPool.userPoolId,
+        COGNITO_ADMIN_CLIENT_ID: props.cognitoStack.adminPoolClient.userPoolClientId,
+        // S3
+        S3_STORAGE_BUCKET: props.s3Stack.storageBucket.bucketName,
+        S3_UPLOADS_BUCKET: props.s3Stack.uploadsBucket.bucketName,
+        S3_ASSETS_BUCKET: props.s3Stack.assetsBucket.bucketName,
+        S3_LOGS_BUCKET: props.s3Stack.logsBucket.bucketName,
+        // SQS
+        SQS_NOTIFICATION_QUEUE_URL: props.sqsStack.notificationQueue.queueUrl,
+        SQS_EMAIL_QUEUE_URL: props.sqsStack.emailQueue.queueUrl,
+        SQS_SMS_QUEUE_URL: props.sqsStack.smsQueue.queueUrl,
+        SQS_ANALYTICS_QUEUE_URL: props.sqsStack.analyticsQueue.queueUrl,
+        SQS_SETTLEMENT_QUEUE_URL: props.sqsStack.settlementQueue.queueUrl,
+        // SNS
+        SNS_BOOKING_CREATED_TOPIC_ARN: props.snsStack.bookingCreatedTopic.topicArn,
+        SNS_PAYMENT_PROCESSED_TOPIC_ARN: props.snsStack.paymentProcessedTopic.topicArn,
+        SNS_VENDOR_APPROVED_TOPIC_ARN: props.snsStack.vendorApprovedTopic.topicArn,
+        SNS_NOTIFICATION_TOPIC_ARN: props.snsStack.notificationTopic.topicArn,
+        SNS_ANALYTICS_TOPIC_ARN: props.snsStack.analyticsTopic.topicArn,
+        // DynamoDB
+        DYNAMODB_LOGS_TABLE: props.dynamoDbStack.logsTable.tableName,
+        DYNAMODB_ANALYTICS_TABLE: props.dynamoDbStack.analyticsTable.tableName,
+        DYNAMODB_REPORTS_TABLE: props.dynamoDbStack.reportsTable.tableName,
+        DYNAMODB_CHAT_MESSAGES_TABLE: props.dynamoDbStack.chatMessagesTable.tableName,
+        DYNAMODB_AI_CONVERSATIONS_TABLE: props.dynamoDbStack.aiConversationsTable.tableName,
+        // CORS
+        ALLOW_ORIGIN: environment === 'prod' ? 'https://warmpawz.com' : '*',
+      },
+      description: 'Main Warmpawz API Lambda function - handles all API requests',
     });
 
-    // Grant RDS access
-    this.apiHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'rds-db:connect',
-        ],
-        resources: [
-          `arn:aws:rds:${this.region}:${this.account}:db:${props.rdsDatabase}`,
-        ],
-      })
-    );
+    // Grant additional permissions via CDK grant methods (more secure than inline policies)
+    // SQS permissions
+    props.sqsStack.notificationQueue.grantSendMessages(this.apiFunction);
+    props.sqsStack.emailQueue.grantSendMessages(this.apiFunction);
+    props.sqsStack.smsQueue.grantSendMessages(this.apiFunction);
+    props.sqsStack.analyticsQueue.grantSendMessages(this.apiFunction);
+    props.sqsStack.settlementQueue.grantSendMessages(this.apiFunction);
 
-    // Grant SNS access for notifications
-    this.apiHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'sns:Publish',
-        ],
-        resources: ['*'],
-      })
-    );
+    // SNS permissions
+    props.snsStack.bookingCreatedTopic.grantPublish(this.apiFunction);
+    props.snsStack.paymentProcessedTopic.grantPublish(this.apiFunction);
+    props.snsStack.vendorApprovedTopic.grantPublish(this.apiFunction);
+    props.snsStack.notificationTopic.grantPublish(this.apiFunction);
+    props.snsStack.analyticsTopic.grantPublish(this.apiFunction);
 
-    // Grant SQS access for async processing
-    this.apiHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'sqs:SendMessage',
-          'sqs:ReceiveMessage',
-          'sqs:DeleteMessage',
-        ],
-        resources: ['*'],
-      })
-    );
+    // DynamoDB permissions
+    props.dynamoDbStack.logsTable.grantReadWriteData(this.apiFunction);
+    props.dynamoDbStack.analyticsTable.grantReadWriteData(this.apiFunction);
+    props.dynamoDbStack.reportsTable.grantReadWriteData(this.apiFunction);
+    props.dynamoDbStack.chatMessagesTable.grantReadWriteData(this.apiFunction);
+    props.dynamoDbStack.aiConversationsTable.grantReadWriteData(this.apiFunction);
 
-    // Grant S3 access for file storage
-    this.apiHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          's3:GetObject',
-          's3:PutObject',
-          's3:DeleteObject',
-        ],
-        resources: ['*'],
-      })
-    );
+    // Store functions in map for easy access
+    this.functions = new Map<string, lambda.Function>();
+    this.functions.set('api', this.apiFunction);
 
-    // Grant Chime SDK access for video calls
-    this.apiHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'chime:CreateMeeting',
-          'chime:CreateAttendee',
-          'chime:DeleteMeeting',
-          'chime:GetMeeting',
-        ],
-        resources: ['*'],
-      })
-    );
-
-    // Grant Cognito access for user management
-    this.apiHandler.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'cognito-idp:AdminCreateUser',
-          'cognito-idp:AdminSetUserPassword',
-          'cognito-idp:AdminInitiateAuth',
-          'cognito-idp:AdminGetUser',
-          'cognito-idp:AdminUpdateUserAttributes',
-        ],
-        resources: [
-          `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`,
-        ],
-      })
-    );
+    // Note: Additional service-specific Lambda functions can be added here
+    // For now, using a single monolithic function as per existing handler.ts structure
+    // Future decomposition can split into:
+    // - booking-service
+    // - payment-service
+    // - vendor-service
+    // - customer-service
+    // - admin-service
+    // - notification-service
+    // - ai-service
+    // - video-service
   }
 }
 

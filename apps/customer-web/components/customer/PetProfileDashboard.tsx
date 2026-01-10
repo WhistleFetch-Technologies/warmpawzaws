@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronLeft, Calendar, TrendingUp, Clock, Filter, Search, Package } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -56,21 +56,15 @@ export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashbo
   const loadPetBookings = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/customer/${phone}/pets/${petData.id}/bookings`) as any;
 
-      if (response.ok) {
-        const result = await response.json();
-        // Filter bookings for this specific pet
-        const petBookings = (result.bookings || []).filter((b: Booking) => b.petId === petData.id);
-        // Sort by date (most recent first)
-        const sortedBookings = petBookings.sort((a: Booking, b: Booking) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        setBookings(sortedBookings);
-      }
+      // Filter bookings for this specific pet
+      const petBookings = (data?.bookings || []).filter((b: Booking) => b.petId === petData.id);
+      // Sort by date (most recent first)
+      const sortedBookings = petBookings.sort((a: Booking, b: Booking) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setBookings(sortedBookings);
     } catch (error) {
       console.error('Error loading pet bookings:', error);
     } finally {
