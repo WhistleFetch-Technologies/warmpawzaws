@@ -5,6 +5,7 @@ import { Filter, X, Star, MapPin, DollarSign, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface SearchFiltersProps {
   query?: string;
@@ -47,17 +48,8 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
       if (query) params.append('q', query);
       if (type) params.append('type', type);
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setFacets(data.data?.facets || data.facets || null);
-      }
+      const data = await apiClient.get<{ data?: { facets?: Facets }, facets?: Facets }>(`/customer/search/facets?${params.toString()}`);
+      setFacets(data.data?.facets || data.facets || null);
     } catch (error) {
       console.error('Error fetching facets:', error);
     } finally {

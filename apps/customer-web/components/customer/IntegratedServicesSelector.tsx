@@ -9,6 +9,7 @@ import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCirc
 import { toast } from 'sonner';
 // Removed Supabase imports - using apiClient instead
 import { motion, AnimatePresence } from 'motion/react';
+import { apiClient } from '@/lib/api-client';
 
 interface ServiceProvider {
   id: string;
@@ -68,7 +69,7 @@ export function IntegratedServicesSelector({
         bookingId: bookingId || ''
       });
 
-      const data = await apiClient.get(`/customer/services/integrated?bookingId=${bookingId || ''}`) as any;
+      const data = await apiClient.get<{ services?: ServiceProvider[] }>(`/customer/services/integrated?${query.toString()}`);
       setProviders(data.services || []);
     } catch (error) {
       console.error(error);
@@ -93,15 +94,12 @@ export function IntegratedServicesSelector({
           providerName: selectedProvider.providerName,
           price: selectedProvider.basePrice
         }
-      }) as any;
+      });
       toast.success(`${activeTab === 'ambulance' ? 'Ambulance' : 'Service'} requested successfully!`);
       onServiceSelected(data);
       onClose();
-      } else {
-        toast.error('Failed to request service');
-      }
     } catch (error) {
-      toast.error('Error submitting request');
+      toast.error('Failed to request service');
     } finally {
       setLoading(false);
     }

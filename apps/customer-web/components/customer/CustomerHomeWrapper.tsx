@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CustomerHome } from './CustomerHomeComplete';
+import { CustomerHomeComplete as CustomerHome } from './CustomerHomeComplete';
 import { UserAccountSidebar } from './UserAccountSidebar';
 import { CustomerPetDetails } from './CustomerPetDetails';
 import { CustomerPetProfile } from './CustomerPetProfile';
@@ -50,6 +50,7 @@ import { OrderDetailView } from './OrderDetailView';
 import { OrderTrackingView } from './OrderTrackingView';
 import { ProblemCategoryMapper } from '../admin/ProblemCategoryMapper';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { useNotificationService } from './useNotificationService';
 import { toast } from 'sonner';
 import { useCart } from '@/context/CartContext';
@@ -70,7 +71,7 @@ import { CustomerServicesPage } from './CustomerServicesPage';
 import { CustomerBookingsPage } from './CustomerBookingsPage';
 import { CreateBookingPage } from './CreateBookingPage';
 import { CustomerPetsPage } from './CustomerPetsPage';
-import { OrderTrackingPage } from '../customer/shop/OrderTrackingPage';
+import { OrderTrackingPage } from '../shop/OrderTrackingPage';
 
 // ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed UI Components
 import { MultiPetBookingPage } from './MultiPetBookingPage';
@@ -194,20 +195,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       console.log('📬 [CUSTOMER-HOME] Notification received:', notification);
       if (notification.type === 'chat_message' && notification.bookingId) {
         try {
-          const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-          );
-          if (response.ok) {
-            const { booking } = await response.json();
+          const data = await apiClient.get<{ booking: { id: string; vendorId: string; vendorName: string; customerPhone: string } }>(`/customer/bookings/${notification.bookingId}`);
+          if (data && data.booking) {
             setVetServiceData({
               booking: {
-                bookingId: booking.id,
-                vendorId: booking.vendorId,
-                vendorName: booking.vendorName,
-                customerPhone: booking.customerPhone
+                bookingId: data.booking.id,
+                vendorId: data.booking.vendorId,
+                vendorName: data.booking.vendorName,
+                customerPhone: data.booking.customerPhone
               }
             });
             setCurrentScreen('vet');
-            toast.success('Opening chat...', { description: `Chat with ${booking.vendorName}`, duration: 2000 });
+            toast.success('Opening chat...', { description: `Chat with ${data.booking.vendorName}`, duration: 2000 });
           }
         } catch (error) {
           console.error('Error fetching booking for navigation:', error);
@@ -233,11 +232,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleViewFullPetProfile = async () => {
     if (!selectedPetId) return;
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { Authorization: `Bearer ${publicAnonKey}` } });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.pet) handleViewPetProfile(data.pet);
-      }
+      const data = await apiClient.get<{ success: boolean; pet: any }>(`/customer/pets/${selectedPetId}`);
+      if (data.success && data.pet) handleViewPetProfile(data.pet);
     } catch (error) { console.error('Error loading pet data:', error); }
   };
 
@@ -379,7 +375,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Given the truncation, I'll focus on the modifications and the structure.
   
   // ✅ UPDATED: Customer Profile with navigation
-  if (currentScreen === 'customer-profile') return <CustomerProfile phone={phone} onBack={handleBack} onNavigate={setCurrentScreen} />;
+  if (currentScreen === 'customer-profile') return <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />;
   if (currentScreen === 'pet-profile' && selectedPetData) return <PetProfile phone={phone} petId={selectedPetData.id} petName={selectedPetData.name} petType={selectedPetData.type} petBreed={selectedPetData.breed} petAge={selectedPetData.age} petGender={selectedPetData.gender} petImage={selectedPetData.image} onBack={handleBack} />;
   if (currentScreen === 'booking-details' && selectedBookingId && selectedPetId) return <PetBookingDetails bookingId={selectedBookingId} petId={selectedPetId} phone={phone} onBack={handleBack} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'pet-quick' && selectedPetId) return <PetQuickView petId={selectedPetId} phone={phone} onBack={handleBack} onViewFullProfile={handleViewFullPetProfile} />;
@@ -396,7 +392,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); setCurrentScreen('vet-clinic-profile'); } }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { if (screen === 'appointment') { setVetServiceData({ vendorId: data?.clinicId, serviceType: 'clinic' }); setCurrentScreen('vet-booking'); } }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
-  if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
+  if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { if (screen === 'appointment-details') { setSelectedAppointmentId(data?.appointmentId); setCurrentScreen('appointment-details'); } }} />;
   if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
   if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
   if (currentScreen === 'adoption') return <AdoptionServiceRouter phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'adoption_questionnaire') setCurrentScreen('adoption_questionnaire'); else setCurrentScreen('coming-soon'); }} />;
@@ -447,7 +443,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'my-bookings') return <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'appointments') return <AppointmentsList customerId={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
   if (currentScreen === 'appointment-details' && selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={() => setCurrentScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-reschedule'); }} onCancel={() => { setCurrentScreen('appointments'); setSelectedAppointmentId(null); }} />;
-  if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} customerId={phone} onBack={() => setCurrentScreen('appointment-details')} onRescheduleSuccess={() => { setCurrentScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
+  if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={() => setCurrentScreen('appointment-details')} onSuccess={() => { setCurrentScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
   
   // if (currentScreen === 'wallet') return <WalletView phone={phone} onBack={handleBack} />;
   if (currentScreen === 'category-mapper') return <ProblemCategoryMapper />;
@@ -530,6 +526,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'emergency-booking') return <EmergencyBookingPage
     customerPhone={phone}
     customerId={phone}
+    onBack={handleBack}
   />;
 
   // Check-In/Check-Out
@@ -537,6 +534,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerPhone={phone}
     customerId={phone}
     bookingId={selectedBookingId || undefined}
+    onBack={handleBack}
   />;
 
   // Medical Records
@@ -550,6 +548,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'customer-wallet') return <CustomerWalletPage
     customerPhone={phone}
     customerId={phone}
+    onBack={handleBack}
   />;
 
   // ✅ MATING & DATING SERVICE - P2P Matchmaking
@@ -559,19 +558,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // ✅ GAP FIXES: Rule 2 & 6
-  if (currentScreen === 'integrated-services') return <IntegratedServicesHub
-    customerId={phone}
-    petId={selectedPetId || 'pet_default'} // Fallback or force selection
-    onNavigate={handleNavigateToService}
-  />;
+  if (currentScreen === 'integrated-services') return <IntegratedServicesHub />;
 
   if (currentScreen === 'home-service-selection') return <HomeServiceSelectionEnhanced
-    serviceType={selectedService || 'grooming'}
-    serviceName={selectedService || 'Pet Grooming'}
     customerId={phone}
+    customerPhone={phone}
     petId={selectedPetId || 'pet_default'}
     onBack={handleBack}
-    onBookingComplete={(bookingId) => handleViewBooking(bookingId)}
+    onSuccess={(bookingId) => bookingId && handleViewBooking(bookingId)}
   />;
 
   return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;

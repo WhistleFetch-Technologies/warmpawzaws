@@ -13,6 +13,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, ChevronRight, Check, Loader2, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface ProblemGridSelectorProps {
   roleId: string;
@@ -45,17 +46,8 @@ export function ProblemGridSelector({
   const loadProblemGrid = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setProblems(data.problems || []);
-      }
+      const data = await apiClient.get<{ problems?: any[] }>(`/customer/problems?roleId=${roleId}`);
+      setProblems(data.problems || []);
     } catch (error) {
       console.error('Error loading problem grid:', error);
     } finally {

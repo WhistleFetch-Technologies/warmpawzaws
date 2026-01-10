@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface PetProfileProps {
   phone: string;
@@ -73,23 +73,15 @@ export function PetProfile({
       setLoading(true);
       console.log(`🐾 [PET-PROFILE] Loading booking history for pet: ${petId} (${petName})`);
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-        }
-      );
+      const data = await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`) as any;
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ [PET-PROFILE] Loaded bookings:', data);
+      console.log('✅ [PET-PROFILE] Loaded bookings:', data);
 
-        if (data.success) {
-          setBookings(data.bookings || []);
-          setStats(data.stats || stats);
-        }
+      if (data && data.success) {
+        setBookings(data.bookings || []);
+        setStats(data.stats || stats);
       } else {
-        console.error('❌ [PET-PROFILE] Failed to load bookings:', response.status);
+        console.error('❌ [PET-PROFILE] Failed to load bookings:', data?.error);
       }
     } catch (error) {
       console.error('❌ [PET-PROFILE] Error loading bookings:', error);

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Service {
   serviceId: string;
@@ -67,21 +68,14 @@ export function ServicesByProblem({
   const fetchServices = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ problemId });
       if (userLocation) {
         params.append('lat', userLocation.lat.toString());
         params.append('lng', userLocation.lng.toString());
       }
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setServices(data.data?.services || data.services || []);
-      }
+      const data = await apiClient.get<{ services?: Service[]; data?: { services?: Service[] } }>(`/customer/services/by-problem?${params.toString()}`);
+      setServices(data.data?.services || data.services || []);
     } catch (error) {
       console.error('Error fetching services:', error);
     } finally {

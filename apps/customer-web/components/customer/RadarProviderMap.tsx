@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Navigation, User, Briefcase, Star, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Provider {
   id: string;
@@ -41,13 +42,9 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
     setScanning(true);
     try {
         // Fetch from the new radar endpoint
-        const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-                headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-            }
-        );
+        const data = await apiClient.get<{ providers?: any[] }>(`/customer/radar/providers?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&serviceType=${serviceType}`);
         
-        if (response.ok) {
-            const data = await response.json();
+        if (data && data.providers && data.providers.length > 0) {
             // Transform backend data to frontend Provider interface
             const mappedProviders = (data.providers || []).map((p: any) => ({
                 id: p.id,

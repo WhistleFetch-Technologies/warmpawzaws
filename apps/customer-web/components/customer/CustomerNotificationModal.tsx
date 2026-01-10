@@ -49,14 +49,12 @@ export function CustomerNotificationModal({
     try {
       setLoading(true);
       const cleanPhone = phone.replace(/[^0-9]/g, '');
-      const response = await apiClient.get('/vendor/endpoint');
-
-      if (response.ok) {
-        const data = await response.json();
+      try {
+        const data = await apiClient.get<{ notifications?: any[] }>('/customer/notifications');
         console.log('📬 Customer notifications loaded:', data.notifications?.length || 0);
         setNotifications(data.notifications || []);
-      } else {
-        console.error('Failed to fetch notifications:', response.status);
+      } catch (error: any) {
+        console.error('Failed to fetch notifications:', error.message || error);
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);

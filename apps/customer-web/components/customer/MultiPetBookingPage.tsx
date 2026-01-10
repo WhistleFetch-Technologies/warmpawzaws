@@ -40,10 +40,11 @@ interface Service {
 interface MultiPetBookingPageProps {
   customerId: string;
   customerPhone: string;
-  service: Service;
-  scheduledDate: string;
-  scheduledTime: string;
+  service?: Service;
+  scheduledDate?: string;
+  scheduledTime?: string;
   location?: any;
+  petId?: string;
   onSuccess?: (bookingId: string) => void;
   onCancel?: () => void;
 }
@@ -73,19 +74,7 @@ export function MultiPetBookingPage({
   const loadPets = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to load pets');
-      }
-
-      const data = await response.json();
+      const data = await apiClient.get<{ pets?: Pet[] }>(`/customer/pets?customerId=${customerId}`);
       setPets(data.pets || []);
     } catch (err) {
       console.error('Error loading pets:', err);
@@ -107,7 +96,7 @@ export function MultiPetBookingPage({
 
   const calculatePricing = () => {
     const numberOfPets = selectedPetIds.length;
-    if (numberOfPets === 0) {
+    if (numberOfPets === 0 || !service) {
       return {
         basePrice: 0,
         discount: 0,
@@ -157,48 +146,38 @@ export function MultiPetBookingPage({
       return;
     }
 
+    if (!service) {
+      setError('Service information is required');
+      return;
+    }
+
     try {
       setBooking(true);
       setError(null);
 
       const pricing = calculatePricing();
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            customerId,
-            customerPhone,
-            petIds: selectedPetIds,
-            vendorId: service.vendorId,
-            serviceId: service.id,
-            serviceName: service.name,
-            vendorName: service.vendorName,
-            serviceStyle: service.serviceStyle,
-            scheduledDate,
-            scheduledTime,
-            location,
-            basePrice: service.price,
-            totalAmount: pricing.totalPrice,
-            discount: pricing.discount
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create booking');
-      }
-
-      const data = await response.json();
+      const data = await apiClient.post<{ parentBookingId?: string }>('/customer/bookings/multi-pet', {
+        customerId,
+        customerPhone,
+        petIds: selectedPetIds,
+        vendorId: service.vendorId,
+        serviceId: service.id,
+        serviceName: service.name,
+        vendorName: service.vendorName,
+        serviceStyle: service.serviceStyle,
+        scheduledDate,
+        scheduledTime,
+        location,
+        basePrice: service.price,
+        totalAmount: pricing.totalPrice,
+        discount: pricing.discount
+      });
       
       // Success!
       alert(`✅ Multi-pet booking created successfully!\n\nBooking ID: ${data.parentBookingId}\nTotal: ₹${pricing.totalPrice}\nSaved: ₹${pricing.discount}`);
       
-      if (onSuccess) {
+      if (onSuccess && data.parentBookingId) {
         onSuccess(data.parentBookingId);
       }
     } catch (err: any) {
@@ -215,6 +194,24 @@ export function MultiPetBookingPage({
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  if (!service) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-900 mb-4">Service information is required</p>
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg"
+            >
+              Go Back
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -247,18 +244,22 @@ export function MultiPetBookingPage({
             <MapPin className="w-4 h-4 text-gray-400" />
             <span>{service.vendorName}</span>
           </div>
-          <div className="flex items-center gap-2 text-gray-700">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <span>{new Date(scheduledDate).toLocaleDateString('en-IN', { 
-              day: 'numeric', 
-              month: 'long', 
-              year: 'numeric' 
-            })}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-700">
-            <Clock className="w-4 h-4 text-gray-400" />
-            <span>{scheduledTime}</span>
-          </div>
+          {scheduledDate && (
+            <div className="flex items-center gap-2 text-gray-700">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <span>{new Date(scheduledDate).toLocaleDateString('en-IN', { 
+                day: 'numeric', 
+                month: 'long', 
+                year: 'numeric' 
+              })}</span>
+            </div>
+          )}
+          {scheduledTime && (
+            <div className="flex items-center gap-2 text-gray-700">
+              <Clock className="w-4 h-4 text-gray-400" />
+              <span>{scheduledTime}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-gray-700">
             <DollarSign className="w-4 h-4 text-gray-400" />
             <span>₹{service.price} per pet</span>

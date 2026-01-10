@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface EnhancedVendorDiscoveryByProblemProps {
   roleId: string;
@@ -65,29 +66,20 @@ export function EnhancedVendorDiscoveryByProblem({
         roleId
       });
 
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({
+        problemId: problem.id,
+        roleId: roleId,
+      });
       if (location) {
         params.append('lat', location.lat.toString());
         params.append('lng', location.lng.toString());
         params.append('radius', '50');
       }
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Discovered results:', data);
-        setResults(data.results || []);
-        setRoleConfig(data.roleConfig);
-      } else {
-        const errorData = await response.json();
-        console.error('❌ Discovery failed:', errorData);
-      }
+      const data = await apiClient.get<{ results?: any[], roleConfig?: any }>(`/customer/vendors/discover-by-problem?${params.toString()}`);
+      console.log('✅ Discovered results:', data);
+      setResults(data.results || []);
+      setRoleConfig(data.roleConfig);
     } catch (error) {
       console.error('Error discovering:', error);
     } finally {

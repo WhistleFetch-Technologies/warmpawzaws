@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Button } from '../../ui/button';
-import { Badge } from '../../ui/badge';
-import { Input } from '../../ui/input';
-import { Card } from '../../ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
 import {
   ArrowLeft,
   Search,
@@ -18,7 +18,7 @@ import {
   UserCircle2,
   Building2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 
 interface UniversalVendorListViewProps {

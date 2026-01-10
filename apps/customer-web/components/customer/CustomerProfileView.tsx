@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, Camera, Edit2, Save, X } from 'lucide-react';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface UserProfile {
   firstName: string;
@@ -13,6 +14,7 @@ interface UserProfile {
   address: string;
   pincode: string;
   photo?: string;
+  created_at?: string;
 }
 
 interface CustomerProfileViewProps {
@@ -35,16 +37,9 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setProfile(result.profile);
-        setPhotoPreview(result.profile.photo || '');
-      }
+      const result = await apiClient.get<{ profile: UserProfile }>(`/customer/profile/${phone}`);
+      setProfile(result.profile);
+      setPhotoPreview(result.profile.photo || '');
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
@@ -86,22 +81,10 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
     setSaving(true);
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({
-            phone: phone,
-            profile: profile,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
-      }
+      await apiClient.post('/customer/profile', {
+        phone: phone,
+        profile: profile,
+      });
 
       setEditMode(false);
       alert('Profile updated successfully! 🎉');

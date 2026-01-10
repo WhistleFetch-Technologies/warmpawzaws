@@ -1,6 +1,23 @@
+/**
+ * ============================================================================
+ * AWS CDK MAIN STACK - WARMPAWZ PLATFORM
+ * ============================================================================
+ *
+ * Main CDK stack that wires all infrastructure components together
+ * - VPC (single VPC lookup)
+ * - RDS Aurora (PostgreSQL)
+ * - Cognito (3 user pools: customer, vendor, admin)
+ * - Lambda (single API handler with Hono routing)
+ * - API Gateway (HTTP API v2 with proxy routes)
+ * - S3 + CloudFront (3 web apps)
+ * - Route53 (custom domains)
+ *
+ * Date: 2026-01-08
+ * ============================================================================
+ */
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import { Construct } from 'constructs';
 import { AuroraStack } from './aurora-stack';
 import { CognitoStack } from './cognito-stack';
 import { S3Stack } from './s3-stack';
@@ -34,3 +51,4 @@ export declare class WarmpawzStack extends cdk.Stack {
     readonly lambdaStack: LambdaStack;
     constructor(scope: Construct, id: string, props?: WarmpawzStackProps);
 }
+//# sourceMappingURL=warmpawz-stack.d.ts.map

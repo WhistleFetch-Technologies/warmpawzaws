@@ -1,3 +1,14 @@
+/**
+ * ============================================================================
+ * AWS CDK STACK - LAMBDA FUNCTIONS
+ * ============================================================================
+ *
+ * Defines Lambda functions for all API endpoints
+ * Uses single Lambda function with Hono routing for all endpoints
+ *
+ * Date: 2026-01-08
+ * ============================================================================
+ */
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
@@ -26,3 +37,4 @@ export declare class LambdaStack extends Construct {
     readonly functions: Map<string, lambda.Function>;
     constructor(scope: Construct, id: string, props: LambdaStackProps);
 }
+//# sourceMappingURL=lambda-stack.d.ts.map

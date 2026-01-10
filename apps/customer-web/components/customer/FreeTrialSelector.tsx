@@ -28,17 +28,13 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
 
   const fetchFreeTrials = async () => {
     try {
-      const url = vendorId 
-        ? `${API_BASE}/trainer/free-trials?vendorId=${vendorId}`
-        : `${API_BASE}/trainer/free-trials`;
+      const endpoint = vendorId 
+        ? `/trainer/free-trials?vendorId=${vendorId}`
+        : '/trainer/free-trials';
 
-      const response = await apiClient.get('/vendor/endpoint');
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setTrials(data.freeTrials);
-        }
+      const data = await apiClient.get<{ success?: boolean, freeTrials?: any[] }>(endpoint);
+      if (data.success) {
+        setTrials(data.freeTrials || []);
       }
     } catch (error) {
       console.error('Failed to fetch free trials:', error);

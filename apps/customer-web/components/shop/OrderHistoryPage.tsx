@@ -1,7 +1,11 @@
 "use client";
 
 // Placeholder component - to be implemented
-export function OrderHistoryPage() {
+interface OrderHistoryPageProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function OrderHistoryPage({ onNavigate }: OrderHistoryPageProps = {}) {
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Order History</h1>
