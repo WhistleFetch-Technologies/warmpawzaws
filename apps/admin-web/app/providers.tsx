@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { useState } from 'react';
 import React from 'react';
+import { NoSSR } from '@/components/NoSSR';
 
 // Create QueryClient factory that works in both SSR and client
 function makeQueryClient() {
@@ -39,17 +40,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // Always create QueryClient (works in both SSR and client)
   // This ensures QueryClientProvider is always available, even during static generation
   const [queryClient] = useState(() => getQueryClient());
-  const [isClient, setIsClient] = useState(false);
-
-  // Only render Toaster on client-side to prevent static generation issues
-  React.useEffect(() => {
-    setIsClient(true);
-  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      {isClient && <Toaster position="top-right" />}
+      {/* Use NoSSR to prevent hydration mismatch with Toaster */}
+      {/* Toaster uses client-side features (DOM manipulation) that can cause hydration issues */}
+      <NoSSR>
+        <Toaster position="top-right" />
+      </NoSSR>
     </QueryClientProvider>
   );
 }
