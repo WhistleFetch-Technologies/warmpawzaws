@@ -204,12 +204,7 @@ export function VendorServiceConfigurationScreen({
   // ✅ NEW: Delete Service (for custom services only)
   const deleteService = async (serviceId: string) => {
     try {
-      const response = await apiClient.get('/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}'),
-        {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.delete(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}`) as any;
 
       if (response.ok) {
         toast.success('Service deleted successfully');
