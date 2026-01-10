@@ -5,12 +5,12 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface VetSpecializedServicesManagerProps {
-  clinicId: string;
-  clinicData?: any;
+  vendorId: string;
+  vendorData?: any;
   onBack?: () => void;
 }
 
-export function VetSpecializedServicesManager({ clinicId, clinicData, onBack }: VetSpecializedServicesManagerProps) {
+export function VetSpecializedServicesManager({ vendorId, vendorData, onBack }: VetSpecializedServicesManagerProps) {
   // Placeholder component - to be implemented with full vet specialized services functionality
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -27,7 +27,7 @@ export function VetSpecializedServicesManager({ clinicId, clinicData, onBack }: 
           )}
         </div>
         <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-gray-600">Vet specialized services management coming soon for clinic {clinicId}...</p>
+          <p className="text-gray-600">Vet specialized services management coming soon for vendor {vendorId}...</p>
         </div>
       </div>
     </div>

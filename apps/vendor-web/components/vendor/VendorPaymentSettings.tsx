@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CreditCard, Bank, Wallet, Settings } from 'lucide-react';
+import { CreditCard, Building2, Wallet, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface VendorPaymentSettingsProps {
@@ -34,7 +34,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            <Bank className="w-6 h-6 mb-2 text-gray-600" />
+            <Building2 className="w-6 h-6 mb-2 text-gray-600" />
             <p className="font-semibold">Bank Account</p>
           </button>
           <button

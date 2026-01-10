@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Package, CheckCircle, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -9,11 +9,7 @@ export function ProductApproval() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadPendingProducts();
-  }, []);
-
-  const loadPendingProducts = async () => {
+  const loadPendingProducts = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/products?status=pending_approval');
@@ -28,7 +24,11 @@ export function ProductApproval() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadPendingProducts();
+  }, [loadPendingProducts]);
 
   const handleApprove = async (productId: string) => {
     try {

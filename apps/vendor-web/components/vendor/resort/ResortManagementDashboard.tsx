@@ -5,12 +5,12 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface ResortManagementDashboardProps {
-  resortId: string;
-  resortData?: any;
+  vendorId: string;
+  vendorData?: any;
   onBack?: () => void;
 }
 
-export function ResortManagementDashboard({ resortId, resortData, onBack }: ResortManagementDashboardProps) {
+export function ResortManagementDashboard({ vendorId, vendorData, onBack }: ResortManagementDashboardProps) {
   // Placeholder component - to be implemented with full resort management functionality
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -27,7 +27,7 @@ export function ResortManagementDashboard({ resortId, resortData, onBack }: Reso
           )}
         </div>
         <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-gray-600">Resort management dashboard coming soon for resort {resortId}...</p>
+          <p className="text-gray-600">Resort management dashboard coming soon for vendor {vendorId}...</p>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ShoppingCart, Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -9,11 +9,7 @@ export function OrderManagementAdmin() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    loadOrders();
-  }, []);
-
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/orders');
@@ -28,7 +24,11 @@ export function OrderManagementAdmin() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
 
   const filteredOrders = orders.filter((order) => {
     const searchLower = searchQuery.toLowerCase();
