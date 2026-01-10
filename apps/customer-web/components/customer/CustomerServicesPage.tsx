@@ -164,7 +164,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
               </SelectContent>
             </Select>
             
-            <Select value={serviceStyle} onValueChange={(v: any) => setServiceStyle(v)}>
+            <Select value={serviceStyle} onValueChange={(v: 'at_home' | 'at_center' | 'tele' | 'all') => setServiceStyle(v)}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Style" />
               </SelectTrigger>

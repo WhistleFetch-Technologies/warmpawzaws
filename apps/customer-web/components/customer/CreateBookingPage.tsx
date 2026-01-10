@@ -139,7 +139,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             ) : (
               <Select 
                 value={formData.petId} 
-                onValueChange={(val) => setFormData({...formData, petId: val})}
+                onValueChange={(val: string) => setFormData({...formData, petId: val})}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a pet" />
