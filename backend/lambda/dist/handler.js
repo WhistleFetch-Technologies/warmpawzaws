@@ -202672,12 +202672,17 @@ var handler = async (event, context3) => {
     });
     const origin = event.headers?.origin || event.headers?.Origin || event.multiValueHeaders?.origin?.[0] || event.multiValueHeaders?.Origin?.[0];
     const allowedOrigins2 = [
-      "https://dfof7mguaa0a5.cloudfront.net",
       "http://localhost:3000",
-      "http://localhost:3001",
+      "http://localhost:5173",
       "https://dev.admin.warmpawz.com",
       "https://dev.vendor.warmpawz.com",
-      "https://dev.customer.warmpawz.com"
+      "https://dev.customer.warmpawz.com",
+      "https://dfof7mguaa0a5.cloudfront.net",
+      // Admin CloudFront
+      "https://d2aoyjj8ine0wk.cloudfront.net",
+      // Customer CloudFront
+      "https://d1s6ykkj381k58.cloudfront.net"
+      // Vendor CloudFront
     ];
     const allowedOrigin = origin && allowedOrigins2.includes(origin) ? origin : allowedOrigins2[0];
     return {
@@ -202695,14 +202700,19 @@ var handler = async (event, context3) => {
     console.error("Lambda handler error:", error);
     const origin = event.headers?.origin || event.headers?.Origin || "https://dfof7mguaa0a5.cloudfront.net";
     const allowedOrigins2 = [
-      "https://dfof7mguaa0a5.cloudfront.net",
       "http://localhost:3000",
-      "http://localhost:3001",
+      "http://localhost:5173",
       "https://dev.admin.warmpawz.com",
       "https://dev.vendor.warmpawz.com",
-      "https://dev.customer.warmpawz.com"
+      "https://dev.customer.warmpawz.com",
+      "https://dfof7mguaa0a5.cloudfront.net",
+      // Admin CloudFront
+      "https://d2aoyjj8ine0wk.cloudfront.net",
+      // Customer CloudFront
+      "https://d1s6ykkj381k58.cloudfront.net"
+      // Vendor CloudFront
     ];
-    const allowedOrigin = allowedOrigins2.includes(origin) ? origin : allowedOrigins2[0];
+    const allowedOrigin = origin && allowedOrigins2.includes(origin) ? origin : allowedOrigins2[0];
     return {
       statusCode: 500,
       body: JSON.stringify({ error: "Internal Server Error" }),

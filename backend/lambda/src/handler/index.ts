@@ -378,12 +378,14 @@ export const handler = async (
                    event.multiValueHeaders?.Origin?.[0];
     
     const allowedOrigins = [
-      'https://dfof7mguaa0a5.cloudfront.net',
       'http://localhost:3000',
-      'http://localhost:3001',
+      'http://localhost:5173',
       'https://dev.admin.warmpawz.com',
       'https://dev.vendor.warmpawz.com',
       'https://dev.customer.warmpawz.com',
+      'https://dfof7mguaa0a5.cloudfront.net', // Admin CloudFront
+      'https://d2aoyjj8ine0wk.cloudfront.net', // Customer CloudFront
+      'https://d1s6ykkj381k58.cloudfront.net', // Vendor CloudFront
     ];
     
     const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
@@ -409,15 +411,17 @@ export const handler = async (
                    'https://dfof7mguaa0a5.cloudfront.net';
     
     const allowedOrigins = [
-      'https://dfof7mguaa0a5.cloudfront.net',
       'http://localhost:3000',
-      'http://localhost:3001',
+      'http://localhost:5173',
       'https://dev.admin.warmpawz.com',
       'https://dev.vendor.warmpawz.com',
       'https://dev.customer.warmpawz.com',
+      'https://dfof7mguaa0a5.cloudfront.net', // Admin CloudFront
+      'https://d2aoyjj8ine0wk.cloudfront.net', // Customer CloudFront
+      'https://d1s6ykkj381k58.cloudfront.net', // Vendor CloudFront
     ];
     
-    const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
     
     return {
       statusCode: 500,
