@@ -125,16 +125,12 @@ export function ProblemGridNavigation({
   const fetchProblems = async () => {
     setLoading(true);
     try {
-      const url = vendorType
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/problem-grid/${vendorType}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/problem-grid/all`;
+      const endpoint = vendorType
+        ? `/vendor/problem-grid/${vendorType}`
+        : '/vendor/problem-grid/all';
 
-      const response = await apiClient.get('/vendor/endpoint');
-
-      if (response.ok) {
-        const data = await response.json();
-        setProblems(data.data?.problems || data.problems || []);
-      }
+      const data = await apiClient.get<{ problems?: any[]; data?: { problems?: any[] } }>(endpoint);
+      setProblems(data.data?.problems || data.problems || []);
     } catch (error) {
       console.error('Error fetching problems:', error);
     } finally {
@@ -145,7 +141,7 @@ export function ProblemGridNavigation({
   const fetchTrendingProblems = async () => {
     try {
       // AWS Serverless compatible - use apiClient
-      const data = await apiClient.get('/customer/problems/trending');
+      const data = await apiClient.get<{ trending?: any[]; data?: { trending?: any[] } }>('/customer/problems/trending');
       setTrendingProblems(data.data?.trending || data.trending || []);
     } catch (error) {
       console.error('Error fetching trending problems:', error);

@@ -118,16 +118,9 @@ export function IntegratedServicesComplete({
         params.append('radius', '15'); // 15km radius
       }
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setProviders(data.data?.providers || data.providers || []);
-        setCurrentView('providers');
-      }
+      const data = await apiClient.get<{ data?: { providers?: ServiceProvider[] }, providers?: ServiceProvider[] }>(`/customer/integrated-services/providers?${params.toString()}`);
+      setProviders(data.data?.providers || data.providers || []);
+      setCurrentView('providers');
     } catch (error) {
       console.error('Error fetching providers:', error);
     } finally {
@@ -151,20 +144,13 @@ export function IntegratedServicesComplete({
   const handleProviderSelect = async (provider: ServiceProvider) => {
     // Check availability before proceeding
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data?.availability?.isAvailable) {
-          // Proceed with booking
-          console.log('Provider available, proceeding to booking:', provider);
-          // TODO: Navigate to booking flow
-        } else {
-          alert(`Service not available: ${data.data?.availability?.reason}`);
-        }
+      const data = await apiClient.get<{ data?: { availability?: { isAvailable: boolean, reason?: string } } }>(`/customer/providers/${provider.providerId}/availability`);
+      if (data.data?.availability?.isAvailable) {
+        // Proceed with booking
+        console.log('Provider available, proceeding to booking:', provider);
+        // TODO: Navigate to booking flow
+      } else {
+        alert(`Service not available: ${data.data?.availability?.reason || 'Service unavailable'}`);
       }
     } catch (error) {
       console.error('Error checking availability:', error);

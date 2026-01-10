@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface AutocompleteProps {
   onSelect: (value: string) => void;
@@ -59,23 +60,18 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
 
     setLoading(true);
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+      const data = await apiClient.get<{ suggestions?: (Suggestion | string)[]; data?: { suggestions?: (Suggestion | string)[] } }>(`/customer/autocomplete?q=${encodeURIComponent(query)}`);
+      const suggestionsList = data.data?.suggestions || data.suggestions || [];
+      const suggestionsData: Suggestion[] = suggestionsList.map((s: string | Suggestion): Suggestion => {
+        if (typeof s === 'string') {
+          return { text: s };
         }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const suggestionsData = (data.data?.suggestions || data.suggestions || []).map((text: string) => ({
-          text,
-          type: 'suggestion' as const
-        }));
-        setSuggestions(suggestionsData);
-      }
+        return s;
+      });
+      setSuggestions(suggestionsData);
     } catch (error) {
       console.error('Error fetching autocomplete:', error);
+      setSuggestions([]);
     } finally {
       setLoading(false);
     }

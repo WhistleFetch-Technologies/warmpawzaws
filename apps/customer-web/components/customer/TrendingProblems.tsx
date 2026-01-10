@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface TrendingProblem {
   problemId: string;
@@ -36,7 +37,7 @@ export function TrendingProblems({
     setLoading(true);
     try {
       // AWS Serverless compatible - use apiClient
-      const data = await apiClient.get('/customer/problems/trending');
+      const data = await apiClient.get<{ trending?: TrendingProblem[]; data?: { trending?: TrendingProblem[] } }>('/customer/problems/trending');
       setTrending(data.data?.trending || data.trending || []);
     } catch (error) {
       console.error('Error fetching trending problems:', error);

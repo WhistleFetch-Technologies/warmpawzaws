@@ -17,14 +17,14 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { MapPin, List, Map, SlidersHorizontal, X } from 'lucide-react';
-import { UniversalSearchBar } from '@/components/ui/UniversalSearchBar';
-import { AdvancedFiltersPanel, SearchFilters } from '@/components/ui/AdvancedFiltersPanel';
-import { SearchResultsGrid, VendorResultCard } from '@/components/ui/SearchResultsGrid';
-import { GoogleMapVendorView } from '@/components/ui/GoogleMapVendorView';
+import { SearchAutocomplete } from './SearchAutocomplete';
+import { SearchFilters, FilterValues } from './SearchFilters';
+import { UniversalVendorCard } from './UniversalVendorCard';
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
-import { useNavigate } from 'react-router-dom';
+import { apiClient } from '@/lib/api-client';
 
 interface VendorResult {
   id: string;
@@ -44,9 +44,9 @@ interface VendorResult {
 }
 
 export function VendorSearchEnhanced() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [query, setQuery] = useState('');
-  const [filters, setFilters] = useState<SearchFilters>({
+  const [filters, setFilters] = useState<FilterValues & { radius?: number; sortBy?: string; location?: { lat: number; lng: number } }>({
     radius: 10,
     sortBy: 'relevance'
   });
@@ -84,27 +84,13 @@ export function VendorSearchEnhanced() {
   const searchVendors = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            query,
-            ...filters,
-            limit: 50
-          })
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setResults(data.results || []);
-        setTotalResults(data.totalResults || 0);
-      } else {
-        console.error('Search failed:', response.statusText);
-      }
+      const data = await apiClient.post<{ results?: VendorResult[], totalResults?: number }>('/customer/vendors/search', {
+        query,
+        ...filters,
+        limit: 50
+      });
+      setResults(data.results || []);
+      setTotalResults(data.totalResults || 0);
     } catch (error) {
       console.error('Search error:', error);
     } finally {
@@ -126,14 +112,14 @@ export function VendorSearchEnhanced() {
   // Handle search from search bar
   const handleSearchNavigate = (type: string, id?: string) => {
     if (type === 'vendor' && id) {
-      navigate(`/vendor/${id}`);
+      router.push(`/vendor/${id}`);
     } else if (type === 'search') {
       setQuery(id || '');
     }
   };
 
   // Handle filter removal
-  const handleRemoveFilter = (key: keyof SearchFilters) => {
+  const handleRemoveFilter = (key: keyof FilterValues) => {
     setFilters(prev => {
       const updated = { ...prev };
       delete updated[key];
@@ -143,7 +129,7 @@ export function VendorSearchEnhanced() {
 
   // Handle vendor click
   const handleVendorClick = (vendorId: string) => {
-    navigate(`/vendor/${vendorId}`);
+    router.push(`/vendor/${vendorId}`);
   };
 
   return (
@@ -153,8 +139,8 @@ export function VendorSearchEnhanced() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           {/* Search Bar */}
           <div className="mb-4">
-            <UniversalSearchBar
-              onNavigate={handleSearchNavigate}
+            <SearchAutocomplete
+              onSelect={handleSearchNavigate}
               placeholder="Search for veterinary, grooming, training..."
             />
           </div>
@@ -228,12 +214,10 @@ export function VendorSearchEnhanced() {
                           <X className="w-5 h-5" />
                         </button>
                       </div>
-                      <AdvancedFiltersPanel
-                        filters={filters}
-                        onChange={setFilters}
-                        onApply={() => setShowFilters(false)}
-                        onReset={() => {
-                          setFilters({ radius: 10, sortBy: 'relevance', location: userLocation || undefined });
+                      <SearchFilters
+                        query={query}
+                        onFilterChange={(newFilters) => {
+                          setFilters(newFilters as any);
                           setShowFilters(false);
                         }}
                       />
@@ -243,10 +227,9 @@ export function VendorSearchEnhanced() {
 
                 {/* Desktop: Filters Sidebar */}
                 <div className="hidden lg:block">
-                  <AdvancedFiltersPanel
-                    filters={filters}
-                    onChange={setFilters}
-                    onReset={() => setFilters({ radius: 10, sortBy: 'relevance', location: userLocation || undefined })}
+                  <SearchFilters
+                    query={query}
+                    onFilterChange={(newFilters) => setFilters(newFilters as any)}
                   />
                 </div>
               </div>
@@ -255,32 +238,50 @@ export function VendorSearchEnhanced() {
 
           {/* Results */}
           <div className="flex-1 min-w-0">
-            {viewMode === 'list' ? (
-              <SearchResultsGrid
-                results={results}
-                loading={loading}
-                totalResults={totalResults}
-                query={query}
-                filters={filters}
-                onRemoveFilter={handleRemoveFilter}
-                renderCard={(vendor: VendorResult) => (
-                  <VendorResultCard
-                    {...vendor}
-                    onClick={() => handleVendorClick(vendor.id)}
-                  />
-                )}
-                emptyTitle={query ? `No vendors found for "${query}"` : 'No vendors found'}
-                emptyMessage="Try adjusting your search terms or filters"
-              />
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
+                <p className="mt-4 text-gray-600">Loading vendors...</p>
+              </div>
+            ) : results.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-600">{query ? `No vendors found for "${query}"` : 'No vendors found'}</p>
+                <p className="text-sm text-gray-500 mt-2">Try adjusting your search terms or filters</p>
+              </div>
+            ) : viewMode === 'list' ? (
+              <div className="space-y-4">
+                <div className="text-sm text-gray-600 mb-4">
+                  {totalResults} {totalResults === 1 ? 'vendor' : 'vendors'} found
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {results.map((vendor) => (
+                    <UniversalVendorCard
+                      key={vendor.id}
+                      vendor={{
+                        id: vendor.id,
+                        vendorId: vendor.id,
+                        vendorName: vendor.businessName || '',
+                        vendorRating: vendor.rating,
+                        vendorReviewCount: vendor.totalReviews,
+                        vendorLocation: vendor.location ? `${vendor.location.lat}, ${vendor.location.lng}` : undefined,
+                        price: vendor.priceRange,
+                        description: vendor.description,
+                        serviceStyle: vendor.serviceStyle,
+                        serviceName: vendor.services?.[0] || undefined,
+                        vendorProfileImage: vendor.photos?.[0]
+                      }}
+                      onViewDetails={() => handleVendorClick(vendor.id)}
+                    />
+                  ))}
+                </div>
+              </div>
             ) : (
               <div className="space-y-4">
-                {/* Map View */}
-                <GoogleMapVendorView
-                  vendors={results}
-                  userLocation={userLocation || undefined}
-                  onVendorClick={handleVendorClick}
-                  height="600px"
-                />
+                {/* Map View Placeholder */}
+                <div className="bg-gray-200 rounded-xl p-12 text-center">
+                  <p className="text-gray-600">Map view coming soon</p>
+                  <p className="text-sm text-gray-500 mt-2">Use list view to see vendors</p>
+                </div>
                 
                 {/* Vendor List Below Map */}
                 {results.length > 0 && (

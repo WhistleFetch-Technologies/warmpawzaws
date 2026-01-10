@@ -15,6 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, DollarSign } from 'lucide-react';
 
 interface PackageItem {
@@ -177,32 +178,17 @@ export function PackageBookingPage({ customerPhone, customerId, petId }: Package
       setBooking(true);
       setError(null);
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            customerPhone,
-            customerId,
-            petId,
-            vendorId: selectedPackage.vendorId,
-            packageId: selectedPackage.id,
-            totalSessions: selectedPackage.totalSessions,
-            scheduledDates: scheduledDates.filter(d => d), // Only send filled dates
-            paymentMethod: 'razorpay',
-            transactionId: `txn_${Date.now()}`
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create package booking');
-      }
-
-      const data = await response.json();
+      const data = await apiClient.post<{ bookingId?: string; parentBookingId?: string }>('/customer/bookings/packages', {
+        customerPhone,
+        customerId,
+        petId,
+        vendorId: selectedPackage.vendorId,
+        packageId: selectedPackage.id,
+        totalSessions: selectedPackage.totalSessions,
+        scheduledDates: scheduledDates.filter(d => d), // Only send filled dates
+        paymentMethod: 'razorpay',
+        transactionId: `txn_${Date.now()}`
+      });
       
       alert(`✅ Package booking created successfully!\n\nPackage: ${selectedPackage.name}\nTotal Sessions: ${selectedPackage.totalSessions}\nTotal Amount: ₹${selectedPackage.totalPrice}`);
       

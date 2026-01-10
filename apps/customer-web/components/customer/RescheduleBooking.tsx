@@ -29,19 +29,17 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
 
   const loadData = async () => {
     try {
-      const [policyRes, slotsRes] = await Promise.all([
-        apiClient.get('/vendor/endpoint'),
-        apiClient.get('/vendor/endpoint')
+      const [policyData, slotsData] = await Promise.all([
+        apiClient.get<{ success?: boolean; policy?: any }>(`/vendor/reschedule-policy?bookingId=${bookingId}`),
+        apiClient.get<{ success?: boolean; slots?: any[] }>(`/vendor/available-slots?bookingId=${bookingId}`)
       ]);
 
-      if (policyRes.ok) {
-        const data = await policyRes.json();
-        if (data.success) setPolicy(data.policy);
+      if (policyData && policyData.success && policyData.policy) {
+        setPolicy(policyData.policy);
       }
 
-      if (slotsRes.ok) {
-        const data = await slotsRes.json();
-        if (data.success) setSlots(data.slots || []);
+      if (slotsData && slotsData.success && slotsData.slots) {
+        setSlots(slotsData.slots || []);
       }
     } catch (error) {
       console.error('Failed to load reschedule data:', error);
@@ -147,7 +145,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
-                  {dateSlots.map((slot, idx) => (
+                  {(dateSlots as any[]).map((slot, idx) => (
                     <button
                       key={idx}
                       onClick={() => setSelectedSlot(slot)}

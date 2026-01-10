@@ -1,10 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, MapPin, Star, Copy, Check, Navigation, Route, Timer, TrendingUp, Play } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
-import { WalkerActiveSession } from './WalkerActiveSession';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface BookingSession {

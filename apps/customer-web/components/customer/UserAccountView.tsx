@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { BookingDetailModal } from './BookingDetailModal';
+import { apiClient } from '@/lib/api-client';
 
 interface UserProfile {
   firstName: string;
@@ -76,31 +77,26 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
+      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile?phone=${phone}`);
+      if (result.profile) {
         setProfile({
-          firstName: result.profile?.firstName || '',
-          lastName: result.profile?.lastName || '',
-          email: result.profile?.email || '',
-          phone: result.profile?.phone || phone,
-          address: result.profile?.address || '',
-          pincode: result.profile?.pincode || '',
-          photo: result.profile?.photo || ''
+          firstName: result.profile.firstName || '',
+          lastName: result.profile.lastName || '',
+          email: result.profile.email || '',
+          phone: result.profile.phone || phone,
+          address: result.profile.address || '',
+          pincode: result.profile.pincode || '',
+          photo: result.profile.photo || ''
         });
-        setPhotoPreview(result.profile?.photo || '');
+        setPhotoPreview(result.profile.photo || '');
         setOriginalProfile({
-          firstName: result.profile?.firstName || '',
-          lastName: result.profile?.lastName || '',
-          email: result.profile?.email || '',
-          phone: result.profile?.phone || phone,
-          address: result.profile?.address || '',
-          pincode: result.profile?.pincode || '',
-          photo: result.profile?.photo || ''
+          firstName: result.profile.firstName || '',
+          lastName: result.profile.lastName || '',
+          email: result.profile.email || '',
+          phone: result.profile.phone || phone,
+          address: result.profile.address || '',
+          pincode: result.profile.pincode || '',
+          photo: result.profile.photo || ''
         });
       } else {
         setProfile({
@@ -132,15 +128,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   const loadBookings = async () => {
     try {
       setLoadingBookings(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setBookings(result.bookings || []);
-      }
+      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${phone}`);
+      setBookings(result.bookings || []);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -182,35 +171,19 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
 
     setSaving(true);
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({
-            phone: phone,
-            profile: profile,
-          }),
-        }
-      );
+      await apiClient.post('/customer/profile', {
+        phone: phone,
+        profile: profile,
+      });
 
-      const result = await response.json();
-
-      if (response.ok) {
-        // Show success message
-        alert('✅ Profile updated successfully!');
-        
-        // Reload the profile to ensure we have the latest data
-        await loadProfile();
-        
-        // Exit edit mode
-        setEditMode(false);
-      } else {
-        // Show error message
-        alert(`❌ Failed to save profile: ${result.error || 'Unknown error'}`);
-        console.error('Save error:', result);
-      }
+      // Show success message
+      alert('✅ Profile updated successfully!');
+      
+      // Reload the profile to ensure we have the latest data
+      await loadProfile();
+      
+      // Exit edit mode
+      setEditMode(false);
     } catch (error) {
       console.error('Error saving profile:', error);
       alert(`❌ Error saving profile: ${error instanceof Error ? error.message : 'Network error. Please try again.'}`);

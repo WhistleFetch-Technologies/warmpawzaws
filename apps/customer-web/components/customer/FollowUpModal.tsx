@@ -85,15 +85,11 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     const counts: Record<string, number> = {};
     for (const booking of bookings) {
       try {
-        const response = await apiClient.get('/vendor/endpoint');
-        
-        if (response.ok) {
-          const data = await response.json();
-          const unreadCount = (data.messages || []).filter(
-            (m: any) => m.senderType === 'vendor' && !m.read
-          ).length;
-          counts[booking.bookingId] = unreadCount;
-        }
+        const data = await apiClient.get<{ messages?: any[] }>(`/customer/bookings/${booking.bookingId}/messages/unread`);
+        const unreadCount = (data.messages || []).filter(
+          (m: any) => m.senderType === 'vendor' && !m.read
+        ).length;
+        counts[booking.bookingId] = unreadCount;
       } catch (error) {
         console.error(`Error loading unread count for ${booking.bookingId}:`, error);
       }
@@ -117,12 +113,8 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     if (!selectedBooking) return;
     
     try {
-      const response = await apiClient.get('/vendor/endpoint');
-
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data.messages || []);
-      }
+      const data = await apiClient.get<{ messages?: any[] }>(`/customer/bookings/${selectedBooking.bookingId}/messages`);
+      setMessages(data.messages || []);
     } catch (error) {
       console.error('❌ Error loading messages:', error);
     }

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface CustomerPlanningJourneyProps {
   session: any;
@@ -77,27 +78,11 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
       console.log('Saving questionnaire with phone:', session.phone);
       console.log('Questionnaire data:', questionnaireData);
       
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({
-            phone: session.phone,
-            type: 'planning',
-            data: questionnaireData,
-          }),
-        }
-      );
-
-      const responseData = await response.json();
-      console.log('Response status:', response.status);
-      console.log('Response data:', responseData);
-
-      if (!response.ok) {
-        throw new Error(`Failed to save questionnaire: ${responseData.error || response.statusText}`);
-      }
+      await apiClient.post('/customer/questionnaire/planning', {
+        phone: session.phone,
+        type: 'planning',
+        data: questionnaireData,
+      });
 
       console.log('Questionnaire saved successfully');
     } catch (error) {

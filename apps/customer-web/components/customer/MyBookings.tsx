@@ -87,8 +87,12 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get(`/customer/${phone}/bookings`);
-      setBookings(result.bookings || result || []);
+      const result = await apiClient.get<{ bookings?: any[] } | any[]>(`/customer/${phone}/bookings`);
+      if (Array.isArray(result)) {
+        setBookings(result);
+      } else {
+        setBookings(result.bookings || []);
+      }
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {

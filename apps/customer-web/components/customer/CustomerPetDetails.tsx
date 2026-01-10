@@ -7,7 +7,7 @@ import {
   MapPin, User, Upload, Heart, AlertCircle, Check,
   ChevronRight, Package
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -81,19 +81,13 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     try {
       setLoading(true);
       // Fetch specific pet by ID
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/customer/${phone}/pets/${petId}`) as any;
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.pet) {
-          setPet(result.pet);
-          setPhotoPreview(result.pet.photo || '');
-        }
+      if (data && data.success && data.pet) {
+        setPet(data.pet);
+        setPhotoPreview(data.pet.photo || '');
       } else {
-        console.error('Failed to load pet:', response.status);
+        console.error('Failed to load pet:', data?.error);
       }
     } catch (error) {
       console.error('Error loading pet details:', error);
@@ -105,17 +99,11 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   const loadPetBookings = async () => {
     try {
       setLoadingBookings(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`) as any;
 
-      if (response.ok) {
-        const result = await response.json();
-        // Filter bookings for this specific pet
-        const petBookings = (result.bookings || []).filter((b: any) => b.petId === petId);
-        setBookings(petBookings);
-      }
+      // Filter bookings for this specific pet
+      const petBookings = (data?.bookings || []).filter((b: any) => b.petId === petId);
+      setBookings(petBookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -140,48 +128,15 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
     setSaving(true);
     try {
-      // Load all pets first
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      // Update pet directly
+      const data = await apiClient.put(`/customer/${phone}/pets/${petId}`, pet) as any;
 
-      if (response.ok) {
-        const result = await response.json();
-        
-        // ✅ Robust response parsing
-        let allPets = [];
-        if (Array.isArray(result)) {
-          allPets = result;
-        } else if (Array.isArray(result.pets)) {
-          allPets = result.pets;
-        } else if (result.pets?.pets && Array.isArray(result.pets.pets)) {
-          allPets = result.pets.pets;
-        }
-        
-        // Update the current pet
-        const updatedPets = allPets.map((p: Pet) => p.id === petId ? pet : p);
-
-        // Save back
-        const saveResponse = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${publicAnonKey}`,
-            },
-            body: JSON.stringify({
-              phone: phone,
-              pets: updatedPets,
-            }),
-          }
-        );
-
-        if (!saveResponse.ok) {
-          throw new Error('Failed to update pet');
-        }
-
+      if (data && data.success) {
         setEditMode(false);
         alert('Pet profile updated successfully! 🎉');
+        await loadPetDetails();
+      } else {
+        throw new Error(data?.error || 'Failed to update pet');
       }
     } catch (error) {
       console.error('Error saving pet:', error);
@@ -207,28 +162,20 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     try {
       console.log(`=== DELETING PET ${petId} ===`);
       
-      const deleteResponse = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
+      const deleteData = await apiClient.delete(`/customer/${phone}/pets/${petId}`) as any;
       
-      const deleteData = await deleteResponse.json();
-      
-      if (!deleteResponse.ok) {
+      if (!deleteData || !deleteData.success) {
         // Check if it's because of active bookings
-        if (deleteData.activeBookingsCount > 0) {
+        if (deleteData?.activeBookingsCount && deleteData.activeBookingsCount > 0) {
           alert(
             `Cannot delete ${pet.name}'s profile\n\n` +
             `This pet has ${deleteData.activeBookingsCount} active booking(s). ` +
             `Please complete or cancel all active bookings before deleting the pet profile.`
           );
+          return;
         } else {
-          throw new Error(deleteData.error || 'Failed to delete pet');
+          throw new Error(deleteData?.error || 'Failed to delete pet');
         }
-        return;
       }
       
       console.log('Pet deleted successfully');
@@ -666,7 +613,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                       </div>
                       <span
                         className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          booking.status === 'active' || booking.status === 'confirmed'
+                          booking.status === 'active'
                             ? 'bg-green-100 text-green-700'
                             : booking.status === 'completed'
                             ? 'bg-gray-100 text-gray-700'
@@ -715,10 +662,10 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     )}
 
                     <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Clock className="w-4 h-4" />
-                        <span>{new Date(booking.startDate || booking.scheduledDate).toLocaleDateString()}</span>
-                      </div>
+                       <div className="flex items-center gap-2 text-gray-600">
+                         <Clock className="w-4 h-4" />
+                         <span>{(booking.startDate || booking.scheduledDate) ? new Date(booking.startDate || booking.scheduledDate!).toLocaleDateString() : 'Not scheduled'}</span>
+                       </div>
                       <div className="flex items-center gap-1 text-[#FF8C42] font-semibold">
                         ₹{booking.price}
                         <ChevronRight className="w-4 h-4" />

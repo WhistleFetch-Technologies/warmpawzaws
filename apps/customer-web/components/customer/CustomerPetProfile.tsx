@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
 // ImageWithFallback component not found - using img tag instead
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Pet {
   id: string;
@@ -161,14 +162,10 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     setLoading(true);
     try {
       // Save pets data to backend - AWS Serverless compatible
-      const responseData = await apiClient.post('/customer/pets', {
+      await apiClient.post('/customer/pets', {
         phone: session.phone,
         pets: pets,
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to save pets: ${responseData.error || response.statusText}`);
-      }
 
       console.log('Pets saved successfully');
       onComplete(pets);
