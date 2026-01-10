@@ -18,6 +18,7 @@ export function SearchResultsPage() {
   const [filters, setFilters] = useState<FilterValues>({});
   const [page, setPage] = useState(0);
   const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const limit = 20;
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
@@ -69,14 +70,11 @@ export function SearchResultsPage() {
       if (filters.priceRange?.max) params.append('maxPrice', filters.priceRange.max.toString());
 
       // Use enhanced search endpoint
-      const response = await apiClient.get('/vendor/endpoint');
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.data) {
-          setResults(data.data?.results || data.results || []);
-          setTotal(data.data?.total || data.total || 0);
-        }
+      const queryString = params.toString();
+      const data = await apiClient.get<{ success?: boolean; results?: any[]; data?: { results?: any[]; total?: number }; total?: number }>(`/vendor/search?${queryString}`);
+      if (data && (data.success || data.data || data.results)) {
+        setResults(data.data?.results || data.results || []);
+        setTotal(data.data?.total || data.total || 0);
       }
     } catch (error) {
       console.error('Search failed:', error);
@@ -94,6 +92,17 @@ export function SearchResultsPage() {
     setFilters(newFilters);
     setPage(0);
   };
+
+  const clearFilters = () => {
+    setFilters({});
+    setPage(0);
+  };
+
+  // Calculate active filters count
+  const activeFiltersCount = Object.values(filters).filter(v => 
+    v !== undefined && v !== null && v !== '' && 
+    (typeof v !== 'object' || (typeof v === 'object' && (v.min !== undefined || v.max !== undefined)))
+  ).length;
 
   const renderResult = (result: any) => {
     const { type, data, score } = result;
@@ -205,7 +214,7 @@ export function SearchResultsPage() {
       <div className="max-w-7xl mx-auto px-4">
         {/* Search Bar */}
         <div className="mb-8 flex justify-center">
-          <SearchAutocomplete onSearch={handleSearch} />
+          <SearchAutocomplete onSelect={handleSearch} />
         </div>
 
         {/* Results Header */}
@@ -259,8 +268,8 @@ export function SearchResultsPage() {
                   Type
                 </label>
                 <select
-                  value={filters.type}
-                  onChange={(e) => handleFilterChange('type', e.target.value)}
+                  value={(filters as any).type || filters.serviceType || ''}
+                  onChange={(e) => handleFilterChange({ ...filters, serviceType: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">All Types</option>
@@ -278,7 +287,7 @@ export function SearchResultsPage() {
                 <input
                   type="text"
                   value={filters.city}
-                  onChange={(e) => handleFilterChange('city', e.target.value)}
+                  onChange={(e) => handleFilterChange({ ...filters, city: e.target.value })}
                   placeholder="Enter city"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -291,8 +300,8 @@ export function SearchResultsPage() {
                 </label>
                 <input
                   type="text"
-                  value={filters.area}
-                  onChange={(e) => handleFilterChange('area', e.target.value)}
+                  value={(filters as any).area || ''}
+                  onChange={(e) => handleFilterChange({ ...filters, city: e.target.value })}
                   placeholder="Enter area"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -304,8 +313,8 @@ export function SearchResultsPage() {
                   Minimum Rating
                 </label>
                 <select
-                  value={filters.minRating}
-                  onChange={(e) => handleFilterChange('minRating', e.target.value)}
+                  value={filters.minRating || ''}
+                  onChange={(e) => handleFilterChange({ ...filters, minRating: e.target.value ? parseFloat(e.target.value) : undefined })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Any Rating</option>
@@ -322,8 +331,8 @@ export function SearchResultsPage() {
                 </label>
                 <input
                   type="number"
-                  value={filters.minPrice}
-                  onChange={(e) => handleFilterChange('minPrice', e.target.value)}
+                  value={filters.priceRange?.min || ''}
+                  onChange={(e) => handleFilterChange({ ...filters, priceRange: { ...filters.priceRange, min: e.target.value ? parseFloat(e.target.value) : undefined } })}
                   placeholder="Min"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -335,8 +344,8 @@ export function SearchResultsPage() {
                 </label>
                 <input
                   type="number"
-                  value={filters.maxPrice}
-                  onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
+                  value={filters.priceRange?.max || ''}
+                  onChange={(e) => handleFilterChange({ ...filters, priceRange: { ...filters.priceRange, max: e.target.value ? parseFloat(e.target.value) : undefined } })}
                   placeholder="Max"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />

@@ -761,7 +761,7 @@ export function CustomerHomeComplete({
 
             {/* Training */}
             <button
-              onClick={() => onNavigate('training')}
+              onClick={() => onNavigate?.('training')}
               className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100 text-left hover:shadow-lg transition-all"
             >
               <GraduationCap className="w-8 h-8 text-indigo-600 mb-2" />
@@ -772,7 +772,7 @@ export function CustomerHomeComplete({
 
             {/* Boarding */}
             <button
-              onClick={() => onNavigate('boarding')}
+              onClick={() => onNavigate?.('boarding')}
               className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4 border border-cyan-100 text-left hover:shadow-lg transition-all"
             >
               <HomeIcon className="w-8 h-8 text-cyan-600 mb-2" />
@@ -783,7 +783,7 @@ export function CustomerHomeComplete({
 
             {/* Insurance */}
             <button
-              onClick={() => onNavigate('insurance')}
+              onClick={() => onNavigate?.('insurance')}
               className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100 text-left hover:shadow-lg transition-all"
             >
               <Shield className="w-8 h-8 text-green-600 mb-2" />
@@ -794,7 +794,7 @@ export function CustomerHomeComplete({
 
             {/* Walker */}
             <button
-              onClick={() => onNavigate('walker')}
+              onClick={() => onNavigate?.('walker')}
               className="bg-gradient-to-br from-lime-50 to-green-50 rounded-2xl p-4 border border-lime-100 text-left hover:shadow-lg transition-all"
             >
               <Bike className="w-8 h-8 text-lime-600 mb-2" />
@@ -845,7 +845,7 @@ export function CustomerHomeComplete({
                 <p className="text-xs text-gray-600">Instant location-based dispatch</p>
               </div>
               <button
-                onClick={() => onNavigate('ambulance')} 
+                onClick={() => onNavigate?.('ambulance')} 
                 className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
               >
                 SOS ALERT

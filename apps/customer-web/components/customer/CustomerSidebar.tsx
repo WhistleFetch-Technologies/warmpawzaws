@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Star, ChevronRight, User, Heart, Settings, LogOut, FileText, Package, Gift, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Booking {
   id: string;
@@ -69,15 +70,8 @@ export function CustomerSidebar({
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setBookings(result.bookings || []);
-      }
+      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${phone}`);
+      setBookings(result.bookings || []);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {

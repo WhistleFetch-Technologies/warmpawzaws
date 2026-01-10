@@ -84,7 +84,7 @@ export function EnhancedSearchBar({
     if (customerId) {
       try {
         // AWS Serverless compatible - use apiClient
-        const data = await apiClient.get(`/customer/${customerId}/search-history`);
+        const data = await apiClient.get<{ data?: { history?: any[] }, history?: any[] }>(`/customer/${customerId}/search-history`);
         const history = data.data?.history || data.history || [];
         setRecentSearches(history.map((h: any) => h.query).slice(0, 5));
         return;
@@ -110,7 +110,7 @@ export function EnhancedSearchBar({
       if (customerId) params.append('customerId', customerId);
 
       // AWS Serverless compatible - use apiClient
-      const result = await apiClient.get(`/customer/search-suggestions?${params.toString()}`);
+      const result = await apiClient.get<{ data?: { suggestions?: string[] }, suggestions?: string[] }>(`/customer/search-suggestions?${params.toString()}`);
       const suggestionsData = result.data?.suggestions || result.suggestions || [];
       setSuggestions(suggestionsData.map((s: string) => ({ text: s, type: 'trending' as const })));
     } catch (error) {
@@ -153,8 +153,8 @@ export function EnhancedSearchBar({
         params.append('customerId', customerId);
       }
 
-      const data = await apiClient.get(`/customer/search?${params.toString()}`);
-      setResults((data as any).data?.results || (data as any).results || []);
+      const data = await apiClient.get<{ data?: { results?: any[] }, results?: any[] }>(`/customer/search?${params.toString()}`);
+      setResults(data.data?.results || data.results || []);
     } catch (error) {
       console.error('Error performing search:', error);
     } finally {

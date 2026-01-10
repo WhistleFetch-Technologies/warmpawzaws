@@ -10,7 +10,8 @@ import {
   Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag,
   Gift, Users, Award
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// Removed Supabase imports - using apiClient with Cognito auth
+import { apiClient } from '@/lib/api-client';
 
 interface UserProfile {
   firstName: string;
@@ -42,6 +43,9 @@ interface Booking {
   upcomingSessions: number;
   status: 'active' | 'completed' | 'cancelled';
   price: number;
+  requiresOTP?: boolean;
+  completionOTP?: string;
+  otpVerifiedAt?: string;
 }
 
 interface CartItem {
@@ -227,29 +231,27 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
+      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile/${phone}`);
 
-      if (response.ok) {
-        const result = await response.json();
+      if (result && result.profile) {
         setProfile({
-          firstName: result.profile?.firstName || '',
-          lastName: result.profile?.lastName || '',
-          email: result.profile?.email || '',
-          phone: result.profile?.phone || phone,
-          address: result.profile?.address || '',
-          pincode: result.profile?.pincode || '',
-          photo: result.profile?.photo || ''
+          firstName: result.profile.firstName || '',
+          lastName: result.profile.lastName || '',
+          email: result.profile.email || '',
+          phone: result.profile.phone || phone,
+          address: result.profile.address || '',
+          pincode: result.profile.pincode || '',
+          photo: result.profile.photo || ''
         });
-        setPhotoPreview(result.profile?.photo || '');
+        setPhotoPreview(result.profile.photo || '');
         setOriginalProfile({
-          firstName: result.profile?.firstName || '',
-          lastName: result.profile?.lastName || '',
-          email: result.profile?.email || '',
-          phone: result.profile?.phone || phone,
-          address: result.profile?.address || '',
-          pincode: result.profile?.pincode || '',
-          photo: result.profile?.photo || ''
+          firstName: result.profile.firstName || '',
+          lastName: result.profile.lastName || '',
+          email: result.profile.email || '',
+          phone: result.profile.phone || phone,
+          address: result.profile.address || '',
+          pincode: result.profile.pincode || '',
+          photo: result.profile.photo || ''
         });
       }
     } catch (error) {
@@ -292,29 +294,13 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     setSaving(true);
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({ phone: phone, profile: profile }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (response.ok) {
-        alert('✅ Profile updated successfully!');
-        await loadProfile();
-        setEditMode(false);
-      } else {
-        alert(`❌ Failed to save profile: ${result.error || 'Unknown error'}`);
-        console.error('Save error:', result);
-      }
-    } catch (error) {
+      await apiClient.post(`/customer/profile/${phone}`, { phone: phone, profile: profile });
+      alert('✅ Profile updated successfully!');
+      await loadProfile();
+      setEditMode(false);
+    } catch (error: any) {
       console.error('Error saving profile:', error);
-      alert(`❌ Error saving profile: ${error instanceof Error ? error.message : 'Network error. Please try again.'}`);
+      alert(`❌ Error saving profile: ${error?.message || 'Network error. Please try again.'}`);
     } finally {
       setSaving(false);
     }
@@ -335,14 +321,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadBookings = async () => {
     try {
       setLoadingBookings(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
-        setBookings(result.bookings || []);
-      }
+      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings/${phone}`);
+      console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
+      setBookings(result.bookings || []);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -357,14 +338,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadCart = async () => {
     try {
       setLoadingCart(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setCartItems(result.cartItems || []);
-        setCartTotal(result.totalPrice || 0);
-      }
+      const result = await apiClient.get<{ cartItems?: CartItem[]; totalPrice?: number }>(`/customer/cart/${phone}`);
+      setCartItems(result.cartItems || []);
+      setCartTotal(result.totalPrice || 0);
     } catch (error) {
       console.error('Error loading cart:', error);
     } finally {
@@ -374,19 +350,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const updateCartQuantity = async (itemId: string, quantity: number) => {
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify({ quantity })
-        }
-      );
-
-      if (response.ok) {
-        await loadCart();
-      }
+      await apiClient.put(`/customer/cart/${phone}/items/${itemId}`, { quantity });
+      await loadCart();
     } catch (error) {
       console.error('Error updating cart:', error);
     }
@@ -394,15 +359,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const removeFromCart = async (itemId: string) => {
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        await loadCart();
-      }
+      await apiClient.delete(`/customer/cart/${phone}/items/${itemId}`);
+      await loadCart();
     } catch (error) {
       console.error('Error removing from cart:', error);
     }
@@ -415,13 +373,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadSaved = async () => {
     try {
       setLoadingSaved(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setSavedItems(result.savedItems || []);
-      }
+      const result = await apiClient.get<{ savedItems?: SavedItem[] }>(`/customer/saved/${phone}`);
+      setSavedItems(result.savedItems || []);
     } catch (error) {
       console.error('Error loading saved items:', error);
     } finally {
@@ -431,15 +384,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const removeFromSaved = async (itemId: string, type: string) => {
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        await loadSaved();
-      }
+      await apiClient.delete(`/customer/saved/${phone}/items/${itemId}`);
+      await loadSaved();
     } catch (error) {
       console.error('Error removing from saved:', error);
     }
@@ -452,13 +398,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadAddresses = async () => {
     try {
       setLoadingAddresses(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setAddresses(result.addresses || []);
-      }
+      const result = await apiClient.get<{ addresses?: Address[] }>(`/customer/addresses/${phone}`);
+      setAddresses(result.addresses || []);
     } catch (error) {
       console.error('Error loading addresses:', error);
     } finally {
@@ -468,27 +409,20 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const saveAddress = async (addressData: any) => {
     try {
-      const url = editingAddress
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/addresses/${editingAddress.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/addresses`;
+      let data: any;
+      if (editingAddress) {
+        data = await apiClient.put(`/customer/${phone}/addresses/${editingAddress.id}`, addressData) as any;
+      } else {
+        data = await apiClient.post(`/customer/${phone}/addresses`, addressData) as any;
+      }
 
-      const response = await fetch(url, {
-        method: editingAddress ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify(addressData)
-      });
-
-      if (response.ok) {
+      if (data && data.success) {
         alert(editingAddress ? '✅ Address updated!' : '✅ Address added!');
         await loadAddresses();
         setShowAddressForm(false);
         setEditingAddress(null);
       } else {
-        const result = await response.json();
-        alert(`❌ Error: ${result.error || 'Failed to save address'}`);
+        alert(`❌ Error: ${data?.error || 'Failed to save address'}`);
       }
     } catch (error) {
       console.error('Error saving address:', error);
@@ -500,18 +434,17 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     if (!confirm('Are you sure you want to delete this address?')) return;
 
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const data = await apiClient.delete(`/customer/${phone}/addresses/${addressId}`) as any;
 
-      if (response.ok) {
-        alert('�� Address deleted!');
+      if (data && data.success) {
+        alert('✅ Address deleted!');
         await loadAddresses();
+      } else {
+        alert(`❌ Error: ${data?.error || 'Failed to delete address'}`);
       }
     } catch (error) {
       console.error('Error deleting address:', error);
+      alert('❌ Error deleting address');
     }
   };
 
@@ -522,13 +455,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadPayments = async () => {
     try {
       setLoadingPayments(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setPaymentMethods(result.paymentMethods || []);
-      }
+      const result = await apiClient.get<{ paymentMethods?: PaymentMethod[] }>(`/customer/payments/${phone}`);
+      setPaymentMethods(result.paymentMethods || []);
     } catch (error) {
       console.error('Error loading payment methods:', error);
     } finally {
@@ -564,36 +492,22 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         }
       }
 
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify(newPayment)
-        }
-      );
-
-      if (response.ok) {
-        alert('✅ Payment method added successfully!');
-        setShowPaymentForm(false);
-        setNewPayment({
-          type: 'card',
-          cardNumber: '',
-          cardHolderName: '',
-          expiryMonth: '',
-          expiryYear: '',
-          cvv: '',
-          cardType: 'visa',
-          upiId: '',
-          bankName: '',
-          isDefault: false
-        });
-        await loadPayments();
-      } else {
-        const errorData = await response.json();
-        alert(`❌ Error: ${errorData.error || 'Failed to add payment method'}`);
-      }
+      await apiClient.post(`/customer/payments/${phone}`, newPayment);
+      alert('✅ Payment method added successfully!');
+      setShowPaymentForm(false);
+      setNewPayment({
+        type: 'card',
+        cardNumber: '',
+        cardHolderName: '',
+        expiryMonth: '',
+        expiryYear: '',
+        cvv: '',
+        cardType: 'visa',
+        upiId: '',
+        bankName: '',
+        isDefault: false
+      });
+      await loadPayments();
     } catch (error) {
       console.error('Error saving payment method:', error);
       alert('❌ Failed to save payment method');
@@ -604,16 +518,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     if (!confirm('Are you sure you want to remove this payment method?')) return;
 
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        alert('✅ Payment method removed!');
-        await loadPayments();
-      }
+      await apiClient.delete(`/customer/payments/${phone}/${paymentId}`);
+      alert('✅ Payment method removed!');
+      await loadPayments();
     } catch (error) {
       console.error('Error deleting payment method:', error);
     }
@@ -626,11 +533,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadNotificationSettings = async () => {
     try {
       setLoadingNotifications(true);
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){ headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
+      const result = await apiClient.get<{ settings?: NotificationSettings }>(`/customer/notifications/${phone}`);
+      if (result.settings) {
         setNotificationSettings(result.settings);
       }
     } catch (error) {
@@ -645,19 +549,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     setNotificationSettings(newSettings);
 
     try {
-      const response = await apiClient.get('/customer/endpoint').then(res => res.ok ? res.json() : null){
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify(newSettings)
-        }
-      );
-
-      if (!response.ok) {
-        setNotificationSettings(notificationSettings);
-      }
+      await apiClient.put(`/customer/notifications/${phone}`, newSettings);
     } catch (error) {
       console.error('Error updating notification settings:', error);
       setNotificationSettings(notificationSettings);
@@ -1798,7 +1690,7 @@ function AddressForm({ address, onSave, onCancel }: {
         // Reverse geocode using Google Maps
         try {
           const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}`
           );
           const data = await response.json();
 

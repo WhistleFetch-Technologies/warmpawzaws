@@ -27,7 +27,7 @@ import { Construct } from 'constructs';
 
 export interface MonitoringStackProps extends cdk.StackProps {
   apiId: string;
-  lambdaFunctions: lambda.IFunction[];
+  lambdaFunctions: lambda.Function[];
   dbInstance?: rds.IDatabaseInstance;
   environment: 'development' | 'staging' | 'production';
 }

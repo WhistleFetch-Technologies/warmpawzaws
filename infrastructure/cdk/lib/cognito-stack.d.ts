@@ -22,3 +22,4 @@ export declare class CognitoStack extends Construct {
     readonly adminPoolClient: cognito.UserPoolClient;
     constructor(scope: Construct, id: string);
 }
+//# sourceMappingURL=cognito-stack.d.ts.map

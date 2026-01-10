@@ -121,13 +121,30 @@ import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-dist
 const app = new Hono();
 
 // Configure CORS - Match API Gateway CORS settings
+// Include all CloudFront distributions for the three web apps
 const allowedOrigins = [
+  // Admin Web CloudFront
   'https://dfof7mguaa0a5.cloudfront.net',
+  // Customer Web CloudFront
+  'https://d2aoyjj8ine0wk.cloudfront.net',
+  // Vendor Web CloudFront
+  'https://d1s6ykkj381k58.cloudfront.net',
+  // Local development
   'http://localhost:3000',
   'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://localhost:5173',
+  // Dev domains
   'https://dev.admin.warmpawz.com',
   'https://dev.vendor.warmpawz.com',
   'https://dev.customer.warmpawz.com',
+  // Production domains (for prod environment)
+  'https://admin.warmpawz.com',
+  'https://vendor.warmpawz.com',
+  'https://customer.warmpawz.com',
+  'https://warmpawz.com',
+  'https://www.warmpawz.com',
 ];
 
 app.use('*', cors({
@@ -139,7 +156,7 @@ app.use('*', cors({
     return allowedOrigins[0]; // Default to CloudFront
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key', 'X-UAT-Mode', 'X-UAT-Token'],
   allowCredentials: true,
   maxAge: 86400,
 }));
@@ -299,12 +316,28 @@ export const handler = async (
                      'https://dfof7mguaa0a5.cloudfront.net';
       
       const allowedOrigins = [
+        // Admin Web CloudFront
         'https://dfof7mguaa0a5.cloudfront.net',
+        // Customer Web CloudFront
+        'https://d2aoyjj8ine0wk.cloudfront.net',
+        // Vendor Web CloudFront
+        'https://d1s6ykkj381k58.cloudfront.net',
+        // Local development
         'http://localhost:3000',
         'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:3003',
+        'http://localhost:5173',
+        // Dev domains
         'https://dev.admin.warmpawz.com',
         'https://dev.vendor.warmpawz.com',
         'https://dev.customer.warmpawz.com',
+        // Production domains (for prod environment)
+        'https://admin.warmpawz.com',
+        'https://vendor.warmpawz.com',
+        'https://customer.warmpawz.com',
+        'https://warmpawz.com',
+        'https://www.warmpawz.com',
       ];
       
       const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
@@ -378,14 +411,28 @@ export const handler = async (
                    event.multiValueHeaders?.Origin?.[0];
     
     const allowedOrigins = [
+      // Admin Web CloudFront
+      'https://dfof7mguaa0a5.cloudfront.net',
+      // Customer Web CloudFront
+      'https://d2aoyjj8ine0wk.cloudfront.net',
+      // Vendor Web CloudFront
+      'https://d1s6ykkj381k58.cloudfront.net',
+      // Local development
       'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'http://localhost:3003',
       'http://localhost:5173',
+      // Dev domains
       'https://dev.admin.warmpawz.com',
       'https://dev.vendor.warmpawz.com',
       'https://dev.customer.warmpawz.com',
-      'https://dfof7mguaa0a5.cloudfront.net', // Admin CloudFront
-      'https://d2aoyjj8ine0wk.cloudfront.net', // Customer CloudFront
-      'https://d1s6ykkj381k58.cloudfront.net', // Vendor CloudFront
+      // Production domains (for prod environment)
+      'https://admin.warmpawz.com',
+      'https://vendor.warmpawz.com',
+      'https://customer.warmpawz.com',
+      'https://warmpawz.com',
+      'https://www.warmpawz.com',
     ];
     
     const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
@@ -399,7 +446,7 @@ export const handler = async (
         'Access-Control-Allow-Origin': responseHeaders['access-control-allow-origin'] || allowedOrigin,
         'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token',
       },
     };
   } catch (error) {
@@ -411,14 +458,28 @@ export const handler = async (
                    'https://dfof7mguaa0a5.cloudfront.net';
     
     const allowedOrigins = [
+      // Admin Web CloudFront
+      'https://dfof7mguaa0a5.cloudfront.net',
+      // Customer Web CloudFront
+      'https://d2aoyjj8ine0wk.cloudfront.net',
+      // Vendor Web CloudFront
+      'https://d1s6ykkj381k58.cloudfront.net',
+      // Local development
       'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'http://localhost:3003',
       'http://localhost:5173',
+      // Dev domains
       'https://dev.admin.warmpawz.com',
       'https://dev.vendor.warmpawz.com',
       'https://dev.customer.warmpawz.com',
-      'https://dfof7mguaa0a5.cloudfront.net', // Admin CloudFront
-      'https://d2aoyjj8ine0wk.cloudfront.net', // Customer CloudFront
-      'https://d1s6ykkj381k58.cloudfront.net', // Vendor CloudFront
+      // Production domains (for prod environment)
+      'https://admin.warmpawz.com',
+      'https://vendor.warmpawz.com',
+      'https://customer.warmpawz.com',
+      'https://warmpawz.com',
+      'https://www.warmpawz.com',
     ];
     
     const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
@@ -430,7 +491,7 @@ export const handler = async (
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token',
         'Access-Control-Allow-Credentials': 'true',
       },
     };
