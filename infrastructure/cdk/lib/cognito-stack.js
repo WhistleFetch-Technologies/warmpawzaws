@@ -204,3 +204,4 @@ class CognitoStack extends constructs_1.Construct {
     }
 }
 exports.CognitoStack = CognitoStack;
+//# sourceMappingURL=cognito-stack.js.map
