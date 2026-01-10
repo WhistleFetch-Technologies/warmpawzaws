@@ -217,12 +217,13 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
   /**
    * GET /admin/service-catalog
-   * Get all services (admin view)
+   * Get all services (admin view) with hierarchical grouping
    */
   app.get("/admin/service-catalog", async (c) => {
     try {
       const status = c.req.query('status');
       const roleId = c.req.query('roleId');
+      const groupBy = c.req.query('groupBy'); // 'category' | 'subcategory' | 'none'
 
       let catalogQuery = `SELECT * FROM service_catalog WHERE 1=1`;
       const params: any[] = [];
@@ -241,14 +242,67 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      catalogQuery += ` ORDER BY display_order ASC, service_name ASC`;
+      catalogQuery += ` ORDER BY category_name ASC, sub_category_name ASC NULLS LAST, display_order ASC, service_name ASC`;
 
       const services = await query(catalogQuery, params);
+
+      // If groupBy is 'category' or 'subcategory', group services hierarchically
+      if (groupBy === 'category' || groupBy === 'subcategory') {
+        const grouped: Record<string, any> = {};
+        
+        services.rows.forEach((service: any) => {
+          const categoryKey = service.category_name || service.category_id || 'Uncategorized';
+          const subcategoryKey = service.sub_category_name || service.sub_category_id || null;
+          
+          if (!grouped[categoryKey]) {
+            grouped[categoryKey] = {
+              category_id: service.category_id,
+              category_name: categoryKey,
+              services: [],
+              subcategories: {},
+            };
+          }
+          
+          if (groupBy === 'subcategory' && subcategoryKey) {
+            if (!grouped[categoryKey].subcategories[subcategoryKey]) {
+              grouped[categoryKey].subcategories[subcategoryKey] = {
+                sub_category_id: service.sub_category_id,
+                sub_category_name: subcategoryKey,
+                services: [],
+              };
+            }
+            grouped[categoryKey].subcategories[subcategoryKey].services.push(service);
+          } else {
+            grouped[categoryKey].services.push(service);
+          }
+        });
+
+        // Convert grouped object to array format
+        const groupedArray = Object.values(grouped).map((category: any) => {
+          if (groupBy === 'subcategory' && Object.keys(category.subcategories).length > 0) {
+            category.subcategories = Object.values(category.subcategories).map((subcat: any) => ({
+              ...subcat,
+              itemCount: subcat.services.length,
+            }));
+          }
+          category.itemCount = category.services.length;
+          return category;
+        });
+
+        return c.json({
+          success: true,
+          services: groupedArray,
+          total: services.rows.length,
+          grouped: true,
+          groupBy,
+        });
+      }
 
       return c.json({
         success: true,
         services: services.rows,
         total: services.rows.length,
+        grouped: false,
       });
     } catch (error: any) {
       console.error('Error fetching service catalog:', error);
