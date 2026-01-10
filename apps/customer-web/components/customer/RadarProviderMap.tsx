@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Navigation, User, Briefcase, Star, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
