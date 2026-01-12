@@ -38,6 +38,7 @@ export type ServiceStyle = 'at_center' | 'at_home' | 'tele' | 'delivery' | 'pack
 export type BookingStep = 
   | 'service_selection'
   | 'service_style_selection'
+  | 'booking_type_selection'
   | 'staff_selection'
   | 'datetime_selection'
   | 'pet_selection'
@@ -55,6 +56,7 @@ interface Service {
   vendor_id: string;
   vendor_name: string;
   vendor_address?: string;
+  role_id?: string;
   requires_staff?: boolean;
   requires_address?: boolean;
   requires_pet?: boolean;
@@ -121,6 +123,7 @@ export function UnifiedBookingEngine({
   const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(
     initialServiceStyle || null
   );
+  const [teleBookingType, setTeleBookingType] = useState<'instant' | 'scheduled' | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
@@ -154,7 +157,8 @@ export function UnifiedBookingEngine({
       
       // Load service if serviceId provided
       if (serviceId) {
-        const serviceData: any = await apiClient.get(`/services/${serviceId}`);
+        const serviceResponse: any = await apiClient.get(`/services/${serviceId}`);
+        const serviceData = serviceResponse.service || serviceResponse;
         setService(serviceData);
         
         // Auto-set service style if available
@@ -164,15 +168,18 @@ export function UnifiedBookingEngine({
       }
 
       // Load customer data
-      const customer: any = await apiClient.get(`/customers/phone/${customerPhone}`);
-      if (customer) {
+      const customerResponse: any = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customer = customerResponse.customer || customerResponse;
+      if (customer && customer.id) {
         // Load pets
-        const petsData: any = await apiClient.get(`/customers/${customer.id}/pets`);
-        setPets(petsData || []);
+        const petsResponse: any = await apiClient.get(`/customer/${customer.id}/pets`);
+        const petsData = petsResponse.pets || petsResponse || [];
+        setPets(Array.isArray(petsData) ? petsData : []);
 
         // Load addresses
-        const addressesData: any = await apiClient.get(`/customers/${customer.id}/addresses`);
-        setAddresses(addressesData || []);
+        const addressesResponse: any = await apiClient.get(`/customer/${customer.id}/addresses`);
+        const addressesData = addressesResponse.addresses || addressesResponse || [];
+        setAddresses(Array.isArray(addressesData) ? addressesData : []);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
@@ -208,7 +215,29 @@ export function UnifiedBookingEngine({
   };
 
   const loadAvailableStaff = async () => {
-    if (!service || !selectedDate || !selectedTime) return;
+    if (!service) return;
+    
+    // For instant tele booking, load available staff immediately
+    if (selectedServiceStyle === 'tele' && teleBookingType === 'instant') {
+      try {
+        const params = new URLSearchParams({
+          roleId: service.role_id || '',
+          serviceStyle: 'tele',
+          serviceId: service.id,
+        });
+        
+        const staffRes: any = await apiClient.get(`/customer/discover-staff?${params}`);
+        setAvailableStaff(staffRes.staff || []);
+        return;
+      } catch (err: any) {
+        console.error('Failed to load instant staff:', err);
+        setAvailableStaff([]);
+        return;
+      }
+    }
+    
+    // For scheduled bookings, require date and time
+    if (!selectedDate || !selectedTime) return;
 
     try {
       const params = new URLSearchParams({
@@ -247,7 +276,18 @@ export function UnifiedBookingEngine({
         return 'datetime_selection';
 
       case 'service_style_selection':
+        // For tele services, show booking type selection (instant vs scheduled)
+        if (selectedServiceStyle === 'tele') {
+          return 'booking_type_selection';
+        }
         if (service.requires_staff) {
+          return 'staff_selection';
+        }
+        return 'datetime_selection';
+      
+      case 'booking_type_selection':
+        // After selecting instant/scheduled for tele, load staff
+        if (teleBookingType === 'instant') {
           return 'staff_selection';
         }
         return 'datetime_selection';
@@ -256,6 +296,13 @@ export function UnifiedBookingEngine({
         return 'datetime_selection';
 
       case 'datetime_selection':
+        // For instant tele, skip datetime
+        if (selectedServiceStyle === 'tele' && teleBookingType === 'instant') {
+          if (service.requires_pet && !selectedPet) {
+            return 'pet_selection';
+          }
+          return 'payment';
+        }
         if (service.requires_pet && !selectedPet) {
           return 'pet_selection';
         }
@@ -287,7 +334,10 @@ export function UnifiedBookingEngine({
       setStep(next);
       setError(null);
 
-      // Auto-load staff when entering datetime selection
+      // Auto-load staff when entering datetime selection or staff selection
+      if (next === 'staff_selection') {
+        loadAvailableStaff();
+      }
       if (next === 'datetime_selection' && service?.requires_staff) {
         loadAvailableStaff();
       }
@@ -317,7 +367,20 @@ export function UnifiedBookingEngine({
   // ============================================================================
 
   const handleCreateBooking = async () => {
-    if (!service || !selectedDate || !selectedTime) {
+    if (!service) {
+      setError('Service not found');
+      return;
+    }
+    
+    // For instant tele booking, use current date/time
+    if (selectedServiceStyle === 'tele' && teleBookingType === 'instant') {
+      const now = new Date();
+      setSelectedDate(now.toISOString().split('T')[0]);
+      setSelectedTime(now.toTimeString().split(' ')[0].substring(0, 5));
+    }
+    
+    // For scheduled bookings, require date and time
+    if (teleBookingType !== 'instant' && (!selectedDate || !selectedTime)) {
       setError('Please complete all required fields');
       return;
     }
@@ -362,7 +425,8 @@ export function UnifiedBookingEngine({
       }
 
       // Get customer ID from phone
-      const customer: any = await apiClient.get(`/customers/phone/${customerPhone}`);
+      const customerResponse: any = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customer = customerResponse.customer || customerResponse;
       if (!customer) {
         throw new Error('Customer not found');
       }
@@ -475,6 +539,46 @@ export function UnifiedBookingEngine({
                   <div className="font-semibold capitalize">{style.replace('_', ' ')}</div>
                 </button>
               ))}
+            </div>
+            <div className="flex justify-end gap-0 mt-4">
+              <button
+                onClick={handleBack}
+                className="px-4 py-0 border rounded-lg hover:bg-gray-50"
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'booking_type_selection' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Choose Booking Type</h2>
+            <div className="space-y-4">
+              <button
+                onClick={() => {
+                  setTeleBookingType('instant');
+                  handleNext();
+                }}
+                className={`w-full p-6 border-2 rounded-lg text-left hover:border-primary ${
+                  teleBookingType === 'instant' ? 'border-primary bg-primary/10' : 'border-gray-200'
+                }`}
+              >
+                <div className="font-semibold text-lg mb-2">⚡ Instant Consultation</div>
+                <div className="text-sm text-gray-600">Connect with available staff immediately</div>
+              </button>
+              <button
+                onClick={() => {
+                  setTeleBookingType('scheduled');
+                  handleNext();
+                }}
+                className={`w-full p-6 border-2 rounded-lg text-left hover:border-primary ${
+                  teleBookingType === 'scheduled' ? 'border-primary bg-primary/10' : 'border-gray-200'
+                }`}
+              >
+                <div className="font-semibold text-lg mb-2">📅 Scheduled Consultation</div>
+                <div className="text-sm text-gray-600">Book for a specific date and time</div>
+              </button>
             </div>
             <div className="flex justify-end gap-0 mt-4">
               <button
