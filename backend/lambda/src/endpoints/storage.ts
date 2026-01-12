@@ -223,5 +223,69 @@ export function registerStorageEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * POST /storage/upload-media
+   * Upload media for customers or pets (photos)
+   */
+  app.post("/storage/upload-media", async (c) => {
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get('file') as File;
+      const userId = formData.get('userId') as string; // customer phone or pet ID
+      const userType = formData.get('userType') as string; // 'customer' or 'pet'
+      const folder = formData.get('folder') as string || 'media';
+
+      if (!file || !userId || !userType) {
+        return c.json({ error: 'Missing required fields: file, userId, userType' }, 400);
+      }
+
+      console.log(`📤 Uploading ${userType} photo: ${file.name} for ${userId}`);
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 11);
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const fileName = `${folder}/${userType}/${userId}_${timestamp}_${random}.${fileExt}`;
+
+      // Convert File to ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // Upload to S3
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileName,
+        Body: uint8Array,
+        ContentType: file.type,
+      }));
+
+      console.log('✅ Media uploaded successfully:', fileName);
+
+      // Generate presigned URL (valid for 1 year)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileName,
+        }),
+        { expiresIn: 31536000 } // 1 year in seconds
+      );
+
+      // Also generate public URL
+      const publicUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileName}`;
+
+      return c.json({
+        success: true,
+        fileName: fileName,
+        url: signedUrl,
+        publicUrl: publicUrl,
+        key: fileName,
+      });
+    } catch (error: any) {
+      console.error('❌ Error uploading media:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

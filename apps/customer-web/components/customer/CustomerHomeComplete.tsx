@@ -148,7 +148,11 @@ export function CustomerHomeComplete({
   };
 
   const handleAddPet = () => {
-    if (onAddPet) {
+    // Navigate to add-pet screen directly
+    if (onNavigate) {
+      onNavigate('add-pet');
+    } else if (onAddPet) {
+      // Fallback to modal if onNavigate not available
       onAddPet();
     }
   };

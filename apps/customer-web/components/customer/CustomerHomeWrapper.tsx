@@ -251,8 +251,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     } catch (error) { console.error('Error loading pet data:', error); }
   };
 
-  const handleAddPet = () => setShowAddPetModal(true);
-  const handleAddPetSuccess = () => setRefreshKey(prev => prev + 1);
+  const handleAddPet = () => {
+    // Navigate to add-pet screen instead of opening modal
+    setCurrentScreen('add-pet');
+  };
+  const handleAddPetSuccess = () => {
+    setRefreshKey(prev => prev + 1);
+    // Return to home after adding pet
+    setCurrentScreen('home');
+  };
 
   const handleNavigateToService = (service: string) => {
     if (service === 'walker') setCurrentScreen('walker');
@@ -734,7 +741,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
          setCurrentScreen('pet-details');
       }
     }} 
-    onAddPet={() => setShowAddPetModal(true)} 
+    onAddPet={() => setCurrentScreen('add-pet')} 
   />;
 
   // ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed Features

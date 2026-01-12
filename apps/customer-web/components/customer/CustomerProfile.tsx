@@ -118,27 +118,55 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               🐾 My Pets ({profile.pets?.length || 0})
             </h3>
-            {onNavigate && (
-              <Button variant="ghost" size="sm" onClick={() => onNavigate('pets')} className="text-[#FF8C42]">
-                Manage
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {onNavigate && (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => onNavigate('add-pet')} 
+                    className="text-[#FF8C42]"
+                  >
+                    Add Pet
+                  </Button>
+                  {profile.pets && profile.pets.length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={() => onNavigate('pets')} className="text-[#FF8C42]">
+                      Manage
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
           
           {profile.pets && profile.pets.length > 0 ? (
             <div className="space-y-3">
               {profile.pets.map((pet) => (
-                <div key={pet.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <button
+                  key={pet.id}
+                  onClick={() => onNavigate && onNavigate('pet-details', { petId: pet.id })}
+                  className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
+                >
                   <div>
                     <p className="font-medium text-gray-900">{pet.name}</p>
                     <p className="text-xs text-gray-500">{pet.type}</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-400" />
-                </div>
+                </button>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-500 text-center py-2">No pets added yet.</p>
+            <div className="text-center py-4">
+              <p className="text-sm text-gray-500 mb-3">No pets added yet.</p>
+              {onNavigate && (
+                <Button 
+                  onClick={() => onNavigate('add-pet')} 
+                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+                >
+                  Add Your First Pet
+                </Button>
+              )}
+            </div>
           )}
         </Card>
 
