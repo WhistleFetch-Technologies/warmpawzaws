@@ -225,7 +225,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         : 'bg-white border border-slate-100 text-slate-700 group-hover:border-orange-200 group-hover:shadow-md group-hover:-translate-y-0.5'
                       }
                     `}>
-                      {need.icon}
+                      {typeof need.icon === 'string' ? (
+                        <span className="text-2xl">{need.icon}</span>
+                      ) : (
+                        <div className="text-slate-600 group-hover:text-orange-600">
+                          {need.icon}
+                        </div>
+                      )}
                     </div>
                     <span className={`text-[10px] font-medium text-center leading-tight line-clamp-2 ${isViewAll ? 'text-orange-600' : 'text-slate-600'}`}>
                       {need.name}

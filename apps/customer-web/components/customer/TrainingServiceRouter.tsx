@@ -242,7 +242,13 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         : 'bg-white border border-slate-100 text-slate-700 group-hover:border-orange-200 group-hover:shadow-md group-hover:-translate-y-0.5'
                       }
                     `}>
-                      {goal.icon}
+                      {typeof goal.icon === 'string' ? (
+                        <span className="text-2xl">{goal.icon}</span>
+                      ) : (
+                        <div className="text-slate-600 group-hover:text-orange-600">
+                          {goal.icon}
+                        </div>
+                      )}
                     </div>
                     <span className={`text-[10px] font-medium text-center leading-tight line-clamp-2 ${isViewAll ? 'text-orange-600' : 'text-slate-600'}`}>
                       {goal.name}
