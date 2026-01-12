@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Search, Loader2 } from 'lucide-react';
+import { AlertTriangle, Search, Loader2, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface PaymentDispute {
@@ -20,6 +20,9 @@ export function PaymentDisputesTab() {
   const [loading, setLoading] = useState(true);
   const [disputes, setDisputes] = useState<PaymentDispute[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDispute, setSelectedDispute] = useState<PaymentDispute | null>(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     loadDisputes();
@@ -35,6 +38,30 @@ export function PaymentDisputesTab() {
       alert('Failed to load payment disputes');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResolveDispute = async (disputeId: string, resolution: 'resolved' | 'rejected') => {
+    if (!resolutionNote.trim()) {
+      alert('Please provide a resolution note');
+      return;
+    }
+    
+    try {
+      setResolving(true);
+      await apiClient.put(`/admin/payment-disputes/${disputeId}/resolve`, {
+        resolutionNote: resolutionNote,
+        status: resolution,
+      });
+      await loadDisputes();
+      setSelectedDispute(null);
+      setResolutionNote('');
+      alert(`Dispute ${resolution === 'resolved' ? 'resolved' : 'rejected'} successfully`);
+    } catch (error) {
+      console.error('Error resolving dispute:', error);
+      alert('Failed to resolve dispute');
+    } finally {
+      setResolving(false);
     }
   };
 
@@ -78,6 +105,7 @@ export function PaymentDisputesTab() {
               <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Raised By</th>
               <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+              <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -101,11 +129,88 @@ export function PaymentDisputesTab() {
                 <td className="px-0 py-4 text-sm text-gray-600">
                   {new Date(dispute.raisedAt).toLocaleDateString()}
                 </td>
+                <td className="px-0 py-4">
+                  {dispute.status === 'pending' || dispute.status === 'investigating' ? (
+                    <button
+                      onClick={() => setSelectedDispute(dispute)}
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      Resolve
+                    </button>
+                  ) : (
+                    <span className="text-gray-400 text-sm">-</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Dispute Resolution Modal */}
+      {selectedDispute && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Resolve Dispute</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  <strong>Dispute #:</strong> {selectedDispute.disputeNumber}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  <strong>Booking ID:</strong> {selectedDispute.bookingId}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  <strong>Amount:</strong> ₹{selectedDispute.amount.toLocaleString()}
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  <strong>Reason:</strong> {selectedDispute.reason}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Resolution Note *
+                </label>
+                <textarea
+                  value={resolutionNote}
+                  onChange={(e) => setResolutionNote(e.target.value)}
+                  placeholder="Enter resolution details..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  rows={4}
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleResolveDispute(selectedDispute.disputeId, 'resolved')}
+                  disabled={resolving || !resolutionNote.trim()}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  {resolving ? 'Resolving...' : 'Resolve'}
+                </button>
+                <button
+                  onClick={() => handleResolveDispute(selectedDispute.disputeId, 'rejected')}
+                  disabled={resolving || !resolutionNote.trim()}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <XCircle className="w-4 h-4" />
+                  {resolving ? 'Rejecting...' : 'Reject'}
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedDispute(null);
+                    setResolutionNote('');
+                  }}
+                  disabled={resolving}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
