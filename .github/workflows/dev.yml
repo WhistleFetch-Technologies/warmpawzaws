@@ -459,6 +459,7 @@ jobs:
         run: |
           echo "🔧 Injecting runtime-config.js with API Gateway endpoint..."
           API_ENDPOINT="${{ steps.get-api-endpoint.outputs.api_endpoint }}"
+          APP_NAME="${{ matrix.app }}"
           
           # Ensure dist directory exists
           if [ ! -d "dist" ]; then
@@ -468,7 +469,7 @@ jobs:
           
           # Inject runtime-config.js into dist folder
           cat > dist/runtime-config.js <<EOF
-// Runtime Configuration for Warmpawz ${{ matrix.app }}
+// Runtime Configuration for Warmpawz ${APP_NAME}
 // Injected at deployment time with actual API Gateway endpoint
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
