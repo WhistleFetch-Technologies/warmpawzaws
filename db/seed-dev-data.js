@@ -52,6 +52,24 @@ async function seedDevData() {
       console.log('✅ Service catalog seeded');
     }
 
+    // Seed onboarding role configs if migration exists
+    const onboardingConfigFile = path.join(__dirname, 'migrations', '050_seed_onboarding_role_configs.sql');
+    if (fs.existsSync(onboardingConfigFile)) {
+      console.log('⚙️  Seeding onboarding role configs...');
+      const onboardingSql = fs.readFileSync(onboardingConfigFile, 'utf8');
+      await client.query(onboardingSql);
+      console.log('✅ Onboarding role configs seeded');
+    }
+
+    // Seed role permissions if migration exists
+    const rolePermissionsFile = path.join(__dirname, 'migrations', '051_seed_role_permissions.sql');
+    if (fs.existsSync(rolePermissionsFile)) {
+      console.log('⚙️  Seeding role permissions...');
+      const permissionsSql = fs.readFileSync(rolePermissionsFile, 'utf8');
+      await client.query(permissionsSql);
+      console.log('✅ Role permissions seeded');
+    }
+
     client.release();
     
     console.log('');

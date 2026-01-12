@@ -39,31 +39,35 @@ DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote(
 
 DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:5432/warmpawz"
 
-# Create wallets table SQL
-cat > /tmp/create_wallets.sql <<'EOF'
+# Use the migration file if it exists, otherwise create inline SQL
+WALLET_MIGRATION_FILE="$(dirname "$0")/../db/migrations/012_wallet_tables.sql"
+
+if [ -f "$WALLET_MIGRATION_FILE" ]; then
+  echo "📝 Using migration file: 012_wallet_tables.sql"
+  SQL_FILE="$WALLET_MIGRATION_FILE"
+else
+  echo "📝 Creating wallets table SQL inline..."
+  cat > /tmp/create_wallets.sql <<'EOF'
 -- Customer Wallets
 CREATE TABLE IF NOT EXISTS customer_wallets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    balance NUMERIC(10, 2) DEFAULT 0.00 CHECK (balance >= 0),
-    currency VARCHAR(3) DEFAULT 'INR',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(customer_id)
+    customer_id UUID NOT NULL UNIQUE REFERENCES customers(id),
+    balance NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Wallet Transactions
 CREATE TABLE IF NOT EXISTS wallet_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    wallet_id UUID NOT NULL REFERENCES customer_wallets(id) ON DELETE CASCADE,
-    transaction_type VARCHAR(20) NOT NULL CHECK (transaction_type IN ('credit', 'debit', 'refund', 'transfer')),
-    amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
-    balance_before NUMERIC(10, 2) NOT NULL,
+    wallet_id UUID NOT NULL REFERENCES customer_wallets(id),
+    transaction_type TEXT NOT NULL CHECK (transaction_type IN ('credit', 'debit', 'refund', 'payout')),
+    amount NUMERIC(10, 2) NOT NULL,
     balance_after NUMERIC(10, 2) NOT NULL,
-    description TEXT,
-    reference_type VARCHAR(50), -- 'booking', 'refund', 'topup', etc.
+    reference_type TEXT,
     reference_id UUID,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Indexes
@@ -71,9 +75,15 @@ CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet_id ON wallet_transacti
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_created_at ON wallet_transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_customer_wallets_customer_id ON customer_wallets(customer_id);
 EOF
+  SQL_FILE="/tmp/create_wallets.sql"
+fi
 
 echo "📝 Executing SQL..."
-psql "$DATABASE_URL" -f /tmp/create_wallets.sql
+psql "$DATABASE_URL" -f "$SQL_FILE"
 
 echo "✅ Wallets table created successfully!"
-rm /tmp/create_wallets.sql
+
+# Cleanup temp file if we created one
+if [ "$SQL_FILE" = "/tmp/create_wallets.sql" ]; then
+  rm /tmp/create_wallets.sql
+fi
