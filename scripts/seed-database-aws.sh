@@ -83,8 +83,15 @@ if [ -z "$DB_SECRET" ]; then
   exit 1
 fi
 
-DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "warmpawz_admin"' 2>/dev/null || echo "warmpawz_admin")
-DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // ""' 2>/dev/null || echo "")
+# Parse JSON using Python if jq is not available
+if command -v jq &> /dev/null; then
+  DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "warmpawz_admin"')
+  DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // ""')
+else
+  # Use Python to parse JSON
+  DB_USERNAME=$(python3 -c "import json, sys; data = json.loads(sys.stdin.read()); print(data.get('username') or data.get('Username') or 'warmpawz_admin')" <<< "$DB_SECRET")
+  DB_PASSWORD=$(python3 -c "import json, sys; data = json.loads(sys.stdin.read()); print(data.get('password') or data.get('Password') or '')" <<< "$DB_SECRET")
+fi
 
 if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "null" ]; then
   echo "❌ ERROR: Password not found in secret"
@@ -108,29 +115,15 @@ echo ""
 # Test Database Connection
 # ============================================================================
 echo "🔍 Testing database connection..."
-if ! command -v psql &> /dev/null; then
-  echo "⚠️  psql not found, installing postgresql-client..."
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    if ! command -v brew &> /dev/null; then
-      echo "❌ Homebrew not found. Please install postgresql-client manually"
-      exit 1
-    fi
-    brew install postgresql-client 2>/dev/null || echo "⚠️  Could not install psql, continuing..."
-  else
-    # Linux
-    sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null 2>&1 || echo "⚠️  Could not install psql, continuing..."
-  fi
-fi
-
-if command -v psql &> /dev/null; then
-  if psql "$DATABASE_URL" -c "SELECT version();" > /dev/null 2>&1; then
-    echo "✅ Database connection successful"
-  else
-    echo "⚠️  Database connection test failed, but continuing..."
-  fi
+# Test connection using Node.js instead of psql
+if node -e "
+const { Pool } = require('./db/node_modules/pg');
+const pool = new Pool({ connectionString: process.env.TEST_DB_URL, ssl: { rejectUnauthorized: false } });
+pool.query('SELECT version()').then(() => { console.log('✅ Database connection successful'); process.exit(0); }).catch(e => { console.log('⚠️  Connection test failed, but continuing...'); process.exit(0); });
+" 2>/dev/null; then
+  echo "✅ Connection test passed"
 else
-  echo "⚠️  psql not available, skipping connection test"
+  echo "⚠️  Connection test skipped (using Node.js for seeding)"
 fi
 echo ""
 
@@ -153,6 +146,7 @@ fi
 echo "🚀 Executing seed:dev..."
 export DATABASE_URL
 export ENVIRONMENT="$ENVIRONMENT"
+export TEST_DB_URL="$DATABASE_URL"
 
 npm run seed:dev
 

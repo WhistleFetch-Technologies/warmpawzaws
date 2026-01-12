@@ -33,8 +33,15 @@ DB_SECRET=$(aws secretsmanager get-secret-value \
   --query SecretString \
   --output text)
 
-DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "warmpawz_admin"')
-DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password')
+# Parse JSON using Python if jq is not available
+if command -v jq &> /dev/null; then
+  DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "warmpawz_admin"')
+  DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password')
+else
+  # Use Python to parse JSON
+  DB_USERNAME=$(python3 -c "import json, sys; data = json.loads(sys.stdin.read()); print(data.get('username') or data.get('Username') or 'warmpawz_admin')" <<< "$DB_SECRET")
+  DB_PASSWORD=$(python3 -c "import json, sys; data = json.loads(sys.stdin.read()); print(data.get('password') or data.get('Password') or '')" <<< "$DB_SECRET")
+fi
 DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
 
 DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:5432/warmpawz"
