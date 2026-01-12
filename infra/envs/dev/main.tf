@@ -73,17 +73,21 @@ locals {
   }
   
   # CORS allowed origins including custom domains and CloudFront distributions
+  # OFFICIAL CloudFront distributions only (as per infrastructure)
+  # Admin: E1WPXL8WBOWOE8 → dfof7mguaa0a5.cloudfront.net
+  # Customer: E2RDORGXSWJJ87 → d2aoyjj8ine0wk.cloudfront.net
+  # Vendor: E95171GX1I6HN → d1s6ykkj381k58.cloudfront.net
   cors_allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://${local.admin_subdomain}",
     "https://${local.vendor_subdomain}",
     "https://${local.customer_subdomain}",
-    # Admin CloudFront: dfof7mguaa0a5.cloudfront.net
+    # Admin CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
     "https://dfof7mguaa0a5.cloudfront.net",
-    # Customer CloudFront: d2aoyjj8ine0wk.cloudfront.net
+    # Customer CloudFront (OFFICIAL - E2RDORGXSWJJ87)
     "https://d2aoyjj8ine0wk.cloudfront.net",
-    # Vendor CloudFront: d1s6ykkj381k58.cloudfront.net
+    # Vendor CloudFront (OFFICIAL - E95171GX1I6HN)
     "https://d1s6ykkj381k58.cloudfront.net",
   ]
 }

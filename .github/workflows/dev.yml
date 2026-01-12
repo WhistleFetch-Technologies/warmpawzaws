@@ -410,33 +410,32 @@ jobs:
           BUCKET_NAME="warmpawz-dev-${APP_NAME}-frontend-ap-south-1"
           echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
           
-          # Get CloudFront distribution ID by finding distribution with matching origin
-          # Use --output text and take only the first result, handling multiple IDs properly
-          DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Origins.Items[?DomainName==\`${BUCKET_NAME}.s3.ap-south-1.amazonaws.com\`]].Id" \
-            --output text | awk '{print $1}' | head -1)
+          # Use OFFICIAL CloudFront distribution IDs (see CLOUDFRONT_OFFICIAL_DISTRIBUTIONS.md)
+          # Admin: E1WPXL8WBOWOE8, Customer: E2RDORGXSWJJ87, Vendor: E95171GX1I6HN
+          case "$APP_NAME" in
+            admin)
+              DIST_ID="E1WPXL8WBOWOE8"
+              ;;
+            customer)
+              DIST_ID="E2RDORGXSWJJ87"
+              ;;
+            vendor)
+              DIST_ID="E95171GX1I6HN"
+              ;;
+            *)
+              echo "⚠️  Unknown app name: $APP_NAME"
+              DIST_ID=""
+              ;;
+          esac
           
-          # Clean up any whitespace or newlines
-          DIST_ID=$(echo "$DIST_ID" | tr -d '[:space:]')
-          
-          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ] || [ "$DIST_ID" = "null" ]; then
-            echo "⚠️  CloudFront distribution not found for ${BUCKET_NAME}"
-            echo "   Trying alternative lookup by comment..."
-            # Try finding by comment/tags
-            DIST_ID=$(aws cloudfront list-distributions \
-              --query "DistributionList.Items[?Comment==\`warmpawz-dev-${APP_NAME}-frontend\`].Id" \
-              --output text | awk '{print $1}' | head -1)
-            DIST_ID=$(echo "$DIST_ID" | tr -d '[:space:]')
-          fi
-          
-          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ] || [ "$DIST_ID" = "null" ]; then
-            echo "❌ CloudFront distribution not found. Skipping cache invalidation."
+          if [ -z "$DIST_ID" ]; then
+            echo "❌ CloudFront distribution not found for ${APP_NAME}. Skipping cache invalidation."
             echo "cloudfront_id=" >> $GITHUB_OUTPUT
           else
             echo "cloudfront_id=$DIST_ID" >> $GITHUB_OUTPUT
-            echo "✅ Found resources:"
+            echo "✅ Using OFFICIAL CloudFront distribution:"
             echo "   Bucket: $BUCKET_NAME"
-            echo "   CloudFront: $DIST_ID"
+            echo "   CloudFront: $DIST_ID (OFFICIAL)"
           fi
 
       - name: Get API Gateway endpoint
@@ -1224,13 +1223,14 @@ jobs:
           fi
           
           # Get CloudFront URLs
-          ADMIN_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-admin-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
-          VENDOR_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-vendor-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
-          CUSTOMER_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-customer-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          # Use OFFICIAL CloudFront domains (see CLOUDFRONT_OFFICIAL_DISTRIBUTIONS.md)
+          ADMIN_DIST="dfof7mguaa0a5.cloudfront.net"
+          VENDOR_DIST="d1s6ykkj381k58.cloudfront.net"
+          CUSTOMER_DIST="d2aoyjj8ine0wk.cloudfront.net"
           
-          ADMIN_URL="https://${ADMIN_DIST:-dev.admin.warmpawz.com}"
-          VENDOR_URL="https://${VENDOR_DIST:-dev.vendor.warmpawz.com}"
-          CUSTOMER_URL="https://${CUSTOMER_DIST:-dev.customer.warmpawz.com}"
+          ADMIN_URL="https://${ADMIN_DIST}"
+          VENDOR_URL="https://${VENDOR_DIST}"
+          CUSTOMER_URL="https://${CUSTOMER_DIST}"
           
           echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
           echo "admin_url=$ADMIN_URL" >> $GITHUB_OUTPUT
