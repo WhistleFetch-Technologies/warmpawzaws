@@ -175,7 +175,9 @@ type ScreenType =
   | 'support_help'
   | 'problem_grid'
   | 'problem_selected'
-  | 'services_by_problem';
+  | 'services_by_problem'
+  | 'grooming_center'
+  | 'grooming_home';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -473,6 +475,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Grooming Service', roleId: 'groomer' });
       }
       setCurrentScreen('services_by_problem');
+    } else if (screen === 'grooming_center') {
+      // Navigate to services page filtered for grooming center services
+      setCurrentScreen('grooming_center');
+    } else if (screen === 'grooming_home') {
+      // Navigate to services page filtered for grooming home services
+      setCurrentScreen('grooming_home');
     }
   }} />;
   if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
@@ -661,6 +669,37 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       handleNavigateToService(screen);
     }
   }} />;
+  
+  // ✅ Grooming Service Style Screens
+  if (currentScreen === 'grooming_center') return <CustomerServicesPage 
+    onBack={() => setCurrentScreen('grooming')} 
+    onNavigate={(screen, data) => { 
+      if (screen === 'create-booking') { 
+        setSelectedService(data?.serviceId);
+        setSelectedVendorId(data?.vendorId);
+        setVetServiceData({ vendorId: data?.vendorId, serviceType: 'grooming', serviceStyle: 'at_center' });
+        setCurrentScreen('create-booking');
+      } else {
+        handleNavigateToService(screen);
+      }
+    }} 
+    initialFilters={{ category: 'grooming', roleId: 'pet_groomer', serviceStyle: 'at_center' }}
+  />;
+  
+  if (currentScreen === 'grooming_home') return <CustomerServicesPage 
+    onBack={() => setCurrentScreen('grooming')} 
+    onNavigate={(screen, data) => { 
+      if (screen === 'create-booking') { 
+        setSelectedService(data?.serviceId);
+        setSelectedVendorId(data?.vendorId);
+        setVetServiceData({ vendorId: data?.vendorId, serviceType: 'grooming', serviceStyle: 'at_home' });
+        setCurrentScreen('create-booking');
+      } else {
+        handleNavigateToService(screen);
+      }
+    }} 
+    initialFilters={{ category: 'grooming', roleId: 'pet_groomer', serviceStyle: 'at_home' }}
+  />;
 
   // ✅ NEW: Bookings List
   if (currentScreen === 'bookings') return <CustomerBookingsPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
