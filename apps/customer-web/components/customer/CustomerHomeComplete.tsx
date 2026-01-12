@@ -41,7 +41,7 @@ interface UserData {
 interface CustomerHomeCompleteProps {
   phone: string;
   refreshKey?: number;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, data?: any) => void;
   onProfileClick?: () => void;
   onSidebarOpen?: () => void;
   onPetClick?: (petId: string) => void;
@@ -92,9 +92,16 @@ export function CustomerHomeComplete({
       setLoading(true);
       
       // AWS Serverless compatible - use apiClient instead of direct Supabase calls
+      // First get customer by phone, then get pets
+      const customerResponse: any = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).catch(() => null);
+      const customer = customerResponse?.customer || customerResponse;
+      const customerId = customer?.id;
+
       const [profileResponse, petsResponse] = await Promise.all([
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null),
-        apiClient.get(`/customer/pets?phone=${encodeURIComponent(phone)}`).catch(() => null)
+        customerId 
+          ? apiClient.get(`/customer/${customerId}/pets`).catch(() => null)
+          : Promise.resolve(null)
       ]);
 
       const profileResp = profileResponse as any;
@@ -527,8 +534,8 @@ export function CustomerHomeComplete({
         <div className="px-6 mb-6">
           <TrendingProblems
             onProblemSelect={(problemId, title) => {
-              console.log('Trending problem selected:', problemId, title);
-              // TODO: Navigate to services by problem
+              // Navigate to services by problem
+              onNavigate?.('services_by_problem', { problemId, problemTitle: title });
             }}
             limit={5}
           />
@@ -542,8 +549,12 @@ export function CustomerHomeComplete({
           </div>
           <ProblemGridNavigation
             onProblemSelect={(problemId, problem) => {
-              console.log('Problem selected:', problemId, problem);
-              // TODO: Navigate to services by problem
+              // Navigate to services by problem
+              onNavigate?.('services_by_problem', { 
+                problemId, 
+                problemTitle: problem?.title || problem?.name || 'Service',
+                roleId: problem?.roleId || problem?.vendorType
+              });
             }}
             showTrending={true}
           />
@@ -621,7 +632,11 @@ export function CustomerHomeComplete({
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
             {groomingServices.map((service, index) => (
-              <div key={index} className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm">
+              <div 
+                key={index} 
+                className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => onNavigate?.('grooming')}
+              >
                 <div className="flex items-start justify-between mb-3">
                   <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">
                     {service.icon}
@@ -635,7 +650,13 @@ export function CustomerHomeComplete({
                 <p className="text-xs text-gray-600 mb-3">{service.description}</p>
                 <div className="flex items-center justify-between">
                   <span className="text-[#FF8C42] font-medium">{service.price}</span>
-                  <button className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium">
+                  <button 
+                    className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium hover:bg-[#FF7A2E] transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigate?.('grooming');
+                    }}
+                  >
                     Book Now
                   </button>
                 </div>
