@@ -190,7 +190,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">What does your pet need?</h2>
               <button 
-                onClick={() => onNavigate?.('problem_grid')}
+                onClick={() => {
+                  console.log('🔵 [Grooming] View All problem grid clicked');
+                  onNavigate?.('problem_grid');
+                }}
                 className="text-sm text-orange-600 font-medium hover:text-orange-700"
               >
                 View All
@@ -204,10 +207,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   <button
                     key={need.id}
                     onClick={() => {
+                      console.log('🔵 [Grooming] Problem grid clicked:', need.id, isViewAll);
                       if (isViewAll) {
+                        console.log('🔵 [Grooming] Navigating to problem_grid');
                         onNavigate?.('problem_grid');
                       } else {
-                        onNavigate?.('problem_selected', { problemId: need.id });
+                        console.log('🔵 [Grooming] Navigating to problem_selected:', need.id);
+                        onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
                       }
                     }}
                     className="group flex flex-col items-center gap-2"
@@ -235,11 +241,14 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <h2 className="text-lg font-bold text-slate-900 mb-4">Choose Service Type</h2>
             <div className="grid grid-cols-2 gap-3">
               {serviceTypes.map((service) => (
-                <button
-                  key={service.id}
-                  onClick={() => onNavigate?.(service.id)}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
-                >
+              <button
+                key={service.id}
+                onClick={() => {
+                  console.log('🔵 [Grooming] Service style clicked:', service.id);
+                  onNavigate?.(service.id);
+                }}
+                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
+              >
                   <div className={`w-10 h-10 rounded-xl ${service.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
                     <service.icon className={`w-5 h-5 ${service.color}`} />
                   </div>
