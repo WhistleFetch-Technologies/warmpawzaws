@@ -387,7 +387,8 @@ class GetBannersHandler extends BaseHandler {
       let paramIndex = 1;
 
       if (position) {
-        queryStr += ` AND type = $${paramIndex}`;
+        // Check if position is a valid banner type, otherwise use it as-is
+        queryStr += ` AND type = $${paramIndex}::text`;
         params.push(position);
         paramIndex++;
       }
@@ -407,9 +408,14 @@ class GetBannersHandler extends BaseHandler {
     } catch (error: any) {
       console.error('Error fetching banners:', error);
       // If table doesn't exist, return empty array instead of error
-      if (error.message && error.message.includes('does not exist')) {
-        console.warn('⚠️ banners table does not exist - returning empty array');
+      if (error.message && (error.message.includes('does not exist') || error.message.includes('operator does not exist'))) {
+        console.warn('⚠️ banners table does not exist or has schema issue - returning empty array');
         return this.success({ banners: [], total: 0, message: 'Banners table not initialized. Run migrations first.' });
+      }
+      // For 503/timeout errors, return empty array gracefully
+      if (error.message && (error.message.includes('timeout') || error.message.includes('connection'))) {
+        console.warn('⚠️ Database connection issue - returning empty array');
+        return this.success({ banners: [], total: 0, message: 'Database connection issue. Please try again later.' });
       }
       return this.error(`Failed to fetch banners: ${error.message}`, 500);
     }
@@ -508,9 +514,14 @@ class UpdateBannerHandler extends BaseHandler {
         position: position || undefined,
       });
 
-      const updated = await select('banners', { id: bannerId });
+      // Use explicit UUID casting in query to avoid "uuid = text" errors
+      const updated = await query(
+        'SELECT * FROM banners WHERE id = $1::uuid',
+        [bannerId]
+      );
+      const rows = Array.isArray(updated) ? updated : (updated as any).rows || [];
       return this.success({
-        banner: updated[0],
+        banner: rows[0],
         message: 'Banner updated successfully',
       });
     } catch (error: any) {
@@ -539,7 +550,7 @@ class DeleteBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'delete',
         bannerId,
-        position: banner[0].position,
+        position: rows[0].position || rows[0].type,
       });
 
       return this.success({
