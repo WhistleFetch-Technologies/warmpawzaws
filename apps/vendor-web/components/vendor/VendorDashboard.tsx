@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
@@ -91,6 +92,7 @@ interface VendorDashboardProps {
   onNavigateToDistancePricing?: () => void;
   onNavigateToMultiDoctorManagement?: () => void;
   onNavigateToPolicyManagement?: () => void;
+  onNavigateToMedicalRecords?: () => void; // ✅ NEW: Navigate to Medical Records
 }
 
 interface DashboardStats {
@@ -182,7 +184,8 @@ export function VendorDashboard({
   onNavigateToCounseling,
   onNavigateToDistancePricing,
   onNavigateToMultiDoctorManagement,
-  onNavigateToPolicyManagement
+  onNavigateToPolicyManagement,
+  onNavigateToMedicalRecords // ✅ NEW: Navigate to Medical Records
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -211,6 +214,7 @@ export function VendorDashboard({
 
   // 🔌 CORE: Load dynamic capabilities
   const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
+  const router = useRouter();
 
   // ✅ AWS Serverless: Using apiClient instead of direct Supabase URLs
   
@@ -632,6 +636,262 @@ export function VendorDashboard({
             <p className="text-xs text-gray-500 mt-2 text-center">
               Manage specialized vet services, equipment, and protocols
             </p>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Groomers */}
+        {VendorUtils.isGroomer(vendorData?.roleId) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Grooming Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToPortfolio && capabilities.portfolio && (
+                <button
+                  onClick={onNavigateToPortfolio}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                >
+                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
+                </button>
+              )}
+              {onNavigateToGallery && capabilities.gallery && (
+                <button
+                  onClick={onNavigateToGallery}
+                  className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
+                >
+                  <Camera className="w-6 h-6 text-pink-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Gallery</span>
+                </button>
+              )}
+              {onNavigateToPackages && capabilities.package_management && (
+                <button
+                  onClick={onNavigateToPackages}
+                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                >
+                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Packages</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Walkers & Taxi */}
+        {(VendorUtils.isWalker(vendorData?.roleId) || VendorUtils.isTaxi(vendorData?.roleId)) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">
+              {VendorUtils.isWalker(vendorData?.roleId) ? 'Walking Services' : 'Transport Services'}
+            </h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToLiveTracking && capabilities.gps_tracking && (
+                <button
+                  onClick={onNavigateToLiveTracking}
+                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                >
+                  <MapPin className="w-6 h-6 text-green-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Live Tracking</span>
+                </button>
+              )}
+              {onNavigateToBookingManagement && (
+                <button
+                  onClick={onNavigateToBookingManagement}
+                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                >
+                  <Calendar className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Bookings</span>
+                </button>
+              )}
+              {onNavigateToDistancePricing && capabilities.distance_pricing && (
+                <button
+                  onClick={onNavigateToDistancePricing}
+                  className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
+                >
+                  <MapPin className="w-6 h-6 text-orange-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Pricing</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Trainers */}
+        {VendorUtils.isTrainer(vendorData?.roleId) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Training Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToProgressTracking && capabilities.progress_tracking && (
+                <button
+                  onClick={onNavigateToProgressTracking}
+                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                >
+                  <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Progress</span>
+                </button>
+              )}
+              {onNavigateToPackages && capabilities.package_management && (
+                <button
+                  onClick={onNavigateToPackages}
+                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                >
+                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Programs</span>
+                </button>
+              )}
+              {onNavigateToPortfolio && capabilities.portfolio && (
+                <button
+                  onClick={onNavigateToPortfolio}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                >
+                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Boarders */}
+        {VendorUtils.isBoarding(vendorData?.roleId) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Boarding Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToCenterProfile && (
+                <button
+                  onClick={onNavigateToCenterProfile}
+                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                >
+                  <Building2 className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Rooms</span>
+                </button>
+              )}
+              {onNavigateToBookingManagement && (
+                <button
+                  onClick={onNavigateToBookingManagement}
+                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                >
+                  <Calendar className="w-6 h-6 text-green-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Check-in/out</span>
+                </button>
+              )}
+              {onNavigateToCCTV && capabilities.cctv_access && (
+                <button
+                  onClick={onNavigateToCCTV}
+                  className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
+                >
+                  <Monitor className="w-6 h-6 text-gray-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">CCTV</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Photographers */}
+        {VendorUtils.isPhotographer(vendorData?.roleId) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Photography Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToGallery && capabilities.gallery && (
+                <button
+                  onClick={onNavigateToGallery}
+                  className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
+                >
+                  <Camera className="w-6 h-6 text-pink-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Gallery</span>
+                </button>
+              )}
+              {onNavigateToPortfolio && capabilities.portfolio && (
+                <button
+                  onClick={onNavigateToPortfolio}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                >
+                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
+                </button>
+              )}
+              {onNavigateToPackages && capabilities.package_management && (
+                <button
+                  onClick={onNavigateToPackages}
+                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                >
+                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Packages</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Shelters */}
+        {VendorUtils.isShelter(vendorData?.roleId) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Shelter Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToAdoptionSystem && capabilities.adoption && (
+                <button
+                  onClick={onNavigateToAdoptionSystem}
+                  className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-rose-100 transition-colors"
+                >
+                  <Heart className="w-6 h-6 text-rose-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Adoption</span>
+                </button>
+              )}
+              {onNavigateToDonationManagement && capabilities.donation && (
+                <button
+                  onClick={onNavigateToDonationManagement}
+                  className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-emerald-100 transition-colors"
+                >
+                  <Gift className="w-6 h-6 text-emerald-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Donations</span>
+                </button>
+              )}
+              {onNavigateToEventManagement && capabilities.events && (
+                <button
+                  onClick={onNavigateToEventManagement}
+                  className="bg-sky-50 border border-sky-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-sky-100 transition-colors"
+                >
+                  <Calendar className="w-6 h-6 text-sky-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Events</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Pharmacies */}
+        {VendorUtils.isPharmacy(vendorData?.roleId) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Pharmacy Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {onNavigateToBusinessHub && capabilities.inventory && (
+                <button
+                  onClick={onNavigateToBusinessHub}
+                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                >
+                  <Package className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Inventory</span>
+                </button>
+              )}
+              {onNavigateToExpiryManagement && capabilities.expiry_management && (
+                <button
+                  onClick={onNavigateToExpiryManagement}
+                  className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-amber-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Expiry</span>
+                </button>
+              )}
+              {onNavigateToPrescriptionVerification && capabilities.prescription_verification && (
+                <button
+                  onClick={onNavigateToPrescriptionVerification}
+                  className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
+                >
+                  <FileText className="w-6 h-6 text-teal-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Rx Verify</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1116,20 +1376,28 @@ export function VendorDashboard({
             <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
               <button 
                 onClick={onNavigateToServiceManagement}
-                className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors"
+                className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors cursor-pointer"
               >
                 <Plus className="w-6 h-6 text-purple-600 mb-1" />
                 <span className="text-xs">Add</span>
               </button>
               {Array.isArray(services) && services.slice(0, 4).map((service) => (
-                <div key={service.serviceId} className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center">
+                <button
+                  key={service.serviceId || service.id}
+                  onClick={() => {
+                    // Navigate to service management page when service is clicked
+                    onNavigateToServiceManagement?.();
+                  }}
+                  className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center hover:bg-blue-200 transition-colors cursor-pointer active:scale-95"
+                  title={service.name || service.serviceName || 'Service'}
+                >
                   {capabilities.catalog && !capabilities.booking ? (
                      <Package className="w-6 h-6 text-blue-600 mb-1" />
                   ) : (
                      <Activity className="w-6 h-6 text-blue-600 mb-1" />
                   )}
-                  <span className="text-xs truncate w-full text-center px-1">{service.name}</span>
-                </div>
+                  <span className="text-xs truncate w-full text-center px-1">{service.name || service.serviceName || 'Service'}</span>
+                </button>
               ))}
             </div>
           </div>
@@ -1140,29 +1408,50 @@ export function VendorDashboard({
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-900">Watchlisted</h2>
-              <button className="flex items-center gap-1 text-sm text-[#FF8C42]">
+              <button 
+                onClick={() => {
+                  if (onNavigateToMedicalRecords) {
+                    onNavigateToMedicalRecords();
+                  } else {
+                    router.push('/medical/records');
+                  }
+                }}
+                className="flex items-center gap-1 text-sm text-[#FF8C42] hover:text-[#FF7A2E] transition-colors"
+              >
                 <Plus className="w-4 h-4" />
                 Add visit
               </button>
             </div>
             <div className="space-y-2">
               {watchlist.slice(0, 3).map(patient => (
-                <div key={patient.watchlistId} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                <button
+                  key={patient.watchlistId}
+                  onClick={() => {
+                    // Navigate to medical records page or booking management to view patient details
+                    if (onNavigateToMedicalRecords) {
+                      onNavigateToMedicalRecords();
+                    } else {
+                      // Fallback: navigate to medical records page directly
+                      router.push('/medical/records');
+                    }
+                  }}
+                  className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors active:scale-[0.98] cursor-pointer"
+                >
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                     <span className="text-sm font-semibold text-blue-600">
                       {patient.customerName.split(' ').map((n, idx) => n[0]).join('')}
                     </span>
                   </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">{patient.customerName}</div>
-                    <div className="text-xs text-gray-500">{patient.petName}</div>
-                    <div className="text-xs text-gray-400">{patient.issue}</div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">{patient.customerName}</div>
+                    <div className="text-xs text-gray-500 truncate">{patient.petName}</div>
+                    <div className="text-xs text-gray-400 truncate">{patient.issue}</div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex-shrink-0">
                     <div className="text-xs text-gray-400">{formatTimeAgo(patient.lastUpdated)}</div>
                     <ChevronRight className="w-4 h-4 text-gray-400 ml-auto mt-1" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>

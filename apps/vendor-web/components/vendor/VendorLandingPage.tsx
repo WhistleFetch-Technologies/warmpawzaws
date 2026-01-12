@@ -1224,6 +1224,12 @@ export function VendorLandingPage({
           onNavigateToCounseling={() => setShowCounseling(true)} // ✅ NEW: Counseling services navigation
           onNavigateToPolicyManagement={() => setShowPolicyManagement(true)} // ✅ NEW: Policy management navigation
           onNavigateToDistancePricing={() => setShowDistancePricing(true)} // ✅ NEW: Distance pricing navigation
+          onNavigateToMedicalRecords={() => {
+            // Navigate to medical records page
+            if (typeof window !== 'undefined') {
+              window.location.href = '/medical/records';
+            }
+          }} // ✅ NEW: Medical records navigation
         />
       );
 
