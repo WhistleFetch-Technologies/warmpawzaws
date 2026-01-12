@@ -65,6 +65,7 @@ import { registerRegionEndpoints } from '../endpoints/regions';
 import { registerChatEndpoints } from '../endpoints/chat';
 import { registerFileUploadEndpoints } from '../endpoints/file-upload';
 import { registerSubscriptionEndpoints } from '../endpoints/subscriptions';
+import { registerCustomerPhoneConvenienceEndpoints } from '../endpoints/customer-phone-convenience';
 import { registerInsuranceEndpoints } from '../endpoints/insurance';
 import { registerTrainingProgressEndpoints } from '../endpoints/training-progress';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
@@ -129,13 +130,14 @@ import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 const app = new Hono();
 
 // Configure CORS - Match API Gateway CORS settings
-// Include all CloudFront distributions for the three web apps
+// OFFICIAL CloudFront distributions (as per infrastructure)
+// These are the ONLY CloudFront distributions that should exist
 const allowedOrigins = [
-  // Admin Web CloudFront
+  // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
   'https://dfof7mguaa0a5.cloudfront.net',
-  // Customer Web CloudFront
+  // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
   'https://d2aoyjj8ine0wk.cloudfront.net',
-  // Vendor Web CloudFront
+  // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
   'https://d1s6ykkj381k58.cloudfront.net',
   // Local development
   'http://localhost:3000',
@@ -197,9 +199,11 @@ registerVendorDashboardEndpoints(app);
 // Register specific routes BEFORE parameterized routes to avoid route conflicts
 // Order matters: specific routes (e.g., /customer/behavior-journal) must come before parameterized routes (e.g., /customer/:customerId)
 registerBehaviorJournalEndpoints(app); // /customer/behavior-journal - before /customer/:customerId
-registerFollowupRescheduleEndpoints(app); // /followup/create, /vendor/reschedule-policy, /vendor/available-slots
+registerFollowupRescheduleEndpoints(app); // /followup/create, /vendor/reschedule-policy, /vendor/available-slots, /bookings/available-slots
 registerNotificationEndpoints(app); // /customer/notifications - before /customer/:customerId
-registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services - before /customer/:customerId
+registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
+registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
+registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
@@ -349,12 +353,14 @@ export const handler = async (
                      event.headers?.Origin || 
                      'https://dfof7mguaa0a5.cloudfront.net';
       
+      // Use the same allowedOrigins array defined at module level for consistency
+      // OFFICIAL CloudFront distributions only
       const allowedOrigins = [
-        // Admin Web CloudFront
+        // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
         'https://dfof7mguaa0a5.cloudfront.net',
-        // Customer Web CloudFront
+        // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
         'https://d2aoyjj8ine0wk.cloudfront.net',
-        // Vendor Web CloudFront
+        // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
         'https://d1s6ykkj381k58.cloudfront.net',
         // Local development
         'http://localhost:3000',
@@ -442,12 +448,14 @@ export const handler = async (
     const origin = event.headers?.origin || 
                    event.headers?.Origin;
     
+    // Use the same allowedOrigins array defined at module level for consistency
+    // OFFICIAL CloudFront distributions only
     const allowedOrigins = [
-      // Admin Web CloudFront
+      // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
       'https://dfof7mguaa0a5.cloudfront.net',
-      // Customer Web CloudFront
+      // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
       'https://d2aoyjj8ine0wk.cloudfront.net',
-      // Vendor Web CloudFront
+      // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
       'https://d1s6ykkj381k58.cloudfront.net',
       // Local development
       'http://localhost:3000',
