@@ -468,7 +468,7 @@ jobs:
           fi
           
           # Inject runtime-config.js into dist folder
-          cat > dist/runtime-config.js <<EOF
+          cat > dist/runtime-config.js <<'HEREDOC_EOF'
 // Runtime Configuration for Warmpawz ${APP_NAME}
 // Injected at deployment time with actual API Gateway endpoint
 (function() {
@@ -478,7 +478,7 @@ jobs:
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-EOF
+HEREDOC_EOF
           
           echo "✅ Injected runtime-config.js into dist/"
           echo "   API endpoint: $API_ENDPOINT"
