@@ -552,8 +552,8 @@ export function CustomerHomeComplete({
               // Navigate to services by problem
               onNavigate?.('services_by_problem', { 
                 problemId, 
-                problemTitle: problem?.title || problem?.name || 'Service',
-                roleId: problem?.roleId || problem?.vendorType
+                problemTitle: problem?.title || (problem as any)?.name || 'Service',
+                roleId: problem?.roleId || (problem as any)?.vendorType
               });
             }}
             showTrending={true}
