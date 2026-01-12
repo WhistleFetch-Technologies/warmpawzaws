@@ -1,5 +1,14 @@
 'use client';
 
+import { 
+  Scissors, Bath, Brush, Hand, Dog, Sparkles, Plus,
+  GraduationCap, Home, PawPrint, AlertTriangle, Trophy, Dog as DogLeash,
+  Footprints, Bone, Mountain,
+  Frown, Volume2, Bomb, Ghost, Shield,
+  Hotel, Sun, Star, Pill,
+  Stethoscope, Heart, Activity, FileText, Eye, Siren, Package
+} from 'lucide-react';
+
 /**
  * UNIVERSAL PROBLEM GRID SECTION COMPONENT
  * 
@@ -10,12 +19,13 @@
  * - Unified Color Palette: Slate (Neutral) + Orange (Brand)
  * - Removed chaotic rainbow colors
  * - consistent card styling
+ * - Using 2D Lucide icons instead of emojis for professional look
  */
 
 interface ProblemGridItem {
   id: string;
   name: string;
-  icon: string;
+  icon: string | React.ReactNode;
   // Deprecated specific color props in favor of unified styling, 
   // but kept for backward compatibility if needed, though we will ignore them in render
   bgColor?: string;
@@ -64,10 +74,13 @@ export function ProblemGridSection({
             <button
               key={problem.id}
               onClick={() => {
+                console.log('🔵 [ProblemGridSection] Problem clicked:', problem.id, isViewAll);
                 if (isViewAll) {
+                  console.log('🔵 [ProblemGridSection] Navigating to problem_grid');
                   onNavigate('problem_grid');
                 } else {
-                  onNavigate('problem_selected', { problemId: problem.id });
+                  console.log('🔵 [ProblemGridSection] Navigating to problem_selected:', problem.id);
+                  onNavigate('problem_selected', { problemId: problem.id, problemTitle: problem.name });
                 }
               }}
               className="group relative flex flex-col items-center"
@@ -80,10 +93,16 @@ export function ProblemGridSection({
                 }
               `}>
                 <div className={`
-                  w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-transform group-hover:scale-110
+                  w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
                   ${isViewAll ? 'bg-white/50' : 'bg-slate-50 group-hover:bg-orange-50'}
                 `}>
-                  {problem.icon}
+                  {typeof problem.icon === 'string' ? (
+                    <span className="text-xl">{problem.icon}</span>
+                  ) : (
+                    <div className="text-slate-600 group-hover:text-orange-600">
+                      {problem.icon}
+                    </div>
+                  )}
                 </div>
                 <p className={`
                   text-[10px] font-medium text-center leading-tight line-clamp-2
@@ -106,59 +125,59 @@ export function ProblemGridSection({
 // ========================================
 
 export const GROOMING_NEEDS = [
-  { id: 'full_grooming', name: 'Full Grooming', icon: '✂️' },
-  { id: 'bath_only', name: 'Bath & Brush', icon: '🛁' },
-  { id: 'haircut_styling', name: 'Hair Styling', icon: '💇' },
-  { id: 'nail_care', name: 'Nail Care', icon: '💅' },
-  { id: 'deshedding', name: 'De-shedding', icon: '🐕' },
-  { id: 'spa_treatment', name: 'Spa & Wellness', icon: '💆' },
-  { id: 'view_all', name: 'View All', icon: '➕' }
+  { id: 'full_grooming', name: 'Full Grooming', icon: <Scissors className="w-6 h-6 text-orange-500" /> },
+  { id: 'bath_only', name: 'Bath & Brush', icon: <Bath className="w-6 h-6 text-blue-500" /> },
+  { id: 'haircut_styling', name: 'Hair Styling', icon: <Brush className="w-6 h-6 text-pink-500" /> },
+  { id: 'nail_care', name: 'Nail Care', icon: <Hand className="w-6 h-6 text-purple-500" /> },
+  { id: 'deshedding', name: 'De-shedding', icon: <Dog className="w-6 h-6 text-amber-500" /> },
+  { id: 'spa_treatment', name: 'Spa & Wellness', icon: <Sparkles className="w-6 h-6 text-rose-500" /> },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
 ];
 
 export const TRAINING_GOALS = [
-  { id: 'basic_obedience', name: 'Basic Obedience', icon: '🎓' },
-  { id: 'potty_training', name: 'Potty Training', icon: '🏠' },
-  { id: 'socialization', name: 'Socialization', icon: '🐾' },
-  { id: 'aggression', name: 'Aggression Fix', icon: '⚠️' },
-  { id: 'advanced_training', name: 'Advanced Skills', icon: '🏆' },
-  { id: 'leash_training', name: 'Leash Training', icon: '🦮' },
-  { id: 'view_all', name: 'View All', icon: '➕' }
+  { id: 'basic_obedience', name: 'Basic Obedience', icon: <GraduationCap className="w-6 h-6 text-purple-500" /> },
+  { id: 'potty_training', name: 'Potty Training', icon: <Home className="w-6 h-6 text-green-500" /> },
+  { id: 'socialization', name: 'Socialization', icon: <PawPrint className="w-6 h-6 text-blue-500" /> },
+  { id: 'aggression', name: 'Aggression Fix', icon: <AlertTriangle className="w-6 h-6 text-red-500" /> },
+  { id: 'advanced_training', name: 'Advanced Skills', icon: <Trophy className="w-6 h-6 text-amber-500" /> },
+  { id: 'leash_training', name: 'Leash Training', icon: <DogLeash className="w-6 h-6 text-indigo-500" /> },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
 ];
 
 export const WALKING_NEEDS = [
-  { id: 'daily_walk', name: 'Daily Walk', icon: '🚶' },
-  { id: 'puppy_walk', name: 'Puppy Walking', icon: '🐶' },
-  { id: 'senior_walk', name: 'Senior Care', icon: '🦴' },
-  { id: 'multiple_dogs', name: 'Multiple Dogs', icon: '🐕‍🦺' },
-  { id: 'long_walk', name: 'Adventure Walk', icon: '⛰️' },
-  { id: 'view_all', name: 'View All', icon: '➕' }
+  { id: 'daily_walk', name: 'Daily Walk', icon: <Footprints className="w-6 h-6 text-green-500" /> },
+  { id: 'puppy_walk', name: 'Puppy Walking', icon: <Dog className="w-6 h-6 text-blue-500" /> },
+  { id: 'senior_walk', name: 'Senior Care', icon: <Bone className="w-6 h-6 text-amber-500" /> },
+  { id: 'multiple_dogs', name: 'Multiple Dogs', icon: <DogLeash className="w-6 h-6 text-indigo-500" /> },
+  { id: 'long_walk', name: 'Adventure Walk', icon: <Mountain className="w-6 h-6 text-emerald-500" /> },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
 ];
 
 export const BEHAVIORAL_ISSUES = [
-  { id: 'separation_anxiety', name: 'Anxiety & Stress', icon: '😰' },
-  { id: 'barking', name: 'Barking Issues', icon: '📢' },
-  { id: 'destructive', name: 'Destructive Habits', icon: '💥' },
-  { id: 'fear_phobia', name: 'Fear Issues', icon: '😨' },
-  { id: 'resource_guarding', name: 'Possessive Behavior', icon: '🛡️' },
-  { id: 'view_all', name: 'View All', icon: '➕' }
+  { id: 'separation_anxiety', name: 'Anxiety & Stress', icon: <Frown className="w-6 h-6 text-yellow-500" /> },
+  { id: 'barking', name: 'Barking Issues', icon: <Volume2 className="w-6 h-6 text-orange-500" /> },
+  { id: 'destructive', name: 'Destructive Habits', icon: <Bomb className="w-6 h-6 text-red-500" /> },
+  { id: 'fear_phobia', name: 'Fear Issues', icon: <Ghost className="w-6 h-6 text-indigo-500" /> },
+  { id: 'resource_guarding', name: 'Possessive Behavior', icon: <Shield className="w-6 h-6 text-blue-500" /> },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
 ];
 
 export const BOARDING_NEEDS = [
-  { id: 'short_stay', name: 'Weekend Stay', icon: '🏨' },
-  { id: 'long_stay', name: 'Extended Stay', icon: '🏡' },
-  { id: 'daycare', name: 'Daily Daycare', icon: '☀️' },
-  { id: 'luxury_boarding', name: 'Luxury Stay', icon: '⭐' },
-  { id: 'medical_boarding', name: 'Medical Care', icon: '💊' },
-  { id: 'view_all', name: 'View All', icon: '➕' }
+  { id: 'short_stay', name: 'Weekend Stay', icon: <Hotel className="w-6 h-6 text-orange-500" /> },
+  { id: 'long_stay', name: 'Extended Stay', icon: <Home className="w-6 h-6 text-amber-500" /> },
+  { id: 'daycare', name: 'Daily Daycare', icon: <Sun className="w-6 h-6 text-yellow-500" /> },
+  { id: 'luxury_boarding', name: 'Luxury Stay', icon: <Star className="w-6 h-6 text-purple-500" /> },
+  { id: 'medical_boarding', name: 'Medical Care', icon: <Pill className="w-6 h-6 text-blue-500" /> },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
 ];
 
 export const VET_PROBLEMS = [
-  { id: 'surgery', name: 'Surgery', icon: '🔪' },
-  { id: 'cardiology', name: 'Heart Care', icon: '❤️' },
-  { id: 'dermatology', name: 'Skin Care', icon: '🦴' },
-  { id: 'dentistry', name: 'Dental', icon: '🦷' },
-  { id: 'ophthalmology', name: 'Eye Care', icon: '👁️' },
-  { id: 'emergency', name: 'Emergency', icon: '🚨' },
-  { id: 'medicine', name: 'General', icon: '💊' },
-  { id: 'view_all', name: '20+ more', icon: '➕' }
+  { id: 'surgery', name: 'Surgery', icon: <Stethoscope className="w-6 h-6 text-teal-500" /> },
+  { id: 'cardiology', name: 'Heart Care', icon: <Heart className="w-6 h-6 text-red-500" /> },
+  { id: 'dermatology', name: 'Skin Care', icon: <Activity className="w-6 h-6 text-green-500" /> },
+  { id: 'dentistry', name: 'Dental', icon: <FileText className="w-6 h-6 text-blue-500" /> },
+  { id: 'ophthalmology', name: 'Eye Care', icon: <Eye className="w-6 h-6 text-cyan-500" /> },
+  { id: 'emergency', name: 'Emergency', icon: <Siren className="w-6 h-6 text-red-500" /> },
+  { id: 'medicine', name: 'General', icon: <Package className="w-6 h-6 text-purple-500" /> },
+  { id: 'view_all', name: '20+ more', icon: <Plus className="w-6 h-6" /> }
 ];
