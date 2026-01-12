@@ -50,7 +50,7 @@ type TabType =
 	| "settlement-rules"
 	| "reports";
 
-export default function FinanceManagement({ onBack }: FinanceManagementProps) {
+export default function FinanceManagement({ onBack }: FinanceManagementProps = {}) {
 	const [activeTab, setActiveTab] = useState<TabType>("dashboard");
 
 	const tabs = [

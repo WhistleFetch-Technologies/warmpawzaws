@@ -37,10 +37,10 @@ import {
 import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
 
 interface RBACDashboardProps {
-	onBack: () => void;
+	onBack?: () => void;
 }
 
-export default function RBACDashboard({ onBack }: RBACDashboardProps) {
+export default function RBACDashboard({ onBack }: RBACDashboardProps = {}) {
 	const [roles, setRoles] = useState<any[]>([]);
 	const [permissions, setPermissions] = useState<any[]>([]);
 	const [policies, setPolicies] = useState<any[]>([]);

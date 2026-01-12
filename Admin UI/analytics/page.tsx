@@ -66,7 +66,7 @@ import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
 import { toast, Toaster } from "sonner";
 
 interface AnalyticsDashboardProps {
-	onBack: () => void;
+	onBack?: () => void;
 }
 
 interface KPICard {
@@ -79,7 +79,7 @@ interface KPICard {
 
 export default function AdminAnalyticsDashboard({
 	onBack,
-}: AnalyticsDashboardProps) {
+}: AnalyticsDashboardProps = {}) {
 	const [dateRange, setDateRange] = useState("7d");
 	const [activeTab, setActiveTab] = useState("overview");
 	const [savedReports, setSavedReports] = useState<any[]>([]);
