@@ -37,6 +37,7 @@ interface CustomerServicesPageProps {
   initialFilters?: {
     category?: string;
     roleId?: string;
+    serviceStyle?: 'at_home' | 'at_center' | 'tele' | 'all';
   };
 }
 
@@ -47,8 +48,18 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   
   // Filters
   const [category, setCategory] = useState(initialFilters?.category || '');
-  const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'all'>('all');
+  // Auto-set serviceStyle based on screen context (grooming_center = at_center, grooming_home = at_home)
+  const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'all'>(
+    initialFilters?.serviceStyle || 'all'
+  );
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
+  
+  // Update serviceStyle when initialFilters change
+  useEffect(() => {
+    if (initialFilters?.serviceStyle) {
+      setServiceStyle(initialFilters.serviceStyle);
+    }
+  }, [initialFilters?.serviceStyle]);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
