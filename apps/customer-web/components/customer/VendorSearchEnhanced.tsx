@@ -23,7 +23,6 @@ import { SearchAutocomplete } from './SearchAutocomplete';
 import { SearchFilters, FilterValues } from './SearchFilters';
 import { UniversalVendorCard } from './UniversalVendorCard';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface VendorResult {

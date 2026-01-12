@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Calendar, Clock, MapPin } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface CreateBookingPageProps {
@@ -38,8 +38,6 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     notes: ''
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchPets();
   }, [phone]);
@@ -47,20 +45,10 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
   const fetchPets = async () => {
     try {
       setLoadingPets(true);
-      const response = await fetch(
-        `${API_BASE}/customer/pets?phone=${encodeURIComponent(phone)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'apikey': publicAnonKey
-          }
-        }
+      const data = await apiClient.get<{ pets?: any[] }>(
+        `/customer/pets?phone=${encodeURIComponent(phone)}`
       );
-      
-      if (response.ok) {
-        const data = await response.json();
-        setPets(data.pets || []);
-      }
+      setPets(data.pets || []);
     } catch (err) {
       console.error('Error fetching pets:', err);
     } finally {
@@ -80,37 +68,23 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
       setLoading(true);
       setError(null);
       
-      const response = await fetch(
-        `${API_BASE}/booking/create`,
+      const data = await apiClient.post<{ success?: boolean; booking?: any }>(
+        `/booking/create`,
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'apikey': publicAnonKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            phone,
-            petId: formData.petId,
-            vendorId,
-            serviceId,
+          phone,
+          petId: formData.petId,
+          vendorId,
+          serviceId,
             serviceType: 'at_home', // Defaulting to at_home for now as per form
             scheduledDate: formData.scheduledDate,
             scheduledTime: formData.scheduledTime,
             address: formData.address,
             notes: formData.notes
-          })
-        }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create booking');
-      }
-      
-      toast.success('Booking created successfully!');
-      onSuccess(data.booking.id);
+          }
+        );
+        
+        toast.success('Booking created successfully!');
+        onSuccess(data.booking?.id || data.booking?.bookingId || '');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create booking';
       setError(msg);

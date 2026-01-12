@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plane, Star, MapPin, Search, Package, Truck, Globe, Shield } from 'lucide-react';
+import { ArrowLeft, Plane, Star, Sparkles, ChevronRight, Package, Truck, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -16,41 +16,31 @@ interface RelocationServicesLandingProps {
 export function RelocationServicesLanding({ phone, onBack, onNavigate }: RelocationServicesLandingProps) {
   const [loading, setLoading] = useState(true);
   const [relocationServices, setRelocationServices] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [stats, setStats] = useState({ activeServices: 25, relocations: '500+', rating: '4.7' });
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
     loadRelocationServices();
   }, []);
 
-  useEffect(() => {
-    if (searchQuery) {
-      const timeout = setTimeout(() => loadRelocationServices(), 300);
-      return () => clearTimeout(timeout);
-    } else {
-      loadRelocationServices();
-    }
-  }, [searchQuery]);
-
   const loadRelocationServices = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        roleId: 'pet_relocation'
-      });
-      
-      if (searchQuery) {
-        params.append('query', searchQuery);
-      }
-
-      // Append params to URL query string
-      const endpoint = `/customer/vendors/search${params.toString() ? `?${params.toString()}` : ''}`;
+      const endpoint = `/customer/discover-services?category=relocation&roleId=pet_relocation`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const serviceList = data.vendors || data.services || [];
       setRelocationServices(serviceList);
+      
+      setStats({
+        activeServices: serviceList.length || 25,
+        relocations: '500+',
+        rating: serviceList.length > 0 
+          ? (serviceList.reduce((acc: number, s: any) => acc + (s.rating || 4.7), 0) / serviceList.length).toFixed(1) 
+          : '4.7'
+      });
     } catch (error) {
       console.error('Error loading relocation services:', error);
       setRelocationServices([]);
+      setStats({ activeServices: 25, relocations: '500+', rating: '4.7' });
     } finally {
       setLoading(false);
     }
@@ -69,162 +59,148 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
+    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
+      {/* Header - Orange Background */}
+      <div className="px-6 pt-12 pb-6">
+        <div className="flex items-center gap-4 mb-6">
+           <button 
             onClick={onBack}
-            className="rounded-full text-white hover:bg-white/20"
+            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
           >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Pet Relocation</h1>
-            <p className="text-white/90 text-sm">Safe & secure pet transport</p>
-          </div>
+            <ArrowLeft className="w-5 h-5 text-white" />
+          </button>
+          <h1 className="text-2xl font-bold text-white">Pet Relocation</h1>
         </div>
-        
-        {/* Search Bar */}
-        <div className="mt-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/70" />
-            <input
-              type="text"
-              placeholder="Search relocation services..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/20 backdrop-blur rounded-lg text-white placeholder-white/70 border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
-            />
+
+        {/* Stats Bar - Glassmorphism */}
+        {stats && (
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
+               <div className="text-2xl font-bold text-white">{stats.activeServices}+</div>
+               <div className="text-xs text-white/80">Services</div>
+            </div>
+            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
+               <div className="text-2xl font-bold text-white">{stats.relocations}</div>
+               <div className="text-xs text-white/80">Relocations</div>
+            </div>
+            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
+               <div className="flex items-center gap-1 text-2xl font-bold text-white">
+                 {stats.rating} <Star className="w-4 h-4 fill-white" />
+               </div>
+               <div className="text-xs text-white/80">Rating</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <div className="p-4 space-y-6">
-        {/* Hero Banner */}
-        <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Safe Pet Relocation</h2>
-              <p className="text-gray-700 mb-4">Professional pet transport services for domestic & international moves</p>
+      {/* Main Content - White Card with Top Radius */}
+      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+        <div className="space-y-8">
+          
+          {/* Spotlight Offers */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-orange-500" />
+              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
             </div>
-            <div className="text-5xl">✈️</div>
-          </div>
-        </Card>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <Card className="p-4 text-center">
-            <div className="text-2xl font-bold text-blue-600">{stats.activeServices}</div>
-            <div className="text-xs text-gray-600 mt-1">Active Services</div>
-          </Card>
-          <Card className="p-4 text-center">
-            <div className="text-2xl font-bold text-blue-600">{stats.relocations}</div>
-            <div className="text-xs text-gray-600 mt-1">Relocations Done</div>
-          </Card>
-          <Card className="p-4 text-center">
-            <div className="flex items-center justify-center gap-1">
-              <Star className="w-5 h-5 fill-amber-500 text-amber-500" />
-              <span className="text-2xl font-bold text-blue-600">{stats.rating}</span>
-            </div>
-            <div className="text-xs text-gray-600 mt-1">Average Rating</div>
-          </Card>
-        </div>
-
-        {/* Service Types */}
-        <div>
-          <h2 className="font-bold text-gray-900 mb-4">Relocation Options</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {serviceTypes.map((type, idx) => (
-              <Card key={idx} className="p-4 hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-blue-300">
-                <div className="flex flex-col">
-                  <div className={`w-12 h-12 ${type.color} rounded-xl flex items-center justify-center mb-3`}>
-                    <type.icon className="w-6 h-6" />
+            
+            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
+              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">International</div>
+                    <div className="text-2xl font-bold text-slate-900">15% OFF</div>
+                    <div className="text-slate-500 text-xs">On Air Transport</div>
                   </div>
-                  <h3 className="font-semibold text-sm text-gray-900 mb-1">{type.label}</h3>
-                  <p className="text-xs text-gray-600">{type.desc}</p>
+                  <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
+                    <Plane className="w-5 h-5 text-blue-600" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
+                  <div className="text-xs text-slate-500">Valid on bookings above ₹10K</div>
+                  <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_relocation', serviceType: 'air' })}>
+                    Book Now
+                  </Button>
                 </div>
               </Card>
-            ))}
+            </div>
           </div>
-        </div>
 
-        {/* Featured Services */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900">Relocation Services</h2>
-            <span className="text-sm text-blue-600">{relocationServices.length} available</span>
-          </div>
-          
-          {relocationServices.length === 0 ? (
-            <Card className="p-8 text-center">
-              <Plane className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No relocation services available at the moment</p>
-              <p className="text-sm text-gray-400 mt-2">Check back later or try a different location</p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {relocationServices.slice(0, 10).map((service, idx) => (
-                <Card 
-                  key={service.id || service.vendorId || idx}
-                  className="p-4 hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => handleServiceSelect(service)}
+          {/* Service Types */}
+          <div>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Relocation Options</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {serviceTypes.map((type, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_relocation', serviceType: type.label })}
+                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                 >
-                  <div className="flex gap-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-                      {service.vendorProfileImage ? (
-                        <img 
-                          src={service.vendorProfileImage} 
-                          alt={service.vendorName}
-                          className="w-full h-full object-cover rounded-xl"
-                        />
-                      ) : (
-                        '✈️'
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-gray-900 truncate">{service.vendorName || service.businessName || 'Pet Relocation Service'}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                          <span className="text-sm font-medium">{(service.rating || 4.7).toFixed(1)}</span>
-                        </div>
-                        <span className="text-gray-400">•</span>
-                        <span className="text-sm text-gray-600">{(service.reviewCount || 0)} reviews</span>
-                      </div>
-                      {service.address && (
-                        <div className="flex items-center gap-1 mt-1 text-sm text-gray-600">
-                          <MapPin className="w-4 h-4" />
-                          <span className="truncate">{service.address}</span>
-                        </div>
-                      )}
-                      {service.serviceName && (
-                        <p className="text-sm text-blue-600 mt-1">{service.serviceName}</p>
-                      )}
-                    </div>
-                    <Button
-                      className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white shadow-lg"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleServiceSelect(service);
-                      }}
-                    >
-                      Book
-                    </Button>
+                  <div className={`w-10 h-10 rounded-xl ${type.color.split(' ')[0]} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+                    <type.icon className={`w-5 h-5 ${type.color.split(' ')[1]}`} />
                   </div>
-                </Card>
+                  <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{type.label}</h3>
+                  <p className="text-xs text-slate-500">{type.desc}</p>
+                </button>
               ))}
             </div>
-          )}
+          </div>
+
+          {/* Featured Services */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Relocation Services</h2>
+              <button 
+                className="text-sm text-orange-600 flex items-center gap-1 font-medium"
+                onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_relocation' })}
+              >
+                View All <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {relocationServices.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <Plane className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="font-semibold text-gray-900 mb-2">No Relocation Services Found</h3>
+                  <p className="text-sm text-gray-500">Check back soon for pet relocation services!</p>
+                </Card>
+              ) : (
+                relocationServices.slice(0, 5).map((service: any, index) => (
+                  <div 
+                    key={service.id || service.vendorId || index}
+                    className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
+                    onClick={() => handleServiceSelect(service)}
+                  >
+                    <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
+                       {service.vendorName ? service.vendorName.charAt(0) : service.businessName ? service.businessName.charAt(0) : 'R'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-slate-900 truncate">{service.vendorName || service.businessName || `Relocation Service ${index}`}</h3>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                        <span className="flex items-center gap-1 text-orange-500 font-bold">
+                          <Star className="w-3 h-3 fill-current" />
+                          {service.rating || 4.7}
+                        </span>
+                        <span>•</span>
+                        <span>{service.serviceName || 'Full Service'}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                       <ChevronRight className="w-5 h-5 text-gray-400" />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

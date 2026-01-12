@@ -18,7 +18,7 @@ import {
   UserCircle2,
   Building2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface UniversalVendorListViewProps {
@@ -43,7 +43,6 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
   // User location
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -99,18 +98,14 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
         params.append('lon', userLocation.lon.toString());
       }
 
-      // Reusing doctor search endpoint which is generic enough
-      const response = await fetch(
-        `${API_BASE}/customer/doctors/search?${params.toString()}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      // Use vendor search endpoint
+      const data = await apiClient.get<{ doctors?: any[]; vendors?: any[]; success?: boolean }>(
+        `/customer/vendors/search?${params.toString()}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setStaff(data.doctors || []);
-          setTotalResults(data.doctors?.length || 0);
-        }
+      
+      if (data.success !== false) {
+        setStaff(data.doctors || data.vendors || []);
+        setTotalResults((data.doctors || data.vendors || []).length);
       }
     } catch (error) {
       console.error('Error searching staff:', error);
@@ -129,17 +124,13 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
         params.append('lon', userLocation.lon.toString());
       }
 
-      const response = await fetch(
-        `${API_BASE}/customer/clinics/search?${params.toString()}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      const data = await apiClient.get<{ clinics?: any[]; vendors?: any[]; success?: boolean }>(
+        `/customer/vendors/search?${params.toString()}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setCenters(data.clinics || []);
-          setTotalResults(data.clinics?.length || 0);
-        }
+      
+      if (data.success !== false) {
+        setCenters(data.clinics || (data as any).vendors || []);
+        setTotalResults((data.clinics || (data as any).vendors || []).length);
       }
     } catch (error) {
       console.error('Error searching centers:', error);

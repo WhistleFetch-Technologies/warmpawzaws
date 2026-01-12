@@ -354,13 +354,25 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       if (groupBy === 'category' || groupBy === 'subcategory') {
         const grouped: Record<string, any> = {};
         
-        services.rows.forEach((service: any) => {
-          const categoryKey = service.category_name || service.category_id || 'Uncategorized';
-          const subcategoryKey = service.sub_category_name || service.sub_category_id || null;
+        (services.rows || []).forEach((service: any) => {
+          // Ensure all service fields are safe (no undefined)
+          const safeService = {
+            ...service,
+            id: String(service.id || service.service_id || ''),
+            service_id: String(service.service_id || service.id || ''),
+            service_name: String(service.service_name || ''),
+            category_id: String(service.category_id || ''),
+            category_name: String(service.category_name || 'Uncategorized'),
+            sub_category_id: String(service.sub_category_id || ''),
+            sub_category_name: String(service.sub_category_name || ''),
+          };
+          
+          const categoryKey = safeService.category_name || 'Uncategorized';
+          const subcategoryKey = safeService.sub_category_name || null;
           
           if (!grouped[categoryKey]) {
             grouped[categoryKey] = {
-              category_id: service.category_id,
+              category_id: safeService.category_id,
               category_name: categoryKey,
               services: [],
               subcategories: {},
@@ -370,26 +382,26 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           if (groupBy === 'subcategory' && subcategoryKey) {
             if (!grouped[categoryKey].subcategories[subcategoryKey]) {
               grouped[categoryKey].subcategories[subcategoryKey] = {
-                sub_category_id: service.sub_category_id,
+                sub_category_id: safeService.sub_category_id,
                 sub_category_name: subcategoryKey,
                 services: [],
               };
             }
-            grouped[categoryKey].subcategories[subcategoryKey].services.push(service);
+            grouped[categoryKey].subcategories[subcategoryKey].services.push(safeService);
           } else {
-            grouped[categoryKey].services.push(service);
+            grouped[categoryKey].services.push(safeService);
           }
         });
 
         // Convert grouped object to array format
         const groupedArray = Object.values(grouped).map((category: any) => {
-          if (groupBy === 'subcategory' && Object.keys(category.subcategories).length > 0) {
+          if (groupBy === 'subcategory' && Object.keys(category.subcategories || {}).length > 0) {
             category.subcategories = Object.values(category.subcategories).map((subcat: any) => ({
               ...subcat,
-              itemCount: subcat.services.length,
+              itemCount: (subcat.services || []).length,
             }));
           }
-          category.itemCount = category.services.length;
+          category.itemCount = (category.services || []).length;
           return category;
         });
 
@@ -411,17 +423,29 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         });
       }
 
+      // Ensure all service fields are safe (no undefined)
+      const safeServices = (services.rows || []).map((service: any) => ({
+        ...service,
+        id: String(service.id || service.service_id || ''),
+        service_id: String(service.service_id || service.id || ''),
+        service_name: String(service.service_name || ''),
+        category_id: String(service.category_id || ''),
+        category_name: String(service.category_name || ''),
+        sub_category_id: String(service.sub_category_id || ''),
+        sub_category_name: String(service.sub_category_name || ''),
+      }));
+
       return c.json({
         success: true,
-        services: services.rows,
-        total: services.rows.length,
+        services: safeServices,
+        total: safeServices.length,
         grouped: false,
         // ✅ Include role info if roleId or vendorId provided (no separate API call needed)
         role: (role || vendorRole) ? {
-          id: (role || vendorRole)!.id,
-          name: (role || vendorRole)!.name,
-          display_name: (role || vendorRole)!.display_name,
-          config: roleConfig,
+          id: String((role || vendorRole)!.id || ''),
+          name: String((role || vendorRole)!.name || ''),
+          display_name: String((role || vendorRole)!.display_name || ''),
+          config: roleConfig || {},
         } : null,
         vendorTypes: roleConfig?.vendorTypes || [],
         serviceStyles: roleConfig?.serviceStyles || [],

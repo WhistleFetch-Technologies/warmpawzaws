@@ -9,7 +9,6 @@ import {
   Copy, Check, Navigation, Route, Timer, TrendingUp, ShoppingCart,
   Home, FileText, Shield, AlertCircle
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { BookingDetailModal } from './BookingDetailModal';
 import { apiClient } from '@/lib/api-client';
 

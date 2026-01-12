@@ -17,7 +17,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface EnhancedVendorDiscoveryByProblemProps {

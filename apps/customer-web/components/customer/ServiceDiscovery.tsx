@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Search, MapPin, Star, Filter, ChevronRight, Clock, Phone, Award } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';

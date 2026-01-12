@@ -14,7 +14,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, DollarSign } from 'lucide-react';
 

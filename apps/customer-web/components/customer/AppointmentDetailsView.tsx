@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface AppointmentDetailsViewProps {
   appointmentId: string;
@@ -30,8 +30,6 @@ export function AppointmentDetailsView({
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [cancelling, setCancelling] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadAppointmentDetails();
   }, [appointmentId]);
@@ -39,22 +37,13 @@ export function AppointmentDetailsView({
   const loadAppointmentDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `${API_BASE}/appointment/${appointmentId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiClient.get<{ appointment?: any; vendor?: any; staff?: any; location?: any }>(
+        `/appointment/${appointmentId}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAppointment(data.appointment);
-        setVendor(data.vendor);
-        setStaff(data.staff);
-        setLocation(data.location);
-      } else {
-        console.error('Failed to load appointment details');
-      }
+      setAppointment(data.appointment);
+      setVendor(data.vendor);
+      setStaff(data.staff);
+      setLocation(data.location);
     } catch (error) {
       console.error('Error loading appointment:', error);
     } finally {
@@ -82,31 +71,23 @@ export function AppointmentDetailsView({
 
     try {
       setCancelling(true);
-      const response = await fetch(
-        `${API_BASE}/appointment/${appointmentId}/cancel`,
+      const data = await apiClient.post<{ success?: boolean }>(
+        `/appointment/${appointmentId}/cancel`,
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify({
-            cancelledBy: 'customer',
-            reason: cancelReason,
-            refundMethod
-          })
+          cancelledBy: 'customer',
+          reason: cancelReason,
+          refundMethod
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        alert(`Appointment cancelled successfully! Refund of ₹${data.refund.amount} will be processed to your ${refundMethod === 'wallet' ? 'wallet' : 'original payment method'}.`);
+      if (data.success !== false) {
+        const refundAmount = (data as any).refund?.amount || 0;
+        alert(`Appointment cancelled successfully! Refund of ₹${refundAmount} will be processed to your ${refundMethod === 'wallet' ? 'wallet' : 'original payment method'}.`);
         setShowCancelModal(false);
         loadAppointmentDetails(); // Refresh
         if (onCancel) onCancel(appointmentId);
       } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to cancel appointment');
+        alert((data as any).error || 'Failed to cancel appointment');
       }
     } catch (error) {
       console.error('Error cancelling appointment:', error);

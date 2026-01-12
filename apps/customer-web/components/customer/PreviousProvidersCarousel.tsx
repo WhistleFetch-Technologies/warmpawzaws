@@ -4,9 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Star, MapPin, Calendar, ArrowRight, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
-
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+import { apiClient } from '@/lib/api-client';
 
 interface PreviousProvider {
   providerId: string;
@@ -46,17 +44,10 @@ export function PreviousProvidersCarousel({
       if (serviceType) params.append('serviceType', serviceType);
       if (customerId) params.append('customerId', customerId);
 
-      const response = await fetch(
-        `${BASE_URL}/home-services/providers/previous?${params}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiClient.get<{ providers?: PreviousProvider[] }>(
+        `/home-services/providers/previous?${params}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setProviders(data.providers || []);
-      }
+      setProviders(data.providers || []);
     } catch (error) {
       console.error('Error fetching previous providers:', error);
       toast.error('Failed to load previous providers');

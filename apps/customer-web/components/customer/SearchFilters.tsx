@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Filter, X, Star, MapPin, DollarSign, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface SearchFiltersProps {

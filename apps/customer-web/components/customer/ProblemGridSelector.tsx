@@ -12,7 +12,6 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, ChevronRight, Check, Loader2, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface ProblemGridSelectorProps {

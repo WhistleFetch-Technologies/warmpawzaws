@@ -294,7 +294,20 @@ export function AdminApp() {
 
   const loadRoles = async () => {
     try {
-      const response = await apiClient.get<any>('/config/roles');
+      // Try /admin/roles first (preferred), fallback to /config/roles
+      let response: any;
+      try {
+        response = await apiClient.get<any>('/admin/roles');
+        if (response.success && response.roles) {
+          setRoles(response.roles || []);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to load from /admin/roles, trying /config/roles:', err);
+      }
+      
+      // Fallback to /config/roles
+      response = await apiClient.get<any>('/config/roles');
       setRoles(response.roles || []);
     } catch (err) {
       console.error('Error loading roles:', err);

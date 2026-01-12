@@ -9,6 +9,8 @@ import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
 import { VendorCapabilityDashboard } from './VendorCapabilityDashboard';
+import { VendorApprovedSetup } from './VendorApprovedSetup';
+import { VendorLandingPage } from './VendorLandingPage';
 import { apiClient, isUatMode } from '@/lib/api-client';
 
 interface VendorSession {
@@ -31,6 +33,7 @@ type VendorStatus =
   | 'submitted'              
   | 'pending'                
   | 'approved'               
+  | 'approved_services'      // Approved, needs service setup
   | 'rejected'               
   | 'clarification'          
   | 'active';               
@@ -113,7 +116,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           vendorData.isActive = true;
           vendorData.status = 'active';
         } else if (onboardingStatus === 'APPROVED') {
-          setStatus('approved');
+          // Check if services are configured
+          if (vendorData.servicesConfigured || vendorData.setupStage === 'availability_pending') {
+            setStatus('approved_services');
+          } else {
+            setStatus('approved_services'); // Show approved setup screen
+          }
           vendorData.isActive = false; // Not yet activated
           vendorData.status = 'approved';
         } else if (onboardingStatus === 'UNDER_REVIEW') {
@@ -287,8 +295,22 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
+  // Approved - Show Setup Screen
+  if (status === 'approved' || status === 'approved_services') {
+    return (
+      <VendorApprovedSetup 
+        vendorId={vendorData?.id || session.vendorId || ''}
+        roleId={vendorData?.role_id || vendorData?.roleId}
+        onComplete={() => {
+          // After setup, check status again or go to dashboard
+          checkVendorStatus();
+        }}
+      />
+    );
+  }
+
   // Active Vendor - Show Dashboard
-  if (status === 'active' || status === 'approved') {
+  if (status === 'active') {
     return (
       <VendorCapabilityDashboard 
         vendorId={vendorData?.id || session.vendorId || ''}

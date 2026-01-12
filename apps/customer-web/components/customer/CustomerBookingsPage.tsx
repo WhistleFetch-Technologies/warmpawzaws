@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar, Clock, MapPin, Phone } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Booking {
   id: string;
@@ -33,8 +33,6 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     if (phone) {
       fetchBookings();
@@ -46,21 +44,9 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
       setLoading(true);
       setError(null);
       
-      const response = await fetch(
-        `${API_BASE}/customer/bookings?phone=${encodeURIComponent(phone)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'apikey': publicAnonKey
-          }
-        }
+      const data = await apiClient.get<{ bookings?: Booking[] }>(
+        `/customer/bookings?phone=${encodeURIComponent(phone)}`
       );
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch bookings');
-      }
-      
-      const data = await response.json();
       setBookings(data.bookings || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load bookings');

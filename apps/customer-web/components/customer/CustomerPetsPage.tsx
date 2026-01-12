@@ -5,7 +5,7 @@ import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, Plus, Calendar, Activity, Weight } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Pet {
   id: string;
@@ -30,8 +30,6 @@ export function CustomerPetsPage({ phone, onBack, onNavigate, onAddPet }: Custom
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchPets();
   }, [phone]);
@@ -41,22 +39,15 @@ export function CustomerPetsPage({ phone, onBack, onNavigate, onAddPet }: Custom
       setLoading(true);
       setError(null);
       
-      const response = await fetch(
-        `${API_BASE}/customer/pets?phone=${encodeURIComponent(phone)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'apikey': publicAnonKey
-          }
-        }
+      const data = await apiClient.get<{ pets?: Pet[] }>(
+        `/customer/pets?phone=${encodeURIComponent(phone)}`
       );
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch pets');
+      if (data.pets) {
+        setPets(data.pets);
+      } else {
+        setPets([]);
       }
-      
-      const data = await response.json();
-      setPets(data.pets || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pets');
       console.error('Error fetching pets:', err);

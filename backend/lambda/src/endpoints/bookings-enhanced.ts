@@ -857,6 +857,15 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
+  // Compatibility endpoint for frontend
+  app.post('/booking/create', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result: any = await createHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
   app.get('/bookings/:bookingId', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { bookingId: c.req.param('bookingId') };

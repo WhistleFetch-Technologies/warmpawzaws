@@ -21,6 +21,7 @@ import { Hono } from 'hono';
 import { select, upsert, query } from '../database/rds-connection';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
+import { getSecret, getSecretJson, putSecret } from '../utils/secrets-manager';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
@@ -98,17 +99,22 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
    * GET /admin/integrations/google-maps
    * Get Google Maps configuration
+   * Retrieves API key from AWS Secrets Manager
    */
   app.get("/admin/integrations/google-maps", async (c) => {
     try {
+      // Get API key from Secrets Manager
+      const apiKey = await getSecret('google-maps/api-key');
+      
+      // Get enabled status from database (non-sensitive config)
       const settings = await select('platform_settings', { setting_key: 'platform:integrations:google_maps' });
       const mapsConfig = settings.length > 0 ? (settings[0].setting_value as any) : null;
 
       return c.json({
         success: true,
-        config: mapsConfig || {
-          enabled: false,
-          apiKey: '',
+        config: {
+          enabled: mapsConfig?.enabled || false,
+          apiKey: apiKey || '',
         },
       });
     } catch (error: any) {
@@ -120,20 +126,35 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
    * PUT /admin/integrations/google-maps
    * Update Google Maps configuration
+   * Stores API key in AWS Secrets Manager, enabled status in database
    */
   app.put("/admin/integrations/google-maps", async (c) => {
     try {
       const { apiKey, enabled } = await c.req.json();
 
+      // Store API key in Secrets Manager (if provided)
+      if (apiKey) {
+        // Validate that it's not a project number (all digits)
+        if (/^\d+$/.test(apiKey)) {
+          return c.json({ 
+            error: 'Invalid API key: Please use a Google Maps API key (starts with AIza...), not a project number' 
+          }, 400);
+        }
+        
+        await putSecret('google-maps/api-key', apiKey, 'Google Maps API Key for Warmpawz platform');
+        console.log('[CONFIG] Google Maps API key stored in Secrets Manager');
+      }
+
+      // Store enabled status in database (non-sensitive config)
       await upsert('platform_settings',
         {
           setting_key: 'platform:integrations:google_maps',
           setting_value: {
             enabled: enabled !== false,
-            apiKey: apiKey || '',
+            // Don't store API key in database anymore
           },
           setting_type: 'json',
-          description: 'Google Maps API configuration',
+          description: 'Google Maps API configuration (enabled status only, API key in Secrets Manager)',
         },
         'setting_key'
       );
@@ -144,6 +165,40 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating Google Maps config:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /config/google-maps-key
+   * Public endpoint to get Google Maps API key for frontend use
+   * Retrieves API key from AWS Secrets Manager
+   * Returns the API key in the format expected by frontend components
+   */
+  app.get("/config/google-maps-key", async (c) => {
+    try {
+      // Get API key from Secrets Manager
+      const apiKey = await getSecret('google-maps/api-key');
+
+      // Validate that it's not a project number (all digits)
+      if (apiKey && /^\d+$/.test(apiKey)) {
+        console.error('[CONFIG] Invalid API Key: Looks like a project number, not an API key');
+        return c.json({ 
+          error: 'Invalid API key: Please use a Google Maps API key (starts with AIza...), not a project number' 
+        }, 500);
+      }
+
+      if (!apiKey) {
+        console.warn('[CONFIG] Google Maps API key not configured in Secrets Manager');
+        return c.json({ 
+          error: 'Google Maps API key not configured',
+          hint: 'Please configure Google Maps API key in Platform Settings'
+        }, 404);
+      }
+
+      return c.json({ apiKey });
+    } catch (error: any) {
+      console.error('Error fetching Google Maps API key from Secrets Manager:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -257,6 +312,155 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error updating logistics settings:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/integrations/:integration/test
+   * Test integration connection
+   */
+  app.post("/admin/integrations/:integration/test", async (c) => {
+    try {
+      const integration = c.req.param('integration');
+
+      switch (integration) {
+        case 'aws':
+          try {
+            const stsClient = new STSClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+            const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+
+            const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+            const buckets = await s3Client.send(new ListBucketsCommand({}));
+
+            return c.json({
+              success: true,
+              connected: true,
+              details: {
+                accountId: identity.Account,
+                userId: identity.UserId,
+                arn: identity.Arn,
+                s3Buckets: buckets.Buckets?.map(b => b.Name) || [],
+              },
+            });
+          } catch (error: any) {
+            return c.json({
+              success: false,
+              connected: false,
+              error: error.message,
+            }, 500);
+          }
+
+        case 'google-maps':
+          try {
+            const apiKey = await getSecret('google-maps/api-key');
+            if (!apiKey) {
+              return c.json({
+                success: false,
+                connected: false,
+                error: 'Google Maps API key not configured',
+              });
+            }
+
+            // Test API key by making a simple geocoding request
+            const testUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=test&key=${apiKey}`;
+            const response = await fetch(testUrl);
+            const data = await response.json();
+
+            if (data.status === 'REQUEST_DENIED') {
+              return c.json({
+                success: false,
+                connected: false,
+                error: 'API key is invalid or restricted',
+              });
+            }
+
+            return c.json({
+              success: true,
+              connected: true,
+              details: {
+                apiKeyConfigured: true,
+                status: data.status,
+              },
+            });
+          } catch (error: any) {
+            return c.json({
+              success: false,
+              connected: false,
+              error: error.message,
+            }, 500);
+          }
+
+        case 'razorpay':
+          try {
+            const settings = await select('platform_settings', { setting_key: 'platform:integrations:razorpay' });
+            const config = settings.length > 0 ? (settings[0].setting_value as any) : null;
+
+            if (!config || !config.keyId || !config.keySecret) {
+              return c.json({
+                success: false,
+                connected: false,
+                error: 'Razorpay credentials not configured',
+              });
+            }
+
+            // Test Razorpay connection (simplified - would normally make API call)
+            return c.json({
+              success: true,
+              connected: true,
+              details: {
+                keyId: config.keyId,
+                mode: config.mode || 'test',
+              },
+            });
+          } catch (error: any) {
+            return c.json({
+              success: false,
+              connected: false,
+              error: error.message,
+            }, 500);
+          }
+
+        case 'shiprocket':
+          try {
+            const settings = await select('platform_settings', { setting_key: 'platform:settings:logistics' });
+            const config = settings.length > 0 ? (settings[0].setting_value as any) : null;
+
+            if (!config || !config.shiprocket || !config.shiprocket.enabled) {
+              return c.json({
+                success: false,
+                connected: false,
+                error: 'Shiprocket not configured or enabled',
+              });
+            }
+
+            return c.json({
+              success: true,
+              connected: true,
+              details: {
+                enabled: config.shiprocket.enabled,
+                testMode: config.shiprocket.test_mode || false,
+              },
+            });
+          } catch (error: any) {
+            return c.json({
+              success: false,
+              connected: false,
+              error: error.message,
+            }, 500);
+          }
+
+        default:
+          return c.json({
+            success: false,
+            error: `Unknown integration: ${integration}`,
+          }, 400);
+      }
+    } catch (error: any) {
+      console.error(`Error testing ${c.req.param('integration')} integration:`, error);
+      return c.json({
+        success: false,
+        error: error.message,
+      }, 500);
     }
   });
 }

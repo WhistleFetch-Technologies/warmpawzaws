@@ -45,34 +45,28 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
       <div className="w-full max-w-[430px] space-y-6">
         {/* Clock Icon */}
         <div className="flex justify-center pt-8">
-          <div className="w-24 h-24 rounded-full bg-[#FF8C42] flex items-center justify-center">
+          <div className="w-24 h-24 rounded-full bg-[#FF8C42] flex items-center justify-center shadow-lg">
             <Clock className="w-12 h-12 text-white" strokeWidth={2.5} />
           </div>
         </div>
 
         {/* Title */}
         <div className="text-center space-y-2">
-          <h1 className="text-2xl">
-            <span className="font-bold">Application</span>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Application
             <br />
-            <span className="font-bold">Under Review</span>
+            Under Review
           </h1>
+          <p className="text-gray-600 text-sm mt-3">
+            We're reviewing your WARMPAWS provider application
+          </p>
         </div>
 
         {/* Main Content */}
         <div className="space-y-4">
-          {/* Status Message */}
-          <div className="text-center">
-            <p className="text-gray-700">
-              We're reviewing your WARMPAWS
-              <br />
-              provider application
-            </p>
-          </div>
-
-          {/* Submission Time */}
-          <div className="bg-white rounded-xl border border-orange-200 p-4">
-            <p className="text-sm text-[#FF8C42] flex items-center justify-center gap-2">
+          {/* Submission Time Banner */}
+          <div className="bg-orange-100 rounded-full px-4 py-2 border border-orange-200">
+            <p className="text-sm text-[#FF8C42] flex items-center justify-center gap-2 font-medium">
               <Clock className="w-4 h-4" />
               Your application was submitted {timeAgo}
             </p>
@@ -164,16 +158,14 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
 
           {/* Support Section */}
           <div className="text-center pt-4">
-            <p className="text-sm text-gray-500 mb-4">
-              Need Help?
-              <br />
-              Have questions about your application status?
+            <p className="text-sm text-gray-600 mb-6">
+              Need Help? Have questions about your application status?
             </p>
 
             <div className="space-y-3">
               <Button
                 variant="outline"
-                className="w-full h-12 rounded-xl border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                className="w-full h-14 rounded-xl border-2 border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50 font-medium"
               >
                 <Mail className="w-5 h-5 mr-2" />
                 Email Support
@@ -181,7 +173,7 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
 
               <Button
                 variant="outline"
-                className="w-full h-12 rounded-xl border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                className="w-full h-14 rounded-xl border-2 border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50 font-medium"
               >
                 <Phone className="w-5 h-5 mr-2" />
                 Call Support

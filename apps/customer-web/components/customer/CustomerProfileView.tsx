@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, Camera, Edit2, Save, X } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface UserProfile {
@@ -37,7 +36,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile: UserProfile }>(`/customer/profile/${phone}`);
+      const result = await apiClient.get<{ profile: UserProfile }>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
       setProfile(result.profile);
       setPhotoPreview(result.profile.photo || '');
     } catch (error) {

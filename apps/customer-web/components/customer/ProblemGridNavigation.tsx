@@ -7,7 +7,6 @@ import {
   Bone, Heart, Pill, Users, TrendingUp, ChevronRight 
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface Problem {
   problemId: string;

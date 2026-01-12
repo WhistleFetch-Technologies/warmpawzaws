@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Image as ImageIcon
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { getAmenityById } from '@/lib/master-amenities';
 import { getVendorPersonalization } from '@/lib/vendor-personalization';
 
@@ -36,7 +35,6 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
   const [reviews, setReviews] = useState<any[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
   
   // Use whichever callback is provided
   const handleClose = onClose || onBack;

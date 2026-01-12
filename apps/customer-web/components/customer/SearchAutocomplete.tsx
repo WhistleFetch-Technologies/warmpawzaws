@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface AutocompleteProps {

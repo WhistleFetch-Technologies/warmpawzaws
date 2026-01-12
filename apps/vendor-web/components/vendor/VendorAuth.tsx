@@ -400,69 +400,67 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
   // OTP VERIFICATION SCREEN - PIXEL PERFECT
   if (showOtpScreen) {
+    const formattedPhone = phoneNumber.length === 10 
+      ? `+91 ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`
+      : `+91 ${phoneNumber}`;
+
     return (
       <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center bg-white">
-          <span className="text-sm">9:41</span>
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center bg-[#FF8C42]">
+          <span className="text-sm text-white">9:41</span>
           <div className="flex gap-1.5 items-center">
             <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
+              <rect y="8" width="3" height="4" rx="0.5" fill="white"/>
+              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="white"/>
+              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="white"/>
+              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
             </svg>
             <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
             <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
+              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="white" strokeWidth="1.5"/>
+              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="white"/>
+              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="white"/>
             </svg>
           </div>
         </div>
 
-        {/* Back Button */}
-        <div className="px-6 py-4">
-          <button
-            onClick={() => {
-              setShowOtpScreen(false);
-              setOtpCode('');
-              setError('');
-            }}
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M12 16L6 10L12 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span className="text-sm">Back</span>
-          </button>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-12">
+        {/* Orange Header Section */}
+        <div className="bg-[#FF8C42] px-6 pt-8 pb-12 flex flex-col items-center">
           {/* Logo */}
-          <div className="w-20 h-20 mb-8">
+          <div className="w-20 h-20 mb-6">
             <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
-          <h1 className="text-2xl text-gray-900 mb-2 text-center">
-            Enter verification code
+          {/* Title */}
+          <h1 className="text-2xl font-bold text-black text-center">
+            Verify Your Number
           </h1>
-          <p className="text-gray-600 text-center mb-8">
-            We've sent a code to +91 {phoneNumber}
-          </p>
+        </div>
+
+        {/* White Content Card */}
+        <div className="flex-1 -mt-8 bg-white rounded-t-[32px] px-6 pt-8 pb-12">
+          <div className="text-center mb-8">
+            <p className="text-gray-600 text-sm mb-1">
+              Enter the OTP sent to
+            </p>
+            <p className="text-gray-900 font-semibold text-base">
+              {formattedPhone}
+            </p>
+          </div>
 
           {error && (
-            <div className="mb-6 w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <div className="mb-6 w-full p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleVerifyOtp} className="w-full max-w-sm">
-            <div className="mb-6">
-              <Label htmlFor="otp" className="text-gray-700 mb-2 block">
-                6-digit code
+          <form onSubmit={handleVerifyOtp} className="w-full space-y-6">
+            <div>
+              <Label htmlFor="otp" className="text-gray-700 mb-2 block text-sm font-medium">
+                Verification Code
               </Label>
               <Input
                 id="otp"
@@ -472,8 +470,8 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 maxLength={6}
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
-                className="text-center text-2xl tracking-widest h-14 border-gray-300 focus:border-[#FF8C42] focus:ring-[#FF8C42]"
-                placeholder="••••••"
+                className="w-full h-14 text-center text-lg tracking-widest border-[#FF8C42]/30 focus:border-[#FF8C42] focus:ring-[#FF8C42] rounded-xl"
+                placeholder="Enter 6-digit code"
                 required
                 autoFocus
               />
@@ -482,20 +480,45 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             <Button
               type="submit"
               disabled={loading || otpCode.length !== 6}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base disabled:opacity-50"
+              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base font-bold disabled:opacity-50"
             >
-              {loading ? 'Verifying...' : 'Verify Code'}
+              {loading ? 'Verifying...' : 'Verify & Continue'}
             </Button>
+          </form>
 
+          <div className="mt-8 space-y-4 text-center">
             <button
               type="button"
               onClick={handleSendCode}
               disabled={loading}
-              className="w-full mt-4 text-[#FF8C42] hover:text-[#FF7A29] text-sm disabled:opacity-50"
+              className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm underline disabled:opacity-50"
             >
-              Resend code
+              Resend Code
             </button>
-          </form>
+
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">
+                Trouble with verification?{' '}
+                <a href="#" className="text-[#FF8C42] underline">Get Help</a>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOtpScreen(false);
+                  setOtpCode('');
+                  setError('');
+                }}
+                className="text-sm text-blue-600 underline"
+              >
+                &lt; Change phone number
+              </button>
+            </div>
+
+            <div className="pt-8 space-y-1 text-xs text-gray-400">
+              <p>WARMPAWS Provider v2.1.0</p>
+              <p>© 2025 WARMPAWS Inc. All rights reserved</p>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -506,85 +529,105 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     return (
       <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center bg-white">
-          <span className="text-sm">9:41</span>
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center bg-[#FF8C42]">
+          <span className="text-sm text-white">9:41</span>
           <div className="flex gap-1.5 items-center">
             <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
+              <rect y="8" width="3" height="4" rx="0.5" fill="white"/>
+              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="white"/>
+              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="white"/>
+              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
             </svg>
             <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
             <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
+              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="white" strokeWidth="1.5"/>
+              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="white"/>
+              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="white"/>
             </svg>
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-12">
+        {/* Orange Header Section */}
+        <div className="bg-[#FF8C42] px-6 pt-8 pb-16 flex flex-col items-center">
           {/* Logo */}
-          <div className="w-32 h-32 mb-8">
+          <div className="w-24 h-24 mb-6">
             <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
-          <h1 className="text-3xl text-gray-900 mb-2 text-center">
-            Warmpawz Provider
+          {/* Welcome Message */}
+          <h1 className="text-3xl font-bold text-white mb-2 text-center">
+            Welcome to WARMPAWZ!
           </h1>
-          <p className="text-gray-600 text-center mb-10">
-            Professional pet care services platform
+        </div>
+
+        {/* White Content Card */}
+        <div className="flex-1 -mt-8 bg-white rounded-t-[32px] px-6 pt-8 pb-12">
+          <p className="text-gray-600 text-center mb-8 text-base">
+            Join our community of professional pet care providers
           </p>
 
           {error && (
-            <div className="mb-6 w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <div className="mb-6 w-full p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSendCode} className="w-full max-w-sm">
-            <div className="mb-6">
-              <Label htmlFor="phone" className="text-gray-700 mb-2 block">
-                Mobile Number
+          <form onSubmit={handleSendCode} className="w-full space-y-6">
+            <div>
+              <Label htmlFor="phone" className="text-gray-700 mb-2 block text-sm font-medium">
+                Phone Number
               </Label>
-              <div className="flex gap-3">
-                <div className="bg-gray-100 border border-gray-300 rounded-xl px-4 py-3 flex items-center">
-                  <span className="text-gray-900">+91</span>
-                </div>
-                <Input
-                  id="phone"
-                  type="tel"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={10}
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="flex-1 h-12 border-gray-300 focus:border-[#FF8C42] focus:ring-[#FF8C42]"
-                  placeholder="9876543210"
-                  required
-                  autoFocus
-                />
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                🔐 UAT Mode: OTP is 123456 for all numbers
-              </p>
+              <Input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={10}
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                className="w-full h-14 border-[#FF8C42]/30 focus:border-[#FF8C42] focus:ring-[#FF8C42] rounded-xl text-base"
+                placeholder="+91 74493 38923"
+                required
+                autoFocus
+              />
             </div>
 
             <Button
               type="submit"
               disabled={loading || phoneNumber.length !== 10}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base disabled:opacity-50"
+              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base font-bold disabled:opacity-50"
             >
-              {loading ? 'Sending code...' : 'Continue'}
+              {loading ? 'Sending...' : 'Send Verification Code'}
             </Button>
           </form>
 
-          <p className="text-xs text-gray-400 text-center mt-10 max-w-xs">
-            By continuing, you agree to our Terms of Service and Privacy Policy
-          </p>
+          <div className="mt-8 space-y-4 text-center">
+            <p className="text-sm text-gray-600">
+              By continuing, you agree to our{' '}
+              <a href="#" className="text-[#FF8C42] underline">Terms of Service</a>
+              {' '}and{' '}
+              <a href="#" className="text-[#FF8C42] underline">Privacy Policy</a>
+            </p>
+            
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+              <span>Already have an account?</span>
+              <button
+                type="button"
+                onClick={() => setIsSignUp(false)}
+                className="text-[#FF8C42] underline font-medium"
+              >
+                Sign In
+              </button>
+            </div>
+
+            <div className="pt-6 space-y-1 text-xs text-gray-400">
+              <p>Need Help?</p>
+              <p>WARMPAWS Provider v2.1.0</p>
+              <p>© 2025 WARMPAWZ Inc. All rights reserved</p>
+            </div>
+          </div>
         </div>
       </div>
     );

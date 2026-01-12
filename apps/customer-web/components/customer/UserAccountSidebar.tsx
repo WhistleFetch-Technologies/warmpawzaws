@@ -231,7 +231,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile/${phone}`);
+      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
 
       if (result && result.profile) {
         setProfile({
@@ -294,7 +294,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     setSaving(true);
     try {
-      await apiClient.post(`/customer/profile/${phone}`, { phone: phone, profile: profile });
+      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: profile });
       alert('✅ Profile updated successfully!');
       await loadProfile();
       setEditMode(false);
@@ -321,7 +321,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadBookings = async () => {
     try {
       setLoadingBookings(true);
-      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings/${phone}`);
+      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${encodeURIComponent(phone)}`);
       console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
       setBookings(result.bookings || []);
     } catch (error) {

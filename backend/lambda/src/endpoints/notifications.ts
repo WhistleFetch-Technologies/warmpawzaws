@@ -242,5 +242,140 @@ export function registerNotificationEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /customer/notifications
+   * Compatibility endpoint - Get notifications by phone (customer)
+   */
+  app.get("/customer/notifications", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // Find customer by phone
+      const customers = await select('customers', { phone: phone.replace(/[^0-9]/g, '') });
+      if (customers.length === 0) {
+        return c.json({ notifications: [], success: true });
+      }
+
+      const customerId = customers[0].id;
+
+      // Get notifications
+      const notifications = await query(
+        `SELECT * FROM notifications
+         WHERE recipient_id = $1 AND recipient_type = 'customer'
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [customerId, limit]
+      );
+
+      return c.json({
+        success: true,
+        notifications: notifications.rows || [],
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer notifications:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /notifications/mark-read
+   * Compatibility endpoint - Mark notification as read
+   */
+  app.post("/notifications/mark-read", async (c) => {
+    try {
+      const { notificationId } = await c.req.json();
+
+      if (!notificationId) {
+        return c.json({ error: 'notificationId is required' }, 400);
+      }
+
+      const updated = await update('notifications',
+        { id: notificationId },
+        { is_read: true, read_at: new Date() }
+      );
+
+      if (updated.length === 0) {
+        return c.json({ error: 'Notification not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        notification: updated[0],
+      });
+    } catch (error: any) {
+      console.error('Error marking notification as read:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /notifications/mark-all-read
+   * Compatibility endpoint - Mark all notifications as read by phone
+   */
+  app.post("/notifications/mark-all-read", async (c) => {
+    try {
+      const { phone } = await c.req.json();
+
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // Find customer by phone
+      const customers = await select('customers', { phone: phone.replace(/[^0-9]/g, '') });
+      if (customers.length === 0) {
+        return c.json({ success: true, message: 'No notifications to mark' });
+      }
+
+      const customerId = customers[0].id;
+
+      await query(
+        `UPDATE notifications 
+         SET is_read = true, read_at = NOW() 
+         WHERE recipient_id = $1 AND recipient_type = 'customer' AND is_read = false`,
+        [customerId]
+      );
+
+      return c.json({
+        success: true,
+        message: 'All notifications marked as read',
+      });
+    } catch (error: any) {
+      console.error('Error marking all notifications as read:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /notifications/:id
+   * Delete a notification
+   */
+  app.delete("/notifications/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+
+      const result = await query(
+        'DELETE FROM notifications WHERE id = $1 RETURNING *',
+        [id]
+      );
+
+      if (result.rows.length === 0) {
+        return c.json({ error: 'Notification not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Notification deleted',
+      });
+    } catch (error: any) {
+      console.error('Error deleting notification:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

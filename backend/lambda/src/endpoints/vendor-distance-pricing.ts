@@ -26,14 +26,13 @@ import { select, insert, update, query, deleteRows } from '../database/rds-conne
 class GetDistancePricingRulesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.pathParameters?.vendorId;
+      const vendorId = context.event.pathParameters?.vendorId;
       if (!vendorId) {
         return this.error('Vendor ID is required', 400);
       }
 
       const rules = await select(
         'vendor_distance_pricing',
-        ['*'],
         { vendor_id: vendorId },
         { orderBy: 'created_at DESC' }
       );
@@ -56,12 +55,12 @@ class GetDistancePricingRulesHandler extends BaseHandler {
 class CreateDistancePricingRuleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.pathParameters?.vendorId;
+      const vendorId = context.event.pathParameters?.vendorId;
       if (!vendorId) {
         return this.error('Vendor ID is required', 400);
       }
 
-      const body = context.body as any;
+      const body = this.parseBody(context.event);
       const {
         serviceName,
         basePrice,
@@ -111,14 +110,14 @@ class CreateDistancePricingRuleHandler extends BaseHandler {
 class UpdateDistancePricingRuleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.pathParameters?.vendorId;
-      const ruleId = context.pathParameters?.ruleId;
+      const vendorId = context.event.pathParameters?.vendorId;
+      const ruleId = context.event.pathParameters?.ruleId;
       
       if (!vendorId || !ruleId) {
         return this.error('Vendor ID and Rule ID are required', 400);
       }
 
-      const body = context.body as any;
+      const body = this.parseBody(context.event);
       const updateData: any = {
         updated_at: new Date().toISOString()
       };
@@ -141,7 +140,6 @@ class UpdateDistancePricingRuleHandler extends BaseHandler {
 
       const updatedRule = await select(
         'vendor_distance_pricing',
-        ['*'],
         { id: ruleId, vendor_id: vendorId }
       );
 
@@ -163,8 +161,8 @@ class UpdateDistancePricingRuleHandler extends BaseHandler {
 class DeleteDistancePricingRuleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.pathParameters?.vendorId;
-      const ruleId = context.pathParameters?.ruleId;
+      const vendorId = context.event.pathParameters?.vendorId;
+      const ruleId = context.event.pathParameters?.ruleId;
       
       if (!vendorId || !ruleId) {
         return this.error('Vendor ID and Rule ID are required', 400);
@@ -193,14 +191,14 @@ class DeleteDistancePricingRuleHandler extends BaseHandler {
 class ToggleDistancePricingRuleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.pathParameters?.vendorId;
-      const ruleId = context.pathParameters?.ruleId;
+      const vendorId = context.event.pathParameters?.vendorId;
+      const ruleId = context.event.pathParameters?.ruleId;
       
       if (!vendorId || !ruleId) {
         return this.error('Vendor ID and Rule ID are required', 400);
       }
 
-      const body = context.body as any;
+      const body = this.parseBody(context.event);
       const isActive = body.isActive !== undefined ? body.isActive : true;
 
       await update(
