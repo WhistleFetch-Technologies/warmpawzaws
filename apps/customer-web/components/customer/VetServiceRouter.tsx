@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -305,6 +306,19 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
             ))}
           </div>
         </div>
+
+        {/* Health Problems Grid - Using ProblemGridSection with 2D icons */}
+        <ProblemGridSection
+          roleId="veterinarian"
+          roleName="Veterinarian"
+          title="Consult by Problem"
+          icon={Stethoscope}
+          problems={VET_PROBLEMS}
+          onNavigate={(screen, data) => {
+            console.log('🔵 [Vet] Problem grid navigation:', screen, data);
+            onNavigate(screen, data);
+          }}
+        />
 
         {/* Featured Vets */}
         <div className="mb-6">
