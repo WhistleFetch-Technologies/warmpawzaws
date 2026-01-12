@@ -26,7 +26,7 @@ import {
 } from "@/components/ecommerce";
 
 interface ECommerceManagementProps {
-	onBack: () => void;
+	onBack?: () => void;
 }
 
 type TabType =
@@ -42,7 +42,7 @@ type TabType =
 
 export default function ECommerceManagement({
 	onBack,
-}: ECommerceManagementProps) {
+}: ECommerceManagementProps = {}) {
 	const [activeTab, setActiveTab] = useState<TabType>("dashboard");
 
 	const tabs = [
