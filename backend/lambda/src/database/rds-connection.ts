@@ -231,7 +231,19 @@ export async function select(
     const conditions: string[] = [];
     for (const [key, value] of Object.entries(filters)) {
       if (value !== undefined && value !== null) {
-        conditions.push(`${key} = $${paramIndex}`);
+        // Auto-detect UUID columns (id, *_id) and cast appropriately
+        // This prevents "operator does not exist: uuid = text" errors
+        if (key === 'id' || key.endsWith('_id')) {
+          // Try to detect if it's a UUID format (basic check)
+          const isLikelyUuid = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+          if (isLikelyUuid) {
+            conditions.push(`${key} = $${paramIndex}::uuid`);
+          } else {
+            conditions.push(`${key} = $${paramIndex}::text`);
+          }
+        } else {
+          conditions.push(`${key} = $${paramIndex}`);
+        }
         params.push(value);
         paramIndex++;
       }
