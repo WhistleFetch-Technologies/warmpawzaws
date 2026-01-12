@@ -1,0 +1,346 @@
+"use client";
+
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Star, MapPin, Phone, Mail, Clock, Award, CheckCircle2, Package, TrendingUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+
+interface VendorProfileDetailProps {
+  vendorId: string;
+  phone?: string;
+  onBack: () => void;
+  onBook?: (vendorId: string) => void;
+  onNavigate?: (screen: string, data?: any) => void;
+}
+
+export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigate }: VendorProfileDetailProps) {
+  const [loading, setLoading] = useState(true);
+  const [vendor, setVendor] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [rating, setRating] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'reviews'>('overview');
+
+  useEffect(() => {
+    loadVendorData();
+  }, [vendorId]);
+
+  const loadVendorData = async () => {
+    try {
+      setLoading(true);
+      
+      const [vendorRes, productsRes, reviewsRes] = await Promise.all([
+        apiClient.get<any>(`/vendor/${vendorId}`),
+        apiClient.get<any>(`/vendor/${vendorId}/products`),
+        apiClient.get<any>(`/vendor/${vendorId}/reviews`)
+      ]);
+
+      if (vendorRes.vendor || vendorRes.success) {
+        setVendor(vendorRes.vendor || vendorRes);
+        setRating(vendorRes.rating || { averageRating: vendorRes.rating || 4.5, totalReviews: vendorRes.reviewCount || 0 });
+      }
+
+      if (productsRes.products) {
+        setProducts(productsRes.products.slice(0, 10));
+      }
+
+      if (reviewsRes.reviews || reviewsRes.recentReviews) {
+        setReviews(reviewsRes.reviews || reviewsRes.recentReviews || []);
+      }
+    } catch (error) {
+      console.error('Error loading vendor data:', error);
+      toast.error('Failed to load vendor information');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
+      </div>
+    );
+  }
+
+  if (!vendor) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
+        <Card className="p-8 text-center">
+          <p className="text-gray-600 mb-4">Vendor information not available</p>
+          <Button onClick={onBack} variant="outline">Go Back</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const vendorName = vendor.businessName || vendor.vendorName || vendor.name || 'Vendor';
+  const vendorImage = vendor.vendorProfileImage || vendor.image;
+  const averageRating = rating?.averageRating || vendor.rating || 4.5;
+  const totalReviews = rating?.totalReviews || vendor.reviewCount || vendor.totalReviews || 0;
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
+      {/* Header */}
+      <div className="bg-white sticky top-0 z-50 border-b border-gray-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            className="rounded-full"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div className="flex-1">
+            <h1 className="text-xl font-bold text-gray-900">Vendor Profile</h1>
+          </div>
+        </div>
+
+        {/* Vendor Info Header */}
+        <div className="px-4 pb-4">
+          <div className="flex gap-4">
+            <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D] rounded-xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden">
+              {vendorImage ? (
+                <img src={vendorImage} alt={vendorName} className="w-full h-full object-cover" />
+              ) : (
+                <span>{vendorName.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">{vendorName}</h2>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-1">
+                  <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+                  <span className="font-semibold">{averageRating.toFixed(1)}</span>
+                </div>
+                <span className="text-gray-400">•</span>
+                <span className="text-sm text-gray-600">{totalReviews} reviews</span>
+              </div>
+              {vendor.address && (
+                <div className="flex items-center gap-1 text-sm text-gray-600">
+                  <MapPin className="w-4 h-4" />
+                  <span className="truncate">{vendor.address}</span>
+                </div>
+              )}
+              {vendor.isVerified && (
+                <div className="flex items-center gap-1 mt-2">
+                  <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Verified
+                  </Badge>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3 mt-4">
+            <Card className="p-3 text-center">
+              <div className="text-lg font-bold text-[#FF8C42]">{products.length}+</div>
+              <div className="text-xs text-gray-600 mt-1">Products</div>
+            </Card>
+            <Card className="p-3 text-center">
+              <div className="text-lg font-bold text-[#FF8C42]">{averageRating.toFixed(1)}</div>
+              <div className="text-xs text-gray-600 mt-1">Rating</div>
+            </Card>
+            <Card className="p-3 text-center">
+              <div className="text-lg font-bold text-[#FF8C42]">{vendor.orderCount || '0'}+</div>
+              <div className="text-xs text-gray-600 mt-1">Orders</div>
+            </Card>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 px-4">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'overview'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('products')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'products'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Products ({products.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('reviews')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'reviews'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Reviews ({totalReviews})
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 space-y-4">
+        {activeTab === 'overview' && (
+          <>
+            {vendor.description && (
+              <Card className="p-4">
+                <h3 className="font-semibold text-gray-900 mb-2">About</h3>
+                <p className="text-sm text-gray-600">{vendor.description}</p>
+              </Card>
+            )}
+
+            {/* Contact Info */}
+            <Card className="p-4">
+              <h3 className="font-semibold text-gray-900 mb-3">Contact Information</h3>
+              <div className="space-y-3">
+                {vendor.phone && (
+                  <div className="flex items-center gap-3">
+                    <Phone className="w-5 h-5 text-gray-400" />
+                    <span className="text-sm text-gray-700">{vendor.phone}</span>
+                  </div>
+                )}
+                {vendor.email && (
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-5 h-5 text-gray-400" />
+                    <span className="text-sm text-gray-700">{vendor.email}</span>
+                  </div>
+                )}
+                {vendor.address && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <span className="text-sm text-gray-700">{vendor.address}</span>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* Business Hours */}
+            {vendor.businessHours && (
+              <Card className="p-4">
+                <h3 className="font-semibold text-gray-900 mb-3">Business Hours</h3>
+                <div className="space-y-2 text-sm">
+                  {Object.entries(vendor.businessHours).map(([day, hours]: [string, any]) => (
+                    <div key={day} className="flex justify-between">
+                      <span className="text-gray-600 capitalize">{day}</span>
+                      <span className="text-gray-900">{hours || 'Closed'}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </>
+        )}
+
+        {activeTab === 'products' && (
+          <div className="space-y-3">
+            {products.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No products available</p>
+              </Card>
+            ) : (
+              products.map((product) => (
+                <Card 
+                  key={product.id} 
+                  className="p-4 hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => onNavigate?.('product_detail', { product })}
+                >
+                  <div className="flex gap-4">
+                    {product.image && (
+                      <img 
+                        src={product.image} 
+                        alt={product.name}
+                        className="w-20 h-20 object-cover rounded-lg"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900 mb-1">{product.name}</h4>
+                      <p className="text-sm text-gray-600 mb-2 line-clamp-2">{product.description}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#FF8C42]">₹{product.price?.toFixed(2) || '0.00'}</span>
+                        {product.rating && (
+                          <div className="flex items-center gap-1">
+                            <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                            <span className="text-sm text-gray-600">{product.rating.toFixed(1)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'reviews' && (
+          <div className="space-y-3">
+            {reviews.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No reviews yet</p>
+              </Card>
+            ) : (
+              reviews.map((review) => (
+                <Card key={review.id || review.reviewId} className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D] rounded-full flex items-center justify-center text-white font-semibold">
+                      {(review.customerName || review.customer_name || 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="font-semibold text-gray-900">{review.customerName || review.customer_name || 'Anonymous'}</h4>
+                        <span className="text-xs text-gray-500">
+                          {new Date(review.createdAt || review.date || review.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 mb-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`w-4 h-4 ${
+                              star <= (review.rating || 5)
+                                ? 'text-amber-500 fill-amber-500'
+                                : 'text-gray-300'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      {review.comment || review.review_text && (
+                        <p className="text-sm text-gray-600">{review.comment || review.review_text}</p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Fixed Bottom CTA */}
+      {onBook && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto shadow-lg">
+          <Button
+            onClick={() => onBook(vendorId)}
+            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-12 shadow-lg"
+          >
+            View Products
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+

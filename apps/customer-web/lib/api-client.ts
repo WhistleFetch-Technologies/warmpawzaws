@@ -191,8 +191,11 @@ export class ApiClient {
     }, retryConfig);
   }
 
-  async delete<T>(endpoint: string, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
-    return this.request<T>(endpoint, { method: 'DELETE' }, retryConfig);
+  async delete<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
+    return this.request<T>(endpoint, { 
+      method: 'DELETE',
+      body: data ? JSON.stringify(data) : undefined
+    }, retryConfig);
   }
   
   /**
@@ -299,5 +302,231 @@ export const supportCrmApi = {
   
   updateTicketStatus: (ticketId: string, status: string, resolution?: string) =>
     apiClient.put(`/support/tickets/${ticketId}/status`, { status, resolution }),
+};
+
+// ✅ NEW: Bookings CRUD API
+export const bookingsApi = {
+  // CREATE
+  create: (data: {
+    customerId: string;
+    vendorId: string;
+    serviceId: string;
+    bookingDate: string;
+    bookingTime: string;
+    serviceType?: 'at_vendor' | 'at_home' | 'online';
+    address?: string;
+    staffId?: string;
+    petId?: string;
+    amount?: number;
+    idempotencyKey?: string;
+  }) => apiClient.post('/bookings/create', data),
+
+  // READ
+  get: (bookingId: string) => apiClient.get(`/bookings/${bookingId}`),
+  getHistory: (bookingId: string) => apiClient.get(`/bookings/${bookingId}/history`),
+  list: (params?: {
+    customerId?: string;
+    vendorId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    return apiClient.get(`/customer/${params?.customerId || 'bookings'}/bookings${query ? `?${query}` : ''}`);
+  },
+
+  // UPDATE
+  updateStatus: (bookingId: string, data: {
+    status: string;
+    reason?: string;
+    actorId?: string;
+    actorType?: string;
+  }) => apiClient.put(`/bookings/${bookingId}/status`, data),
+
+  // CANCEL
+  cancel: (bookingId: string, data: {
+    reason?: string;
+    customerId?: string;
+    actorId?: string;
+    actorType?: string;
+  }) => apiClient.post(`/bookings/${bookingId}/cancel`, data),
+
+  // RESCHEDULE
+  reschedule: (bookingId: string, data: {
+    newDate: string;
+    newTime: string;
+    reason?: string;
+    customerId?: string;
+    actorId?: string;
+    actorType?: string;
+  }) => apiClient.post(`/bookings/${bookingId}/reschedule`, data),
+};
+
+// ✅ NEW: Orders CRUD API
+export const ordersApi = {
+  // CREATE
+  create: (data: {
+    customerId: string;
+    vendorId?: string;
+    items: Array<{
+      productId?: string;
+      serviceId?: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      category?: string;
+      hsnCode?: string;
+    }>;
+    shippingAddress: any;
+    subtotal: number;
+    taxAmount?: number;
+    shippingAmount?: number;
+    discountAmount?: number;
+    totalAmount: number;
+  }) => apiClient.post('/orders', data),
+
+  // READ
+  get: (orderId: string) => apiClient.get(`/customer/orders/${orderId}`),
+  list: (params?: {
+    customerId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    return apiClient.get(`/customer/orders${query ? `?${query}` : ''}`);
+  },
+  getInvoice: (orderId: string) => apiClient.get(`/customer/orders/${orderId}/invoice`),
+  getTracking: (orderId: string) => apiClient.get(`/orders/${orderId}/tracking`),
+
+  // UPDATE
+  update: (orderId: string, data: {
+    shippingAddress?: any;
+    shippingCity?: string;
+    shippingState?: string;
+    shippingPincode?: string;
+    shippingPhone?: string;
+    subtotal?: number;
+    taxAmount?: number;
+    shippingAmount?: number;
+    discountAmount?: number;
+    totalAmount?: number;
+    items?: Array<any>;
+  }) => apiClient.put(`/orders/${orderId}`, data),
+  updateStatus: (orderId: string, data: {
+    status: string;
+    trackingNumber?: string;
+    notes?: string;
+  }) => apiClient.put(`/orders/${orderId}/status`, data),
+
+  // CANCEL
+  cancel: (orderId: string, data: {
+    reason?: string;
+  }) => apiClient.post(`/orders/${orderId}/cancel`, data),
+};
+
+// ✅ NEW: Customer CRUD API
+export const customerApi = {
+  // READ
+  get: (customerId: string) => apiClient.get(`/customer/${customerId}`),
+  getByPhone: (phone: string) => apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`),
+
+  // UPDATE
+  update: (customerId: string, data: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    address?: string;
+    pincode?: string;
+    photo?: string;
+  }) => apiClient.put(`/customer/${customerId}`, data),
+
+  // DELETE (deactivate)
+  deactivate: (customerId: string, data?: {
+    reason?: string;
+    permanentDelete?: boolean;
+  }) => apiClient.delete(`/customer/${customerId}`, data),
+};
+
+// ✅ NEW: Pets CRUD API
+export const petsApi = {
+  // CREATE
+  create: (data: {
+    customerId: string;
+    name: string;
+    species: string;
+    breed?: string;
+    age?: number;
+    ageUnit?: 'years' | 'months';
+    gender?: string;
+    weight?: number;
+    color?: string;
+    photos?: string[];
+    medicalHistory?: any;
+    vaccinationStatus?: boolean;
+    spayedNeutered?: boolean;
+    microchipped?: boolean;
+    specialNeeds?: string;
+  }) => apiClient.post('/pets', data),
+
+  // READ
+  get: (petId: string) => apiClient.get(`/pets/${petId}`),
+  getByCustomer: (customerId: string) => apiClient.get(`/pets/customer/${customerId}`),
+  getByPhone: (phone: string) => apiClient.get(`/customer/pets/${phone}`),
+
+  // UPDATE
+  update: (petId: string, data: {
+    name?: string;
+    species?: string;
+    breed?: string;
+    age?: number;
+    ageUnit?: 'years' | 'months';
+    gender?: string;
+    weight?: number;
+    photos?: string[];
+    medicalHistory?: any;
+  }) => apiClient.put(`/pets/${petId}`, data),
+
+  // DELETE
+  delete: (petId: string) => apiClient.delete(`/pets/${petId}`),
+};
+
+// ✅ NEW: Addresses CRUD API
+export const addressesApi = {
+  // CREATE
+  create: (customerId: string, data: {
+    label?: string;
+    name: string;
+    phone: string;
+    addressLine1: string;
+    addressLine2?: string;
+    city: string;
+    state: string;
+    pincode: string;
+    landmark?: string;
+    coordinates?: any;
+    isDefault?: boolean;
+  }) => apiClient.post(`/customer/${customerId}/addresses`, data),
+
+  // READ
+  list: (customerId: string) => apiClient.get(`/customer/${customerId}/addresses`),
+
+  // UPDATE
+  update: (customerId: string, addressId: string, data: {
+    label?: string;
+    name?: string;
+    phone?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    landmark?: string;
+    coordinates?: any;
+    isDefault?: boolean;
+  }) => apiClient.put(`/customer/${customerId}/addresses/${addressId}`, data),
+
+  // DELETE
+  delete: (customerId: string, addressId: string) => apiClient.delete(`/customer/${customerId}/addresses/${addressId}`),
 };
 

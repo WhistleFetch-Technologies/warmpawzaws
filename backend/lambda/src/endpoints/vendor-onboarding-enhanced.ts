@@ -49,6 +49,12 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Phone number is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    // Check if UAT mode is enabled
+    const isUATMode = process.env.UAT_MODE === 'true' || 
+                     process.env.NODE_ENV === 'development' ||
+                     process.env.STAGE === 'dev' ||
+                     (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
+
     try {
       // Get or create vendor identity
       let identity = await select('vendor_identity', { phone });
@@ -92,6 +98,23 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       }, requestId);
     } catch (error: any) {
       console.error('Error getting onboarding status:', error);
+      
+      // In UAT mode, return a default response if table doesn't exist
+      if (isUATMode && (error.message?.includes('does not exist') || error.message?.includes('relation'))) {
+        console.warn('[ONBOARDING] UAT Mode: Table missing, returning default INIT status');
+        return this.success({
+          identity: {
+            phone,
+            onboarding_status: 'INIT',
+            metadata: {},
+            created_at: new Date().toISOString(),
+          },
+          application: null,
+          role: null,
+          nextStep: '/onboarding/role-selection',
+        }, requestId);
+      }
+      
       return this.error(
         error.message || 'Failed to get onboarding status',
         500,
@@ -353,17 +376,49 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
         );
       }
 
-      // Get form schema from role config
-      const schemaResult = await query(
-        `SELECT get_onboarding_form_schema($1, $2) as schema`,
-        [identity.selected_role_id, identity.vendor_type]
-      );
+      // Get form schema from onboarding forms table (matching reference implementation)
+      const forms = await select('onboarding_forms', { role_id: identity.selected_role_id });
+      let fields: any[] = [];
 
-      const schema = schemaResult.rows[0]?.schema;
+      if (forms.length > 0) {
+        fields = typeof forms[0].fields === 'string' 
+          ? JSON.parse(forms[0].fields) 
+          : forms[0].fields || [];
+      }
 
-      if (!schema) {
+      // Filter active fields only
+      const activeFields = fields.filter((f: any) => f.isActive !== false);
+
+      // Group fields by section (matching reference structure)
+      const sections: Record<string, any> = {};
+      const sectionMeta: Record<string, any> = {
+        'business_information': { title: 'Business Information', order: 1 },
+        'location_information': { title: 'Location', order: 2 },
+        'banking_information': { title: 'Banking Details', order: 3 },
+        'document_verification': { title: 'Documents', order: 4 },
+        'documents': { title: 'Documents', order: 4 },
+        'additional_information': { title: 'Additional Info', order: 5 },
+      };
+
+      for (const field of activeFields) {
+        const secKey = field.section || 'business_information';
+        if (!sections[secKey]) {
+          sections[secKey] = {
+            id: secKey,
+            name: secKey,
+            title: sectionMeta[secKey]?.title || secKey.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            order: sectionMeta[secKey]?.order || 99,
+            fields: [],
+          };
+        }
+        sections[secKey].fields.push(field);
+      }
+
+      const sectionsArray = Object.values(sections).sort((a: any, b: any) => a.order - b.order);
+
+      if (activeFields.length === 0) {
         return this.error(
-          'Form schema not found for this role and vendor type',
+          'Form schema not found for this role. Please ensure onboarding form is configured.',
           404,
           'NOT_FOUND',
           undefined,
@@ -381,7 +436,15 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       return this.success({
-        schema,
+        success: true,
+        roleId: identity.selected_role_id,
+        roleName: identity.selected_role_id,
+        fields: activeFields,
+        sections: sectionsArray,
+        schema: {
+          fields: activeFields,
+          sections: sectionsArray,
+        },
         existingApplication: application,
         canEdit: !application || application.status === 'DRAFT' || application.status === 'CLARIFICATION_REQUIRED',
       }, requestId);

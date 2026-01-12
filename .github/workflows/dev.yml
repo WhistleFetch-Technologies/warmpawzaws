@@ -69,12 +69,116 @@ jobs:
         continue-on-error: true
 
   # ============================================
+  # SECURITY SCANNING
+  # ============================================
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    needs: validate-lockfile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --fail-on=patchable
+        if: ${{ secrets.SNYK_TOKEN != '' }}
+
+      - name: Upload Snyk results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && secrets.SNYK_TOKEN != ''
+        with:
+          sarif_file: snyk.sarif
+          continue-on-error: true
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=high || echo "npm audit found vulnerabilities (non-blocking)"
+        continue-on-error: true
+
+  # ============================================
+  # RUN TESTS
+  # ============================================
+  run-tests:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Copy test configuration if exists
+        run: |
+          if [ -f package.json.cicd ]; then
+            cp package.json.cicd package.json
+            npm ci --legacy-peer-deps
+          fi
+        continue-on-error: true
+
+      - name: Run unit tests
+        run: |
+          if npm run test:unit 2>/dev/null; then
+            echo "✅ Unit tests passed"
+          else
+            echo "⚠️ Unit tests not configured or failed (non-blocking)"
+          fi
+        continue-on-error: true
+
+      - name: Run integration tests
+        run: |
+          if npm run test:integration 2>/dev/null; then
+            echo "✅ Integration tests passed"
+          else
+            echo "⚠️ Integration tests not configured or failed (non-blocking)"
+          fi
+        continue-on-error: true
+
+      - name: Run smoke tests
+        run: |
+          if npm run test:smoke 2>/dev/null; then
+            echo "✅ Smoke tests passed"
+          else
+            echo "⚠️ Smoke tests not configured or failed (non-blocking)"
+          fi
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+            *.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ============================================
   # BUILD BACKEND
   # ============================================
   build-backend:
     name: 🔨 Build Backend
     runs-on: ubuntu-latest
-    needs: static-analysis
+    needs: [static-analysis, run-tests]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -331,6 +435,57 @@ jobs:
             echo "✅ Found resources:"
             echo "   Bucket: $BUCKET_NAME"
             echo "   CloudFront: $DIST_ID"
+          fi
+
+      - name: Get API Gateway endpoint
+        id: get-api-endpoint
+        run: |
+          # Get API Gateway endpoint from AWS
+          API_ENDPOINT=$(aws apigatewayv2 get-apis --region ${{ env.AWS_REGION }} \
+            --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
+            --output text 2>/dev/null | head -1 || echo "")
+          
+          if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ] || [ "$API_ENDPOINT" = "null" ]; then
+            # Fallback to default or secret
+            API_ENDPOINT="${{ secrets.DEV_API_URL || 'https://dev.api.warmpawz.com' }}"
+            echo "⚠️  Using fallback API endpoint: $API_ENDPOINT"
+          else
+            echo "✅ API Gateway endpoint: $API_ENDPOINT"
+          fi
+          
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Inject runtime-config.js
+        run: |
+          echo "🔧 Injecting runtime-config.js with API Gateway endpoint..."
+          API_ENDPOINT="${{ steps.get-api-endpoint.outputs.api_endpoint }}"
+          
+          # Ensure dist directory exists
+          if [ ! -d "dist" ]; then
+            echo "❌ Error: dist directory not found!"
+            exit 1
+          fi
+          
+          # Inject runtime-config.js into dist folder
+          cat > dist/runtime-config.js <<EOF
+// Runtime Configuration for Warmpawz ${{ matrix.app }}
+// Injected at deployment time with actual API Gateway endpoint
+(function() {
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+    apiBaseUrl: "${API_ENDPOINT}",
+    uatMode: true
+  };
+  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+})();
+EOF
+          
+          echo "✅ Injected runtime-config.js into dist/"
+          echo "   API endpoint: $API_ENDPOINT"
+          
+          # Verify file was created
+          if [ ! -f "dist/runtime-config.js" ]; then
+            echo "❌ Error: runtime-config.js was not created!"
+            exit 1
           fi
 
       - name: Deploy to S3

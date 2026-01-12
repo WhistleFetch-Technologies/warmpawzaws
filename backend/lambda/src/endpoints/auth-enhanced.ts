@@ -132,18 +132,52 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     const { phone } = validationResult.data;
+    
+    // Normalize phone number (add + if missing and starts with country code)
+    const normalizedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
 
     try {
-      // Generate OTP
-      const otpCode = process.env.UAT_MODE === 'true' ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+      // Generate OTP - use 123456 in UAT mode, random 6-digit in production
+      // Check multiple ways to detect dev/UAT environment
+      const isUATMode = process.env.UAT_MODE === 'true' || 
+                       process.env.NODE_ENV === 'development' ||
+                       process.env.STAGE === 'dev' ||
+                       process.env.ENVIRONMENT === 'dev' ||
+                       (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
       
-      // Store OTP
-      await createOtp(phone, otpCode, body.role || 'login');
+      const otpCode = isUATMode ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+      
+      if (isUATMode) {
+        console.log(`[AUTH] UAT Mode: Using fixed OTP 123456 for ${phone}`);
+      } else {
+        console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
+      }
+      
+      // Store OTP (use original phone for storage, normalized for display)
+      try {
+        await createOtp(phone, otpCode, body.role || 'login');
+      } catch (dbError: any) {
+        console.error('[AUTH] Database error creating OTP:', dbError);
+        console.error('[AUTH] Error details:', JSON.stringify(dbError, null, 2));
+        // In UAT environments, continue even if database fails (for testing)
+        if (!isUATMode) {
+          throw dbError;
+        }
+        console.warn('[AUTH] UAT Mode: Continuing despite database error - OTP will still work');
+      }
 
-      // Send SMS (in production)
-      if (process.env.UAT_MODE !== 'true') {
-        const message = `Your Warmpawz OTP is ${otpCode}. Valid for 5 minutes.`;
-        await sendSmsViaSns(phone, message);
+      // Send SMS (only in production, not in UAT mode)
+      if (!isUATMode) {
+        try {
+          const message = `Your Warmpawz OTP is ${otpCode}. Valid for 5 minutes.`;
+          await sendSmsViaSns(phone, message);
+          console.log(`[AUTH] Production Mode: SMS sent to ${phone}`);
+        } catch (smsError: any) {
+          console.warn('[AUTH] Production Mode: SMS send failed, continuing:', smsError);
+          // Don't fail OTP send if SMS fails, but log it
+        }
+      } else {
+        console.log(`[AUTH] UAT Mode: SMS skipped for ${phone} (using fixed OTP 123456)`);
       }
 
       // Return standardized response
@@ -161,12 +195,16 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
       }, context.requestId);
 
     } catch (error: any) {
-      console.error('Error sending OTP:', error);
+      console.error('[AUTH] Error sending OTP:', error);
+      console.error('[AUTH] Error stack:', error.stack);
       return this.error(
         'Failed to send OTP',
         500,
         'INTERNAL_ERROR',
-        { details: error.message },
+        { 
+          details: error.message,
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        },
         context.requestId
       );
     }
@@ -191,9 +229,44 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
     const { phone, otp } = validationResult.data;
 
+    // Check if UAT mode is enabled (check once for the entire function)
+    const isUATMode = process.env.UAT_MODE === 'true' || 
+                     process.env.NODE_ENV === 'development' ||
+                     process.env.STAGE === 'dev' ||
+                     (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
+
     try {
-      // Verify OTP
-      const isValid = await verifyOtp(phone, otp);
+      let isValid = false;
+      
+      if (isUATMode && otp === '123456') {
+        // UAT MODE: Accept 123456 without checking database
+        console.log(`[AUTH] UAT Mode: Accepting fixed OTP 123456 for ${phone} (database check skipped)`);
+        isValid = true;
+        // Try to mark any existing OTP as used to clean up
+        try {
+          const records = await select('otp_tokens', {
+            phone,
+            is_used: false,
+          });
+          if (records.length > 0) {
+            await query(
+              'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+              [records[0].id]
+            );
+          }
+        } catch (e) {
+          console.warn('[AUTH] UAT Mode: Could not mark existing OTP as used:', e);
+        }
+      } else {
+        // PRODUCTION MODE: Normal OTP verification against database
+        console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
+        isValid = await verifyOtp(phone, otp);
+        if (isValid) {
+          console.log(`[AUTH] Production Mode: OTP verified successfully for ${phone}`);
+        } else {
+          console.log(`[AUTH] Production Mode: OTP verification failed for ${phone}`);
+        }
+      }
       
       if (!isValid) {
         return this.error('Invalid or expired OTP', 401, 'UNAUTHORIZED', undefined, context.requestId);
@@ -239,27 +312,54 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           userId = vendors[0].id;
           userData = vendors[0];
         } else {
-          // Vendor should go through onboarding
-          return this.error('Vendor not found. Please complete onboarding first.', 404, 'NOT_FOUND', undefined, context.requestId);
+          // Vendor doesn't exist yet - this is OK for new vendor registration
+          // OTP verification will succeed and they can proceed to onboarding
+          // Generate a temporary user ID for the new vendor
+          userId = `temp_vendor_${phone}_${Date.now()}`;
+          userData = {
+            id: userId,
+            phone: phone,
+            is_active: false,
+            created_at: new Date().toISOString(),
+          };
+          console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
         }
       } else {
         return this.error('Invalid role', 400, 'VALIDATION_ERROR', undefined, context.requestId);
       }
 
       // Get or create Cognito user
+      
       let cognitoTokens: CognitoTokens;
-      try {
-        const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
-        cognitoTokens = await authenticateCognitoUser(phone);
-      } catch (cognitoError: any) {
-        console.warn('Cognito authentication failed, using fallback:', cognitoError.message);
-        // Fallback: Generate simple token (in production, always use Cognito)
+      
+      if (isUATMode) {
+        // UAT MODE: Skip Cognito and use temporary tokens for faster testing
+        console.log(`[AUTH] UAT Mode: Skipping Cognito authentication for ${phone} (role: ${role})`);
         cognitoTokens = {
-          accessToken: `temp_${userId}_${Date.now()}`,
-          idToken: `id_${userId}_${Date.now()}`,
-          refreshToken: `refresh_${userId}_${Date.now()}`,
-          expiresIn: 3600,
+          accessToken: `uat_token_${role}_${userId}_${Date.now()}`,
+          idToken: `uat_id_${userId}_${Date.now()}`,
+          refreshToken: `uat_refresh_${userId}_${Date.now()}`,
+          expiresIn: 86400, // 24 hours for UAT mode
         };
+        console.log('[AUTH] UAT Mode: Generated temporary tokens (Cognito skipped)');
+      } else {
+        // PRODUCTION MODE: Use full Cognito authentication
+        try {
+          console.log(`[AUTH] Production Mode: Authenticating with Cognito for ${phone} (role: ${role})`);
+          const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
+          cognitoTokens = await authenticateCognitoUser(phone);
+          console.log('[AUTH] Production Mode: Cognito authentication successful');
+        } catch (cognitoError: any) {
+          console.error('[AUTH] Production Mode: Cognito authentication failed:', cognitoError);
+          // In production, Cognito failures are critical - fail the request
+          return this.error(
+            'Authentication service unavailable',
+            503,
+            'SERVICE_UNAVAILABLE',
+            { details: 'Cognito authentication failed' },
+            context.requestId
+          );
+        }
       }
 
       // Return standardized response
@@ -309,35 +409,72 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
   const verifyOtpHandler = new VerifyOtpHandlerEnhanced();
 
   app.post('/auth/send-otp', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result: any = await sendOtpHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
+    try {
+      const event = await createApiGatewayEvent(c);
+      const context = createLambdaContext();
+      const result: any = await sendOtpHandler.execute(event, context);
+      const body = JSON.parse(result.body);
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      console.error('[AUTH] Error in send-otp handler:', error);
+      return c.json({ error: error.message || 'Internal Server Error' }, 500);
+    }
   });
 
   app.post('/auth/verify-otp', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result: any = await verifyOtpHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
+    try {
+      const event = await createApiGatewayEvent(c);
+      const context = createLambdaContext();
+      const result: any = await verifyOtpHandler.execute(event, context);
+      const body = JSON.parse(result.body);
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      console.error('[AUTH] Error in verify-otp handler:', error);
+      return c.json({ error: error.message || 'Internal Server Error' }, 500);
+    }
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+async function createApiGatewayEvent(c: any): Promise<any> {
+  // Get body from Hono request
+  const body = await c.req.json().catch(() => ({}));
+  
+  // Get headers - Hono's c.req.raw contains the raw request
+  const headers: Record<string, string> = {};
+  try {
+    if (c.req.raw && c.req.raw.headers) {
+      // Access raw headers from Node.js request
+      const rawHeaders = c.req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else {
+      // Fallback: get common headers via Hono's header() method
+      const contentType = c.req.header('content-type');
+      const authorization = c.req.header('authorization');
+      if (contentType) headers['content-type'] = contentType;
+      if (authorization) headers['authorization'] = authorization;
+    }
+  } catch (e) {
+    console.warn('[AUTH] Error processing headers:', e);
+  }
+
+  const url = new URL(c.req.url);
   return {
-    rawPath: req.url.split('?')[0],
-    rawQueryString: req.url.includes('?') ? req.url.split('?')[1] : '',
+    rawPath: url.pathname,
+    rawQueryString: url.search.substring(1), // Remove leading '?'
     requestContext: {
       http: {
-        method: req.method,
-        path: req.url.split('?')[0],
+        method: c.req.method || 'POST',
+        path: url.pathname,
       },
       requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`,
     },
-    headers: Object.fromEntries(req.headers.entries()),
-    body: req.body ? JSON.stringify(req.body) : undefined,
+    headers: headers,
+    body: body ? JSON.stringify(body) : undefined,
     isBase64Encoded: false,
   };
 }

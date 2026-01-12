@@ -282,13 +282,23 @@ export default function BankDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Bank & Payment Details</h1>
-          <p className="text-gray-500">Manage your settlement accounts</p>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">Bank & Payment Details</h1>
+              <p className="text-sm text-gray-500 mt-1">Manage your settlement accounts</p>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
 
         {/* Messages */}
         {error && (
@@ -463,7 +473,8 @@ export default function BankDetailsPage() {
             </div>
           </div>
         </div>
-      </div>
+          </div>
+        </div>
 
       {/* Bank Account Modal */}
       {showBankModal && (

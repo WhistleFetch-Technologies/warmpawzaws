@@ -126,7 +126,7 @@ export default function ReferralsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading referral program...</p>
@@ -136,33 +136,34 @@ export default function ReferralsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-orange-500 to-orange-600 text-white px-4 py-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-3xl font-bold mb-2">Refer & Earn</h1>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Hero Section - Special design, keep as-is but update container */}
+      <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+        <div className="max-w-7xl mx-auto px-6 py-8 text-center">
+          {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+          <h1 className="text-2xl font-bold mb-2">Refer & Earn</h1>
           <p className="text-orange-100">Invite friends and earn rewards together!</p>
         </div>
-      </header>
-
-      {/* Messages */}
-      <div className="max-w-4xl mx-auto px-4 mt-4">
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
-          </div>
-        )}
-        
-        {success && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
-            <span>{success}</span>
-            <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
-          </div>
-        )}
       </div>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
+          
+          {/* Messages */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
+          
+          {success && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
+              <span>{success}</span>
+              <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
+            </div>
+          )}
         {/* Stats Cards */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -327,7 +328,8 @@ export default function ReferralsPage() {
             </div>
           )}
         </div>
-      </main>
+        </div>
+      </div>
     </div>
   );
 }

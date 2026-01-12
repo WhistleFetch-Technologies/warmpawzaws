@@ -1,0 +1,286 @@
+import { Card } from '../../ui/card';
+import { Label } from '../../ui/label';
+import { Globe, MapPin, XCircle } from 'lucide-react';
+
+interface Region {
+  regionId: string;
+  regionName: string;
+  regionCode: string;
+  isActive: boolean;
+  currency: {
+    code: string;
+    symbol: string;
+  };
+}
+
+interface RegionalAvailability {
+  mode: 'all' | 'specific' | 'exclude';
+  regions: string[];
+}
+
+interface RegionalAvailabilitySelectorProps {
+  value: RegionalAvailability;
+  onChange: (value: RegionalAvailability) => void;
+  availableRegions: Region[];
+  className?: string;
+}
+
+const REGION_FLAGS: Record<string, string> = {
+  'IN': '🇮🇳',
+  'US': '🇺🇸',
+  'AE': '🇦🇪',
+  'SG': '🇸🇬',
+  'GB': '🇬🇧',
+  'AU': '🇦🇺',
+  'CA': '🇨🇦',
+};
+
+export function RegionalAvailabilitySelector({
+  value,
+  onChange,
+  availableRegions,
+  className = '',
+}: RegionalAvailabilitySelectorProps) {
+  const activeRegions = availableRegions.filter(r => r.isActive);
+
+  const handleModeChange = (mode: 'all' | 'specific' | 'exclude') => {
+    onChange({
+      mode,
+      regions: mode === 'all' ? [] : value.regions,
+    });
+  };
+
+  const handleRegionToggle = (regionId: string) => {
+    const currentRegions = value.regions;
+    const isSelected = currentRegions.includes(regionId);
+
+    if (isSelected) {
+      onChange({
+        ...value,
+        regions: currentRegions.filter(r => r !== regionId),
+      });
+    } else {
+      onChange({
+        ...value,
+        regions: [...currentRegions, regionId],
+      });
+    }
+  };
+
+  const selectAllRegions = () => {
+    onChange({
+      ...value,
+      regions: activeRegions.map(r => r.regionId),
+    });
+  };
+
+  const deselectAllRegions = () => {
+    onChange({
+      ...value,
+      regions: [],
+    });
+  };
+
+  return (
+    <Card className={`p-4 border-2 border-gray-200 ${className}`}>
+      <div className="flex items-center gap-2 mb-4">
+        <Globe className="w-5 h-5 text-orange-600" />
+        <Label className="text-base">Regional Availability</Label>
+      </div>
+
+      {/* Availability Mode Selection */}
+      <div className="space-y-3 mb-4">
+        {/* Mode: All Regions */}
+        <label className="flex items-start gap-3 p-3 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+          <input
+            type="radio"
+            name="availability-mode"
+            checked={value.mode === 'all'}
+            onChange={() => handleModeChange('all')}
+            className="mt-1 w-4 h-4 text-orange-600 focus:ring-orange-500"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-blue-600" />
+              <span className="font-medium">Available in all regions</span>
+            </div>
+            <p className="text-sm text-gray-600 mt-1">
+              This package will be available in all active regions (current and future)
+            </p>
+            {value.mode === 'all' && (
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+                ✅ Will show in: {activeRegions.map(r => r.regionName).join(', ')}
+              </div>
+            )}
+          </div>
+        </label>
+
+        {/* Mode: Specific Regions */}
+        <label className="flex items-start gap-3 p-3 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+          <input
+            type="radio"
+            name="availability-mode"
+            checked={value.mode === 'specific'}
+            onChange={() => handleModeChange('specific')}
+            className="mt-1 w-4 h-4 text-orange-600 focus:ring-orange-500"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-green-600" />
+              <span className="font-medium">Available in specific regions</span>
+            </div>
+            <p className="text-sm text-gray-600 mt-1">
+              Choose which regions this package should be available in
+            </p>
+          </div>
+        </label>
+
+        {/* Mode: Exclude Regions */}
+        <label className="flex items-start gap-3 p-3 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+          <input
+            type="radio"
+            name="availability-mode"
+            checked={value.mode === 'exclude'}
+            onChange={() => handleModeChange('exclude')}
+            className="mt-1 w-4 h-4 text-orange-600 focus:ring-orange-500"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <XCircle className="w-4 h-4 text-red-600" />
+              <span className="font-medium">Exclude from specific regions</span>
+            </div>
+            <p className="text-sm text-gray-600 mt-1">
+              Available everywhere except selected regions
+            </p>
+          </div>
+        </label>
+      </div>
+
+      {/* Region Selection (for specific or exclude modes) */}
+      {value.mode !== 'all' && (
+        <div className="border-t pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <Label className="text-sm">
+              {value.mode === 'specific' ? 'Select Regions' : 'Exclude Regions'}
+              <span className="text-gray-500 ml-2">
+                ({value.regions.length} selected)
+              </span>
+            </Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={selectAllRegions}
+                className="text-xs text-orange-600 hover:text-orange-700 hover:underline"
+              >
+                Select All
+              </button>
+              <span className="text-gray-300">|</span>
+              <button
+                type="button"
+                onClick={deselectAllRegions}
+                className="text-xs text-gray-600 hover:text-gray-700 hover:underline"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {activeRegions.length === 0 ? (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+              ⚠️ No active regions found. Please create and activate regions first.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {activeRegions.map((region) => {
+                const isSelected = value.regions.includes(region.regionId);
+                const flag = REGION_FLAGS[region.regionCode] || '🌍';
+
+                return (
+                  <label
+                    key={region.regionId}
+                    className={`flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-orange-50 border-orange-300'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleRegionToggle(region.regionId)}
+                      className="w-4 h-4 text-orange-600 focus:ring-orange-500 rounded"
+                    />
+                    <span className="text-2xl">{flag}</span>
+                    <div className="flex-1">
+                      <div className="font-medium">{region.regionName}</div>
+                      <div className="text-sm text-gray-600">
+                        {region.currency.symbol} {region.currency.code}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div className="text-xs bg-orange-600 text-white px-2 py-1 rounded">
+                        {value.mode === 'specific' ? 'Included' : 'Excluded'}
+                      </div>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Summary */}
+          {value.regions.length > 0 && (
+            <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="text-sm">
+                <span className="font-medium">
+                  {value.mode === 'specific' ? 'Will show in:' : 'Will hide in:'}
+                </span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {value.regions.map(regionId => {
+                    const region = activeRegions.find(r => r.regionId === regionId);
+                    if (!region) return null;
+                    const flag = REGION_FLAGS[region.regionCode] || '🌍';
+                    return (
+                      <span
+                        key={regionId}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs"
+                      >
+                        <span>{flag}</span>
+                        <span>{region.regionName}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Warning for exclude mode */}
+          {value.mode === 'exclude' && value.regions.length > 0 && (
+            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+              <div className="flex gap-2">
+                <XCircle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-medium text-yellow-900">Package will be hidden in:</span>
+                  <span className="text-yellow-700 ml-1">
+                    {value.regions.map(rid => {
+                      const r = activeRegions.find(ar => ar.regionId === rid);
+                      return r?.regionName;
+                    }).filter(Boolean).join(', ')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Validation Warning */}
+      {value.mode !== 'all' && value.regions.length === 0 && (
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          ⚠️ Please select at least one region for {value.mode} mode
+        </div>
+      )}
+    </Card>
+  );
+}

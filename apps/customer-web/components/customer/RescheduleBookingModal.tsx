@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { LoadingState } from '@/components/ui/states';
 import { Calendar as CalendarIcon, Clock } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { bookingsApi } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface RescheduleBookingModalProps {
@@ -31,8 +31,6 @@ export function RescheduleBookingModal({
   const [loading, setLoading] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     if (selectedDate) {
       loadAvailableSlots(selectedDate.toISOString().split('T')[0]);
@@ -42,19 +40,15 @@ export function RescheduleBookingModal({
   const loadAvailableSlots = async (date: string) => {
     try {
       setLoadingSlots(true);
-      const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/available-slots?date=${date}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAvailableSlots(data.slots || []);
-      } else {
-        toast.error('Failed to load available slots');
-      }
+      // TODO: Get available slots from vendor schedule API
+      // For now, generate default time slots
+      const defaultSlots = [
+        '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
+      ].map(time => ({ time, available: true }));
+      setAvailableSlots(defaultSlots);
     } catch (error) {
       console.error('Error loading slots:', error);
+      toast.error('Failed to load available slots');
     } finally {
       setLoadingSlots(false);
     }
@@ -69,32 +63,18 @@ export function RescheduleBookingModal({
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/reschedule`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            userId: 'customer_id', // TODO: Get from context
-            newDate: selectedDate.toISOString().split('T')[0],
-            newTime: selectedSlot,
-            reason
-          })
-        }
-      );
+      const result = await bookingsApi.reschedule(bookingId, {
+        newDate: selectedDate.toISOString().split('T')[0],
+        newTime: selectedSlot,
+        reason,
+        actorType: 'customer'
+      }) as any;
 
-      if (response.ok) {
-        onSuccess();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to reschedule');
-      }
-    } catch (error) {
+      toast.success(result.message || 'Booking rescheduled successfully');
+      onSuccess();
+    } catch (error: any) {
       console.error('Error rescheduling:', error);
-      toast.error('Network error');
+      toast.error(error.message || 'Failed to reschedule');
     } finally {
       setLoading(false);
     }

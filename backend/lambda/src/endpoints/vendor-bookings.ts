@@ -334,6 +334,78 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   });
 
   /**
+   * POST /vendor/bookings/:bookingId/decline
+   * Decline a booking (alias for cancel with reason)
+   */
+  app.post("/vendor/bookings/:bookingId/decline", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { vendorId, reason, suggestAlternative } = await c.req.json();
+
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+      const oldStatus = booking.status;
+      if (!['pending', 'confirmed'].includes(oldStatus)) {
+        return c.json({ error: `Booking cannot be declined. Current status: ${oldStatus}` }, 400);
+      }
+
+      const updated = await update('bookings',
+        { id: bookingId },
+        {
+          status: 'cancelled',
+          cancellation_reason: reason || 'Vendor declined booking',
+          cancelled_at: new Date().toISOString(),
+          metadata: {
+            ...(booking.metadata || {}),
+            suggestAlternative: suggestAlternative || null,
+            declinedBy: 'vendor',
+          },
+        }
+      );
+
+      // Log status change
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        'cancelled',
+        vendorId || booking.vendor_id,
+        'vendor',
+        reason || 'Vendor declined booking'
+      );
+
+      // Publish notification event
+      try {
+        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: booking.customer_id,
+          vendorId: booking.vendor_id || vendorId,
+          oldStatus,
+          newStatus: 'cancelled',
+          reason: reason || 'Vendor declined booking',
+          eventTimestamp: new Date().toISOString(),
+          eventId: crypto.randomUUID(),
+        });
+      } catch (error) {
+        console.error('Failed to publish booking status updated event:', error);
+      }
+
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: 'Booking declined successfully',
+      });
+    } catch (error: any) {
+      console.error('Error declining booking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /vendor/bookings/:bookingId/complete
    * Mark booking as completed
    */

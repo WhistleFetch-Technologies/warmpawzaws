@@ -25,11 +25,14 @@ function handler(event) {
   if (uri.startsWith('/api/') || 
       uri.startsWith('/_next/') || 
       uri.startsWith('/static/') ||
-      uri.startsWith('/runtime-config.js')) {
+      uri.startsWith('/runtime-config.js') ||
+      uri.startsWith('/favicon.ico') ||
+      uri.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|json)$/i)) {
     return request;
   }
   
   // Rewrite /ecommerce to /ecommerce.html, /catalog to /catalog.html, etc.
+  // This handles Next.js static export routing
   request.uri = uri + '.html';
   
   return request;

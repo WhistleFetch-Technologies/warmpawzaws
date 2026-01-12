@@ -129,7 +129,7 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
         availability
       };
       
-      const data = await apiClient.post('/make-server-3dd53475/vendor/setup/availability', payload) as any;
+      const data = await apiClient.post('/vendor/setup/availability', payload) as any;
 
       if (!data || !data.success) {
         throw new Error(data?.error || 'Failed to save availability');

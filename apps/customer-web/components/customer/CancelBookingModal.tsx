@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/ui/states';
 import { AlertTriangle, DollarSign, Info, XCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { bookingsApi } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface CancelBookingModalProps {
@@ -28,8 +28,6 @@ export function CancelBookingModal({
   const [loading, setLoading] = useState(false);
   const [loadingRefundInfo, setLoadingRefundInfo] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadRefundEligibility();
   }, []);
@@ -37,20 +35,37 @@ export function CancelBookingModal({
   const loadRefundEligibility = async () => {
     try {
       setLoadingRefundInfo(true);
-      const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/refund-eligibility`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setRefundInfo(data);
+      // Get booking details to show refund info if payment was made
+      const booking = await bookingsApi.get(bookingId) as any;
+      if (booking?.booking?.payment_status === 'paid' && booking?.booking?.total_amount > 0) {
+        setRefundInfo({
+          eligible: true,
+          refundAmount: booking.booking.total_amount,
+          refundPercentage: 100,
+          hoursUntil: 24, // TODO: Calculate actual hours until booking
+          cancellationFee: 0,
+          message: `₹${booking.booking.total_amount} will be refunded to your original payment method`
+        });
       } else {
-        toast.error('Failed to load refund information');
+        setRefundInfo({
+          eligible: false,
+          refundAmount: 0,
+          refundPercentage: 0,
+          hoursUntil: 0,
+          cancellationFee: 0,
+          message: 'No refund available for this booking'
+        });
       }
     } catch (error) {
       console.error('Error loading refund info:', error);
-      toast.error('Network error');
+      setRefundInfo({
+        eligible: false,
+        refundAmount: 0,
+        refundPercentage: 0,
+        hoursUntil: 0,
+        cancellationFee: 0,
+        message: 'Unable to load refund information'
+      });
     } finally {
       setLoadingRefundInfo(false);
     }
@@ -65,33 +80,21 @@ export function CancelBookingModal({
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/cancel`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            userId: customerId,
-            userType: 'customer',
-            reason
-          })
-        }
-      );
+      const result = await bookingsApi.cancel(bookingId, {
+        reason,
+        customerId,
+        actorId: customerId,
+        actorType: 'customer'
+      }) as any;
 
-      if (response.ok) {
-        const data = await response.json();
-        toast.success(data.message || 'Booking cancelled successfully');
-        onSuccess();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to cancel booking');
+      toast.success(result.message || 'Booking cancelled successfully');
+      if (result.refund) {
+        toast.info(`Refund of ₹${result.refund.amount} will be processed`);
       }
-    } catch (error) {
+      onSuccess();
+    } catch (error: any) {
       console.error('Error cancelling:', error);
-      toast.error('Network error');
+      toast.error(error.message || 'Failed to cancel booking');
     } finally {
       setLoading(false);
     }

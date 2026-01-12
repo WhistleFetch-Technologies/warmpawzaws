@@ -130,13 +130,14 @@ export default function RBACDashboard() {
 
 	return (
 		<AdminLayout>
-			<div className="flex-1 bg-gray-50">
-				{/* Header */}
+			<div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+				{/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 */}
 				<div className="bg-white border-b sticky top-0 z-10">
 					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 						<div className="flex items-center justify-between h-16">
 							<div className="flex items-center gap-4">
 								<div>
+									{/* ✅ FIX: Match wireframe - text-xl font-semibold */}
 									<h1 className="text-xl font-semibold">
 										Role & User Management
 									</h1>
@@ -158,7 +159,9 @@ export default function RBACDashboard() {
 					</div>
 				</div>
 
-				<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+				{/* Content - Match wireframe: max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 					{/* Summary Cards */}
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
 						<Card className="p-6">
@@ -409,6 +412,7 @@ export default function RBACDashboard() {
 							</Card>
 						</TabsContent>
 					</Tabs>
+					</div>
 				</div>
 			</div>
 

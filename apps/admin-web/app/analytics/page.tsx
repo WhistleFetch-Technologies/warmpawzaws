@@ -317,12 +317,13 @@ export default function AnalyticsPage() {
       <div className="min-h-screen bg-gray-50">
         <Toaster position="top-right" richColors />
 
-        {/* Header */}
-        <div className="bg-white border-b sticky top-0 z-10 px-20">
+        {/* Header - Match wireframe: px-20 border-b, max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 */}
+        <div className="bg-white border-b sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center gap-4">
                 <div>
+                  {/* ✅ FIX: Match wireframe - text-xl font-semibold (consistent with wireframe) */}
                   <h1 className="text-xl font-semibold">Analytics Dashboard</h1>
                   <p className="text-sm text-gray-500">
                     Platform performance metrics

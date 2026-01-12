@@ -23,10 +23,36 @@ export default function StaffManagementPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [vendorData, setVendorData] = useState<any>(null);
   const [newStaff, setNewStaff] = useState<Partial<Staff>>({
     is_active: true,
     specializations: [],
   });
+
+  // ✅ PHASE 3: Role-based conditional field visibility
+  useEffect(() => {
+    const loadVendorData = async () => {
+      try {
+        const vendorId = localStorage.getItem('vendorId');
+        if (vendorId) {
+          const response = await apiClient.get<any>(`/vendor/${vendorId}/profile`);
+          setVendorData(response.vendor || response);
+        }
+      } catch (err) {
+        console.error('Error loading vendor data:', err);
+      }
+    };
+    loadVendorData();
+  }, []);
+
+  const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
+  const isCafe = vendorRoleId === 'pet_cafe' || vendorRoleId === 'cafe';
+  const isResort = vendorRoleId === 'pet_resort' || vendorRoleId === 'resort';
+  const isBoarding = vendorRoleId === 'pet_boarding' || vendorRoleId === 'boarding';
+  const isRetail = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller';
+  const isPharmacy = vendorRoleId === 'pet_pharmacy' || vendorRoleId === 'pharmacy';
+  const isHealthcare = vendorRoleId === 'veterinarian' || vendorRoleId === 'veterinary_clinic';
+  const supportsHomeService = !isCafe && !isResort && !isBoarding && !isRetail && !isPharmacy; // These roles don't do home services
 
   useEffect(() => {
     const vendorId = localStorage.getItem('vendorId');

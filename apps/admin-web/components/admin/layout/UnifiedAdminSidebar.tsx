@@ -215,7 +215,8 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                 const Icon = item.icon;
                 const isActive = activeView === item.id || 
                                (item.id === 'vendors' && (activeView === 'vendor-admin' || activeView === 'vendor-management')) ||
-                               (item.id === 'regions' && activeView === 'region-manager');
+                               (item.id === 'regions' && activeView === 'region-manager') ||
+                               (item.id === 'catalog' && activeView === 'catalog-and-services');
                 
                 return (
                   <button

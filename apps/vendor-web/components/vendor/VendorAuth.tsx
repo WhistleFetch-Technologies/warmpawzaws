@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/lib/supabase/client';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager'; // ✅ SECURITY FIX
 
@@ -67,14 +65,17 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     setError('');
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // Use API Gateway for email/password login
+      const loginData = await apiClient.post<any>('/auth/login', {
         email: formData.email,
         password: formData.password,
+        portal: 'vendor'
       });
 
-      if (error) throw error;
+      if (loginData.error) {
+        throw new Error(loginData.error);
+      }
 
-      const authData = data;
       const vendorData = await apiClient.get('/vendor/profile') as any;
       
       if (vendorData && vendorData.vendor) {
@@ -89,7 +90,18 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         }
       }
 
-      onAuthSuccess(authData.session);
+      // Store session
+      if (loginData.session) {
+        storeSession({
+          phone: loginData.user?.phone || formData.email,
+          accessToken: loginData.session.accessToken || loginData.session.token,
+          user: loginData.user,
+          profile: loginData.profile,
+          vendorId: loginData.profile?.id || loginData.profile?.vendorId
+        });
+      }
+
+      onAuthSuccess(loginData.session || loginData);
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
       console.error('Sign in error:', err);
@@ -98,131 +110,211 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     }
   };
 
-  const handleSendCode = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormData({ ...formData, phone: phoneNumber });
-    setShowOtpScreen(true);
-    console.log('Sending OTP to:', phoneNumber);
-  };
-
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
+    
+    if (!phoneNumber || phoneNumber.length < 10) {
+      setError('Please enter a valid phone number');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      console.log('📤 [VendorAuth] Sending OTP to:', phoneNumber);
+      
+      // Send OTP using the correct endpoint
+      const sendOtpData = await apiClient.post<any>('/auth/send-otp', {
+        phone: phoneNumber,
+        role: 'vendor'
+      });
+      
+      console.log('✅ [VendorAuth] OTP sent successfully:', sendOtpData);
+      
+      // Show OTP screen
+      setFormData({ ...formData, phone: phoneNumber });
+      setShowOtpScreen(true);
+      setLoading(false);
+    } catch (error: any) {
+      console.error('❌ [VendorAuth] Failed to send OTP:', error);
+      setError(error.message || 'Failed to send OTP. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
     console.log('🔐 [VendorAuth] Verifying OTP:', otpCode);
     console.log('🔐 [VendorAuth] Phone number:', phoneNumber);
     
-    // Helper to safely parse JSON response
-    const safeFetch = async (url: string, options: any) => {
-      const response = await fetch(url, options);
-      const text = await response.text();
+    try {
+      // Verify OTP using the correct endpoint
+      console.log('🔐 [VendorAuth] Step 1: Verifying OTP...');
+      const verifyData = await apiClient.post<any>('/auth/verify-otp', {
+        phone: phoneNumber,
+        otp: otpCode,
+        role: 'vendor'
+      });
       
-      console.log(`📡 [VendorAuth] Response from ${url}:`, response.status, response.statusText);
+      console.log('📋 [VendorAuth] OTP verification result:', verifyData);
       
+      // Handle nested response structure from API Gateway
+      // Response can be: { data: { data: { token: {...}, user: {...} } } }
+      // or direct: { token: {...}, user: {...} }
+      let responseData = verifyData;
+      
+      // Unwrap nested data structure
+      if (verifyData.data) {
+        // Check if it's the nested structure: { data: { data: {...} } }
+        if (verifyData.data.data) {
+          responseData = verifyData.data.data;
+        } else {
+          // Single level: { data: {...} }
+          responseData = verifyData.data;
+        }
+      }
+      
+      // Extract token and user from the unwrapped response
+      const tokens = responseData.token || responseData.tokens || {};
+      const user = responseData.user || {};
+      
+      // Get access token from various possible locations
+      const accessToken = tokens.access_token || 
+                         tokens.accessToken || 
+                         responseData.token?.access_token ||
+                         responseData.access_token;
+      
+      console.log('🔍 [VendorAuth] Extracted token:', { 
+        hasToken: !!accessToken, 
+        tokenPreview: accessToken ? accessToken.substring(0, 30) + '...' : 'none',
+        user: user 
+      });
+      
+      if (!accessToken) {
+        console.error('❌ [VendorAuth] Token extraction failed. Response structure:', JSON.stringify(verifyData, null, 2));
+        throw new Error('Authentication failed: No access token received');
+      }
+      
+      console.log('✅ [VendorAuth] OTP verified successfully!');
+      
+      // Store session with access token IMMEDIATELY before any async calls
+      // This ensures localStorage is set before redirect
+      storeSession({
+        phone: phoneNumber,
+        accessToken: accessToken,
+        user: user,
+        vendorId: user.id
+      });
+      
+      // Double-check storage immediately
+      const storedPhoneCheck = localStorage.getItem('vendorPhone');
+      const storedTokenCheck = localStorage.getItem('authToken');
+      console.log('🔐 [VendorAuth] Session stored:', {
+        phone: !!storedPhoneCheck,
+        token: !!storedTokenCheck,
+        phoneValue: storedPhoneCheck,
+        tokenPreview: storedTokenCheck ? storedTokenCheck.substring(0, 30) + '...' : 'none'
+      });
+      
+      if (!storedPhoneCheck || !storedTokenCheck) {
+        console.error('❌ [VendorAuth] Session storage failed! Storing directly...');
+        // Fallback: Store directly
+        localStorage.setItem('vendorPhone', phoneNumber);
+        localStorage.setItem('authToken', accessToken);
+        if (user.id) {
+          localStorage.setItem('vendorId', user.id);
+        }
+        localStorage.setItem('vendorUser', JSON.stringify(user));
+      }
+      
+      // Fetch vendor onboarding status to get vendor profile
       try {
-        // Try to parse as JSON
-        return { 
-          ok: response.ok, 
-          status: 200, 
-          data: JSON.parse(text),
-          raw: text 
-        };
-      } catch (err) {
-        console.error(`❌ [VendorAuth] JSON Parse Error for ${url}:`, err);
-        console.error(`   Raw body (${text.length} chars):`, text.substring(0, 200));
-        throw new Error(`Server returned invalid JSON: ${text.substring(0, 50)}...`);
-      }
-    };
-
-    // FIRST: Check if this phone belongs to a staff member
-    console.log('🔍 [VendorAuth] Step 1: Checking if phone belongs to staff...');
-    
-    safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/auth/check-phone`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${publicAnonKey}`
-      },
-      body: JSON.stringify({ phone: phoneNumber })
-    })
-    .then(({ ok, status, data: staffCheckData }) => {
-      if (!ok && status !== 404) {
-        throw new Error(staffCheckData.error || `Staff check failed with status ${status}`);
-      }
-      
-      console.log('📋 [VendorAuth] Staff check result:', staffCheckData);
-      
-      // If this is a staff member, log them in as staff
-      if (staffCheckData && staffCheckData.exists && staffCheckData.staff) {
-        console.log('✅ [VendorAuth] Staff member detected!');
-        console.log('🔐 [VendorAuth] Step 2: Logging in as staff...');
+        console.log('📊 [VendorAuth] Fetching vendor status...');
+        const statusData = await apiClient.get<any>('/vendor/onboarding/status?phone=' + encodeURIComponent(phoneNumber));
         
-        // Call staff login endpoint
-        return safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/auth/login`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify({ phone: phoneNumber })
-        })
-        .then(({ ok, data }) => {
-          if (ok && data.success && data.staff) {
-            console.log('✅ [VendorAuth] Staff login successful!');
-            onAuthSuccess({
-              phone: phoneNumber,
-              user: { isStaff: true },
-              staff: data.staff,
-              isStaffLogin: true
-            });
-          } else {
-            throw new Error(data.error || 'Staff login failed');
-          }
-        });
-      }
-      
-      // Not a staff member, proceed with regular vendor login
-      console.log('📞 [VendorAuth] Not a staff member, proceeding with vendor login...');
-      return safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          phone: phoneNumber,
-          portal: 'vendor'
-        })
-      })
-      .then(({ ok, data }) => {
-        if (ok && data.success && data.session) {
-          console.log('✅ [VendorAuth] Vendor login successful!');
+        if (statusData && statusData.identity) {
+          const vendorProfile = statusData.identity.vendor || statusData.vendor;
           
-          // ✅ SECURITY FIX: Store session with access token
-          storeSession({
-            phone: phoneNumber,
-            accessToken: data.session.accessToken,
-            user: data.user,
-            profile: data.profile,
-            vendorId: data.profile?.id || data.profile?.vendorId
+          // Update stored session with vendor profile
+          if (vendorProfile) {
+            localStorage.setItem('vendorData', JSON.stringify(vendorProfile));
+            if (vendorProfile.id) {
+              localStorage.setItem('vendorId', vendorProfile.id);
+            }
+          }
+          
+          // Store onboarding status
+          if (statusData.identity.onboarding_status) {
+            localStorage.setItem('vendorApplicationStatus', statusData.identity.onboarding_status);
+          }
+          
+          // Verify all session data is stored before calling onAuthSuccess
+          const finalPhoneCheck = localStorage.getItem('vendorPhone');
+          const finalTokenCheck = localStorage.getItem('authToken');
+          console.log('✅ [VendorAuth] Final session check before redirect:', {
+            phone: !!finalPhoneCheck,
+            token: !!finalTokenCheck
           });
-          console.log('🔐 [VendorAuth] Session stored with access token');
           
           onAuthSuccess({
-            ...data.session,
-            user: data.user,
-            profile: data.profile,
-            state: data.state
+            phone: phoneNumber,
+            accessToken: accessToken,
+            user: user,
+            profile: vendorProfile,
+            vendorId: user.id || vendorProfile?.id,
+            onboardingStatus: statusData.identity.onboarding_status
           });
         } else {
-          throw new Error(data.error || 'Login failed');
+          // No vendor profile yet, but OTP is verified
+          localStorage.setItem('vendorApplicationStatus', 'INIT');
+          
+          // Verify session before redirect
+          const finalPhoneCheck = localStorage.getItem('vendorPhone');
+          const finalTokenCheck = localStorage.getItem('authToken');
+          console.log('✅ [VendorAuth] Final session check (no profile) before redirect:', {
+            phone: !!finalPhoneCheck,
+            token: !!finalTokenCheck
+          });
+          
+          onAuthSuccess({
+            phone: phoneNumber,
+            accessToken: accessToken,
+            user: user,
+            vendorId: user.id,
+            onboardingStatus: 'INIT'
+          });
         }
-      });
-    })
-    .catch(error => {
+      } catch (statusError: any) {
+        console.warn('⚠️ [VendorAuth] Could not fetch vendor status:', statusError);
+        // OTP verified, proceed without status (user will go through onboarding)
+        localStorage.setItem('vendorApplicationStatus', 'INIT');
+        
+        // Verify session before redirect
+        const finalPhoneCheck = localStorage.getItem('vendorPhone');
+        const finalTokenCheck = localStorage.getItem('authToken');
+        console.log('✅ [VendorAuth] Final session check (error) before redirect:', {
+          phone: !!finalPhoneCheck,
+          token: !!finalTokenCheck
+        });
+        
+        // Always call onAuthSuccess even if status fetch fails
+        console.log('✅ [VendorAuth] Proceeding to onboarding despite status fetch failure');
+        onAuthSuccess({
+          phone: phoneNumber,
+          accessToken: accessToken,
+          user: user,
+          vendorId: user.id,
+          onboardingStatus: 'INIT'
+        });
+      }
+    } catch (error: any) {
       console.error('❌ [VendorAuth] Login error:', error);
       setError(error.message || 'Network error. Please try again.');
       setLoading(false);
-    });
+    }
   };
   
   // DEBUG: Test button to check database

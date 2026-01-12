@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, bookingsApi } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface BookingActionsProps {
@@ -48,22 +48,26 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
       return;
     }
 
+    if (!rescheduleData.newTimeSlot) {
+      toast.error('Please select a time slot');
+      return;
+    }
+
     setLoading(true);
     try {
-      await apiClient.post('/customer/bookings/reschedule', {
-        bookingId: booking.id,
+      const result = await bookingsApi.reschedule(booking.id, {
         newDate: rescheduleData.newDate,
-        newTimeSlot: rescheduleData.newTimeSlot,
+        newTime: rescheduleData.newTimeSlot,
         reason: rescheduleData.reason,
-        phone
-      });
+        actorType: 'customer'
+      }) as any;
 
-      toast.success('Booking rescheduled successfully');
+      toast.success(result.message || 'Booking rescheduled successfully');
       setShowRescheduleModal(false);
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error rescheduling booking:', error);
-      toast.error('Failed to reschedule booking');
+      toast.error(error.message || 'Failed to reschedule booking');
     } finally {
       setLoading(false);
     }
@@ -77,18 +81,17 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
     setLoading(true);
     try {
-      const result = await apiClient.post('/customer/bookings/cancel', {
-        bookingId: booking.id,
+      const result = await bookingsApi.cancel(booking.id, {
         reason: cancellationReason,
-        phone
+        actorType: 'customer'
       }) as any;
 
       toast.success(result.message || 'Booking cancelled successfully');
       setShowCancelModal(false);
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error cancelling booking:', error);
-      toast.error('Failed to cancel booking');
+      toast.error(error.message || 'Failed to cancel booking');
     } finally {
       setLoading(false);
     }

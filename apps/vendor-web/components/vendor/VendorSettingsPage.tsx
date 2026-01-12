@@ -97,9 +97,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
   }
 
   return (
-    <div className="p-0">
-      <h1 className="text-2xl font-bold text-gray-900 mb-0">Settings</h1>
-
+    <div>
       {/* Tabs */}
       <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit">
         {[

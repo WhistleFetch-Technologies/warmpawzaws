@@ -1,11 +1,17 @@
 /**
  * ============================================================================
- * BOOKING ENDPOINTS - LAMBDA VERSION (TEMPORAL AUDIT COMPLIANT)
+ * BOOKING ENDPOINTS - LAMBDA VERSION (DEPRECATED)
  * ============================================================================
+ * 
+ * ⚠️ DEPRECATED: This handler is deprecated and not registered.
+ * 
+ * Use bookings-enhanced.ts instead, which is registered in handler/index.ts
+ * 
+ * This file is kept for reference only. Do not use or register this handler.
  * 
  * Migrated from: supabase/functions/make-server-booking/booking-endpoints.tsx
  * 
- * Endpoints:
+ * Endpoints (DEPRECATED - not registered):
  * - POST /bookings/create - Create new booking
  * - GET /bookings/:id - Get booking details
  * - PUT /bookings/:id/status - Update booking status
@@ -20,6 +26,7 @@
  * 
  * Date: 2025-01-28
  * Updated: 2026-01-02 (Temporal Audit Fixes)
+ * Deprecated: 2026-01-28 (Replaced by bookings-enhanced.ts)
  * Migration: Supabase to AWS Lambda
  * ============================================================================
  */

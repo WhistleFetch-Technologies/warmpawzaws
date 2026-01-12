@@ -102,12 +102,12 @@ export function AdminRefundsPage() {
   };
 
   return (
-    <div className="p-0">
-      <div className="flex items-center justify-between mb-0">
-        <h1 className="text-2xl font-bold text-gray-900">Refund Management</h1>
+    <div className="space-y-6">
+      {/* Header actions removed - now in parent page */}
+      <div className="flex items-center justify-end mb-4">
         <button
           onClick={loadData}
-          className="px-4 py-0 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+          className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition"
         >
           🔄 Refresh
         </button>
@@ -115,7 +115,7 @@ export function AdminRefundsPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-5 gap-4 mb-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <p className="text-sm text-gray-500">Total Requests</p>
             <p className="text-2xl font-bold text-gray-900">{stats.total}</p>

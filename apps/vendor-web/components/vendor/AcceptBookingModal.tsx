@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CheckCircle, User } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 
 interface AcceptBookingModalProps {
   booking: any;
@@ -23,22 +23,17 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
   const [loading, setLoading] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadStaffMembers();
   }, []);
 
   const loadStaffMembers = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/${vendorId}/staff?active=true`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
+      const data = await apiClient.get<any>(`/vendor/${vendorId}/staff?active=true`);
+      if (data && data.success) {
         setStaffMembers(data.staff || []);
+      } else {
+        setStaffMembers(data.staff || data || []);
       }
     } catch (error) {
       console.error('Error loading staff:', error);
@@ -56,33 +51,21 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `${API_BASE}/bookings/${booking.id}/accept`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            vendorId,
-            staffId: selectedStaffId || undefined,
-            notes
-          })
-        }
-      );
+      const data = await apiClient.post(`/vendor/bookings/${booking.id}/confirm`, {
+        vendorId,
+        staffId: selectedStaffId || undefined,
+        notes
+      }) as any;
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data && data.success) {
         toast.success('Booking accepted successfully!');
         onSuccess();
       } else {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        toast.error(error.error || 'Failed to accept booking');
+        toast.error(data?.error || 'Failed to accept booking');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accepting booking:', error);
-      toast.error('Network error');
+      toast.error(error?.message || 'Network error');
     } finally {
       setLoading(false);
     }

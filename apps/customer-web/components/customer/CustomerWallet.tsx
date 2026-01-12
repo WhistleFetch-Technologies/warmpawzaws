@@ -250,43 +250,35 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <header className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <a href="/" className="text-2xl">←</a>
-          <h1 className="text-xl font-bold">My Wallet</h1>
-        </div>
-
-        {/* Balance Card */}
-        <div className="max-w-4xl mx-auto px-4 pb-8">
-          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-0">
-            <p className="text-white/80 text-sm">Available Balance</p>
-            <p className="text-4xl font-bold mt-0">₹{wallet?.balance?.toLocaleString() || '0'}</p>
+    <div>
+      {/* Balance Card */}
+      <div className="mb-6">
+          <div className="bg-white rounded-2xl shadow-sm p-6">
+            <p className="text-gray-600 text-sm mb-2">Available Balance</p>
+            <p className="text-4xl font-bold text-gray-900">₹{wallet?.balance?.toLocaleString() || '0'}</p>
             
             {wallet?.pending_credits && wallet.pending_credits > 0 && (
-              <div className="mt-4 flex items-center gap-0 text-sm text-white/80">
+              <div className="mt-4 flex items-center gap-2 text-sm text-orange-600">
                 <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
                 ₹{wallet.pending_credits.toLocaleString()} pending
               </div>
             )}
 
-            <div className="mt-0 grid grid-cols-2 gap-4">
-              <div className="bg-white/10 rounded-xl p-0">
-                <p className="text-xs text-white/70">Total Earned</p>
-                <p className="text-lg font-semibold">₹{wallet?.total_earned?.toLocaleString() || '0'}</p>
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <div className="bg-orange-50 rounded-xl p-4">
+                <p className="text-xs text-gray-600">Total Earned</p>
+                <p className="text-lg font-semibold text-gray-900">₹{wallet?.total_earned?.toLocaleString() || '0'}</p>
               </div>
-              <div className="bg-white/10 rounded-xl p-0">
-                <p className="text-xs text-white/70">Total Spent</p>
-                <p className="text-lg font-semibold">₹{wallet?.total_spent?.toLocaleString() || '0'}</p>
+              <div className="bg-orange-50 rounded-xl p-4">
+                <p className="text-xs text-gray-600">Total Spent</p>
+                <p className="text-lg font-semibold text-gray-900">₹{wallet?.total_spent?.toLocaleString() || '0'}</p>
               </div>
             </div>
           </div>
         </div>
-      </header>
 
       {/* Quick Actions */}
-      <div className="max-w-4xl mx-auto px-4 -mt-4">
+      <div className="mb-6">
         <div className="bg-white rounded-2xl shadow-sm p-4 flex gap-0 overflow-x-auto">
           <button
             onClick={() => setShowTopUpModal(true)}
@@ -311,7 +303,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
       </div>
 
       {/* Transactions */}
-      <main className="max-w-4xl mx-auto px-4 py-0 pb-24">
+      <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Transaction History</h2>
           <select
@@ -365,7 +357,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
             </div>
           </div>
         )}
-      </main>
+      </div>
 
       {/* Top-up Modal */}
       {showTopUpModal && (

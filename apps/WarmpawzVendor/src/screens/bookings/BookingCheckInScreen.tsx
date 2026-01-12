@@ -48,6 +48,7 @@ export function BookingCheckInScreen({
     try {
       const response = await BookingActionsApi.checkIn(
         bookingId,
+        vendorId,
         undefined, // staffId - can be added later
         notes,
         petCondition

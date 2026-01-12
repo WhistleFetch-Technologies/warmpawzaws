@@ -19,11 +19,9 @@ import {
   Image as ImageIcon,
   Trash2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
 import { toast } from 'sonner';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
-import { authenticatedFetch } from '@/lib/session-manager'; // ✅ SECURITY FIX
 
 interface FacilityManagementProps {
   vendorId: string;
@@ -65,7 +63,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
   const [newPhotos, setNewPhotos] = useState<PhotoFile[]>([]); // New photos to upload
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // Using apiClient instead of API_BASE
   const MAX_PHOTOS = 10;
 
   // Get applicable amenities for this vendor type
@@ -165,30 +163,16 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         });
 
         console.log('📤 Uploading facility photos...');
-        // ✅ SECURITY FIX: Use authenticatedFetch for photo upload
-        const uploadResponse = await authenticatedFetch(
-          `${API_BASE}/storage/upload-facility-photos`,
-          {
-            method: 'POST',
-            body: formData
-            // Note: Don't set Content-Type - browser handles multipart/form-data
-          }
-        );
-
-        if (!uploadResponse.ok) {
-          const error = await uploadResponse.text();
-          console.error('❌ Upload failed:', error);
-          toast.error('Failed to upload photos');
-          return;
-        }
-
-        const uploadResult = await uploadResponse.json();
+        // Upload photos using apiClient
+        const uploadResult = await apiClient.post('/storage/upload-facility-photos', formData) as any;
         console.log('✅ Photos uploaded:', uploadResult);
         
-        if (uploadResult.uploads) {
+        if (uploadResult && uploadResult.uploads) {
           uploadedUrls = uploadResult.uploads
             .filter((u: any) => u.success)
             .map((u: any) => u.url);
+        } else if (uploadResult && uploadResult.photoUrls) {
+          uploadedUrls = uploadResult.photoUrls;
         }
       }
 
@@ -196,25 +180,15 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
       const allPhotos = [...facility.photos, ...uploadedUrls];
 
       // Save facility data
-      // ✅ SECURITY FIX: Use authenticatedFetch for facility update
-      const response = await authenticatedFetch(`${API_BASE}/vendor/facility/${vendorId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          description: facility.description,
-          photos: allPhotos,
-          address: facility.address,
-          operatingHours: facility.operatingHours,
-          amenities: facility.amenities,
-          customAmenities: facility.customAmenities,
-          specializations: facility.specializations
-        })
+      const saveData = await apiClient.put<{ success?: boolean; error?: string }>(`/vendor/facility/${vendorId}`, {
+        description: facility.description,
+        photos: allPhotos,
+        address: facility.address,
+        operatingHours: facility.operatingHours,
+        amenities: facility.amenities,
+        customAmenities: facility.customAmenities,
+        specializations: facility.specializations
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to save facility data');
-      }
-
-      const saveData = await response.json();
 
       if (saveData.success) {
         toast.success('Facility photos and description saved successfully!');
@@ -226,7 +200,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
           photos: allPhotos
         }));
       } else {
-        toast.error(saveData.error || 'Failed to save facility information');
+        toast.error((saveData as any).error || 'Failed to save facility information');
       }
     } catch (error) {
       console.error('Error saving facility data:', error);

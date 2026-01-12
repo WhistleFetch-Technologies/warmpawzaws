@@ -193,17 +193,29 @@ export function registerOrderManagementEndpoints(app: Hono) {
         if (payments.length > 0) {
           const payment = payments[0];
           
-          // Create refund request
-          const { insert } = require('../database/rds-connection');
-          await insert('refunds', {
-            payment_id: payment.id,
-            order_id: orderId,
-            amount: payment.amount,
-            refund_reason: `Order cancelled: ${reason || 'Customer request'}`,
-            refund_status: 'pending',
-            requested_by: 'system',
-            created_at: new Date().toISOString(),
-          });
+          // Create refund request (use refund_status field)
+          const { insert, query } = require('../database/rds-connection');
+          await query(
+            `INSERT INTO refunds (
+              payment_id,
+              order_id,
+              customer_id,
+              vendor_id,
+              refund_amount,
+              refund_reason,
+              refund_status,
+              requested_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
+            RETURNING *`,
+            [
+              payment.id,
+              orderId,
+              order.customer_id,
+              order.vendor_id || null,
+              payment.amount,
+              `Order cancelled: ${reason || 'Customer request'}`
+            ]
+          );
           
           console.log(`✅ Refund request created for cancelled order ${orderId}`);
         }
@@ -219,6 +231,89 @@ export function registerOrderManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error cancelling order:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /orders/:orderId
+   * Update order (full update - shipping address, items, etc.)
+   */
+  app.put("/orders/:orderId", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const updates = await c.req.json();
+
+      // Get order
+      const orders = await select('orders', { id: orderId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+
+      const order = orders[0];
+
+      // Validate that order can be updated (only pending/confirmed orders)
+      if (!['pending', 'confirmed'].includes(order.order_status)) {
+        return c.json({
+          error: `Order cannot be updated. Current status: ${order.order_status}`,
+        }, 400);
+      }
+
+      // Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+
+      // Update shipping address if provided
+      if (updates.shippingAddress) {
+        updateData.shipping_address = typeof updates.shippingAddress === 'string'
+          ? updates.shippingAddress
+          : JSON.stringify(updates.shippingAddress);
+      }
+      if (updates.shippingCity) updateData.shipping_city = updates.shippingCity;
+      if (updates.shippingState) updateData.shipping_state = updates.shippingState;
+      if (updates.shippingPincode) updateData.shipping_pincode = updates.shippingPincode;
+      if (updates.shippingPhone) updateData.shipping_phone = updates.shippingPhone;
+
+      // Update amounts if provided
+      if (updates.subtotal !== undefined) updateData.subtotal = updates.subtotal;
+      if (updates.taxAmount !== undefined) updateData.tax_amount = updates.taxAmount;
+      if (updates.shippingAmount !== undefined) updateData.shipping_amount = updates.shippingAmount;
+      if (updates.discountAmount !== undefined) updateData.discount_amount = updates.discountAmount;
+      if (updates.totalAmount !== undefined) updateData.total_amount = updates.totalAmount;
+
+      // Update order items if provided
+      if (updates.items && Array.isArray(updates.items)) {
+        // Delete existing items
+        await query('DELETE FROM order_items WHERE order_id = $1', [orderId]);
+
+        // Insert new items
+        const { insert } = require('../database/rds-connection');
+        for (const item of updates.items) {
+          await insert('order_items', {
+            order_id: orderId,
+            product_id: item.productId || null,
+            service_id: item.serviceId || null,
+            name: item.name,
+            quantity: item.quantity || 1,
+            unit_price: item.unitPrice || item.price || 0,
+            total_price: (item.quantity || 1) * (item.unitPrice || item.price || 0),
+            ...(item.category && { category: item.category }),
+            ...(item.hsnCode && { hsn_code: item.hsnCode }),
+          });
+        }
+      }
+
+      // Update order
+      const updated = await update('orders', { id: orderId }, updateData);
+
+      return c.json({
+        success: true,
+        order: updated[0],
+        message: 'Order updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating order:', error);
       return c.json({ error: error.message }, 500);
     }
   });

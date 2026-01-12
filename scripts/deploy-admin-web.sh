@@ -20,8 +20,9 @@ NC='\033[0m' # No Color
 
 # Step 1: Build the app
 echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
-cd "$(dirname "$0")/.."
-cd "apps/${APP_NAME}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT/apps/${APP_NAME}"
 npm run build
 
 if [ ! -d "dist" ]; then
@@ -31,9 +32,39 @@ fi
 
 echo -e "${GREEN}✅ Build completed successfully${NC}"
 
+# Step 1.5: Inject runtime-config.js
+echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
+cd "$PROJECT_ROOT"
+
+# Get API Gateway endpoint
+API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \
+  --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
+  --output text 2>/dev/null | head -1 || echo "")
+
+if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ]; then
+  API_ENDPOINT="${DEV_API_URL:-https://dev.api.warmpawz.com}"
+  echo -e "${YELLOW}⚠️  Using fallback API endpoint: $API_ENDPOINT${NC}"
+else
+  echo -e "${GREEN}✅ API Gateway endpoint: $API_ENDPOINT${NC}"
+fi
+
+# Inject runtime-config.js into dist folder
+cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
+// Runtime Configuration for Warmpawz ${APP_NAME}
+// Injected at deployment time with actual API Gateway endpoint
+(function() {
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+    apiBaseUrl: "${API_ENDPOINT}",
+    uatMode: true
+  };
+  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+})();
+EOF
+
+echo -e "${GREEN}✅ runtime-config.js injected${NC}"
+
 # Step 2: Deploy to S3
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"
-cd "$(dirname "$0")/../.."
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map"
 
 if [ $? -eq 0 ]; then

@@ -131,7 +131,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       
       // Don't pass activeFilter (today/week/month) as status filter - it's just for UI display
       // Pass empty string to get all statuses
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`) as any;
+      const data = await apiClient.get(`/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`) as any;
 
       if (data && data.success) {
         // data already available
@@ -188,7 +188,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     if (!confirm('Are you sure you want to cancel this booking?')) return;
 
     try {
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${bookingId}/cancel`, {}) as any;
+      const data = await apiClient.post(`/vendor/bookings/${bookingId}/cancel`, {}) as any;
 
       if (data && data.success) {
         loadBookings(); // Reload bookings
@@ -207,7 +207,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   const handleAcceptBooking = async (booking: Booking) => {
     try {
       setCompletingBooking(true);
-      const data = await apiClient.post(`/make-server-3dd53475/bookings/${booking.id}/accept`, { vendorId }) as any;
+      const data = await apiClient.post(`/vendor/bookings/${booking.id}/confirm`, { vendorId }) as any;
 
       if (data && data.success) {
         alert('✅ Booking accepted!');
@@ -259,7 +259,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       setOtpError('');
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/start-session`, {
+      const data = await apiClient.post(`/vendor/bookings/${selectedBooking.id}/start-session`, {
         vendorId,
         otp: otpInput
       }) as any;
@@ -288,7 +288,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${booking.id}/end-session`, { vendorId }) as any;
+      const data = await apiClient.post(`/vendor/bookings/${booking.id}/end-session`, { vendorId }) as any;
       
       // data already available
       
@@ -311,7 +311,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${booking.id}/complete`, { vendorId, otp: null }) as any;
+      const data = await apiClient.post(`/vendor/bookings/${booking.id}/complete`, { vendorId, otp: null }) as any;
       
       // data already available
       
@@ -342,7 +342,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       setOtpError('');
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/complete`, { vendorId, otp: otpInput }) as any;
+      const data = await apiClient.post(`/vendor/bookings/${selectedBooking.id}/complete`, { vendorId, otp: otpInput }) as any;
       
       // data already available
       
@@ -388,7 +388,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     if (booking.hasPrescription) {
       // View existing prescription
       try {
-        const data = await apiClient.get(`/make-server-3dd53475/vendor/prescription/${bookingId}`) as any;
+        const data = await apiClient.get(`/vendor/prescription/${bookingId}`) as any;
         
         if (data && data.success) {
           // data already available
@@ -407,7 +407,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       if (!notes || notes.trim() === '') return;
       
       try {
-        const data = await apiClient.post('/make-server-3dd53475/vendor/prescription/upload', {
+        const data = await apiClient.post('/vendor/prescription/upload', {
           bookingId,
           vendorId,
           prescriptionNotes: notes.trim(),

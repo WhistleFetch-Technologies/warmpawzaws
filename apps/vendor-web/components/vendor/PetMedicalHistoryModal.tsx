@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, FileText, Calendar, User, AlertCircle, Pill, Activity } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// Using apiClient instead of Supabase
 
 interface PetMedicalHistoryModalProps {
   petId: string;
@@ -62,7 +62,7 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
       setLoading(true);
       console.log('🏥 [MEDICAL-HISTORY] Loading history for pet:', petId);
       
-      const result = await apiClient.get(`/make-server-3dd53475/prescription/pet/${petId}`) as any;
+      const result = await apiClient.get(`/prescription/pet/${petId}`) as any;
       
       console.log('✅ [MEDICAL-HISTORY] Loaded:', result.prescriptions?.length || 0, 'records');
       setPrescriptions(result.prescriptions || []);

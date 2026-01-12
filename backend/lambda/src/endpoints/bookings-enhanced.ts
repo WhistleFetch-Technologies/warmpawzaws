@@ -13,6 +13,8 @@
  * - GET /bookings/:id - Get booking details
  * - PUT /bookings/:id/status - Update booking status
  * - GET /bookings/:id/history - Get booking status history
+ * - POST /bookings/:id/cancel - Cancel booking
+ * - POST /bookings/:id/reschedule - Reschedule booking
  * 
  * Date: 2026-01-28
  * Phase: 3
@@ -433,6 +435,9 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
         updateData.completed_at = new Date();
       } else if (status === 'cancelled') {
         updateData.cancelled_at = new Date();
+        if (reason) {
+          updateData.cancellation_reason = reason;
+        }
       }
 
       const setClauses = Object.keys(updateData).map((key, i) => `${key} = $${i + 1}`);
@@ -493,6 +498,345 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
   }
 }
 
+class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const bookingId = context.event.pathParameters?.bookingId;
+    const body = this.parseBody(context.event);
+    const requestId = context.requestId;
+
+    if (!bookingId) {
+      return this.error('Booking ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    const reason = body.reason || body.cancellationReason || 'Customer cancellation';
+    const actorId = context.userId || body.customerId || body.actorId;
+    const actorType = context.userRole || body.actorType || 'customer';
+
+    // Get current booking
+    const existingBookings = await select('bookings', { id: bookingId });
+    if (existingBookings.length === 0) {
+      return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
+    }
+
+    const currentBooking = existingBookings[0];
+    const oldStatus = currentBooking.status;
+
+    // Validate that booking can be cancelled
+    const cancellableStatuses = ['pending', 'confirmed'];
+    if (!cancellableStatuses.includes(oldStatus)) {
+      return this.error(
+        `Booking cannot be cancelled. Current status: ${oldStatus}`,
+        400,
+        'VALIDATION_ERROR',
+        { currentStatus: oldStatus, allowedStatuses: cancellableStatuses },
+        requestId
+      );
+    }
+
+    // Check if booking is in the past
+    const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
+    const now = new Date();
+    if (bookingDateTime < now) {
+      return this.error(
+        'Cannot cancel past bookings',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        requestId
+      );
+    }
+
+    try {
+      // Update booking status to cancelled
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE bookings 
+           SET status = 'cancelled', 
+               cancelled_at = NOW(), 
+               cancellation_reason = $1,
+               updated_at = NOW() 
+           WHERE id = $2`,
+          [reason, bookingId]
+        );
+      });
+
+      // Log status change
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        'cancelled',
+        actorId,
+        actorType,
+        reason
+      );
+
+      // Log audit entry
+      await logAuditEntry({
+        entityType: 'booking',
+        entityId: bookingId,
+        action: 'cancel',
+        oldValues: { status: oldStatus },
+        newValues: { status: 'cancelled', reason },
+        changedFields: ['status', 'cancelled_at', 'cancellation_reason'],
+        actorId,
+        actorType,
+        requestId,
+      });
+
+      // Process refund if payment was made
+      let refundInfo = null;
+      if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
+        try {
+          // Get payment for refund
+          const payments = await query(
+            `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
+            [bookingId]
+          );
+
+          if (payments.rows.length > 0) {
+            const paymentId = payments.rows[0].id;
+            
+            // Create refund request (refunds table uses refund_status, not status)
+            const refundRequests = await query(
+              `INSERT INTO refunds (
+                payment_id,
+                booking_id, 
+                customer_id, 
+                vendor_id,
+                refund_amount,
+                refund_reason, 
+                refund_status,
+                requested_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW()) 
+              RETURNING *`,
+              [
+                paymentId,
+                bookingId,
+                currentBooking.customer_id,
+                currentBooking.vendor_id || null,
+                currentBooking.total_amount,
+                `Booking cancellation: ${reason}`
+              ]
+            );
+            refundInfo = {
+              refundId: refundRequests.rows[0]?.id,
+              amount: currentBooking.total_amount,
+              status: 'pending'
+            };
+          }
+        } catch (error) {
+          console.error('Error creating refund request:', error);
+          // Don't fail cancellation if refund processing fails
+        }
+      }
+
+      // Publish event
+      try {
+        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: currentBooking.customer_id,
+          vendorId: currentBooking.vendor_id,
+          oldStatus,
+          newStatus: 'cancelled',
+          reason,
+          ...generateEventMetadata(requestId),
+        });
+      } catch (error) {
+        console.error('Failed to publish booking cancelled event:', error);
+      }
+
+      return this.success({
+        bookingId,
+        message: 'Booking cancelled successfully',
+        refund: refundInfo,
+      }, requestId);
+    } catch (error: any) {
+      console.error('Error cancelling booking:', error);
+      return this.error(
+        error.message || 'Failed to cancel booking',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        requestId
+      );
+    }
+  }
+}
+
+class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const bookingId = context.event.pathParameters?.bookingId;
+    const body = this.parseBody(context.event);
+    const requestId = context.requestId;
+
+    if (!bookingId) {
+      return this.error('Booking ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    const newDate = body.newDate || body.bookingDate;
+    const newTime = body.newTime || body.newTimeSlot || body.bookingTime;
+    const reason = body.reason || body.rescheduleReason || 'Customer reschedule request';
+    const actorId = context.userId || body.customerId || body.actorId;
+    const actorType = context.userRole || body.actorType || 'customer';
+
+    if (!newDate || !newTime) {
+      return this.error(
+        'newDate and newTime are required',
+        400,
+        'VALIDATION_ERROR',
+        undefined,
+        requestId
+      );
+    }
+
+    // Validate new booking date/time
+    const dateValidation = validateBookingDate(newDate, newTime);
+    if (!dateValidation.valid) {
+      return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    // Get current booking
+    const existingBookings = await select('bookings', { id: bookingId });
+    if (existingBookings.length === 0) {
+      return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
+    }
+
+    const currentBooking = existingBookings[0];
+    const oldStatus = currentBooking.status;
+
+    // Validate that booking can be rescheduled
+    const reschedulableStatuses = ['pending', 'confirmed'];
+    if (!reschedulableStatuses.includes(oldStatus)) {
+      return this.error(
+        `Booking cannot be rescheduled. Current status: ${oldStatus}`,
+        400,
+        'VALIDATION_ERROR',
+        { currentStatus: oldStatus, allowedStatuses: reschedulableStatuses },
+        requestId
+      );
+    }
+
+    try {
+      // Check for slot conflicts
+      const conflictCheck = await query(
+        `SELECT id FROM bookings 
+         WHERE vendor_id = $1 
+           AND booking_date = $2 
+           AND booking_time = $3 
+           AND id != $4
+           AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+         LIMIT 1`,
+        [currentBooking.vendor_id, newDate, newTime, bookingId]
+      );
+
+      if (conflictCheck.rows.length > 0) {
+        return this.error(
+          'This time slot is already booked. Please select a different time.',
+          409,
+          'SLOT_CONFLICT',
+          undefined,
+          requestId
+        );
+      }
+
+      // Update booking with new date/time
+      await withTransaction(async (client) => {
+        await client.query(
+          `UPDATE bookings 
+           SET booking_date = $1,
+               booking_time = $2,
+               rescheduled_from_booking_id = $4,
+               notes = CASE 
+                 WHEN notes IS NULL THEN $3
+                 ELSE notes || ' | ' || $3
+               END,
+               updated_at = NOW() 
+           WHERE id = $4`,
+          [newDate, newTime, `Rescheduled: ${reason}`, bookingId]
+        );
+      });
+
+      // Get updated booking
+      const updatedBookings = await select('bookings', { id: bookingId });
+
+      // Log status change (reschedule is a status update to track history)
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        oldStatus, // Status remains the same, just time changes
+        actorId,
+        actorType,
+        `Rescheduled to ${newDate} ${newTime}: ${reason}`
+      );
+
+      // Log audit entry
+      await logAuditEntry({
+        entityType: 'booking',
+        entityId: bookingId,
+        action: 'reschedule',
+        oldValues: {
+          booking_date: currentBooking.booking_date,
+          booking_time: currentBooking.booking_time,
+        },
+        newValues: {
+          booking_date: newDate,
+          booking_time: newTime,
+          reason,
+        },
+        changedFields: ['booking_date', 'booking_time'],
+        actorId,
+        actorType,
+        requestId,
+      });
+
+      // Publish event
+      try {
+        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: currentBooking.customer_id,
+          vendorId: currentBooking.vendor_id,
+          oldStatus,
+          newStatus: oldStatus, // Status unchanged
+          reason: `Rescheduled: ${reason}`,
+          ...generateEventMetadata(requestId),
+        });
+      } catch (error) {
+        console.error('Failed to publish booking rescheduled event:', error);
+      }
+
+      return this.success({
+        bookingId,
+        booking: updatedBookings[0],
+        message: 'Booking rescheduled successfully',
+        oldDate: currentBooking.booking_date,
+        oldTime: currentBooking.booking_time,
+        newDate,
+        newTime,
+      }, requestId);
+    } catch (error: any) {
+      if (error.message === 'SLOT_CONFLICT' || error.code === '55P03') {
+        return this.error(
+          'This time slot is already booked. Please select a different time.',
+          409,
+          'SLOT_CONFLICT',
+          undefined,
+          requestId
+        );
+      }
+      console.error('Error rescheduling booking:', error);
+      return this.error(
+        error.message || 'Failed to reschedule booking',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        requestId
+      );
+    }
+  }
+}
+
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -502,6 +846,8 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   const getHandler = new GetBookingHandlerEnhanced();
   const updateHandler = new UpdateBookingStatusHandlerEnhanced();
   const historyHandler = new GetBookingHistoryHandlerEnhanced();
+  const cancelHandler = new CancelBookingHandlerEnhanced();
+  const rescheduleHandler = new RescheduleBookingHandlerEnhanced();
 
   app.post('/bookings/create', async (c) => {
     const event = createApiGatewayEvent(c.req);
@@ -534,6 +880,24 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result: any = await updateHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
+  app.post('/bookings/:bookingId/cancel', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    const context = createLambdaContext();
+    const result: any = await cancelHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
+  app.post('/bookings/:bookingId/reschedule', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    const context = createLambdaContext();
+    const result: any = await rescheduleHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });

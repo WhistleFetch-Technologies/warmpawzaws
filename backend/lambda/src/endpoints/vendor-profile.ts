@@ -176,7 +176,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/profile
-   * Get vendor profile
+   * Get vendor profile with role and capabilities (DB query - no frontend dependency)
    */
   app.get("/vendor/:vendorId/profile", async (c) => {
     try {
@@ -187,12 +187,141 @@ export function registerVendorProfileEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
+      const vendor = vendors[0];
+      
+      // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
+      let role = null;
+      let capabilities: string[] = [];
+      let roleConfig: any = {};
+      
+      if (vendor.role_id) {
+        try {
+          // Get role from DB
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            
+            // Get capabilities from DB
+            const permissions = await select('role_permissions', { role_id: vendor.role_id });
+            capabilities = permissions.map(p => p.permission_name);
+          }
+        } catch (roleError: any) {
+          console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
+          // Continue without role - vendor profile still works
+        }
+      }
+
       return c.json({
         success: true,
-        vendor: vendors[0],
+        vendor: {
+          ...vendor,
+          // Include role info directly in response
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            description: role.description,
+            config: roleConfig,
+          } : null,
+          capabilities, // Include capabilities directly
+          vendorTypes: roleConfig?.vendorTypes || [],
+          serviceStyles: roleConfig?.serviceStyles || [],
+        },
       });
     } catch (error: any) {
       console.error('Error fetching vendor profile:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/complete
+   * Get complete vendor data with role, capabilities, and onboarding form in one call
+   * This endpoint ensures vendor functions work even if frontend role loading fails
+   */
+  app.get("/vendor/:vendorId/complete", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+      
+      // ✅ Query DB directly for all related data (no frontend dependency)
+      let role = null;
+      let capabilities: string[] = [];
+      let roleConfig: any = {};
+      let onboardingForm: any = null;
+      
+      if (vendor.role_id) {
+        try {
+          // Get role from DB
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            
+            // Get capabilities from DB (batch query)
+            try {
+              const allPermissions = await query(
+                `SELECT role_id, permission_name 
+                 FROM role_permissions 
+                 WHERE role_id = ANY($1::text[])`,
+                [[vendor.role_id]]
+              );
+              capabilities = allPermissions.rows.map((p: any) => p.permission_name);
+            } catch {
+              // Fallback to individual query
+              const permissions = await select('role_permissions', { role_id: vendor.role_id });
+              capabilities = permissions.map(p => p.permission_name);
+            }
+            
+            // Get onboarding form for this role (if vendor is still onboarding)
+            try {
+              const forms = await select('onboarding_forms', { role_id: role.name });
+              if (forms.length > 0) {
+                const fields = typeof forms[0].fields === 'string' 
+                  ? JSON.parse(forms[0].fields) 
+                  : forms[0].fields || [];
+                onboardingForm = {
+                  fields: fields.filter((f: any) => f.isActive !== false),
+                  version: forms[0].version || 1,
+                };
+              }
+            } catch (formError: any) {
+              console.warn(`[Vendor Complete] Failed to load onboarding form:`, formError.message);
+              // Continue without form
+            }
+          }
+        } catch (roleError: any) {
+          console.warn(`[Vendor Complete] Failed to load role ${vendor.role_id}:`, roleError.message);
+          // Continue without role - vendor data still works
+        }
+      }
+
+      return c.json({
+        success: true,
+        vendor: {
+          ...vendor,
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            description: role.description,
+            config: roleConfig,
+          } : null,
+          capabilities,
+          vendorTypes: roleConfig?.vendorTypes || [],
+          serviceStyles: roleConfig?.serviceStyles || [],
+          onboardingForm, // Include form if available
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching complete vendor data:', error);
       return c.json({ error: error.message }, 500);
     }
   });

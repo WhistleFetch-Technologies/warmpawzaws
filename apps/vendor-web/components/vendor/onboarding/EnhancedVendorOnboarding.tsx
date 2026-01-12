@@ -134,67 +134,60 @@ export function EnhancedVendorOnboarding({
     setStep(solo ? 'solo_onboarding' : 'multi_staff_onboarding');
   };
 
-  const handleSoloOnboardingSubmit = async (soloData: any) => {
+  // ✅ REMOVED: handleSoloOnboardingSubmit - Not used, SoloProviderOnboarding handles submission directly
+
+  // ✅ FIX: handleMultiStaffOnboardingSubmit - Use correct endpoint
+  const handleMultiStaffOnboardingSubmit = async (submissionData: any) => {
     setSubmitting(true);
-    
     try {
+      // ✅ FIX: Get phone from localStorage or props
+      const vendorPhone = phone || (typeof window !== 'undefined' ? localStorage.getItem('vendorPhone') : null);
+      
+      if (!vendorPhone) {
+        throw new Error('Phone number is required. Please log in again.');
+      }
+
+      // ✅ FIX: Transform submissionData to match backend expected format
       const payload = {
-        roleId,
-        phone: phone || soloData.phone,
-        email: soloData.email,
-        ownerName: soloData.ownerName,
-        businessName: soloData.businessName,
-        panNumber: soloData.panNumber,
-        bankAccount: soloData.bankAccount,
-        serviceArea: soloData.serviceArea,
-        operatingHours: soloData.operatingHours,
-        certifications: soloData.certifications || [],
-        experience: soloData.experience || 0,
-        specializations: soloData.specializations || [],
-        bio: soloData.bio || '',
-        profilePhoto: soloData.profilePhoto
+        phone: vendorPhone,
+        application_payload: {
+          ...submissionData.formData,
+          roleId: submissionData.roleId || roleId,
+          location: submissionData.location || submissionData.coordinates,
+          coordinates: submissionData.coordinates || submissionData.location,
+          serviceStyles: submissionData.serviceStyles || [],
+          specializations: submissionData.specializations || [],
+          agreedToTerms: submissionData.agreedToTerms || false,
+          formVersion: submissionData.formVersion || 1,
+        },
+        uploaded_documents: Object.entries(submissionData.documents || {}).map(([key, doc]: [string, any]) => ({
+          type: key,
+          name: doc.name,
+          url: doc.url,
+          size: doc.size,
+          mime_type: doc.type,
+        })),
       };
 
-      const response = await apiClient.post<any>('/vendor/onboard-solo', payload);
-
-      if (response.success) {
+      // ✅ FIX: Use correct endpoint /vendor/onboarding/submit-application
+      const response = await apiClient.post<any>('/vendor/onboarding/submit-application', payload);
+      
+      if (response.success || response.applicationId) {
         onComplete({
           success: true,
-          vendorId: response.vendorId,
-          centerId: response.centerId,
-          staffId: response.staffId,
-          isSoloProvider: true,
-          status: 'submitted',
-          roleId,
-          ...soloData
-        });
-      } else {
-        throw new Error(response.error || 'Failed to submit');
-      }
-    } catch (error: any) {
-      console.error('Solo onboarding error:', error);
-      alert(`Failed to submit: ${error.message || 'Unknown error'}`);
-      setSubmitting(false);
-    }
-  };
-
-  const handleMultiStaffOnboardingSubmit = async (formData: any) => {
-    setSubmitting(true);
-    try {
-      const response = await apiClient.post<any>('/vendor/onboard', formData);
-      if (response.success) {
-        onComplete({
-          success: true,
+          applicationId: response.applicationId,
           vendorId: response.vendorId,
           isSoloProvider: false,
           status: 'submitted',
-          roleId,
-          ...formData
+          roleId: roleId,
         });
+      } else {
+        throw new Error(response.error || 'Failed to submit application');
       }
     } catch (error: any) {
       console.error('Multi-staff onboarding error:', error);
       alert(`Failed to submit: ${error.message || 'Unknown error'}`);
+    } finally {
       setSubmitting(false);
     }
   };

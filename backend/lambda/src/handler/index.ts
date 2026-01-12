@@ -14,6 +14,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, Context } from 'aws-lambda';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
 // Enhanced handlers (Phase 2-5)
 import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
@@ -24,9 +25,11 @@ import { registerCustomerEndpointsEnhanced } from '../endpoints/customer-enhance
 // Legacy handlers (to be migrated gradually)
 import { registerAuthEndpoints } from '../endpoints/auth';
 import { registerVendorOnboardingEndpoints } from '../endpoints/vendor-onboarding';
-import { registerBookingEndpoints } from '../endpoints/bookings';
+// import { registerBookingEndpoints } from '../endpoints/bookings'; // DEPRECATED - use registerBookingEndpointsEnhanced instead
 import { registerPaymentEndpoints } from '../endpoints/payments';
 import { registerRoleEndpoints } from '../endpoints/roles';
+import { registerRoleSeedingEndpoints } from '../endpoints/role-seeding';
+import { registerOnboardingFormManagementEndpoints } from '../endpoints/onboarding-form-management';
 import { registerVendorDashboardEndpoints } from '../endpoints/vendor-dashboard';
 import { registerCustomerEndpoints } from '../endpoints/customer';
 import { registerGpsTrackingEndpoints } from '../endpoints/gps-tracking';
@@ -116,6 +119,7 @@ import { registerSupportCrmEndpoints } from '../endpoints/support-crm';
 import { registerLocationSharingEndpoints } from '../endpoints/location-sharing';
 import { registerVendorSecurityEndpoints } from '../endpoints/vendor-security';
 import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-distance-pricing';
+import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
 
 // Create Hono app
 const app = new Hono();
@@ -157,9 +161,19 @@ app.use('*', cors({
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key', 'X-UAT-Mode', 'X-UAT-Token'],
-  allowCredentials: true,
+  credentials: true,
   maxAge: 86400,
 }));
+
+// Initialize CloudWatch error tracking (India data residency compliant)
+const environment = process.env.NODE_ENV || process.env.ENVIRONMENT || 'development';
+initializeErrorTracking({
+  enabled: true,
+  environment: environment,
+  useCloudWatchMetrics: true,
+  cloudWatchNamespace: 'Warmpawz/Errors',
+  // No Sentry DSN - CloudWatch only for India compliance
+});
 
 // Health check
 app.get('/health', (c) => {
@@ -173,6 +187,8 @@ registerVendorOnboardingEndpointsEnhanced(app);
 registerBookingEndpointsEnhanced(app);
 registerPaymentEndpointsEnhanced(app);
 registerRoleEndpoints(app);
+registerRoleSeedingEndpoints(app);
+registerOnboardingFormManagementEndpoints(app);
 registerVendorDashboardEndpoints(app);
 registerCustomerEndpointsEnhanced(app);
 registerGpsTrackingEndpoints(app);
@@ -262,14 +278,21 @@ registerSupportCrmEndpoints(app);
 registerLocationSharingEndpoints(app);
 registerVendorSecurityEndpoints(app);
 registerVendorDistancePricingEndpoints(app);
+registerSchedulingPolicyEndpoints(app);
 
 // 404 handler
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404);
 });
 
-// Error handler
+// Error handler with CloudWatch tracking
 app.onError((err, c) => {
+  // Capture error to CloudWatch (India data residency compliant)
+  captureException(err, {
+    requestId: c.req.header('x-request-id') || 'unknown',
+    path: c.req.path,
+    method: c.req.method,
+  });
   console.error('Handler error:', err);
   return c.json({ error: 'Internal Server Error' }, 500);
 });
@@ -292,11 +315,13 @@ export const handler = async (
     // If UAT mode is enabled, inject a mock authorizer context to bypass Cognito validation
     if (uatMode && uatToken && uatToken.startsWith('uat-token-')) {
       // Inject mock authorizer claims for UAT mode
-      if (!event.requestContext.authorizer) {
-        (event.requestContext as any).authorizer = {};
+      // Type assertion needed as authorizer is not in V2 type definition
+      const requestContext = event.requestContext as any;
+      if (!requestContext.authorizer) {
+        requestContext.authorizer = {};
       }
-      if (!event.requestContext.authorizer.claims) {
-        (event.requestContext.authorizer as any).claims = {
+      if (!requestContext.authorizer.claims) {
+        requestContext.authorizer.claims = {
           sub: 'uat-admin-user',
           'cognito:username': 'admin@warmpawz.com',
           email: 'admin@warmpawz.com',
@@ -311,8 +336,6 @@ export const handler = async (
     if (httpMethod === 'OPTIONS') {
       const origin = event.headers?.origin || 
                      event.headers?.Origin || 
-                     event.multiValueHeaders?.origin?.[0] ||
-                     event.multiValueHeaders?.Origin?.[0] ||
                      'https://dfof7mguaa0a5.cloudfront.net';
       
       const allowedOrigins = [
@@ -406,9 +429,7 @@ export const handler = async (
 
     // Ensure CORS headers are present in all responses
     const origin = event.headers?.origin || 
-                   event.headers?.Origin || 
-                   event.multiValueHeaders?.origin?.[0] ||
-                   event.multiValueHeaders?.Origin?.[0];
+                   event.headers?.Origin;
     
     const allowedOrigins = [
       // Admin Web CloudFront
@@ -451,6 +472,14 @@ export const handler = async (
     };
   } catch (error) {
     console.error('Lambda handler error:', error);
+    
+    // Capture error in error tracking
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      requestId: context.awsRequestId,
+      path: event.rawPath,
+      method: event.requestContext?.http?.method,
+      apiId: event.requestContext?.apiId,
+    });
     
     // Ensure CORS headers in error responses too
     const origin = event.headers?.origin || 

@@ -38,30 +38,45 @@ export function VendorServiceManagementComplete({
     loadRoleConfiguration();
   }, [vendorId]);
 
+  // ✅ PHASE 3: Role-based conditional field visibility
+  const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
+  const isCafe = vendorRoleId === 'pet_cafe' || vendorRoleId === 'cafe';
+  const isResort = vendorRoleId === 'pet_resort' || vendorRoleId === 'resort';
+  const isBoarding = vendorRoleId === 'pet_boarding' || vendorRoleId === 'boarding';
+  const isRetail = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' || vendorRoleId === 'retail';
+  const isPharmacy = vendorRoleId === 'pet_pharmacy' || vendorRoleId === 'pharmacy';
+  const isHealthcare = vendorRoleId === 'veterinarian' || vendorRoleId === 'veterinary_clinic' || vendorRoleId === 'pet_clinic';
+  const supportsHomeService = !isCafe && !isResort && !isBoarding && !isRetail && !isPharmacy; // Cafe, Resort, Boarding, Retail, Pharmacy don't do home services
+
   const loadRoleConfiguration = async () => {
     try {
       setLoadingRoleConfig(true);
       console.log('🔧 [ROLE-CONFIG] Loading allowed service styles for vendor:', vendorId);
       
-      // Use the new dedicated endpoint
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/allowed-service-styles`) as any;
+      // ✅ FIX: Use /vendor/:vendorId/services endpoint (now includes role config and allowedServiceStyles)
+      const data = await apiClient.get(`/vendor/${vendorId}/services`) as any;
 
       if (data && data.success) {
-        // data already available
         console.log('✅ [ROLE-CONFIG] API Response:', data);
         
-        if (data.success && Array.isArray(data.allowedStyles)) {
-          console.log('✅ [ROLE-CONFIG] Setting allowed styles:', data.allowedStyles);
-          setAllowedServiceStyles(data.allowedStyles);
-          setRoleConfig(data.roleConfig);
+        // ✅ FIX: Extract allowedServiceStyles and role config from services endpoint response
+        const allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || ['at_home', 'at_center', 'tele'];
+        const roleConfig = data.role?.config || data.roleConfig || {};
+        
+        if (Array.isArray(allowedStyles)) {
+          console.log('✅ [ROLE-CONFIG] Setting allowed styles:', allowedStyles);
+          setAllowedServiceStyles(allowedStyles);
+          setRoleConfig(roleConfig);
         } else {
-          console.error('❌ [ROLE-CONFIG] Invalid response format - allowedStyles is not an array:', data);
-          setAllowedServiceStyles([]);
+          console.error('❌ [ROLE-CONFIG] Invalid response format - allowedServiceStyles is not an array:', data);
+          setAllowedServiceStyles(['at_home', 'at_center', 'tele']); // Default fallback
+          setRoleConfig({});
         }
       } else {
         console.error('❌ [ROLE-CONFIG] API request failed:', data);
         toast.error(data?.error || 'Failed to load role configuration');
-        setAllowedServiceStyles([]);
+        setAllowedServiceStyles(['at_home', 'at_center', 'tele']); // Default fallback
+        setRoleConfig({});
       }
     } catch (error) {
       console.error('❌ [ROLE-CONFIG] Exception during role config load:', error);

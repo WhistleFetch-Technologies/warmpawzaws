@@ -27,6 +27,7 @@ import {
 	GSTConfigurationManagement,
 	CancellationPolicyManagement,
 	DynamicSettlementRulesManager,
+	FlexibleTaxRulesManager,
 } from "@/components/admin/finance";
 
 import { Button } from "@warmpawz/ui";
@@ -38,6 +39,7 @@ type TabType =
 	| "refund-policies"
 	| "cancellation-policy"
 	| "gst-config"
+	| "flexible-tax"
 	| "settlements"
 	| "payouts"
 	| "tiers"
@@ -59,6 +61,7 @@ export default function FinanceManagement() {
 			icon: FileCheck,
 		},
 		{ id: "gst-config", label: "GST Configuration", icon: ReceiptText },
+		{ id: "flexible-tax", label: "Flexible Tax System", icon: ReceiptText },
 		{ id: "settlements", label: "Settlements", icon: Receipt },
 		{ id: "payouts", label: "Payout Management", icon: Wallet },
 		{ id: "tiers", label: "Tier System", icon: Layers },
@@ -70,12 +73,13 @@ export default function FinanceManagement() {
 
 	return (
 		<AdminLayout>
-			<div className="flex-1 flex flex-col">
-				{/* Header */}
-				<div className="bg-white border-b border-gray-200 px-20">
-					<div className="px-6 py-4">
+			<div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+				{/* Header - Match wireframe: px-20 border-b, inner px-6 py-4 */}
+				<div className="bg-white border-b border-gray-200">
+					<div className="max-w-7xl mx-auto px-6 py-4">
 						<div className="flex items-center justify-between">
 							<div>
+								{/* ✅ FIX: Match wireframe - text-black text-2xl font-semibold */}
 								<h1 className="text-black text-2xl font-semibold">
 									Finance & Logistics
 								</h1>
@@ -93,10 +97,10 @@ export default function FinanceManagement() {
 					</div>
 				</div>
 
-				{/* Tabs */}
+				{/* Tabs - Match wireframe: border-b border-gray-200, px-6 */}
 				<div className="bg-white border-b border-gray-200">
-					<div className="px-6">
-						<div className="flex gap-1 overflow-x-auto scrollbar-hide">
+					<div className="max-w-7xl mx-auto px-6">
+						<div className="flex gap-1 overflow-x-auto">
 							{tabs.map((tab) => {
 								const Icon = tab.icon;
 								const isActive = activeTab === tab.id;
@@ -122,8 +126,9 @@ export default function FinanceManagement() {
 					</div>
 				</div>
 
-				{/* Content */}
-				<div className="flex-1 overflow-y-auto px-6 py-6">
+				{/* Content - Match wireframe: flex-1 overflow-y-auto px-6 py-6 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-7xl mx-auto px-6 py-6">
 					{activeTab === "dashboard" && (
 						<div className="space-y-6">
 							{/* Stats Grid */}
@@ -240,6 +245,12 @@ export default function FinanceManagement() {
 						</div>
 					)}
 
+					{activeTab === "flexible-tax" && (
+						<div className="bg-white rounded-lg border border-gray-200 p-6">
+							<FlexibleTaxRulesManager />
+						</div>
+					)}
+
 					{activeTab === "settlements" && <SettlementDashboard />}
 					{activeTab === "payouts" && <PayoutManagement />}
 					{activeTab === "tiers" && <TierManagement />}
@@ -290,6 +301,7 @@ export default function FinanceManagement() {
 							</button>
 						</div>
 					)}
+					</div>
 				</div>
 			</div>
 		</AdminLayout>

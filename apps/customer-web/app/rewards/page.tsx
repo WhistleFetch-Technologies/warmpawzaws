@@ -157,11 +157,11 @@ export default function RewardsPage() {
     : rewards;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      {/* Hero Section */}
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Hero Section - Special design, keep as-is but update container */}
       {balance && (
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white px-4 py-8">
-          <div className="max-w-lg mx-auto text-center">
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+          <div className="max-w-7xl mx-auto px-6 py-8 text-center">
             <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${tierColors[balance.tier].bg} ${tierColors[balance.tier].text} mb-4`}>
               <span>{tierColors[balance.tier].icon}</span>
               <span className="font-semibold capitalize">{balance.tier} Member</span>
@@ -188,47 +188,47 @@ export default function RewardsPage() {
         </div>
       )}
 
-      {/* Messages */}
-      <div className="max-w-4xl mx-auto px-4 pt-4">
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
-          </div>
-        )}
-        
-        {success && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
-            <span>{success}</span>
-            <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
-          </div>
-        )}
-      </div>
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
+          
+          {/* Messages */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
+          
+          {success && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
+              <span>{success}</span>
+              <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
+            </div>
+          )}
 
-      {/* Tabs */}
-      <div className="max-w-4xl mx-auto px-4 mt-4">
-        <div className="flex bg-white rounded-xl p-1 shadow-sm">
-          {[
-            { id: 'rewards', label: 'Redeem Points', icon: '🎁' },
-            { id: 'history', label: 'Points History', icon: '📜' },
-            { id: 'redeemed', label: 'My Rewards', icon: '🎫' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-1 py-3 rounded-lg font-medium transition ${
-                activeTab === tab.id
-                  ? 'bg-orange-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <main className="max-w-4xl mx-auto px-4 py-6">
+          {/* Tabs */}
+          <div className="mb-6">
+            <div className="flex bg-white rounded-xl p-1 shadow-sm">
+              {[
+                { id: 'rewards', label: 'Redeem Points', icon: '🎁' },
+                { id: 'history', label: 'Points History', icon: '📜' },
+                { id: 'redeemed', label: 'My Rewards', icon: '🎫' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex-1 py-3 rounded-lg font-medium transition ${
+                    activeTab === tab.id
+                      ? 'bg-orange-500 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
         {/* Rewards Tab */}
         {activeTab === 'rewards' && (
           <>
@@ -411,7 +411,8 @@ export default function RewardsPage() {
             )}
           </div>
         )}
-      </main>
+        </div>
+      </div>
     </div>
   );
 }

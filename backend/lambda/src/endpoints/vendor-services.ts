@@ -23,15 +23,62 @@ export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/services
    * Get all services for a vendor (grouped by style)
+   * ✅ CRITICAL: Includes role, capabilities, and allowed service styles (DB query - no frontend dependency)
    */
   app.get("/vendor/:vendorId/services", async (c) => {
     try {
       const { vendorId } = c.req.param();
 
+      // ✅ CRITICAL: Get vendor with role and capabilities from DB (no frontend dependency)
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const vendor = vendors[0];
+
+      let role = null;
+      let capabilities: string[] = [];
+      let roleConfig: any = {};
+      let allowedServiceStyles: string[] = ['at_home', 'at_center', 'tele'];
+
+      if (vendor.role_id) {
+        try {
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            allowedServiceStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ['at_home', 'at_center', 'tele'];
+            
+            // Get capabilities from DB
+            try {
+              const allPermissions = await query(
+                `SELECT role_id, permission_name 
+                 FROM role_permissions 
+                 WHERE role_id = ANY($1::text[])`,
+                [[vendor.role_id]]
+              );
+              capabilities = allPermissions.rows.map((p: any) => p.permission_name);
+            } catch {
+              const permissions = await select('role_permissions', { role_id: vendor.role_id });
+              capabilities = permissions.map(p => p.permission_name);
+            }
+          }
+        } catch (roleError: any) {
+          console.warn(`[Vendor Services] Failed to load role ${vendor.role_id}:`, roleError.message);
+          // Continue with default service styles
+        }
+      }
+
       const serviceStyles = ['at_home', 'at_center', 'tele'];
       const servicesByStyle: Record<string, any> = {};
 
       for (const style of serviceStyles) {
+        // Only fetch services for allowed styles
+        if (!allowedServiceStyles.includes(style)) {
+          servicesByStyle[style] = { services: [], count: 0 };
+          continue;
+        }
+
         const services = await query(
           `SELECT vs.*, s.name as base_service_name, s.description as base_description
            FROM vendor_services vs
@@ -72,6 +119,21 @@ export function registerVendorServicesEndpoints(app: Hono) {
         services: servicesByStyle,
         allServices,
         totalEnabled: allServices.length,
+        // ✅ Include role and capabilities directly (no separate API call needed)
+        vendor: {
+          id: vendor.id,
+          role_id: vendor.role_id,
+          vendor_type: vendor.vendor_type,
+        },
+        role: role ? {
+          id: role.id,
+          name: role.name,
+          display_name: role.display_name,
+          config: roleConfig,
+        } : null,
+        capabilities,
+        allowedServiceStyles, // ✅ Included so frontend knows what styles are allowed
+        vendorTypes: roleConfig?.vendorTypes || [],
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);

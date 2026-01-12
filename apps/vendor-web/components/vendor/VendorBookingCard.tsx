@@ -47,7 +47,7 @@ export function VendorBookingCard({
     
     // Mark messages as read
     try {
-      await apiClient.post(`/make-server-3dd53475/chat/mark-read/${bookingId}`, { vendorId });
+      await apiClient.post(`/chat/mark-read/${bookingId}`, { vendorId });
     } catch (error) {
       console.error('Error marking messages as read:', error);
     }
@@ -69,7 +69,7 @@ export function VendorBookingCard({
     if (booking.hasPrescription) {
       // View existing prescription
       try {
-        const data = await apiClient.get(`/make-server-3dd53475/vendor/prescription/${bookingId}`) as any;
+        const data = await apiClient.get(`/vendor/prescription/${bookingId}`) as any;
         
         if (data && data.prescription) {
           alert(`📋 Prescription Details\n\n${data.prescription.notes}\n\nUploaded: ${new Date(data.prescription.uploadedAt).toLocaleString()}`);
@@ -93,7 +93,7 @@ export function VendorBookingCard({
           prescriptionFile: null // TODO: Add file upload
         };
         
-        const data = await apiClient.post('/make-server-3dd53475/vendor/prescription/upload', payload) as any;
+        const data = await apiClient.post('/vendor/prescription/upload', payload) as any;
         
         if (data && data.success) {
           alert('✅ Prescription uploaded successfully!');

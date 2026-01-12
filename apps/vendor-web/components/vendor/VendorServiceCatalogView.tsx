@@ -98,7 +98,7 @@ export function VendorServiceCatalogView({
       console.log('📚 [CATALOG] Loading service catalog...');
 
       // Load all services from admin catalog API
-      const servicesData = await apiClient.get('/make-server-3dd53475/admin/service-catalog') as any;
+      const servicesData = await apiClient.get('/admin/service-catalog') as any;
 
       if (servicesData) {
         console.log('📚 [CATALOG] Loaded services:', servicesData);
@@ -117,7 +117,7 @@ export function VendorServiceCatalogView({
       }
 
       // Load vendor's enabled services
-      const vendorServicesData = await apiClient.get(`/make-server-3dd53475/vendor/services/`) as any;
+      const vendorServicesData = await apiClient.get(`/vendor/${vendorId}/services`) as any;
 
       if (vendorServicesData) {
         const data = vendorServicesData;
@@ -146,11 +146,18 @@ export function VendorServiceCatalogView({
         setVendorServices(vendorServicesList);
       }
 
-      // Load roles
-      const rolesData = await apiClient.get('/make-server-3dd53475/config/roles') as any;
-
-      if (rolesData && rolesData.roles) {
-        setRoles(rolesData.roles || []);
+      // ✅ FIX: Use comprehensive endpoint /vendor/:vendorId/service-catalog/complete (includes roles, services, categories)
+      // Roles are now included in vendor services endpoint, but we can still load them separately if needed
+      // For now, roles will be extracted from vendorData.role if available
+      // If vendorData.role is not available, we can load roles separately
+      try {
+        const rolesData = await apiClient.get('/config/roles') as any;
+        if (rolesData && rolesData.roles) {
+          setRoles(rolesData.roles || []);
+        }
+      } catch (roleError) {
+        console.warn('Failed to load roles separately, will use vendor data:', roleError);
+        // Continue without roles - service catalog will still work
       }
 
     } catch (error) {
@@ -340,7 +347,7 @@ export function VendorServiceCatalogView({
     try {
       setAdding(true);
 
-      const data = await apiClient.post('/make-server-3dd53475/vendor/services/add', {
+      const data = await apiClient.post(`/vendor/${vendorId}/services`, {
         vendorId,
         catalogId: service.catalogId,
         categoryId: service.categoryId,

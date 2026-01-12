@@ -171,7 +171,7 @@ export default function MedicalRecordsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading medical records...</p>
@@ -190,14 +190,15 @@ export default function MedicalRecordsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Medical Records</h1>
-              <p className="text-sm text-gray-500">Track your pet's health history</p>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">Medical Records</h1>
+              <p className="text-sm text-gray-500 mt-1">Track your pet's health history</p>
             </div>
             <button
               onClick={handleExportAll}
@@ -207,11 +208,11 @@ export default function MedicalRecordsPage() {
             </button>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Pet Selector */}
-      <div className="bg-white border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex gap-3 overflow-x-auto pb-2">
             <button
               onClick={() => setSelectedPet('')}
@@ -236,9 +237,13 @@ export default function MedicalRecordsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="max-w-4xl mx-auto px-4 mt-4">
-        <div className="flex bg-white rounded-xl p-1 shadow-sm">
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
+          
+          {/* Tabs */}
+          <div className="mb-6">
+            <div className="flex bg-white rounded-xl p-1 shadow-sm">
           <button
             onClick={() => setActiveTab('timeline')}
             className={`flex-1 py-3 rounded-lg font-medium transition ${
@@ -258,17 +263,14 @@ export default function MedicalRecordsPage() {
         </div>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="max-w-4xl mx-auto px-4 mt-4">
-          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
-            {error}
-          </div>
-        </div>
-      )}
+          {/* Error */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+              {error}
+            </div>
+          )}
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
-        {/* Timeline Tab */}
+          {/* Timeline Tab */}
         {activeTab === 'timeline' && (
           <>
             {/* Filters */}
@@ -426,7 +428,10 @@ export default function MedicalRecordsPage() {
             </div>
           </div>
         )}
-      </main>
+        </div>
+      </div>
+
+      {/* Modals - Outside main content wrapper */}
 
       {/* Record Detail Modal */}
       {showRecord && (

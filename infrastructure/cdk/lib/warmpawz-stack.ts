@@ -77,9 +77,20 @@ export class WarmpawzStack extends cdk.Stack {
       });
     }
 
-    // Deploy Aurora RDS
+    // Deploy Aurora RDS (use existing if cluster identifier provided)
+    const existingClusterId = this.node.tryGetContext('existingRdsClusterId') || 
+                              process.env.EXISTING_RDS_CLUSTER_ID;
+    const existingSecretArn = this.node.tryGetContext('existingRdsSecretArn') || 
+                              process.env.EXISTING_RDS_SECRET_ARN;
+    const existingProxyName = this.node.tryGetContext('existingRdsProxyName') || 
+                              process.env.EXISTING_RDS_PROXY_NAME;
+    
     this.auroraStack = new AuroraStack(this, 'AuroraStack', {
       vpc: this.vpc,
+      environment: environment,
+      existingClusterIdentifier: existingClusterId || 'warmpawz-dev-cluster', // Default from CI/CD
+      existingSecretArn: existingSecretArn,
+      existingProxyName: existingProxyName || 'warmpawz-aurora-proxy',
     });
 
     // Deploy Cognito User Pools (3 separate pools for customer, vendor, admin)
@@ -90,9 +101,20 @@ export class WarmpawzStack extends cdk.Stack {
       vpc: this.vpc,
     });
 
-    // Deploy S3 Buckets (needed before IAM stack)
+    // Deploy S3 Buckets (use existing if bucket names provided)
+    const existingAdminFrontend = this.node.tryGetContext('existingAdminFrontendBucket') ||
+                                  `warmpawz-${environment}-admin-frontend-ap-south-1`;
+    const existingVendorFrontend = this.node.tryGetContext('existingVendorFrontendBucket') ||
+                                   `warmpawz-${environment}-vendor-frontend-ap-south-1`;
+    const existingCustomerFrontend = this.node.tryGetContext('existingCustomerFrontendBucket') ||
+                                     `warmpawz-${environment}-customer-frontend-ap-south-1`;
+    
     this.s3Stack = new S3Stack(this, 'S3Stack', {
       environment: environment,
+      existingAdminFrontendBucket: existingAdminFrontend,
+      existingVendorFrontendBucket: existingVendorFrontend,
+      existingCustomerFrontendBucket: existingCustomerFrontend,
+      // Other buckets will be created if not provided
     });
 
     // Deploy IAM Roles and Policies

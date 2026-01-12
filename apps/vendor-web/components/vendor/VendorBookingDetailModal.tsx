@@ -40,7 +40,7 @@ export function VendorBookingDetailModal({
       setLoading(true);
       console.log('🔍 [VENDOR-BOOKING-DETAIL] Loading booking:', bookingId);
       
-      const data = await apiClient.get(`/make-server-3dd53475/bookings/${bookingId}`) as any;
+      const data = await apiClient.get(`/bookings/${bookingId}`) as any;
 
       if (data && data.success) {
         const result = data;
