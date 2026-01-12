@@ -610,6 +610,69 @@ export function registerRoleEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  app.get('/config/ui/dashboard', async (c) => {
+    try {
+      const roleId = c.req.query('roleId');
+      
+      if (!roleId) {
+        return c.json({ error: 'roleId is required' }, 400);
+      }
+
+      const settings = await select('platform_settings', { 
+        setting_key: `platform:ui:dashboard:${roleId}` 
+      });
+
+      const dashboardConfig = settings.length > 0 
+        ? (settings[0].setting_value as any) 
+        : {
+            widgets: [],
+            layout: 'default',
+            theme: 'light',
+          };
+
+      return c.json({
+        success: true,
+        config: dashboardConfig,
+        roleId,
+      });
+    } catch (error: any) {
+      console.error('Error fetching dashboard config:', error);
+      return c.json({ 
+        success: true, 
+        config: { widgets: [], layout: 'default', theme: 'light' } 
+      });
+    }
+  });
+
+  app.put('/config/ui/dashboard', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { roleId, ...config } = body;
+
+      if (!roleId) {
+        return c.json({ error: 'roleId is required' }, 400);
+      }
+
+      await upsert('platform_settings',
+        {
+          setting_key: `platform:ui:dashboard:${roleId}`,
+          setting_value: config,
+          setting_type: 'json',
+          description: `Dashboard UI configuration for role ${roleId}`,
+        },
+        'setting_key'
+      );
+
+      return c.json({
+        success: true,
+        message: 'Dashboard configuration updated',
+      });
+    } catch (error: any) {
+      console.error('Error updating dashboard config:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.get('/config/roles/:roleId', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { roleId: c.req.param('roleId') };

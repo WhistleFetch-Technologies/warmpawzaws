@@ -5,8 +5,6 @@ import { apiClient } from '@/lib/api-client';
 import { Calendar, Clock, DollarSign, Info } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
-
 interface RescheduleBookingProps {
   bookingId: string;
   onSuccess?: () => void;
@@ -20,8 +18,6 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     loadData();
@@ -56,25 +52,18 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
 
     setSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE}/bookings/${bookingId}/reschedule`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
+      const data = await apiClient.post<{ success?: boolean }>(
+        `/bookings/${bookingId}/reschedule`,
+        {
           newDate: selectedSlot.date,
           newTimeSlot: selectedSlot.timeSlot,
           reason
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          alert('Reschedule request submitted!');
-          onSuccess?.();
         }
+      );
+
+      if (data.success !== false) {
+        alert('Reschedule request submitted!');
+        onSuccess?.();
       }
     } catch (error) {
       console.error('Failed to reschedule:', error);

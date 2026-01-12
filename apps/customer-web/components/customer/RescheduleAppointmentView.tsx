@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { SmartTimeSlotSelection } from './vet/SmartTimeSlotSelection';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface RescheduleAppointmentViewProps {
   appointmentId: string;
@@ -20,8 +20,6 @@ export function RescheduleAppointmentView({
   const [loading, setLoading] = useState(true);
   const [rescheduling, setRescheduling] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadAppointment();
   }, [appointmentId]);
@@ -29,19 +27,10 @@ export function RescheduleAppointmentView({
   const loadAppointment = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `${API_BASE}/appointment/${appointmentId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiClient.get<{ appointment?: any }>(
+        `/appointment/${appointmentId}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAppointment(data.appointment);
-      } else {
-        console.error('Failed to load appointment');
-      }
+      setAppointment(data.appointment);
     } catch (error) {
       console.error('Error loading appointment:', error);
     } finally {
@@ -52,27 +41,19 @@ export function RescheduleAppointmentView({
   const handleReschedule = async (date: string, time: string) => {
     try {
       setRescheduling(true);
-      const response = await fetch(
-        `${API_BASE}/appointment/${appointmentId}/reschedule`,
+      const data = await apiClient.post<{ success?: boolean }>(
+        `/appointment/${appointmentId}/reschedule`,
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify({
-            newDate: date,
-            newTime: time
-          })
+          newDate: date,
+          newTime: time
         }
       );
 
-      if (response.ok) {
+      if (data.success !== false) {
         alert('Appointment rescheduled successfully!');
         onSuccess();
       } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to reschedule appointment');
+        alert((data as any).error || 'Failed to reschedule appointment');
       }
     } catch (error) {
       console.error('Error rescheduling appointment:', error);

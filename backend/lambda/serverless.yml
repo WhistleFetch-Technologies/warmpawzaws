@@ -81,6 +81,9 @@ provider:
         - Effect: Allow
           Action:
             - secretsmanager:GetSecretValue
+            - secretsmanager:PutSecretValue
+            - secretsmanager:CreateSecret
+            - secretsmanager:DescribeSecret
           Resource:
             - arn:aws:secretsmanager:${self:provider.region}:*:secret:warmpawz/${self:provider.stage}/*
         

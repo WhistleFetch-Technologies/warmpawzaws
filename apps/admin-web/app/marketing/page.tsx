@@ -118,7 +118,20 @@ export default function MarketingPromotionsTab() {
 
 	const loadRoles = async () => {
 		try {
-			const data = await apiClient.get("/config/roles");
+			// Try /admin/roles first (preferred), fallback to /config/roles
+			let data: any;
+			try {
+				data = await apiClient.get<any>("/admin/roles");
+				if (data.success && data.roles) {
+					setAvailableRoles(data.roles || []);
+					return;
+				}
+			} catch (err) {
+				console.warn('Failed to load from /admin/roles, trying /config/roles:', err);
+			}
+			
+			// Fallback to /config/roles
+			data = await apiClient.get("/config/roles");
 			setAvailableRoles((data as any).roles || []);
 
 			// If current selected role is not in the list and we have roles, select the first one

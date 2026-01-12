@@ -22,7 +22,6 @@ import {
   File,
   Film
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface FollowUpModalProps {
   onClose: () => void;
@@ -71,7 +70,15 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
   // Unread message counts
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // Helper function to get base URL (for file downloads)
+  const getBaseUrl = (): string => {
+    if (typeof window !== 'undefined') {
+      const cfg = (window as any).__WARMPAWZ_RUNTIME_CONFIG__ as { apiBaseUrl?: string } | undefined;
+      return cfg?.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    }
+    return process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  };
+
 
   useEffect(() => {
     // Update bookings if they change externally
@@ -142,33 +149,19 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       }
       const cleanVendorPhone = vendorPhone.replace(/[^0-9]/g, '');
 
-      const response = await fetch(`${API_BASE}/chat/send`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          bookingId: selectedBooking.bookingId,
-          senderPhone: cleanPhone,
-          senderName: selectedBooking.customerName || 'Customer',
-          senderType: 'customer',
-          receiverPhone: cleanVendorPhone,
-          receiverName: selectedBooking.vendorName || 'Vendor',
-          receiverType: 'vendor',
-          message: newMessage,
-          messageType: 'text'
-        })
+      await apiClient.post('/chat/send', {
+        bookingId: selectedBooking.bookingId,
+        senderPhone: cleanPhone,
+        senderName: selectedBooking.customerName || 'Customer',
+        senderType: 'customer',
+        receiverPhone: cleanVendorPhone,
+        receiverName: selectedBooking.vendorName || 'Vendor',
+        receiverType: 'vendor',
+        message: newMessage,
+        messageType: 'text'
       });
-
-      if (response.ok) {
-        setNewMessage('');
-        await loadMessages();
-      } else {
-        const error = await response.json();
-        console.error('❌ Failed to send message:', error);
-        alert(`Failed to send message: ${error.error || 'Unknown error'}`);
-      }
+      setNewMessage('');
+      await loadMessages();
     } catch (error) {
       console.error('❌ Error sending message:', error);
       alert('Failed to send message. Please try again.');
@@ -214,11 +207,10 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       formData.append('senderType', 'customer');
       formData.append('caption', `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`);
 
-      const response = await fetch(`${API_BASE}/chat/upload-file`, {
+      // Use fetch for FormData (apiClient handles JSON, but FormData needs special handling)
+      const baseUrl = getBaseUrl();
+      const response = await fetch(`${baseUrl}/chat/upload-file`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
         body: formData
       });
 
@@ -230,27 +222,20 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
         const vendorPhone = selectedBooking.vendorPhone || '';
         if (vendorPhone) {
           const cleanVendorPhone = vendorPhone.replace(/[^0-9]/g, '');
-          await fetch(`${API_BASE}/chat/send`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              bookingId: selectedBooking.bookingId,
-              senderPhone: cleanPhone,
-              senderName: selectedBooking.customerName || 'Customer',
-              senderType: 'customer',
-              receiverPhone: cleanVendorPhone,
-              receiverName: selectedBooking.vendorName,
-              receiverType: 'vendor',
-              message: `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`,
-              messageType: 'file_notification'
-            })
+          await apiClient.post('/chat/send', {
+            bookingId: selectedBooking.bookingId,
+            senderPhone: cleanPhone,
+            senderName: selectedBooking.customerName || 'Customer',
+            senderType: 'customer',
+            receiverPhone: cleanVendorPhone,
+            receiverName: selectedBooking.vendorName,
+            receiverType: 'vendor',
+            message: `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`,
+            messageType: 'file_notification'
           });
         }
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
         alert(`Failed to upload file: ${error.error || 'Unknown error'}`);
       }
     } catch (error) {
@@ -281,15 +266,10 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     if (!selectedBooking) return;
 
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/${selectedBooking.vendorId}/slots/${date}?serviceStyle=at_center`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      const data = await apiClient.get<{ slots?: any[] }>(
+        `/vendor/${selectedBooking.vendorId}/slots/${date}?serviceStyle=at_center`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAvailableSlots(data.slots || []);
-      }
+      setAvailableSlots(data.slots || []);
     } catch (error) {
       console.error('❌ Error loading slots:', error);
     }
@@ -304,13 +284,9 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       const phone = selectedBooking.customerPhone || customerPhone;
       const cleanPhone = phone.replace(/[^0-9]/g, '');
 
-      const response = await fetch(`${API_BASE}/followup/create`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      const data = await apiClient.post<{ message?: string }>(
+        `/followup/create`,
+        {
           originalBookingId: selectedBooking.bookingId,
           customerPhone: cleanPhone,
           vendorId: selectedBooking.vendorId,
@@ -321,17 +297,11 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
           petId: 'pet_' + selectedBooking.petName.toLowerCase().replace(/\s/g, '_'),
           address: '',
           serviceStyle: 'at_center'
-        })
-      });
+        }
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        alert(`✅ Follow-up appointment booked!\n${data.message}\nDate: ${selectedDate} at ${selectedSlot}`);
-        onClose();
-      } else {
-        const error = await response.json();
-        alert(`❌ Error: ${error.error || 'Failed to book appointment'}`);
-      }
+      alert(`✅ Follow-up appointment booked!\n${data.message || 'Success'}\nDate: ${selectedDate} at ${selectedSlot}`);
+      onClose();
     } catch (error) {
       console.error('❌ Error booking follow-up:', error);
       alert('Failed to book appointment. Please try again.');
@@ -556,7 +526,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                           {msg.fileId && (
                             <div className="mb-2">
                               <a
-                                href={`${API_BASE}/chat/file/${msg.fileId}`}
+                                href={`${getBaseUrl()}/chat/file/${msg.fileId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-2 p-2 rounded-lg ${

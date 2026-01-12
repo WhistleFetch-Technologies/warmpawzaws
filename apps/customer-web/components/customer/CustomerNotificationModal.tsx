@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, Check, CheckCheck, Trash2, Bell, MessageCircle, Calendar, AlertCircle, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface NotificationItem {
   notificationId: string;
@@ -35,8 +34,6 @@ export function CustomerNotificationModal({
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchNotifications();
     
@@ -65,14 +62,7 @@ export function CustomerNotificationModal({
 
   const markAsRead = async (notificationId: string) => {
     try {
-      await fetch(`${API_BASE}/notifications/mark-read`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ notificationId })
-      });
+      await apiClient.post('/notifications/mark-read', { notificationId });
 
       setNotifications(prev =>
         prev.map(n =>
@@ -90,14 +80,7 @@ export function CustomerNotificationModal({
   const markAllAsRead = async () => {
     try {
       const cleanPhone = phone.replace(/[^0-9]/g, '');
-      await fetch(`${API_BASE}/notifications/mark-all-read`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ phone: cleanPhone })
-      });
+      await apiClient.post('/notifications/mark-all-read', { phone: cleanPhone });
 
       setNotifications(prev =>
         prev.map(n => ({ ...n, read: true }))
@@ -110,15 +93,7 @@ export function CustomerNotificationModal({
 
   const deleteNotification = async (notificationId: string) => {
     try {
-      const cleanPhone = phone.replace(/[^0-9]/g, '');
-      await fetch(`${API_BASE}/notifications/${notificationId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ phone: cleanPhone })
-      });
+      await apiClient.delete(`/notifications/${notificationId}`);
 
       setNotifications(prev =>
         prev.filter(n => n.notificationId !== notificationId)

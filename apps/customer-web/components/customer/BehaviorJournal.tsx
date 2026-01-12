@@ -5,7 +5,6 @@ import { apiClient } from '@/lib/api-client';
 import { BookOpen, Plus, TrendingUp, AlertCircle, Calendar, Tag } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 
 interface BehaviorJournalProps {
@@ -26,7 +25,6 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
     notes: ''
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchJournal();
@@ -50,13 +48,9 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
     e.preventDefault();
 
     try {
-      const response = await fetch(`${API_BASE}/behaviorist/journal-entry`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
+      const data = await apiClient.post<{ success?: boolean }>(
+        `/behaviorist/journal-entry`,
+        {
           petId,
           customerId,
           behavior: formData.behavior,
@@ -64,23 +58,20 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
           duration: formData.duration,
           severity: formData.severity,
           notes: formData.notes
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Journal entry added successfully');
-          setFormData({
-            behavior: '',
-            triggers: '',
-            duration: '',
-            severity: 'medium',
-            notes: ''
-          });
-          setShowAddForm(false);
-          fetchJournal();
         }
+      );
+
+      if (data.success !== false) {
+        toast.success('Journal entry added successfully');
+        setFormData({
+          behavior: '',
+          triggers: '',
+          duration: '',
+          severity: 'medium',
+          notes: ''
+        });
+        setShowAddForm(false);
+        fetchJournal();
       }
     } catch (error) {
       console.error('Failed to add journal entry:', error);

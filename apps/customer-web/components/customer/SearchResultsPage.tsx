@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SearchAutocomplete } from './SearchAutocomplete';
 import { SearchFilters, FilterValues } from './SearchFilters';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 export function SearchResultsPage() {
   const [query, setQuery] = useState('');
@@ -21,7 +20,6 @@ export function SearchResultsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const limit = 20;
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   // Get user location
   useEffect(() => {

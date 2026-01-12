@@ -222,6 +222,17 @@ export function DynamicVendorOnboardingForm({
     }
   }, [mapLoaded, mapRef.current]);
 
+  // Update map marker when coordinates change after initialization
+  useEffect(() => {
+    if (coordinates && googleMapRef.current && markerRef.current) {
+      console.log('🔄 [COORDINATES UPDATE] Updating map marker position:', coordinates);
+      const position = { lat: coordinates.lat, lng: coordinates.lng };
+      markerRef.current.setPosition(position);
+      googleMapRef.current.setCenter(position);
+      googleMapRef.current.setZoom(15);
+    }
+  }, [coordinates]);
+
   const checkServerHealth = async () => {
     try {
       console.log('[DYNAMIC FORM] 🏥 Checking server health...');
@@ -365,12 +376,7 @@ export function DynamicVendorOnboardingForm({
     console.log('📦 [GOOGLE MAPS] Creating new script tag...');
     console.log('📦 [GOOGLE MAPS] Using API key:', googleMapsApiKey.substring(0, 10) + '...');
     
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initGoogleMaps`;
-    script.async = true;
-    script.defer = true;
-    
-    // Define global callback
+    // Define global callback BEFORE creating script to ensure it's available
     (window as any).initGoogleMaps = () => {
       console.log('✅ [GOOGLE MAPS] Callback fired - Google Maps is ready!');
       console.log('✅ [GOOGLE MAPS] window.google exists:', !!(window as any).google);
@@ -393,9 +399,14 @@ export function DynamicVendorOnboardingForm({
       }, 200);
     };
     
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=initGoogleMaps`;
+    script.async = true;
+    script.defer = true;
+    
     script.onerror = (error) => {
       console.error('❌ [GOOGLE MAPS] Script loading error:', error);
-      toast.error('Failed to load Google Maps. Please check your internet connection.');
+      toast.error('Failed to load Google Maps. Please check your internet connection and API key.');
     };
     
     console.log('📦 [GOOGLE MAPS] Appending script to document head...');
@@ -489,6 +500,7 @@ export function DynamicVendorOnboardingForm({
     console.log('🗺️ [MAP INIT] window.google.maps exists:', !!((window as any).google?.maps));
     console.log('🗺️ [MAP INIT] window.google.maps.Map exists:', !!((window as any).google?.maps?.Map));
     console.log('🗺️ [MAP INIT] window.google.maps.Marker exists:', !!((window as any).google?.maps?.Marker));
+    console.log('🗺️ [MAP INIT] Existing coordinates:', coordinates);
     
     if (!mapRef.current) {
        console.error('❌ [MAP INIT] Map Ref not found');
@@ -524,10 +536,17 @@ export function DynamicVendorOnboardingForm({
     try {
         console.log('🗺️ [MAP INIT] All checks passed - creating map instance...');
         
+        // Use existing coordinates if available, otherwise default to India center
+        const initialCenter = coordinates || { lat: 20.5937, lng: 78.9629 };
+        const initialZoom = coordinates ? 15 : 5;
+        
+        console.log('🗺️ [MAP INIT] Initial center:', initialCenter);
+        console.log('🗺️ [MAP INIT] Initial zoom:', initialZoom);
+        
         // Use simple, direct Google Maps API
         const map = new (window as any).google.maps.Map(mapRef.current, {
-          center: { lat: 20.5937, lng: 78.9629 }, // India center
-          zoom: 5,
+          center: initialCenter,
+          zoom: initialZoom,
           disableDefaultUI: false,
           zoomControl: true,
           mapTypeControl: false,
@@ -538,17 +557,18 @@ export function DynamicVendorOnboardingForm({
         googleMapRef.current = map;
         console.log('✅ [MAP INIT] Map instance created successfully');
 
-        // Create marker
+        // Create marker with existing coordinates if available
         console.log('🗺️ [MAP INIT] Creating marker...');
         const marker = new (window as any).google.maps.Marker({
           map: map,
-          position: { lat: 20.5937, lng: 78.9629 },
+          position: initialCenter,
           draggable: true,
-          title: 'Your Business Location'
+          title: 'Your Business Location',
+          animation: (window as any).google.maps.Animation.DROP
         });
 
         markerRef.current = marker;
-        console.log('✅ [MAP INIT] Marker created successfully');
+        console.log('✅ [MAP INIT] Marker created successfully at position:', initialCenter);
         
         // Add click listener to map
         map.addListener('click', (e: any) => {
@@ -580,7 +600,11 @@ export function DynamicVendorOnboardingForm({
         });
 
         console.log('✅ [MAP INIT] Map fully initialized and ready to use');
-        toast.success('Map loaded successfully! Click or drag to set your location.');
+        if (!coordinates) {
+          toast.success('Map loaded successfully! Click or drag to set your location.');
+        } else {
+          toast.success('Map loaded with your location!');
+        }
 
     } catch (e) {
         console.error('❌ [MAP INIT] Error initializing map:', e);
@@ -978,7 +1002,7 @@ export function DynamicVendorOnboardingForm({
             {!googleMapsApiKey && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                 <p className="text-xs text-yellow-800 font-medium">
-                  ⚠️ Google Maps API key is not configured. Please contact support or configure VITE_GOOGLE_MAPS_API_KEY in environment variables.
+                  ⚠️ Google Maps API key is not configured. Please contact support or configure NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in environment variables.
                 </p>
               </div>
             )}
@@ -1155,23 +1179,51 @@ export function DynamicVendorOnboardingForm({
 
         {/* Form Sections */}
         <div className="space-y-8 pb-32">
-          {form.sections.filter(s => s.isActive).map((section) => (
+          {form.sections.filter(s => s.isActive).map((section) => {
+            const isProfessionalSection = section.id === 'professional' || section.name === 'professional';
+            
+            return (
             <div key={section.id} className="space-y-6">
-              {/* Section Header */}
-              {form.sections.length > 1 && (
-                  <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
-                    <h3 className="font-bold text-lg text-gray-900">{section.title}</h3>
+              {/* Special Header for Professional Section */}
+              {isProfessionalSection && form.sections.length > 1 ? (
+                <div className="-mx-6 -mt-8 mb-6">
+                  {/* Orange Header Section */}
+                  <div className="bg-[#FF8C42] px-6 pt-8 pb-12 flex flex-col items-center rounded-b-[32px]">
+                    {/* Person Icon */}
+                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-4 border-4 border-white/30">
+                      <User className="w-10 h-10 text-white" strokeWidth={2} />
+                    </div>
+                    
+                    {/* Title */}
+                    <h2 className="text-2xl font-bold text-black text-center leading-tight">
+                      Your
+                      <br />
+                      <span className="text-3xl">Information</span>
+                    </h2>
                   </div>
-              )}
+                  
+                  {/* White Form Card */}
+                  <div className="bg-white rounded-t-[32px] px-6 pt-6 -mt-8">
+                    <p className="text-sm text-gray-500 mb-6 text-center">
+                      Your professional details as the lead veterinarian
+                    </p>
+                  </div>
+                </div>
+              ) : form.sections.length > 1 ? (
+                /* Regular Section Header */
+                <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
+                  <h3 className="font-bold text-lg text-gray-900">{section.title}</h3>
+                </div>
+              ) : null}
 
-              <div className="space-y-5">
+              <div className={`space-y-5 ${isProfessionalSection ? 'px-6' : ''}`}>
                 {section.fields
                   .filter(f => f.isActive)
                   .sort((a, b) => a.order - b.order)
                   .map((field) => (
                     <div key={field.id}>
                       {field.type !== 'checkbox' && (
-                        <Label className="text-sm font-semibold text-gray-900 mb-2 block ml-1">
+                        <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                           {field.label}
                           {field.validation?.required && (
                             <span className="text-red-500 ml-0.5">*</span>
@@ -1182,11 +1234,11 @@ export function DynamicVendorOnboardingForm({
                       {renderField(field)}
                       
                       {field.helpText && (
-                        <p className="text-xs text-gray-400 mt-1.5 ml-1">{field.helpText}</p>
+                        <p className="text-xs text-gray-400 mt-1.5">{field.helpText}</p>
                       )}
                       
                       {errors[field.name] && (
-                        <p className="text-xs text-red-500 mt-1.5 ml-1 flex items-center gap-1 font-medium">
+                        <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1 font-medium">
                           {errors[field.name]}
                         </p>
                       )}
@@ -1194,7 +1246,8 @@ export function DynamicVendorOnboardingForm({
                   ))}
               </div>
             </div>
-          ))}
+          );
+          })}
 
           {/* Document Sections */}
           {form.documentSections?.map((section) => (

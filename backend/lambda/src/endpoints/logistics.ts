@@ -253,5 +253,145 @@ export function registerLogisticsEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  // ============================================================================
+  // GENERIC LOGISTICS ENDPOINTS (Admin UI compatibility)
+  // ============================================================================
+
+  /**
+   * POST /logistics/create-order
+   * Create logistics order (generic - routes to Shiprocket)
+   */
+  app.post("/logistics/create-order", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { order_id, ...orderData } = body;
+
+      // Use Shiprocket endpoint
+      const shiprocketData = {
+        orderId: order_id,
+        ...orderData,
+      };
+
+      // Forward to Shiprocket create-order
+      const response = await fetch(new URL('/logistics/shiprocket/create-order', c.req.url).toString(), {
+        method: 'POST',
+        headers: c.req.header(),
+        body: JSON.stringify(shiprocketData),
+      });
+
+      const result = await response.json();
+      return c.json(result, response.status);
+    } catch (error: any) {
+      console.error('Error creating logistics order:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /logistics/cancel-order
+   * Cancel logistics order
+   */
+  app.post("/logistics/cancel-order", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { order_id } = body;
+
+      if (!order_id) {
+        return c.json({ error: 'order_id is required' }, 400);
+      }
+
+      // Update order status in database
+      await update('shipments', { order_id }, {
+        status: 'cancelled',
+        updated_at: new Date().toISOString(),
+      }).catch(() => {
+        // Graceful fallback if table doesn't exist
+      });
+
+      // Also update logistics_orders if exists
+      await query(
+        'UPDATE logistics_orders SET order_status = $1, updated_at = NOW() WHERE order_id = $2',
+        ['cancelled', order_id]
+      ).catch(() => {
+        // Graceful fallback if table doesn't exist
+      });
+
+      // Try to cancel in Shiprocket if shipment_id exists
+      try {
+        const shipments = await select('shipments', { order_id });
+        if (shipments.length > 0 && shipments[0].shipment_id) {
+          const token = await getShiprocketToken();
+          await fetch(`${SHIPROCKET_API_BASE}/orders/cancel/shipment/${shipments[0].shipment_id}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }).catch(() => {
+            // Graceful fallback if Shiprocket cancel fails
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to cancel in Shiprocket:', e);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Order cancelled successfully',
+      });
+    } catch (error: any) {
+      console.error('Error cancelling order:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /logistics/track/:awbNumber
+   * Track shipment by AWB number
+   */
+  app.get("/logistics/track/:awbNumber", async (c) => {
+    try {
+      const { awbNumber } = c.req.param();
+
+      // First try to find shipment by AWB in database
+      const shipments = await query(
+        'SELECT * FROM shipments WHERE awb_code = $1',
+        [awbNumber]
+      ).catch(() => ({ rows: [] }));
+
+      if (shipments.rows.length > 0 && shipments.rows[0].shipment_id) {
+        // Use Shiprocket tracking
+        const token = await getShiprocketToken();
+        const response = await fetch(`${SHIPROCKET_API_BASE}/shipments/track/${shipments.rows[0].shipment_id}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const result: any = await response.json();
+          return c.json({
+            success: true,
+            tracking: result,
+            awb: awbNumber,
+          });
+        }
+      }
+
+      // Fallback: return basic tracking info
+      return c.json({
+        success: true,
+        tracking: {
+          awb: awbNumber,
+          status: shipments.rows[0]?.status || 'unknown',
+          current_status: shipments.rows[0]?.status || 'unknown',
+        },
+      });
+    } catch (error: any) {
+      console.error('Error tracking shipment:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

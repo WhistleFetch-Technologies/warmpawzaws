@@ -93,8 +93,8 @@ export function CustomerHomeComplete({
       
       // AWS Serverless compatible - use apiClient instead of direct Supabase calls
       const [profileResponse, petsResponse] = await Promise.all([
-        apiClient.get(`/customer/profile/${phone}`).catch(() => null),
-        apiClient.get(`/customer/pets/${phone}`).catch(() => null)
+        apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null),
+        apiClient.get(`/customer/pets?phone=${encodeURIComponent(phone)}`).catch(() => null)
       ]);
 
       const profileResp = profileResponse as any;

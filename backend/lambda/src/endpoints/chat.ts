@@ -169,5 +169,182 @@ export function registerChatEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * POST /chat/send
+   * Compatibility endpoint for frontend - sends message using bookingId from body
+   */
+  app.post("/chat/send", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { bookingId, senderPhone, senderName, senderType, receiverPhone, receiverName, receiverType, message, messageType } = body;
+
+      if (!bookingId || !senderPhone || !message) {
+        return c.json({ error: 'bookingId, senderPhone, and message are required' }, 400);
+      }
+
+      // Verify booking exists
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Create message
+      const newMessage = await insert('chat_messages', {
+        booking_id: bookingId,
+        sender_phone: senderPhone,
+        sender_name: senderName || null,
+        sender_type: senderType || 'customer',
+        message: message,
+        message_type: messageType || 'text',
+        is_read: false,
+      }).catch(() => {
+        return [{
+          id: `msg_${Date.now()}`,
+          booking_id: bookingId,
+          sender_phone: senderPhone,
+          message: message,
+          created_at: new Date().toISOString(),
+        }];
+      });
+
+      // Notify recipient via SNS if phone provided
+      if (receiverPhone) {
+        const snsClient = getSnsClient();
+        await snsClient.send(new PublishCommand({
+          PhoneNumber: receiverPhone,
+          Message: `New message from ${senderName || senderPhone}: ${message.substring(0, 100)}`,
+          MessageAttributes: {
+            'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+          },
+        })).catch(err => console.error('SNS notification failed:', err));
+      }
+
+      return c.json({
+        success: true,
+        message: newMessage[0],
+      });
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /chat/upload-file
+   * Upload a file for chat message
+   */
+  app.post("/chat/upload-file", async (c) => {
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get('file') as File;
+      const bookingId = formData.get('bookingId') as string;
+      const senderPhone = formData.get('senderPhone') as string;
+      const senderName = formData.get('senderName') as string;
+      const senderType = formData.get('senderType') as string;
+      const caption = formData.get('caption') as string;
+
+      if (!file || !bookingId || !senderPhone) {
+        return c.json({ error: 'file, bookingId, and senderPhone are required' }, 400);
+      }
+
+      // Upload to S3 (using storage endpoint logic)
+      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+      
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.CHAT_FILES_BUCKET || process.env.STORAGE_BUCKET || 'warmpawz-chat-files';
+      
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop();
+      const fileKey = `chat/${bookingId}/${timestamp}_${file.name}`;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+        Body: uint8Array,
+        ContentType: file.type,
+      }));
+
+      // Generate presigned URL
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 31536000 } // 1 year
+      );
+
+      // Create chat message with file
+      const newMessage = await insert('chat_messages', {
+        booking_id: bookingId,
+        sender_phone: senderPhone,
+        sender_name: senderName || null,
+        sender_type: senderType || 'customer',
+        message: caption || `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`,
+        message_type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file',
+        file_id: fileKey,
+        file_name: file.name,
+        file_type: file.type,
+        file_size: file.size,
+        is_read: false,
+      }).catch(() => {
+        return [{
+          id: `msg_${Date.now()}`,
+          booking_id: bookingId,
+          file_id: fileKey,
+          file_name: file.name,
+        }];
+      });
+
+      return c.json({
+        success: true,
+        message: newMessage[0],
+        fileUrl: signedUrl,
+        fileId: fileKey,
+      });
+    } catch (error: any) {
+      console.error('Error uploading file:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /chat/file/:fileId
+   * Get presigned URL for chat file download
+   */
+  app.get("/chat/file/:fileId", async (c) => {
+    try {
+      const { fileId } = c.req.param();
+
+      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.CHAT_FILES_BUCKET || process.env.STORAGE_BUCKET || 'warmpawz-chat-files';
+
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileId,
+        }),
+        { expiresIn: 3600 } // 1 hour
+      );
+
+      // Redirect to presigned URL
+      return c.redirect(signedUrl);
+    } catch (error: any) {
+      console.error('Error getting file URL:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

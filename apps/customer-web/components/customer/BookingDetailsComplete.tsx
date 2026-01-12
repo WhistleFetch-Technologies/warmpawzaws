@@ -10,7 +10,7 @@ import {
   DollarSign, CheckCircle, XCircle, AlertCircle, 
   Edit, Trash2, FileText, Navigation
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { RescheduleBookingModal } from './RescheduleBookingModal';
 import { CancelBookingModal } from './CancelBookingModal';
@@ -35,8 +35,6 @@ export function BookingDetailsComplete({
   const [showReschedule, setShowReschedule] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadBookingDetails();
   }, [bookingId]);
@@ -46,14 +44,9 @@ export function BookingDetailsComplete({
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}?userId=${customerId}&userType=customer`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      const data = await apiClient.get<{ booking?: any; vendor?: any }>(
+        `/bookings/${bookingId}?userId=${customerId}&userType=customer`
       );
-
-      if (!response.ok) throw new Error('Failed to load booking');
-
-      const data = await response.json();
       setBooking(data.booking);
       setVendor(data.vendor);
     } catch (err) {

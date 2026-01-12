@@ -2,15 +2,13 @@
 
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface NotificationServiceProps {
   phone: string;
   enabled: boolean;
   onNewNotification?: (notification: any) => void;
 }
-
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
 export function useNotificationService({ phone, enabled, onNewNotification }: NotificationServiceProps) {
   const lastNotificationIdRef = useRef<string | null>(null);
@@ -37,20 +35,15 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
           return;
         }
         
-        const response = await fetch(
-          `${API_BASE}/customer/notifications/${cleanPhone}?limit=10`,
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
+        const data = await apiClient.get<{ notifications?: any[] }>(
+          `/customer/notifications/${cleanPhone}?limit=10`
         );
-
-        if (response.ok) {
-          const data = await response.json();
-          const notifications = data.notifications || [];
-          
-          console.log(`🔔 [NOTIFICATION-SERVICE] Polling - Found ${notifications.length} notifications`);
-          
-          if (notifications.length > 0) {
+        
+        const notifications = data.notifications || [];
+        
+        console.log(`🔔 [NOTIFICATION-SERVICE] Polling - Found ${notifications.length} notifications`);
+        
+        if (notifications.length > 0) {
             const latestNotification = notifications[0];
             
             console.log(`🔔 [NOTIFICATION-SERVICE] Latest: ${latestNotification.notificationId}, Last: ${lastNotificationIdRef.current}`);
@@ -87,9 +80,6 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
               isInitialLoadRef.current = false;
             }
           }
-        } else {
-          console.error(`❌ [NOTIFICATION-SERVICE] API error: ${response.status}`);
-        }
       } catch (error) {
         // Silently log error without showing it prominently (this is normal for polling)
         console.log(`⚠️ [NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));

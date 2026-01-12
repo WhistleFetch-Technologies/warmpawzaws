@@ -52,7 +52,6 @@ import { VendorProfileDetail } from './VendorProfileDetail';
 import { SupportHelpCenter } from './SupportHelpCenter';
 import { OrderTrackingView } from './OrderTrackingView';
 import { ProblemCategoryMapper } from '../admin/ProblemCategoryMapper';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 import { useNotificationService } from './useNotificationService';
 import { toast } from 'sonner';

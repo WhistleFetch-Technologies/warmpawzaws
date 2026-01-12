@@ -437,6 +437,184 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   /**
+   * GET /marketing/promotions
+   * Get all promotions (admin UI endpoint)
+   */
+  app.get("/marketing/promotions", async (c) => {
+    try {
+      const { type, status, active } = c.req.query();
+      
+      let queryStr = 'SELECT * FROM promotions WHERE 1=1';
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (active === 'true' || active === undefined) {
+        queryStr += ` AND is_active = true AND (end_date IS NULL OR end_date >= NOW())`;
+      } else if (active === 'false') {
+        queryStr += ` AND (is_active = false OR end_date < NOW())`;
+      }
+
+      if (type) {
+        queryStr += ` AND promotion_type = $${paramIndex}`;
+        params.push(type);
+        paramIndex++;
+      }
+
+      if (status) {
+        queryStr += ` AND is_active = $${paramIndex}`;
+        params.push(status === 'active');
+        paramIndex++;
+      }
+
+      queryStr += ` ORDER BY created_at DESC`;
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return c.json({
+        success: true,
+        promotions: rows,
+        total: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching promotions:', error);
+      if (error.message && error.message.includes('does not exist')) {
+        return c.json({ success: true, promotions: [], total: 0 });
+      }
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /marketing/promotions
+   * Create promotion (admin UI endpoint)
+   */
+  app.post("/marketing/promotions", async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        name,
+        description,
+        promotionType,
+        discountType,
+        discountValue,
+        minOrderAmount,
+        maxDiscountAmount,
+        startDate,
+        endDate,
+        isActive = true,
+        applicableServices,
+        applicableRoles,
+        priority = 0,
+      } = body;
+
+      if (!name || !promotionType || !discountType || !discountValue) {
+        return c.json({ error: 'name, promotionType, discountType, and discountValue are required' }, 400);
+      }
+
+      const promotion = await insert('promotions', {
+        name,
+        description: description || '',
+        promotion_type: promotionType,
+        discount_type: discountType,
+        discount_value: parseFloat(discountValue),
+        min_order_amount: minOrderAmount ? parseFloat(minOrderAmount) : null,
+        max_discount_amount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null,
+        start_date: startDate ? new Date(startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        end_date: endDate ? new Date(endDate).toISOString().split('T')[0] : null,
+        is_active: isActive !== false,
+        applicable_services: applicableServices || null,
+        applicable_roles: applicableRoles || null,
+        priority: parseInt(priority) || 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        promotion: promotion[0],
+        message: 'Promotion created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /marketing/promotions/:id
+   * Update promotion (admin UI endpoint)
+   */
+  app.put("/marketing/promotions/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+      const body = await c.req.json();
+
+      const promotions = await select('promotions', { id });
+      if (promotions.length === 0) {
+        return c.json({ error: 'Promotion not found' }, 404);
+      }
+
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+      if (body.name !== undefined) updateData.name = body.name;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.promotionType !== undefined) updateData.promotion_type = body.promotionType;
+      if (body.discountType !== undefined) updateData.discount_type = body.discountType;
+      if (body.discountValue !== undefined) updateData.discount_value = parseFloat(body.discountValue);
+      if (body.minOrderAmount !== undefined) updateData.min_order_amount = body.minOrderAmount ? parseFloat(body.minOrderAmount) : null;
+      if (body.maxDiscountAmount !== undefined) updateData.max_discount_amount = body.maxDiscountAmount ? parseFloat(body.maxDiscountAmount) : null;
+      if (body.startDate !== undefined) updateData.start_date = new Date(body.startDate).toISOString().split('T')[0];
+      if (body.endDate !== undefined) updateData.end_date = body.endDate ? new Date(body.endDate).toISOString().split('T')[0] : null;
+      if (body.isActive !== undefined) updateData.is_active = body.isActive !== false;
+      if (body.applicableServices !== undefined) updateData.applicable_services = body.applicableServices;
+      if (body.applicableRoles !== undefined) updateData.applicable_roles = body.applicableRoles;
+      if (body.priority !== undefined) updateData.priority = parseInt(body.priority) || 0;
+
+      const updated = await update('promotions', { id }, updateData);
+
+      return c.json({
+        success: true,
+        promotion: updated[0],
+        message: 'Promotion updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /marketing/promotions/:id
+   * Delete promotion (admin UI endpoint)
+   */
+  app.delete("/marketing/promotions/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+      
+      const promotions = await select('promotions', { id });
+      if (promotions.length === 0) {
+        return c.json({ error: 'Promotion not found' }, 404);
+      }
+
+      // Soft delete: set is_active to false
+      await update('promotions', { id }, {
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Promotion deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /admin/promotions
    * Get all promotions (admin)
    */

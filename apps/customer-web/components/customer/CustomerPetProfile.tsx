@@ -4,7 +4,6 @@ import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
 // ImageWithFallback component not found - using img tag instead
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface Pet {

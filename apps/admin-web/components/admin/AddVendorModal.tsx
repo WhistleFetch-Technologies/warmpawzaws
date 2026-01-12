@@ -58,7 +58,20 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
   const loadRoles = async () => {
     try {
       setRolesLoading(true);
-      const data = await apiClient.get<any>('/config/roles');
+      // Try /admin/roles first (preferred), fallback to /config/roles
+      let data: any;
+      try {
+        data = await apiClient.get<any>('/admin/roles');
+        if (data.success && data.roles) {
+          setAvailableRoles(data.roles || []);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to load from /admin/roles, trying /config/roles:', err);
+      }
+      
+      // Fallback to /config/roles
+      data = await apiClient.get<any>('/config/roles');
       setAvailableRoles(data.roles || []);
     } catch (error) {
       console.error('Error loading roles:', error);

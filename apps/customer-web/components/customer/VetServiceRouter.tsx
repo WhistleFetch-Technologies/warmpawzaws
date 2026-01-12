@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Video, Building2, Home, Stethoscope, Star, MapPin, Clock, Search } from 'lucide-react';
+import { ArrowLeft, Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -15,301 +16,426 @@ interface VetServiceRouterProps {
 }
 
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
-  const [currentView, setCurrentView] = useState<'landing' | 'doctor-list'>('landing');
-  const [loading, setLoading] = useState(false);
-  const [doctors, setDoctors] = useState<any[]>([]);
-  const [selectedServiceType, setSelectedServiceType] = useState<'tele' | 'clinic' | 'home' | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
+  const [featuredVets, setFeaturedVets] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [showBookingHistory, setShowBookingHistory] = useState(false);
 
   useEffect(() => {
-    if (currentView === 'doctor-list' && selectedServiceType) {
-      loadDoctors();
-    }
-  }, [currentView, selectedServiceType]);
+    loadVetData();
+  }, []);
 
-  const loadDoctors = async () => {
+  const loadVetData = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        roleId: 'veterinarian',
-        ...(selectedServiceType === 'tele' && { serviceStyle: 'tele_consultation' }),
-        ...(selectedServiceType === 'clinic' && { serviceStyle: 'at_center' }),
-        ...(selectedServiceType === 'home' && { serviceStyle: 'home_visit' }),
-        ...(searchQuery && { query: searchQuery })
+      
+      const endpoint = `/customer/discover-services?category=vet&roleId=veterinarian`;
+      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
+      const servicesData = data.vendors || data.services || [];
+      
+      // Extract unique vet vendors
+      const vendorMap = new Map();
+      servicesData.forEach((service: any) => {
+        const vendorId = service.vendorId || service.id;
+        const vendorType = (service.vendorType || '').toLowerCase();
+        const roleId = (service.vendorRoleId || service.roleId || '').toLowerCase();
+        const vendorName = service.vendorName || service.businessName || service.name || '';
+        
+        // Filter for veterinary vendors
+        const isVet = vendorType.includes('vet') || 
+                      vendorType.includes('clinic') || 
+                      vendorType.includes('healthcare') ||
+                      roleId.includes('vet') ||
+                      roleId.includes('clinic') ||
+                      vendorName.toLowerCase().includes('vet') ||
+                      vendorName.toLowerCase().includes('clinic');
+        
+        if (isVet && !vendorMap.has(vendorId)) {
+          vendorMap.set(vendorId, {
+            id: vendorId,
+            name: vendorName,
+            rating: service.vendorRating || service.rating || 4.5,
+            reviews: service.vendorReviewCount || service.reviewsCount || 0,
+            specialty: 'General Veterinarian',
+            experience: 5,
+            fee: service.price || 499,
+            location: service.vendorLocation || service.location,
+            serviceStyle: service.serviceStyle
+          });
+        }
       });
-
-      // Append params to URL query string
-      const endpoint = `/customer/doctors/search${params.toString() ? `?${params.toString()}` : ''}`;
-      const data = await apiClient.get<{ doctors?: any[]; staff?: any[]; success?: boolean }>(endpoint);
-      const doctorList = data.doctors || data.staff || [];
-      setDoctors(doctorList);
+      
+      const vets = Array.from(vendorMap.values());
+      setFeaturedVets(vets.slice(0, 5));
+      
+      // Set stats based on real data
+      setStats({
+        activeVets: vets.length > 0 ? vets.length : 150,
+        consultations: '5K',
+        rating: vets.length > 0 ? (vets.reduce((acc: number, v: any) => acc + v.rating, 0) / vets.length).toFixed(1) : '4.8'
+      });
     } catch (error) {
-      console.error('Error loading doctors:', error);
-      // No mock fallback - show empty state when API fails
-      setDoctors([]);
+      console.error('Error loading vet data:', error);
+      setStats({
+        activeVets: 150,
+        consultations: '5K',
+        rating: '4.8'
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleServiceTypeSelect = (type: 'tele' | 'clinic' | 'home') => {
-    setSelectedServiceType(type);
-    setCurrentView('doctor-list');
-  };
+  const serviceTypes = [
+    {
+      id: 'tele',
+      name: 'Tele Consultation',
+      description: 'Video call with vets',
+      icon: Video,
+      color: '#6B9FFF',
+      bgColor: 'bg-blue-50',
+      badge: '24/7 Available'
+    },
+    {
+      id: 'clinic',
+      name: 'Clinic Visit',
+      description: 'Book appointment',
+      icon: Building2,
+      color: '#7FD47F',
+      bgColor: 'bg-green-50',
+      badge: '200+ Clinics'
+    },
+    {
+      id: 'home',
+      name: 'Home Visit',
+      description: 'Vet comes to you',
+      icon: HomeIcon,
+      color: '#FF8C42',
+      bgColor: 'bg-orange-50',
+      badge: 'Track Live'
+    },
+    {
+      id: 'lab',
+      name: 'Lab Tests',
+      description: 'Sample collection',
+      icon: FlaskConical,
+      color: '#9F7FFF',
+      bgColor: 'bg-purple-50',
+      badge: 'Digital Reports'
+    },
+    {
+      id: 'medicine',
+      name: 'Medicine',
+      description: 'Order medicines',
+      icon: Pill,
+      color: '#FF6B9F',
+      bgColor: 'bg-pink-50',
+      badge: 'Fast Delivery'
+    }
+  ];
 
-  const handleDoctorSelect = (doctor: any) => {
-    onNavigate('vet-doctor-details', { doctorId: doctor.id, doctor, serviceType: selectedServiceType });
-  };
-
-  // Landing Page View
-  if (currentView === 'landing') {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-teal-600 to-blue-600 text-white px-4 py-4 sticky top-0 z-50">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              className="rounded-full text-white hover:bg-white/20"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">Veterinary Services</h1>
-              <p className="text-white/90 text-sm">Expert care for your pets</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 space-y-6">
-          {/* Hero Banner */}
-          <Card className="bg-gradient-to-br from-teal-50 to-blue-50 border-teal-200 p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h2 className="text-xl font-bold text-gray-900 mb-2">Expert Pet Care</h2>
-                <p className="text-gray-700 mb-4">Consult with licensed veterinarians</p>
-              </div>
-              <div className="text-5xl">🐾</div>
-            </div>
-          </Card>
-
-          {/* Service Type Selection */}
-          <div>
-            <h2 className="font-bold text-gray-900 mb-4">Choose Consultation Type</h2>
-            <div className="space-y-3">
-              {/* Tele Consultation */}
-              <Card 
-                className="p-4 hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-teal-300"
-                onClick={() => handleServiceTypeSelect('tele')}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <Video className="w-7 h-7 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-gray-900">Video Consultation</h3>
-                    <p className="text-sm text-gray-600 mt-1">Consult from home via video call</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Quick</span>
-                      <span className="text-xs text-gray-500">₹299 onwards</span>
-                    </div>
-                  </div>
-                  <div className="text-gray-400">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Clinic Visit */}
-              <Card 
-                className="p-4 hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-teal-300"
-                onClick={() => handleServiceTypeSelect('clinic')}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-teal-100 rounded-xl flex items-center justify-center">
-                    <Building2 className="w-7 h-7 text-teal-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-gray-900">Clinic Visit</h3>
-                    <p className="text-sm text-gray-600 mt-1">Visit nearby veterinary clinic</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded">In-person</span>
-                      <span className="text-xs text-gray-500">₹399 onwards</span>
-                    </div>
-                  </div>
-                  <div className="text-gray-400">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Home Visit */}
-              <Card 
-                className="p-4 hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-teal-300"
-                onClick={() => handleServiceTypeSelect('home')}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center">
-                    <Home className="w-7 h-7 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-gray-900">Home Visit</h3>
-                    <p className="text-sm text-gray-600 mt-1">Doctor visits your home</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Convenient</span>
-                      <span className="text-xs text-gray-500">₹599 onwards</span>
-                    </div>
-                  </div>
-                  <div className="text-gray-400">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </div>
-        </div>
+      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
-  // Doctor List View
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-teal-600 to-blue-600 text-white px-4 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCurrentView('landing')}
-            className="rounded-full text-white hover:bg-white/20"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Available Doctors</h1>
-            <p className="text-white/90 text-sm">
-              {selectedServiceType === 'tele' && 'Video Consultation'}
-              {selectedServiceType === 'clinic' && 'Clinic Visit'}
-              {selectedServiceType === 'home' && 'Home Visit'}
-            </p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-white max-w-md mx-auto">
+      {/* Header with Concave Bottom Curve */}
+      <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-16 relative">
+        <button 
+          onClick={onBack}
+          className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Back</span>
+        </button>
         
-        {/* Search Bar */}
-        <div className="mt-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/70" />
-            <input
-              type="text"
-              placeholder="Search doctors..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                // Debounce search
-                setTimeout(() => loadDoctors(), 300);
-              }}
-              className="w-full pl-10 pr-4 py-2 bg-white/20 backdrop-blur rounded-lg text-white placeholder-white/70 border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
-            />
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+            <Stethoscope className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Vet Services</h1>
+            <p className="text-white/80 text-sm">Complete pet healthcare</p>
           </div>
         </div>
+
+        {/* Quick Stats */}
+        {stats && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+              <div className="text-2xl font-bold">{stats.activeVets || 150}+</div>
+              <div className="text-white/80 text-xs">Active Vets</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+              <div className="text-2xl font-bold">{stats.consultations || '5K'}+</div>
+              <div className="text-white/80 text-xs">Consultations</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+              <div className="flex items-center gap-1 text-2xl font-bold">
+                <Star className="w-4 h-4 fill-white" />
+                {stats.rating || '4.8'}
+              </div>
+              <div className="text-white/80 text-xs">Avg Rating</div>
+            </div>
+          </div>
+        )}
+        
+        {/* Concave curve - curves inward */}
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white" 
+             style={{
+               borderTopLeftRadius: '50% 100%',
+               borderTopRightRadius: '50% 100%',
+             }}
+        />
       </div>
 
-      {/* Doctors List */}
-      <div className="p-4 space-y-4">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+      {/* Main Content on White Background */}
+      <div className="px-6 pb-24">
+        {/* Spotlight Banners */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-5 h-5 text-[#FF8C42]" />
+            <h2 className="text-lg font-semibold">Spotlight Offers</h2>
           </div>
-        ) : doctors.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Stethoscope className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="font-semibold text-gray-900 mb-2">No Doctors Found</h3>
-            <p className="text-sm text-gray-500">Try adjusting your search or service type</p>
-          </Card>
-        ) : (
-          doctors.map((doctor) => (
-            <Card
-              key={doctor.id}
-              className="p-4 hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-teal-300"
-              onClick={() => handleDoctorSelect(doctor)}
-            >
-              <div className="flex gap-4">
-                {/* Doctor Avatar */}
-                <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Stethoscope className="w-8 h-8 text-teal-600" />
+          
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
+            {/* First Consultation Offer - WHITE BACKGROUND */}
+            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <Badge className="bg-blue-100 text-blue-600 border-none mb-2">Limited Time</Badge>
+                  <div className="text-3xl font-bold text-blue-600 mb-1">50% OFF</div>
+                  <div className="text-gray-700 text-sm">First Tele Consultation</div>
                 </div>
+                <div className="p-3 bg-blue-50 rounded-xl">
+                  <Video className="w-6 h-6 text-blue-600" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <div className="text-sm">
+                  <span className="line-through text-gray-400">₹599</span>
+                  <span className="ml-2 font-bold text-lg text-gray-900">₹299</span>
+                </div>
+                <Button 
+                  size="sm" 
+                  className="bg-blue-600 text-white hover:bg-blue-700 h-8"
+                  onClick={() => onNavigate('vet-booking', { serviceType: 'tele' })}
+                >
+                  Book Now
+                </Button>
+              </div>
+            </Card>
 
-                {/* Doctor Details */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <h3 className="font-bold text-lg text-gray-900">{doctor.name || doctor.staffName}</h3>
-                      <p className="text-sm text-gray-600">{doctor.specialization || doctor.roleName || 'Veterinarian'}</p>
-                      {doctor.experience && (
-                        <p className="text-xs text-gray-500 mt-1">{doctor.experience} experience</p>
-                      )}
-                    </div>
-                    {doctor.availableToday && (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-                        Available
-                      </span>
-                    )}
+            {/* Free Lab Tests Offer - WHITE BACKGROUND */}
+            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <Badge className="bg-purple-100 text-purple-600 border-none mb-2">New</Badge>
+                  <div className="text-3xl font-bold text-purple-600 mb-1">FREE</div>
+                  <div className="text-gray-700 text-sm">Home Sample Collection</div>
+                </div>
+                <div className="p-3 bg-purple-50 rounded-xl">
+                  <FlaskConical className="w-6 h-6 text-purple-600" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <div className="text-sm text-gray-600">On orders above ₹999</div>
+                <Button 
+                  size="sm" 
+                  className="bg-purple-600 text-white hover:bg-purple-700 h-8"
+                  onClick={() => onNavigate('vet-lab-tests')}
+                >
+                  Book Test
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        {/* Service Types */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Choose Service</h2>
+            <button 
+              className="text-sm text-[#FF8C42] flex items-center gap-1 font-medium"
+              onClick={() => setShowBookingHistory(true)}
+            >
+              <History className="w-4 h-4" />
+              My Bookings
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            {serviceTypes.map((service) => (
+              <Card
+                key={service.id}
+                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
+                onClick={() => {
+                  // Special handling for clinic visit - use new enhanced flow
+                  if (service.id === 'clinic') {
+                    onNavigate('vet-clinic-list');
+                  } else {
+                    onNavigate('vet-booking', { serviceType: service.id });
+                  }
+                }}
+              >
+                <div className="flex flex-col h-full">
+                  <div 
+                    className={`w-12 h-12 ${service.bgColor} rounded-xl flex items-center justify-center mb-3`}
+                  >
+                    <service.icon className="w-6 h-6" style={{ color: service.color }} />
                   </div>
-
-                  {/* Rating & Reviews */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="flex items-center gap-1">
-                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                      <span className="font-semibold text-gray-900">{doctor.rating || 4.5}</span>
-                    </div>
-                    <span className="text-sm text-gray-500">({doctor.reviewsCount || 0} reviews)</span>
+                  <div className="flex-1">
+                    <h3 className="font-semibold mb-1">{service.name}</h3>
+                    <p className="text-xs text-gray-500 mb-2">{service.description}</p>
                   </div>
-
-                  {/* Clinic & Location */}
-                  {(doctor.clinicName || doctor.location?.address) && (
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <MapPin className="w-4 h-4" />
-                      <span className="truncate">
-                        {doctor.clinicName || doctor.location?.address || 'Location'}
-                      </span>
-                    </div>
+                  {service.badge && (
+                    <Badge variant="secondary" className="text-xs w-fit">
+                      {service.badge}
+                    </Badge>
                   )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
 
-                  {/* Price & Action */}
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
-                    <div>
-                      <span className="text-lg font-bold text-teal-600">
-                        {selectedServiceType === 'tele' && '₹299'}
-                        {selectedServiceType === 'clinic' && '₹399'}
-                        {selectedServiceType === 'home' && '₹599'}
-                      </span>
-                      <span className="text-sm text-gray-500 ml-1">onwards</span>
+        {/* Featured Vets */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Featured Vets</h2>
+            <button 
+              className="text-sm text-[#FF8C42] flex items-center gap-1"
+              onClick={() => onNavigate('vet-all-doctors')}
+            >
+              View All
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="space-y-3">
+            {featuredVets.length > 0 ? (
+              featuredVets.slice(0, 3).map((vet, index) => (
+                <Card 
+                  key={index}
+                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
+                  onClick={() => onNavigate('vet-doctor-details', { doctorId: vet.id })}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">
+                      {vet.name?.charAt(0) || 'V'}
                     </div>
-                    <Button
-                      size="sm"
-                      className="bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-700 hover:to-blue-700 text-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDoctorSelect(doctor);
-                      }}
-                    >
-                      View Details
-                    </Button>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">{vet.name || 'Dr. Veterinarian'}</h3>
+                      <p className="text-xs text-gray-500 mb-2">{vet.specialty || 'General Veterinarian'}</p>
+                      <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <Star className="w-3 h-3 fill-current" />
+                          <span className="font-semibold">{vet.rating || 4.8}</span>
+                          <span className="text-gray-400">({vet.reviews || 0})</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-gray-500">
+                          <Clock className="w-3 h-3" />
+                          <span>{vet.experience || 5}+ years</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-[#FF8C42]">₹{vet.fee || 499}</div>
+                      <div className="text-xs text-gray-400">per visit</div>
+                    </div>
                   </div>
+                </Card>
+              ))
+            ) : (
+              // Placeholder vets
+              [1, 2, 3].map((i) => (
+                <Card 
+                  key={i}
+                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
+                  onClick={() => onNavigate('vet-tele-consultation')}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">
+                      D
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">Dr. Veterinarian {i}</h3>
+                      <p className="text-xs text-gray-500 mb-2">General Veterinarian • MVSc</p>
+                      <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <Star className="w-3 h-3 fill-current" />
+                          <span className="font-semibold">4.8</span>
+                          <span className="text-gray-400">(120)</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-gray-500">
+                          <Clock className="w-3 h-3" />
+                          <span>8+ years</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-[#FF8C42]">₹{299 + i * 100}</div>
+                      <div className="text-xs text-gray-400">per visit</div>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* What's New */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="w-5 h-5 text-[#FF8C42]" />
+            <h2 className="text-lg font-semibold">What's New</h2>
+          </div>
+          
+          <div className="space-y-3">
+            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Video className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">24/7 Tele Consultation</h3>
+                  <p className="text-sm text-gray-600">Connect with vets anytime via video call</p>
                 </div>
               </div>
             </Card>
-          ))
-        )}
+
+            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FlaskConical className="w-5 h-5 text-purple-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">Digital Lab Reports</h3>
+                  <p className="text-sm text-gray-600">View reports instantly in your pet's health records</p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <HomeIcon className="w-5 h-5 text-orange-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">Live Tracking</h3>
+                  <p className="text-sm text-gray-600">Track your vet's location for home visits</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -336,5 +336,163 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /customer/vendors/search
+   * Search vendors by roleId and other filters
+   * This is a compatibility endpoint for components that use /customer/vendors/search
+   */
+  app.get("/customer/vendors/search", async (c) => {
+    try {
+      const roleId = c.req.query('roleId');
+      const query = c.req.query('query');
+      const location = c.req.query('location');
+      const latitude = c.req.query('latitude');
+      const longitude = c.req.query('longitude');
+      const serviceStyle = c.req.query('serviceStyle');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // Build vendor query
+      let vendorQuery = `
+        SELECT v.*, r.name as role_name, r.display_name as role_display_name
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        WHERE v.status = 'approved' AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      // Filter by roleId (primary filter)
+      if (roleId) {
+        vendorQuery += ` AND (r.id::text = $${paramIndex} OR r.name = $${paramIndex + 1})`;
+        params.push(roleId, roleId);
+        paramIndex += 2;
+      }
+
+      // Filter by search query (name, business_name, specialization)
+      if (query) {
+        vendorQuery += ` AND (
+          v.business_name ILIKE $${paramIndex} OR 
+          v.owner_name ILIKE $${paramIndex} OR
+          v.specializations::text ILIKE $${paramIndex}
+        )`;
+        params.push(`%${query}%`);
+        paramIndex++;
+      }
+
+      // Filter by location
+      if (location) {
+        vendorQuery += ` AND (
+          v.city ILIKE $${paramIndex} OR 
+          v.state ILIKE $${paramIndex} OR 
+          v.address ILIKE $${paramIndex}
+        )`;
+        params.push(`%${location}%`);
+        paramIndex++;
+      }
+
+      vendorQuery += ` ORDER BY v.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+      paramIndex += 2;
+
+      const vendorResults = await query(vendorQuery, params);
+      let vendors = vendorResults.rows;
+
+      // Enrich vendors with additional data
+      const enrichedVendors = await Promise.all(
+        vendors.map(async (vendor: any) => {
+          // Get average rating
+          const reviews = await query(
+            `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
+             FROM reviews 
+             WHERE vendor_id = $1 AND is_approved = true`,
+            [vendor.id]
+          );
+
+          const avgRating = reviews.rows[0]?.avg_rating || 0;
+          const reviewCount = reviews.rows[0]?.review_count || 0;
+
+          // Calculate distance if coordinates provided
+          let distance = null;
+          if (latitude && longitude && vendor.latitude && vendor.longitude) {
+            distance = calculateDistance(
+              parseFloat(latitude),
+              parseFloat(longitude),
+              parseFloat(vendor.latitude),
+              parseFloat(vendor.longitude)
+            );
+          }
+
+          // Get services count
+          const servicesCount = await query(
+            `SELECT COUNT(*) as count
+             FROM vendor_services vs
+             INNER JOIN services s ON vs.service_id = s.id
+             WHERE vs.vendor_id = $1 AND s.is_active = true AND vs.is_enabled = true`,
+            [vendor.id]
+          );
+
+          return {
+            ...vendor,
+            id: vendor.id,
+            vendorId: vendor.id,
+            businessName: vendor.business_name,
+            name: vendor.business_name || vendor.owner_name,
+            rating: parseFloat(avgRating) || 0,
+            reviewCount: parseInt(reviewCount) || 0,
+            distance: distance ? parseFloat(distance.toFixed(2)) : null,
+            servicesCount: parseInt(servicesCount.rows[0]?.count || '0'),
+            priceRange: vendor.price_range || null,
+            address: vendor.address,
+            city: vendor.city,
+            state: vendor.state,
+          };
+        })
+      );
+
+      // If serviceStyle is 'at_home' or 'tele', also return staff
+      let staff: any[] = [];
+      if (serviceStyle && ['at_home', 'tele'].includes(serviceStyle) && roleId) {
+        const staffQuery = `
+          SELECT s.*, v.business_name as vendor_name, v.city, v.state
+          FROM staff s
+          INNER JOIN vendors v ON s.vendor_id = v.id
+          INNER JOIN roles r ON v.role_id = r.id
+          WHERE s.is_active = true
+            AND v.status = 'approved'
+            AND v.is_active = true
+            AND (r.id::text = $1 OR r.name = $2)
+          LIMIT $3
+        `;
+        const staffResults = await query(staffQuery, [roleId, roleId, limit]);
+        staff = staffResults.rows.map((s: any) => ({
+          ...s,
+          id: s.id,
+          vendorId: s.vendor_id,
+          name: s.name,
+          rating: s.rating || 0,
+        }));
+      }
+
+      return c.json({
+        success: true,
+        vendors: enrichedVendors,
+        staff: staff.length > 0 ? staff : undefined,
+        total: enrichedVendors.length,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      console.error('Error in /customer/vendors/search:', error);
+      return c.json({ 
+        success: false,
+        error: error.message || 'Failed to search vendors',
+        vendors: [],
+        total: 0
+      }, 500);
+    }
+  });
 }
 

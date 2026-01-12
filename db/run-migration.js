@@ -32,7 +32,28 @@ async function runMigration(migrationFile) {
   console.log(`📄 Read ${sql.length} bytes from migration file`);
 
   // Connect to database
-  const pool = new Pool({ connectionString: DATABASE_URL });
+  // Parse connection string for SSL configuration
+  let connectionConfig;
+  
+  // If connecting to RDS (AWS), use explicit SSL config
+  if (DATABASE_URL.includes('rds.amazonaws.com')) {
+    // Parse URL to extract components
+    const url = new URL(DATABASE_URL.replace('postgresql://', 'https://'));
+    connectionConfig = {
+      host: url.hostname,
+      port: parseInt(url.port || '5432', 10),
+      database: url.pathname.slice(1) || 'warmpawz',
+      user: url.username,
+      password: url.password,
+      ssl: {
+        rejectUnauthorized: false // RDS uses AWS-managed certificates
+      }
+    };
+  } else {
+    connectionConfig = { connectionString: DATABASE_URL };
+  }
+  
+  const pool = new Pool(connectionConfig);
 
   try {
     console.log('🔗 Connecting to database...');

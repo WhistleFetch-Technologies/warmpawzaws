@@ -350,6 +350,112 @@ export function registerPetResortEndpoints(app: Hono) {
   const createRoomHandler = new CreateRoomHandler();
   const updateRoomHandler = new UpdateRoomHandler();
 
+  /**
+   * GET /pet-resort/discover
+   * Discover pet resorts for customers
+   */
+  app.get('/pet-resort/discover', async (c) => {
+    try {
+      const location = c.req.query('location');
+      const latitude = c.req.query('latitude');
+      const longitude = c.req.query('longitude');
+      const minRating = c.req.query('minRating');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+
+      let resortsQuery = `
+        SELECT 
+          v.*,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          COALESCE(AVG(rev.rating), 0) as avg_rating,
+          COUNT(DISTINCT rev.id) as total_reviews,
+          COUNT(DISTINCT b.id) as total_bookings
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        LEFT JOIN reviews rev ON rev.vendor_id = v.id AND rev.is_approved = true
+        LEFT JOIN bookings b ON b.vendor_id = v.id AND b.status = 'completed'
+        WHERE v.status = 'approved' 
+          AND v.is_active = true
+          AND (r.name = 'pet_resort' OR r.name = 'boarding_resort' OR r.name LIKE '%resort%')
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (location) {
+        resortsQuery += ` AND (
+          v.city ILIKE $${paramIndex} OR 
+          v.state ILIKE $${paramIndex} OR 
+          v.address ILIKE $${paramIndex}
+        )`;
+        params.push(`%${location}%`);
+        paramIndex++;
+      }
+
+      if (minRating) {
+        resortsQuery += ` HAVING AVG(rev.rating) >= $${paramIndex}`;
+        params.push(parseFloat(minRating));
+        paramIndex++;
+      }
+
+      resortsQuery += `
+        GROUP BY v.id, r.name, r.display_name
+        ORDER BY avg_rating DESC, total_bookings DESC
+        LIMIT $${paramIndex}
+      `;
+      params.push(limit);
+
+      const resortsResult = await query(resortsQuery, params);
+
+      // Enrich with distance if coordinates provided
+      const resorts = resortsResult.rows.map((resort: any) => {
+        const resortData: any = {
+          id: resort.id,
+          name: resort.business_name,
+          ownerName: resort.owner_name,
+          role: resort.role_name,
+          roleDisplayName: resort.role_display_name,
+          city: resort.city,
+          state: resort.state,
+          address: resort.address,
+          rating: parseFloat(resort.avg_rating || '0'),
+          reviews: parseInt(resort.total_reviews || '0'),
+          bookings: parseInt(resort.total_bookings || '0'),
+          distance: null as number | null,
+        };
+
+        if (latitude && longitude && resort.latitude && resort.longitude) {
+          resortData.distance = calculateDistance(
+            parseFloat(latitude),
+            parseFloat(longitude),
+            parseFloat(resort.latitude),
+            parseFloat(resort.longitude)
+          );
+        }
+
+        return resortData;
+      });
+
+      // Sort by distance if available
+      if (latitude && longitude) {
+        resorts.sort((a: any, b: any) => {
+          if (a.distance === null) return 1;
+          if (b.distance === null) return -1;
+          return a.distance - b.distance;
+        });
+      }
+
+      return c.json({
+        success: true,
+        resorts,
+        total: resorts.length,
+      });
+    } catch (error: any) {
+      console.error('Error discovering pet resorts:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.get('/vendor/:id/rooms', async (c) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
@@ -398,5 +504,20 @@ function createApiGatewayEvent(req: any): any {
 
 function createLambdaContext(): any {
   return {};
+}
+
+/**
+ * Helper: Calculate distance between two coordinates (Haversine formula)
+ */
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in km
 }
 

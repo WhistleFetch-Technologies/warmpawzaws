@@ -347,6 +347,39 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
     const result = await cancelHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  // Compatibility endpoints for frontend
+  app.get('/appointment/:appointmentId', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { id: c.req.param('appointmentId') };
+    const context = createLambdaContext();
+    const result = await getDetailsHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/appointment/:appointmentId/cancel', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { id: c.req.param('appointmentId') };
+    const context = createLambdaContext();
+    const result = await cancelHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/appointment/:appointmentId/reschedule', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { id: c.req.param('appointmentId') };
+    const context = createLambdaContext();
+    const result = await rescheduleHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.get('/appointment/customer/:customerId', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.queryStringParameters = { status: c.req.query('status') || 'all' };
+    const context = createLambdaContext();
+    const result = await getAppointmentsHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
 }
 
 // Helper to convert Hono request to API Gateway event (for compatibility)

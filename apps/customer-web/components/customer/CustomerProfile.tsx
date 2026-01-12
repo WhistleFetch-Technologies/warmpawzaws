@@ -5,7 +5,7 @@ import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, User, Phone, Mail, MapPin, ChevronRight, Calendar } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface CustomerProfileProps {
   phone: string;
@@ -35,8 +35,6 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchProfile();
@@ -47,22 +45,11 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
       setLoading(true);
       setError(null);
       
-      const response = await fetch(
-        `${API_BASE}/customer/profile?phone=${encodeURIComponent(phone)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'apikey': publicAnonKey
-          }
-        }
+      const data = await apiClient.get<{ profile?: Profile }>(
+        `/customer/profile?phone=${encodeURIComponent(phone)}`
       );
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
-      
-      const data = await response.json();
-      setProfile(data.profile);
+      setProfile(data.profile || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
       console.error('Error fetching profile:', err);

@@ -282,11 +282,18 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         if (customers.length > 0) {
           userId = customers[0].id;
           userData = customers[0];
+          // Update last_login_at timestamp to persist login state
+          await update('customers', { id: userId }, { 
+            last_login_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
         } else {
           // Create customer
           const newCustomers = await insert('customers', {
             phone,
             is_active: true,
+            last_login_at: new Date().toISOString(),
           });
           userId = newCustomers[0].id;
           userData = newCustomers[0];
@@ -311,6 +318,12 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         if (vendors.length > 0) {
           userId = vendors[0].id;
           userData = vendors[0];
+          // Update last_login_at timestamp to persist login state
+          await update('vendors', { id: userId }, { 
+            last_login_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          console.log(`[AUTH] Updated last_login_at for vendor ${userId}`);
         } else {
           // Vendor doesn't exist yet - this is OK for new vendor registration
           // OTP verification will succeed and they can proceed to onboarding
@@ -324,6 +337,21 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           };
           console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
         }
+      } else if (role === 'admin') {
+        // Admin login via OTP (alternative to email/password)
+        const admins = await select('admins', { phone });
+        if (admins.length > 0) {
+          userId = admins[0].id;
+          userData = admins[0];
+          // Update last_login_at timestamp to persist login state
+          await update('admins', { id: userId }, { 
+            last_login_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          console.log(`[AUTH] Updated last_login_at for admin ${userId}`);
+        } else {
+          return this.error('Admin not found', 404, 'NOT_FOUND', undefined, context.requestId);
+        }
       } else {
         return this.error('Invalid role', 400, 'VALIDATION_ERROR', undefined, context.requestId);
       }
@@ -334,14 +362,15 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       
       if (isUATMode) {
         // UAT MODE: Skip Cognito and use temporary tokens for faster testing
+        // Token expiry set to 60 seconds for UAT testing
         console.log(`[AUTH] UAT Mode: Skipping Cognito authentication for ${phone} (role: ${role})`);
         cognitoTokens = {
           accessToken: `uat_token_${role}_${userId}_${Date.now()}`,
           idToken: `uat_id_${userId}_${Date.now()}`,
           refreshToken: `uat_refresh_${userId}_${Date.now()}`,
-          expiresIn: 86400, // 24 hours for UAT mode
+          expiresIn: 60, // 60 seconds for UAT mode testing
         };
-        console.log('[AUTH] UAT Mode: Generated temporary tokens (Cognito skipped)');
+        console.log('[AUTH] UAT Mode: Generated temporary tokens (Cognito skipped) with 60s expiry');
       } else {
         // PRODUCTION MODE: Use full Cognito authentication
         try {

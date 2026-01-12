@@ -22,7 +22,7 @@ export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
 
   return (
     <span className={`inline-flex items-center rounded-full border font-medium ${sizeClasses[size]} ${statusColors[status]}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {status ? (status.charAt(0).toUpperCase() + status.slice(1)) : ''}
     </span>
   );
 }

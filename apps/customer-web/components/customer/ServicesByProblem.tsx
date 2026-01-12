@@ -5,7 +5,6 @@ import { Star, MapPin, Clock, Phone, ChevronRight, ArrowLeft, Filter } from 'luc
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { apiClient } from '@/lib/api-client';
 
 interface Service {

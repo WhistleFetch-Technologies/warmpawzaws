@@ -24,6 +24,168 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 
 export function registerSettlementEndpoints(app: Hono) {
   /**
+   * GET /settlements
+   * Get all settlements with filtering (Admin UI endpoint)
+   */
+  app.get("/settlements", async (c) => {
+    try {
+      const status = c.req.query('status');
+      const period = c.req.query('period'); // '7d', '30d', '90d', 'all'
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let queryStr = `
+        SELECT 
+          s.*,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone
+        FROM settlements s
+        LEFT JOIN vendors v ON s.vendor_id = v.id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (status && status !== 'all') {
+        queryStr += ` AND s.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+
+      if (period && period !== 'all') {
+        const days = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 30;
+        queryStr += ` AND s.created_at >= NOW() - INTERVAL '${days} days'`;
+      }
+
+      queryStr += ` ORDER BY s.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const settlements = await query(queryStr, params).catch(() => ({ rows: [] }));
+
+      const safeSettlements = (settlements.rows || []).map((s: any) => ({
+        id: String(s.id || ''),
+        vendor_id: String(s.vendor_id || ''),
+        vendor_name: String(s.vendor_name || ''),
+        vendor_phone: String(s.vendor_phone || ''),
+        period_start: s.period_start ? String(s.period_start) : '',
+        period_end: s.period_end ? String(s.period_end) : '',
+        gross_amount: parseFloat(s.gross_amount || '0'),
+        commission_amount: parseFloat(s.commission_amount || '0'),
+        net_amount: parseFloat(s.net_amount || '0'),
+        booking_count: parseInt(s.booking_count || '0', 10),
+        status: String(s.status || 'pending'),
+        payout_reference: s.payout_reference || undefined,
+        payout_date: s.payout_date ? String(s.payout_date) : undefined,
+        failure_reason: s.failure_reason || undefined,
+        created_at: String(s.created_at || ''),
+        updated_at: String(s.updated_at || ''),
+      }));
+
+      return c.json({
+        success: true,
+        settlements: safeSettlements,
+        count: safeSettlements.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching settlements:', error);
+      return c.json({ success: true, settlements: [], count: 0 });
+    }
+  });
+
+  /**
+   * GET /settlements/summary
+   * Get settlement summary statistics
+   */
+  app.get("/settlements/summary", async (c) => {
+    try {
+      const summary = await query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE status = 'pending') as total_pending,
+          COUNT(*) FILTER (WHERE status = 'processing') as total_processing,
+          COUNT(*) FILTER (WHERE status = 'completed') as total_completed,
+          COUNT(*) FILTER (WHERE status = 'failed') as total_failed,
+          COALESCE(SUM(net_amount) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+          COALESCE(SUM(net_amount) FILTER (WHERE status = 'completed'), 0) as completed_amount
+        FROM settlements
+      `).catch(() => ({ rows: [{
+        total_pending: '0',
+        total_processing: '0',
+        total_completed: '0',
+        total_failed: '0',
+        pending_amount: '0',
+        completed_amount: '0'
+      }] }));
+
+      return c.json({
+        success: true,
+        summary: {
+          totalPending: parseInt(summary.rows[0]?.total_pending || '0', 10),
+          totalProcessing: parseInt(summary.rows[0]?.total_processing || '0', 10),
+          totalCompleted: parseInt(summary.rows[0]?.total_completed || '0', 10),
+          totalFailed: parseInt(summary.rows[0]?.total_failed || '0', 10),
+          pendingAmount: parseFloat(summary.rows[0]?.pending_amount || '0'),
+          completedAmount: parseFloat(summary.rows[0]?.completed_amount || '0'),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching settlement summary:', error);
+      return c.json({
+        success: true,
+        summary: {
+          totalPending: 0,
+          totalProcessing: 0,
+          totalCompleted: 0,
+          totalFailed: 0,
+          pendingAmount: 0,
+          completedAmount: 0,
+        },
+      });
+    }
+  });
+
+  /**
+   * GET /settlements/:id
+   * Get settlement details with bookings
+   */
+  app.get("/settlements/:id", async (c) => {
+    try {
+      const id = c.req.param('id');
+
+      const settlements = await select('settlements', { id });
+      if (settlements.length === 0) {
+        return c.json({ error: 'Settlement not found' }, 404);
+      }
+
+      const settlement = settlements[0];
+
+      // Get related bookings
+      const bookings = await query(`
+        SELECT 
+          b.id,
+          b.booking_date,
+          s.name as service_name,
+          b.total_amount,
+          b.commission_amount,
+          (b.total_amount - b.commission_amount) as net_amount
+        FROM bookings b
+        LEFT JOIN services s ON b.service_id = s.id
+        WHERE b.settlement_id = $1
+        ORDER BY b.booking_date DESC
+      `, [id]).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        settlement: {
+          ...settlement,
+          bookings: bookings.rows || [],
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching settlement details:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  /**
    * POST /settlements/calculate-daily
    * Calculate daily settlements (cron job)
    * ✅ TEMPORAL FIX: Uses advisory locks to prevent concurrent execution

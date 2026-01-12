@@ -80,7 +80,7 @@ export function BulkEditModal({
               <Edit className="w-5 h-5 text-blue-600" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900">
-              Bulk Edit {itemType.charAt(0).toUpperCase() + itemType.slice(1)}s
+              Bulk Edit {itemType ? (itemType.charAt(0).toUpperCase() + itemType.slice(1)) : 'Item'}s
             </h3>
           </div>
           <button

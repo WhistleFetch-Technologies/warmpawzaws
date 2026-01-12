@@ -97,7 +97,7 @@ export default function ServiceCatalogPage() {
         apiClient.get<any>('/admin/catalog/stats'),
       ]);
       
-      // Handle grouped services response
+      // Handle grouped services response - ensure all fields are safe
       if (servicesRes.grouped && Array.isArray(servicesRes.services)) {
         // Flatten grouped structure for compatibility
         const allServices: ServiceCatalogItem[] = [];
@@ -105,20 +105,62 @@ export default function ServiceCatalogPage() {
           if (cat.subcategories && Array.isArray(cat.subcategories)) {
             cat.subcategories.forEach((subcat: any) => {
               if (subcat.services && Array.isArray(subcat.services)) {
-                allServices.push(...subcat.services);
+                allServices.push(...subcat.services.map((s: any) => ({
+                  ...s,
+                  id: String(s.id || s.service_id || ''),
+                  service_id: String(s.service_id || s.id || ''),
+                  service_name: String(s.service_name || ''),
+                  display_name: String(s.display_name || s.service_name || ''),
+                  category_id: String(s.category_id || ''),
+                  category_name: String(s.category_name || ''),
+                  sub_category_id: String(s.sub_category_id || ''),
+                  sub_category_name: String(s.sub_category_name || ''),
+                  description: String(s.description || ''),
+                })));
               }
             });
           }
           if (cat.services && Array.isArray(cat.services)) {
-            allServices.push(...cat.services);
+            allServices.push(...cat.services.map((s: any) => ({
+              ...s,
+              id: String(s.id || s.service_id || ''),
+              service_id: String(s.service_id || s.id || ''),
+              service_name: String(s.service_name || ''),
+              display_name: String(s.display_name || s.service_name || ''),
+              category_id: String(s.category_id || ''),
+              category_name: String(s.category_name || ''),
+              sub_category_id: String(s.sub_category_id || ''),
+              sub_category_name: String(s.sub_category_name || ''),
+              description: String(s.description || ''),
+            })));
           }
         });
         setServices(allServices);
       } else {
-        setServices(servicesRes.services || servicesRes || []);
+        const safeServices = (servicesRes.services || servicesRes || []).map((s: any) => ({
+          ...s,
+          id: String(s.id || s.service_id || ''),
+          service_id: String(s.service_id || s.id || ''),
+          service_name: String(s.service_name || ''),
+          display_name: String(s.display_name || s.service_name || ''),
+          category_id: String(s.category_id || ''),
+          category_name: String(s.category_name || ''),
+          sub_category_id: String(s.sub_category_id || ''),
+          sub_category_name: String(s.sub_category_name || ''),
+          description: String(s.description || ''),
+        }));
+        setServices(safeServices);
       }
       
-      setCategories(categoriesRes.categories || categoriesRes || []);
+      // Ensure categories are safe
+      const safeCategories = (categoriesRes.categories || categoriesRes || []).map((cat: any) => ({
+        id: String(cat.id || ''),
+        name: String(cat.name || ''),
+        display_name: String(cat.display_name || cat.name || ''),
+        category_id: String(cat.category_id || ''),
+        description: String(cat.description || ''),
+      }));
+      setCategories(safeCategories);
       
       if (statsRes.stats) {
         setStats(statsRes.stats);

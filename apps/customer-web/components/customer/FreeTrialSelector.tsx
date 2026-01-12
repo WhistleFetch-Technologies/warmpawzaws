@@ -5,7 +5,6 @@ import { apiClient } from '@/lib/api-client';
 import { Gift, Check, Calendar, Clock, Star } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 
 interface FreeTrialSelectorProps {
@@ -20,7 +19,6 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
   const [booking, setBooking] = useState(false);
   const [selectedTrial, setSelectedTrial] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchFreeTrials();
@@ -51,32 +49,25 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
 
     setBooking(true);
     try {
-      const response = await fetch(`${API_BASE}/trainer/book-free-trial`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
+      const data = await apiClient.post<{ success?: boolean; message?: string; booking?: any; error?: string }>(
+        `/trainer/book-free-trial`,
+        {
           customerId,
           trialId,
           vendorId,
           preferredDate: new Date().toISOString().split('T')[0],
           preferredTime: '10:00'
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Free trial booked! Trainer will contact you soon.');
-          setSelectedTrial(trialId);
-          if (onTrialBooked) {
-            onTrialBooked(data.booking);
-          }
-        } else {
-          toast.error(data.error || 'Failed to book trial');
         }
+      );
+
+      if (data.success !== false) {
+        toast.success('Free trial booked! Trainer will contact you soon.');
+        setSelectedTrial(trialId);
+        if (onTrialBooked && data.booking) {
+          onTrialBooked(data.booking);
+        }
+      } else {
+        toast.error(data.error || 'Failed to book trial');
       }
     } catch (error) {
       console.error('Failed to book trial:', error);

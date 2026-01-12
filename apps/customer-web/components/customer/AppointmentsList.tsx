@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, User, ChevronRight, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface AppointmentsListProps {
   customerId: string;
@@ -20,8 +20,6 @@ export function AppointmentsList({
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'completed' | 'cancelled'>('all');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadAppointments();
   }, [customerId, filter]);
@@ -29,19 +27,10 @@ export function AppointmentsList({
   const loadAppointments = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `${API_BASE}/appointment/customer/${customerId}?status=${filter}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiClient.get<{ appointments?: any[] }>(
+        `/appointment/customer/${customerId}?status=${filter}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setAppointments(data.appointments);
-      } else {
-        console.error('Failed to load appointments');
-      }
+      setAppointments(data.appointments || []);
     } catch (error) {
       console.error('Error loading appointments:', error);
     } finally {

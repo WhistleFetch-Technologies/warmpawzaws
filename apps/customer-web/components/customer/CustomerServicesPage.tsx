@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Star, MapPin, Clock, ArrowLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface Service {
   id: string;
@@ -53,8 +53,6 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchServices();
   }, [category, serviceStyle, roleId, location]);
@@ -64,48 +62,33 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
       setLoading(true);
       setError(null);
       
-      const params = new URLSearchParams();
-      if (category && category !== 'all') params.append('category', category);
-      if (serviceStyle && serviceStyle !== 'all') params.append('serviceStyle', serviceStyle);
-      if (roleId && roleId !== 'all') params.append('roleId', roleId);
+      const params: Record<string, string> = {};
+      if (category && category !== 'all') params.category = category;
+      if (serviceStyle && serviceStyle !== 'all') params.serviceStyle = serviceStyle;
+      if (roleId && roleId !== 'all') params.roleId = roleId;
       if (location) {
-        params.append('location', `${location.lat},${location.lng}`);
-        params.append('radius', '10');
+        params.latitude = location.lat.toString();
+        params.longitude = location.lng.toString();
       }
       
-      const response = await fetch(
-        `${API_BASE}/customer/services?${params.toString()}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'apikey': publicAnonKey
-          }
-        }
-      );
+      const queryString = new URLSearchParams(params).toString();
       
-      if (!response.ok) {
-        // Fallback to catalog endpoint if first one fails (as per handoff)
-        const fallbackResponse = await fetch(
-            `${API_BASE}/catalog/services?${params.toString()}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${publicAnonKey}`,
-                'apikey': publicAnonKey
-              }
-            }
+      try {
+        const data = await apiClient.get<{ services?: Service[] }>(
+          `/customer/services?${queryString}`
         );
-        
-        if (!fallbackResponse.ok) {
-             throw new Error('Failed to load services');
-        }
-        
-        const data = await fallbackResponse.json();
         setServices(data.services || []);
-        return;
+      } catch (err) {
+        // Fallback to catalog endpoint if first one fails
+        try {
+          const fallbackData = await apiClient.get<{ services?: Service[] }>(
+            `/catalog/services?${queryString}`
+          );
+          setServices(fallbackData.services || []);
+        } catch (fallbackErr) {
+          throw new Error('Failed to load services');
+        }
       }
-      
-      const data = await response.json();
-      setServices(data.services || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load services');
       console.error('Error fetching services:', err);
