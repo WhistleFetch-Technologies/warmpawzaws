@@ -90,6 +90,8 @@ import { WalletPage as CustomerWalletPage } from './WalletPage';
 import { MatingDatingHub } from './MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from './HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../IntegratedServicesHub';
+import { ProblemGridSelector } from './ProblemGridSelector';
+import { ServicesByProblem } from './ServicesByProblem';
 
 type ScreenType = 
   | 'home' 
@@ -170,13 +172,18 @@ type ScreenType =
   | 'home-service-selection'
   | 'product_reviews'
   | 'vendor_profile'
-  | 'support_help';
+  | 'support_help'
+  | 'problem_grid'
+  | 'problem_selected'
+  | 'services_by_problem';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [selectedProblem, setSelectedProblem] = useState<{ id: string; title: string; roleId?: string } | null>(null);
+  const [currentServiceType, setCurrentServiceType] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userSidebarOpen, setUserSidebarOpen] = useState(false);
   const [showAddPetModal, setShowAddPetModal] = useState(false);
@@ -304,6 +311,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     setVetServiceData(null);
     setWalkerServiceData(null);
     setSelectedVendorId(undefined);
+    setSelectedProblem(null);
+    setCurrentServiceType(null);
   };
 
   const handlePetDeleted = () => {
@@ -355,7 +364,22 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         <CustomerHome 
           phone={phone}
           refreshKey={refreshKey}
-          onNavigate={handleNavigateToService}
+          onNavigate={(screen, data) => {
+            // Handle problem-based navigation
+            if (screen === 'services_by_problem') {
+              setSelectedProblem({ 
+                id: data?.problemId, 
+                title: data?.problemTitle || 'Service',
+                roleId: data?.roleId
+              });
+              setCurrentScreen('services_by_problem');
+            } else if (screen === 'problem_grid') {
+              setCurrentServiceType(data?.roleId || 'general');
+              setCurrentScreen('problem_grid');
+            } else {
+              handleNavigateToService(screen);
+            }
+          }}
           onProfileClick={handleProfileClick}
           onSidebarOpen={() => setSidebarOpen(true)}
           onPetClick={handlePetClick}
@@ -389,15 +413,41 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'add-pet') return <CustomerPetProfile session={{ phone }} prefillData={null} onComplete={handlePetProfileComplete} onBack={handleBack} />;
   
   // Core Services
-  if (currentScreen === 'walker') return <WalkerDashboard phone={phone} onBack={handleBack} onNavigate={handleWalkerNavigate} data={walkerServiceData} />;
+  if (currentScreen === 'walker') return <WalkerDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'problem_grid') {
+      setCurrentServiceType('walker');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Walking Service', roleId: 'walker' });
+      setCurrentScreen('services_by_problem');
+    } else {
+      handleWalkerNavigate(screen, data);
+    }
+  }} data={walkerServiceData} />;
   if (currentScreen === 'walker-booking') return <WalkerService phone={phone} onBack={() => setCurrentScreen('walker')} onNavigate={(screen, data) => {
     if (screen === 'create-booking') {
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
+    } else if (screen === 'problem_grid') {
+      setCurrentServiceType('walker');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Walking Service', roleId: 'walker' });
+      setCurrentScreen('services_by_problem');
     }
   }} />;
-  if (currentScreen === 'vet') return <VetServiceRouter phone={phone} onBack={handleBack} onNavigate={handleVetNavigate} data={vetServiceData} />;
+  if (currentScreen === 'vet') return <VetServiceRouter phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'problem_grid') {
+      setCurrentServiceType('veterinarian');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Vet Service', roleId: 'veterinarian' });
+      setCurrentScreen('services_by_problem');
+    } else {
+      handleVetNavigate(screen, data);
+    }
+  }} data={vetServiceData} />;
   if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.doctorId} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType || 'clinic'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); setCurrentScreen('vet-clinic-profile'); } }} />;
@@ -411,6 +461,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
+    } else if (screen === 'problem_grid') {
+      setCurrentServiceType('groomer');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      // Fetch problem details if not provided
+      if (data?.problemId && !data?.problemTitle) {
+        // Problem title will be fetched by ServicesByProblem component
+        setSelectedProblem({ id: data.problemId, title: 'Loading...', roleId: 'groomer' });
+      } else {
+        setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Grooming Service', roleId: 'groomer' });
+      }
+      setCurrentScreen('services_by_problem');
     }
   }} />;
   if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
@@ -418,6 +480,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
+    } else if (screen === 'problem_grid') {
+      setCurrentServiceType('trainer');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Training Service', roleId: 'trainer' });
+      setCurrentScreen('services_by_problem');
     } else {
       setCurrentScreen('coming-soon');
     }
@@ -427,6 +495,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
+    } else if (screen === 'problem_grid') {
+      setCurrentServiceType('boarding');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Boarding Service', roleId: 'boarding' });
+      setCurrentScreen('services_by_problem');
     } else {
       setCurrentScreen('coming-soon');
     }
@@ -437,6 +511,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     } else if (screen === 'create-booking') {
       setSelectedVendorId(data?.vendorId);
       setCurrentScreen('create-booking');
+    } else if (screen === 'problem_grid') {
+      setCurrentServiceType('adoption');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Adoption Service', roleId: 'adoption' });
+      setCurrentScreen('services_by_problem');
     } else {
       setCurrentScreen('coming-soon');
     }
@@ -446,6 +526,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
+    } else if (screen === 'problem_grid') {
+      setCurrentServiceType('sunset');
+      setCurrentScreen('problem_grid');
+    } else if (screen === 'problem_selected') {
+      setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Sunset Care Service', roleId: 'sunset' });
+      setCurrentScreen('services_by_problem');
     } else {
       setCurrentScreen('coming-soon');
     }
@@ -684,6 +770,83 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     onBack={handleBack}
     onSuccess={(bookingId) => bookingId && handleViewBooking(bookingId)}
   />;
+
+  // ✅ Problem Grid Navigation Handlers
+  if (currentScreen === 'problem_grid') {
+    // Determine roleId and roleName from currentServiceType or default to general
+    const roleMap: Record<string, { roleId: string; roleName: string }> = {
+      'groomer': { roleId: 'groomer', roleName: 'Groomer' },
+      'trainer': { roleId: 'trainer', roleName: 'Trainer' },
+      'veterinarian': { roleId: 'veterinarian', roleName: 'Veterinarian' },
+      'walker': { roleId: 'walker', roleName: 'Walker' },
+      'boarding': { roleId: 'boarding', roleName: 'Boarding' },
+      'adoption': { roleId: 'adoption', roleName: 'Adoption' },
+      'sunset': { roleId: 'sunset', roleName: 'Sunset Care' },
+      'general': { roleId: 'all', roleName: 'All Services' },
+    };
+    const roleInfo = currentServiceType 
+      ? (roleMap[currentServiceType] || { roleId: currentServiceType, roleName: currentServiceType })
+      : roleMap['general'];
+    
+    return (
+      <ProblemGridSelector
+        roleId={roleInfo.roleId}
+        roleName={roleInfo.roleName}
+        customerId={phone}
+        phone={phone}
+        onBack={() => {
+          // Go back to the service that opened problem grid
+          if (currentServiceType === 'groomer') setCurrentScreen('grooming');
+          else if (currentServiceType === 'trainer') setCurrentScreen('training');
+          else if (currentServiceType === 'veterinarian') setCurrentScreen('vet');
+          else if (currentServiceType === 'walker') setCurrentScreen('walker');
+          else if (currentServiceType === 'boarding') setCurrentScreen('boarding');
+          else if (currentServiceType === 'adoption') setCurrentScreen('adoption');
+          else if (currentServiceType === 'sunset') setCurrentScreen('sunset');
+          else {
+            // If opened from home page, go back to home
+            setCurrentScreen('home');
+          }
+          setCurrentServiceType(null);
+        }}
+        onProblemSelect={(problem) => {
+          setSelectedProblem({ 
+            id: problem.id || problem.problemId, 
+            title: problem.displayName || problem.name || problem.title,
+            roleId: roleInfo.roleId === 'all' ? undefined : roleInfo.roleId
+          });
+          setCurrentScreen('services_by_problem');
+        }}
+      />
+    );
+  }
+
+  if (currentScreen === 'services_by_problem' && selectedProblem) {
+    return (
+      <ServicesByProblem
+        problemId={selectedProblem.id}
+        problemTitle={selectedProblem.title}
+        onBack={() => {
+          setCurrentScreen('problem_grid');
+          setSelectedProblem(null);
+        }}
+        onServiceSelect={(service) => {
+          // Handle service selection - navigate to booking flow
+          const vendorId = service.vendorId || service.id;
+          const serviceId = service.serviceId || service.id;
+          
+          setSelectedVendorId(vendorId);
+          setSelectedService(serviceId);
+          setVetServiceData({ 
+            vendorId: vendorId, 
+            serviceType: selectedProblem.roleId,
+            service: service
+          });
+          setCurrentScreen('create-booking');
+        }}
+      />
+    );
+  }
 
   return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;
 }
