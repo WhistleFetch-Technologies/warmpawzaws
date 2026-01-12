@@ -237,9 +237,11 @@ export async function select(
           // Try to detect if it's a UUID format (basic check)
           const isLikelyUuid = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
           if (isLikelyUuid) {
+            // Use UUID type directly - PostgreSQL will handle conversion
             conditions.push(`${key} = $${paramIndex}::uuid`);
           } else {
-            conditions.push(`${key} = $${paramIndex}::text`);
+            // For non-UUID values, cast both sides to text to avoid type mismatch
+            conditions.push(`CAST(${key} AS TEXT) = CAST($${paramIndex} AS TEXT)`);
           }
         } else {
           conditions.push(`${key} = $${paramIndex}`);

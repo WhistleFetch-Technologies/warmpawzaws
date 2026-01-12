@@ -45,6 +45,8 @@ import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerServiceDiscoveryEndpoints } from '../endpoints/service-discovery';
 import { registerReviewEndpoints } from '../endpoints/reviews';
 import { registerNotificationEndpoints } from '../endpoints/notifications';
+import { registerFollowupRescheduleEndpoints } from '../endpoints/followup-reschedule';
+import { registerBehaviorJournalEndpoints } from '../endpoints/behavior-journal';
 import { registerVendorScheduleEndpoints } from '../endpoints/vendor-schedule';
 import { registerCustomerBookingHistoryEndpoints } from '../endpoints/customer-booking-history';
 import { registerPrescriptionEndpoints } from '../endpoints/prescriptions';
@@ -120,6 +122,8 @@ import { registerLocationSharingEndpoints } from '../endpoints/location-sharing'
 import { registerVendorSecurityEndpoints } from '../endpoints/vendor-security';
 import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-distance-pricing';
 import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
+import { registerAdminComprehensiveEndpoints } from '../endpoints/admin-comprehensive';
+import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 
 // Create Hono app
 const app = new Hono();
@@ -190,7 +194,14 @@ registerRoleEndpoints(app);
 registerRoleSeedingEndpoints(app);
 registerOnboardingFormManagementEndpoints(app);
 registerVendorDashboardEndpoints(app);
-registerCustomerEndpointsEnhanced(app);
+// Register specific routes BEFORE parameterized routes to avoid route conflicts
+// Order matters: specific routes (e.g., /customer/behavior-journal) must come before parameterized routes (e.g., /customer/:customerId)
+registerBehaviorJournalEndpoints(app); // /customer/behavior-journal - before /customer/:customerId
+registerFollowupRescheduleEndpoints(app); // /followup/create, /vendor/reschedule-policy, /vendor/available-slots
+registerNotificationEndpoints(app); // /customer/notifications - before /customer/:customerId
+registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services - before /customer/:customerId
+// Now register parameterized routes
+registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
 registerVideoCallEndpoints(app);
@@ -201,9 +212,7 @@ registerWalletEndpoints(app);
 registerSpecializedServicesEndpoints(app);
 registerAdminGovernanceEndpoints(app);
 registerStaffEndpoints(app);
-registerServiceDiscoveryEndpoints(app);
 registerReviewEndpoints(app);
-registerNotificationEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerCustomerBookingHistoryEndpoints(app);
 registerPrescriptionEndpoints(app);
@@ -279,6 +288,8 @@ registerLocationSharingEndpoints(app);
 registerVendorSecurityEndpoints(app);
 registerVendorDistancePricingEndpoints(app);
 registerSchedulingPolicyEndpoints(app);
+registerAdminComprehensiveEndpoints(app);
+registerProblemGridEndpoints(app);
 
 // 404 handler
 app.notFound((c) => {

@@ -39,6 +39,21 @@ export function isUatMode(): boolean {
 
 const UAT_MODE = isUatMode();
 
+// Rate limiting: Track last request time per endpoint to prevent rapid retries
+const rateLimitCache = new Map<string, { lastRequest: number; retryAfter?: number }>();
+
+// Custom error class for rate limiting
+export class RateLimitError extends Error {
+  constructor(
+    message: string,
+    public retryAfter?: number,
+    public endpoint?: string
+  ) {
+    super(message);
+    this.name = 'RateLimitError';
+  }
+}
+
 export class ApiClient {
   private baseUrl: string;
 
@@ -50,13 +65,24 @@ export class ApiClient {
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log('🔧 [UAT Mode] API Client Initialized (Admin)');
-      console.log('   Base URL:', this.baseUrl);
+      console.log('   Base URL:', this.baseUrl || '(will be loaded dynamically)');
       console.log('   Environment:', process.env.NODE_ENV);
       console.log('   Runtime Config:', getRuntimeConfig());
       
-      // Warn if config not loaded
+      // Warn if config not loaded, but don't fail - will retry on first request
       if (!this.baseUrl) {
-        console.warn('⚠️ API_BASE_URL is empty. Check runtime-config.js is loaded.');
+        console.warn('⚠️ API_BASE_URL is empty. Will retry on first request. Check runtime-config.js is loaded.');
+      }
+    }
+  }
+  
+  // Method to refresh base URL (useful if runtime config loads after initialization)
+  refreshBaseUrl(): void {
+    const newUrl = getApiBaseUrl();
+    if (newUrl && newUrl !== this.baseUrl) {
+      this.baseUrl = newUrl;
+      if (UAT_MODE && typeof window !== 'undefined') {
+        console.log('✅ [API Client] Base URL refreshed:', this.baseUrl);
       }
     }
   }
@@ -77,13 +103,67 @@ export class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount = 0
   ): Promise<T> {
-    if (!this.baseUrl) {
-      throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
+    // Get base URL dynamically (in case runtime config loads after component mount)
+    // Try multiple times to get the URL
+    let currentBaseUrl = this.baseUrl || getApiBaseUrl();
+    
+    // If still empty, wait a bit and retry (runtime-config.js might be loading)
+    if (!currentBaseUrl && typeof window !== 'undefined') {
+      // Check window config directly
+      const windowConfig = window.__WARMPAWZ_RUNTIME_CONFIG__;
+      if (windowConfig?.apiBaseUrl) {
+        currentBaseUrl = windowConfig.apiBaseUrl;
+      }
     }
+    
+    if (!currentBaseUrl) {
+      const errorMsg = 'API_BASE_URL is not configured. Please check runtime-config.js or NEXT_PUBLIC_API_BASE_URL environment variable.';
+      console.error('❌ [API Client]', errorMsg);
+      console.error('   Runtime Config:', getRuntimeConfig());
+      console.error('   Window Config:', typeof window !== 'undefined' ? window.__WARMPAWZ_RUNTIME_CONFIG__ : 'N/A');
+      console.error('   Endpoint:', endpoint);
+      throw new Error(errorMsg);
+    }
+    
+    // Update baseUrl if it was empty but now we have a value
+    if (!this.baseUrl && currentBaseUrl) {
+      this.baseUrl = currentBaseUrl;
+      if (UAT_MODE && typeof window !== 'undefined') {
+        console.log('✅ [API Client] Base URL updated:', this.baseUrl);
+      }
+    }
+    
+    // Check rate limiting: If we recently got a 429 for this endpoint, wait before retrying
+    const cacheKey = `${options.method || 'GET'}:${endpoint}`;
+    const cached = rateLimitCache.get(cacheKey);
+    const now = Date.now();
+    
+    if (cached) {
+      // If we have a retryAfter time and haven't waited long enough, throw immediately
+      if (cached.retryAfter && now < cached.lastRequest + cached.retryAfter) {
+        const waitTime = Math.ceil((cached.lastRequest + cached.retryAfter - now) / 1000);
+        throw new RateLimitError(
+          `Rate limit exceeded. Please wait ${waitTime} second(s) before retrying.`,
+          cached.retryAfter,
+          endpoint
+        );
+      }
+      
+      // If we got a 429 recently (within last 5 seconds) and no retryAfter, prevent immediate retry
+      if (now - cached.lastRequest < 5000 && cached.retryAfter === undefined) {
+        throw new RateLimitError(
+          'Too many requests. Please wait a moment before retrying.',
+          5000,
+          endpoint
+        );
+      }
+    }
+    
     // Fix: Normalize URL to avoid double slashes
-    const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
+    const base = currentBaseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
     const url = `${base}${path}`;
     const token = this.getAuthToken();
@@ -114,7 +194,53 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      let error: any;
+      try {
+        error = await response.json();
+      } catch {
+        // If response is not JSON, create error from status
+        error = { 
+          error: `HTTP ${response.status}: ${response.statusText}`,
+          message: `Request failed with status ${response.status}`
+        };
+      }
+      
+      // Handle 404: Endpoint not found - provide helpful error message
+      if (response.status === 404) {
+        const errorMsg = error.error || error.message || `Endpoint not found: ${endpoint}`;
+        if (UAT_MODE && typeof window !== 'undefined') {
+          console.error(`❌ [API Client] 404 Error for ${endpoint}:`, errorMsg);
+          console.error('   Full URL:', url);
+          console.error('   Base URL:', currentBaseUrl);
+          console.error('   Check if the endpoint exists in API Gateway');
+        }
+        throw new Error(`Endpoint not found: ${endpoint}. Please check if the API route is configured.`);
+      }
+      
+      // Handle 429: Rate limiting - extract Retry-After header if present
+      if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('Retry-After');
+        const retryAfter = retryAfterHeader 
+          ? parseInt(retryAfterHeader, 10) * 1000 // Convert seconds to milliseconds
+          : Math.min(5000 * Math.pow(2, retryCount), 30000); // Exponential backoff: 5s, 10s, 20s, max 30s
+        
+        // Cache the rate limit info
+        rateLimitCache.set(cacheKey, {
+          lastRequest: Date.now(),
+          retryAfter,
+        });
+        
+        // Clear cache after retryAfter time
+        setTimeout(() => {
+          rateLimitCache.delete(cacheKey);
+        }, retryAfter);
+        
+        throw new RateLimitError(
+          error.error || error.message || 'Too many requests. Please wait before retrying.',
+          retryAfter,
+          endpoint
+        );
+      }
       
       // Handle 401: In UAT mode, don't redirect - let components handle gracefully
       if (response.status === 401) {
@@ -130,9 +256,23 @@ export class ApiClient {
         }
       }
       
-      throw new Error(error.error || error.message || `HTTP ${response.status}`);
+      // Handle 500: Server error
+      if (response.status >= 500) {
+        const errorMsg = error.error || error.message || `Server error: ${response.status}`;
+        if (UAT_MODE && typeof window !== 'undefined') {
+          console.error(`❌ [API Client] Server error for ${endpoint}:`, errorMsg);
+        }
+        throw new Error(`Server error: ${errorMsg}`);
+      }
+      
+      // Generic error for other status codes
+      const errorMsg = error.error || error.message || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(errorMsg);
     }
 
+    // Success: Clear any rate limit cache for this endpoint
+    rateLimitCache.delete(cacheKey);
+    
     return response.json();
   }
 
