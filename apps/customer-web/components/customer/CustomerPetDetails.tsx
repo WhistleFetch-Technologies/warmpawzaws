@@ -111,15 +111,51 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && pet) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+      
+      // Show preview immediately
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result as string);
-        setPet({ ...pet, photo: reader.result as string });
       };
       reader.readAsDataURL(file);
+      
+      // Upload to S3
+      try {
+        setSaving(true);
+        const { uploadPetPhoto } = await import('@/lib/photo-upload');
+        const result = await uploadPetPhoto(file, pet.id, phone);
+        
+        if (result.success && result.publicUrl) {
+          setPet({ ...pet, photo: result.publicUrl });
+          console.log('✅ Pet photo uploaded to S3:', result.publicUrl);
+        } else {
+          console.error('Failed to upload photo:', result.error);
+          // Fallback to base64 if S3 upload fails
+          const base64Reader = new FileReader();
+          base64Reader.onloadend = () => {
+            setPet({ ...pet, photo: base64Reader.result as string });
+          };
+          base64Reader.readAsDataURL(file);
+        }
+      } catch (error) {
+        console.error('Error uploading photo to S3:', error);
+        // Fallback to base64
+        const base64Reader = new FileReader();
+        base64Reader.onloadend = () => {
+          setPet({ ...pet, photo: base64Reader.result as string });
+        };
+        base64Reader.readAsDataURL(file);
+      } finally {
+        setSaving(false);
+      }
     }
   };
 

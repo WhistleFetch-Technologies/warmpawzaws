@@ -68,15 +68,51 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+      
+      // Show preview immediately
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result as string);
-        setCurrentPet({ ...currentPet, photo: reader.result as string });
       };
       reader.readAsDataURL(file);
+      
+      // Upload to S3
+      try {
+        setLoading(true);
+        const { uploadPetPhoto } = await import('@/lib/photo-upload');
+        const result = await uploadPetPhoto(file, currentPet.id || `pet_${Date.now()}`, session.phone);
+        
+        if (result.success && result.publicUrl) {
+          setCurrentPet({ ...currentPet, photo: result.publicUrl });
+          console.log('✅ Pet photo uploaded to S3:', result.publicUrl);
+        } else {
+          console.error('Failed to upload photo:', result.error);
+          // Fallback to base64 if S3 upload fails
+          const base64Reader = new FileReader();
+          base64Reader.onloadend = () => {
+            setCurrentPet({ ...currentPet, photo: base64Reader.result as string });
+          };
+          base64Reader.readAsDataURL(file);
+        }
+      } catch (error) {
+        console.error('Error uploading photo to S3:', error);
+        // Fallback to base64
+        const base64Reader = new FileReader();
+        base64Reader.onloadend = () => {
+          setCurrentPet({ ...currentPet, photo: base64Reader.result as string });
+        };
+        base64Reader.readAsDataURL(file);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -114,38 +150,85 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     setCurrentStep('basic');
   };
 
-  const handleSavePet = () => {
+  const handleSavePet = async () => {
     if (!currentPet.name || !currentPet.type || !currentPet.breed || !currentPet.age) {
       alert('Please fill in all required fields (Name, Type, Breed, Age)');
       return;
     }
 
-    const petId = currentPet.id || `pet_${Date.now()}`;
-    const updatedPet = { ...currentPet, id: petId };
+    setLoading(true);
+    try {
+      const petId = currentPet.id || `pet_${Date.now()}`;
+      const updatedPet = { ...currentPet, id: petId };
 
-    if (currentPet.id) {
-      // Update existing pet
-      setPets(pets.map(p => p.id === currentPet.id ? updatedPet : p));
-    } else {
-      // Add new pet
-      setPets([...pets, updatedPet]);
+      // Save to backend immediately
+      try {
+        // Get existing pets
+        const getPetsData = await apiClient.get(`/customer/pets/${session.phone}`) as any;
+        let existingPets = [];
+        const petsData = getPetsData as any;
+        if (Array.isArray(petsData)) {
+          existingPets = petsData;
+        } else if (Array.isArray(petsData.pets)) {
+          existingPets = petsData.pets;
+        } else if (petsData.pets?.pets && Array.isArray(petsData.pets.pets)) {
+          existingPets = petsData.pets.pets;
+        }
+
+        // Update or add pet
+        let updatedPets;
+        if (currentPet.id) {
+          // Update existing pet
+          updatedPets = existingPets.map((p: any) => p.id === currentPet.id ? updatedPet : p);
+        } else {
+          // Add new pet
+          updatedPets = [...existingPets, updatedPet];
+        }
+
+        // Save to backend
+        await apiClient.post('/customer/pets', {
+          phone: session.phone,
+          pets: updatedPets,
+        });
+
+        console.log('✅ Pet saved to backend');
+      } catch (error) {
+        console.error('Error saving pet to backend:', error);
+        // Continue with local state update even if backend save fails
+      }
+
+      // Update local state
+      if (currentPet.id) {
+        // Update existing pet
+        setPets(pets.map(p => p.id === currentPet.id ? updatedPet : p));
+      } else {
+        // Add new pet
+        setPets([...pets, updatedPet]);
+      }
+
+      setCurrentStep('list');
+      setCurrentPet({
+        id: '',
+        name: '',
+        type: 'Dog',
+        breed: '',
+        age: '',
+        gender: '',
+        weight: '',
+        photo: '',
+        microchipId: '',
+        healthRecords: {},
+        vaccinations: {}
+      });
+      setPhotoPreview('');
+      
+      alert(`${updatedPet.name} saved successfully! 🎉`);
+    } catch (error) {
+      console.error('Error saving pet:', error);
+      alert('Error saving pet. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    setCurrentStep('list');
-    setCurrentPet({
-      id: '',
-      name: '',
-      type: 'Dog',
-      breed: '',
-      age: '',
-      gender: '',
-      weight: '',
-      photo: '',
-      microchipId: '',
-      healthRecords: {},
-      vaccinations: {}
-    });
-    setPhotoPreview('');
   };
 
   const handleDeletePet = (petId: string) => {

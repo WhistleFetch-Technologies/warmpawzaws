@@ -121,7 +121,12 @@ export function EnhancedSearchBar({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setQuery(value);
-    setIsOpen(true);
+    // Only open dropdown if there's content to show or we're searching
+    if (value.trim().length > 0 || showRecentSearches || showSuggestions) {
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -132,6 +137,10 @@ export function EnhancedSearchBar({
         performSearch(value.trim());
       } else {
         setResults([]);
+        // Close dropdown if no query and no recent/suggestions
+        if (!value.trim() && !showRecentSearches && !showSuggestions) {
+          setIsOpen(false);
+        }
       }
     }, 300);
   };
@@ -193,6 +202,7 @@ export function EnhancedSearchBar({
   const handleResultClick = (result: SearchResult) => {
     saveSearch(query);
     setIsOpen(false);
+    setQuery(''); // Clear query after selection
     if (onResultSelect) {
       onResultSelect(result);
     }
@@ -207,6 +217,17 @@ export function EnhancedSearchBar({
 
   const showRecentSearches = !query && recentSearches.length > 0;
   const showSuggestions = !query && suggestions.length > 0;
+  
+  // Close dropdown if there's no content to show (prevents empty white window)
+  useEffect(() => {
+    if (isOpen && !loading && !showRecentSearches && !showSuggestions && results.length === 0 && !query.trim()) {
+      // Small delay to allow for typing
+      const timer = setTimeout(() => {
+        setIsOpen(false);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, loading, showRecentSearches, showSuggestions, results.length, query]);
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
@@ -237,8 +258,8 @@ export function EnhancedSearchBar({
         </div>
       </form>
 
-      {/* Dropdown */}
-      {isOpen && (
+      {/* Dropdown - Only show when there's content to display */}
+      {isOpen && (showRecentSearches || showSuggestions || results.length > 0 || loading) && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-[70vh] overflow-y-auto z-50">
           {/* Loading */}
           {loading && (
@@ -248,7 +269,7 @@ export function EnhancedSearchBar({
           )}
 
           {/* Recent Searches */}
-          {showRecentSearches && (
+          {!loading && showRecentSearches && (
             <div className="p-2 border-b border-gray-100">
               <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
                 Recent Searches
@@ -270,7 +291,7 @@ export function EnhancedSearchBar({
           )}
 
           {/* Trending Suggestions */}
-          {showSuggestions && (
+          {!loading && showSuggestions && (
             <div className="p-2 border-b border-gray-100">
               <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
                 Trending Searches
@@ -294,7 +315,7 @@ export function EnhancedSearchBar({
           )}
 
           {/* Search Results */}
-          {results.length > 0 && (
+          {!loading && results.length > 0 && (
             <div className="p-2">
               <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
                 Results

@@ -72,7 +72,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
   
   const [photoPreview, setPhotoPreview] = useState<string>('');
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       // Check file size (max 5MB)
@@ -81,13 +81,42 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         return;
       }
       
+      // Show preview immediately
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setPhotoPreview(base64String);
-        setPetData({ ...petData, photo: base64String });
+        setPhotoPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+      
+      // Upload to S3
+      try {
+        setLoading(true);
+        const { uploadPetPhoto } = await import('@/lib/photo-upload');
+        const result = await uploadPetPhoto(file, petData.id, phone);
+        
+        if (result.success && result.publicUrl) {
+          setPetData({ ...petData, photo: result.publicUrl });
+          console.log('✅ Pet photo uploaded to S3:', result.publicUrl);
+        } else {
+          console.error('Failed to upload photo:', result.error);
+          // Fallback to base64 if S3 upload fails
+          const base64Reader = new FileReader();
+          base64Reader.onloadend = () => {
+            setPetData({ ...petData, photo: base64Reader.result as string });
+          };
+          base64Reader.readAsDataURL(file);
+        }
+      } catch (error) {
+        console.error('Error uploading photo to S3:', error);
+        // Fallback to base64
+        const base64Reader = new FileReader();
+        base64Reader.onloadend = () => {
+          setPetData({ ...petData, photo: base64Reader.result as string });
+        };
+        base64Reader.readAsDataURL(file);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

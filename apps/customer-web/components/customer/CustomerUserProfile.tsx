@@ -35,15 +35,51 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+      
+      // Show preview immediately
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result as string);
-        setProfile({ ...profile, photo: reader.result as string });
       };
       reader.readAsDataURL(file);
+      
+      // Upload to S3
+      try {
+        setLoading(true);
+        const { uploadCustomerPhoto } = await import('@/lib/photo-upload');
+        const result = await uploadCustomerPhoto(file, session.phone);
+        
+        if (result.success && result.publicUrl) {
+          setProfile({ ...profile, photo: result.publicUrl });
+          console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
+        } else {
+          console.error('Failed to upload photo:', result.error);
+          // Fallback to base64 if S3 upload fails
+          const base64Reader = new FileReader();
+          base64Reader.onloadend = () => {
+            setProfile({ ...profile, photo: base64Reader.result as string });
+          };
+          base64Reader.readAsDataURL(file);
+        }
+      } catch (error) {
+        console.error('Error uploading photo to S3:', error);
+        // Fallback to base64
+        const base64Reader = new FileReader();
+        base64Reader.onloadend = () => {
+          setProfile({ ...profile, photo: base64Reader.result as string });
+        };
+        base64Reader.readAsDataURL(file);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
