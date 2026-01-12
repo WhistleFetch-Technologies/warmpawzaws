@@ -51,19 +51,35 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
 
     try {
       setLoading(true);
-      const response = await apiClient.post<any>('/vendor/onboarding/solo', {
-        roleId,
-        ...formData,
+      
+      // ✅ FIX: Use correct endpoint - /vendor/onboarding/submit-application
+      // Get phone from localStorage if not in formData
+      const phone = formData.phone || (typeof window !== 'undefined' ? localStorage.getItem('vendorPhone') : null);
+      
+      if (!phone) {
+        alert('Phone number is required. Please log in again.');
+        return;
+      }
+
+      // ✅ FIX: Use correct endpoint and payload structure
+      const response = await apiClient.post<any>('/vendor/onboarding/submit-application', {
+        phone: phone,
+        application_payload: {
+          ...formData,
+          roleId,
+          vendor_type: 'solo', // Solo provider type
+        },
+        uploaded_documents: [], // Documents can be added later if needed
       });
 
-      if (response.success) {
+      if (response.success || response.applicationId) {
         if (onSuccess) onSuccess();
       } else {
-        alert('Failed to submit application');
+        alert(response.error || 'Failed to submit application');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting application:', error);
-      alert('Error submitting application');
+      alert(error?.message || 'Error submitting application');
     } finally {
       setLoading(false);
     }

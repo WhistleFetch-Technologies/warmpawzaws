@@ -13,12 +13,138 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
   const [tracking, setTracking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
 
+  // ✅ NEW: SSE (Server-Sent Events) for real-time GPS tracking with polling fallback
   useEffect(() => {
-    loadTrackingStatus();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadTrackingStatus, 5000);
-    return () => clearInterval(interval);
+    if (!bookingId) return;
+
+    setLoading(true);
+    let eventSource: EventSource | null = null;
+    let pollInterval: NodeJS.Timeout | null = null;
+    let sseSupported = false;
+
+    // Try to connect via SSE first
+    try {
+      const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl 
+        || process.env.NEXT_PUBLIC_API_BASE_URL 
+        || '';
+      const sseUrl = `${apiBaseUrl.replace(/\/+$/, '')}/gps-tracking/booking/${bookingId}/stream`;
+      
+      // Get auth token for SSE connection
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('authToken') || null)
+        : null;
+
+      const urlWithAuth = token ? `${sseUrl}?token=${encodeURIComponent(token)}` : sseUrl;
+      eventSource = new EventSource(urlWithAuth);
+      sseSupported = true;
+
+      eventSource.onopen = () => {
+        console.log('✅ [GPS SSE] Connected to real-time tracking stream');
+        setSseConnected(true);
+        setLoading(false);
+        setError(null);
+      };
+
+      eventSource.addEventListener('location', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.tracking) {
+            setTracking({
+              isTracking: true,
+              currentLocation: data.tracking.current_location,
+              route: [],
+              distanceTraveled: data.tracking.distance_traveled_km || 0,
+              duration: data.tracking.duration_seconds || 0,
+              eta_minutes: data.tracking.eta_minutes,
+              distance_km: data.tracking.distance_km,
+              status: data.tracking.status,
+            });
+            setError(null);
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error('Error parsing location event:', err);
+        }
+      });
+
+      eventSource.addEventListener('status', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (!data.isTracking) {
+            setTracking(null);
+            setError(data.message || 'GPS tracking is not active for this booking');
+          }
+        } catch (err) {
+          console.error('Error parsing status event:', err);
+        }
+      });
+
+      eventSource.onerror = () => {
+        console.error('❌ [GPS SSE] EventSource error');
+        setSseConnected(false);
+        if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+          eventSource.close();
+          eventSource = null;
+          sseSupported = false;
+        }
+      };
+    } catch (sseError) {
+      console.warn('⚠️ [GPS] SSE not supported, using polling:', sseError);
+      sseSupported = false;
+    }
+
+    // Fallback to polling if SSE is not supported
+    if (!sseSupported) {
+      setSseConnected(false);
+      
+      const loadTrackingStatus = async () => {
+        try {
+          const response = await apiClient.get<{
+            isTracking: boolean;
+            tracking?: any;
+            message?: string;
+          }>(`/gps-tracking/booking/${bookingId}`);
+
+          if (response.isTracking && response.tracking) {
+            setTracking({
+              isTracking: true,
+              currentLocation: response.tracking.current_location,
+              route: [],
+              distanceTraveled: response.tracking.distance_traveled_km || 0,
+              duration: response.tracking.duration_seconds || 0,
+              eta_minutes: response.tracking.eta_minutes,
+              distance_km: response.tracking.distance_km,
+            });
+            setError(null);
+          } else {
+            setTracking(null);
+            setError(response.message || 'GPS tracking is not active for this booking');
+          }
+        } catch (err: any) {
+          console.error('Error loading GPS tracking:', err);
+          setError(err.message || 'Failed to load GPS tracking');
+          setTracking(null);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadTrackingStatus();
+      pollInterval = setInterval(loadTrackingStatus, 3000);
+    }
+
+    // Cleanup
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      setSseConnected(false);
+    };
   }, [bookingId]);
 
   const loadTrackingStatus = async () => {

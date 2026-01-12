@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
@@ -594,6 +595,273 @@ export function registerGpsTrackingEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await customerTrackingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // ✅ NEW: Server-Sent Events (SSE) endpoint for real-time GPS tracking
+  app.get('/gps-tracking/booking/:bookingId/stream', async (c) => {
+    const bookingId = c.req.param('bookingId');
+    
+    if (!bookingId) {
+      return c.json({ error: 'Booking ID is required' }, 400);
+    }
+
+    // Set SSE headers
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
+    c.header('X-Accel-Buffering', 'no'); // Disable buffering for nginx/proxy
+
+    // Use Hono's SSE streaming
+    return streamSSE(c, async (stream) => {
+      let lastLocationHash = '';
+      let heartbeatInterval: NodeJS.Timeout | null = null;
+      let isActive = true;
+
+      // Send initial connection message
+      await stream.writeSSE({
+        data: JSON.stringify({
+          type: 'connected',
+          message: 'GPS tracking stream connected',
+          timestamp: new Date().toISOString(),
+        }),
+        event: 'connection',
+      });
+
+      // Heartbeat to keep connection alive
+      heartbeatInterval = setInterval(async () => {
+        if (isActive) {
+          try {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'heartbeat',
+                timestamp: new Date().toISOString(),
+              }),
+              event: 'heartbeat',
+            });
+          } catch (error) {
+            console.error('Error sending heartbeat:', error);
+            isActive = false;
+          }
+        }
+      }, 30000); // Every 30 seconds
+
+      // Poll database for location updates
+      const pollInterval = setInterval(async () => {
+        if (!isActive) {
+          clearInterval(pollInterval);
+          if (heartbeatInterval) clearInterval(heartbeatInterval);
+          return;
+        }
+
+        try {
+          // Get latest tracking status
+          const sessions = await select('gps_tracking_sessions', {
+            booking_id: bookingId,
+            status: 'active',
+          });
+
+          if (sessions.length === 0) {
+            // No active session - send status update
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'status',
+                isTracking: false,
+                message: 'GPS tracking is not active for this booking',
+                timestamp: new Date().toISOString(),
+              }),
+              event: 'status',
+            });
+            return;
+          }
+
+          const session = sessions[0];
+
+          // Get latest location point
+          const { rows: latestPoints } = await query(
+            `SELECT * FROM gps_tracking_points 
+             WHERE booking_id = $1 
+             ORDER BY timestamp DESC 
+             LIMIT 1`,
+            [bookingId]
+          );
+
+          if (latestPoints.length === 0) {
+            return; // No location data yet
+          }
+
+          const currentLocation = latestPoints[0];
+          
+          // Create hash to detect location changes
+          const locationHash = `${currentLocation.latitude}-${currentLocation.longitude}-${currentLocation.timestamp}`;
+
+          // Only send update if location changed
+          if (locationHash !== lastLocationHash) {
+            lastLocationHash = locationHash;
+
+            // Get booking details
+            const bookings = await select('bookings', { id: bookingId });
+            const booking = bookings.length > 0 ? bookings[0] : null;
+
+            if (!booking) {
+              await stream.writeSSE({
+                data: JSON.stringify({
+                  type: 'error',
+                  message: 'Booking not found',
+                  timestamp: new Date().toISOString(),
+                }),
+                event: 'error',
+              });
+              return;
+            }
+
+            // Get staff information
+            let staffInfo = null;
+            if (booking.staff_id) {
+              const staff = await select('staff', { id: booking.staff_id });
+              if (staff.length > 0) {
+                const s = staff[0];
+                staffInfo = {
+                  id: s.id,
+                  name: s.name || 'Service Provider',
+                  phone: s.phone || null,
+                  photo_url: s.photo_url || null,
+                };
+              }
+            }
+
+            // Get service name
+            let serviceName = 'Service';
+            if (booking.service_id) {
+              const services = await select('vendor_services', { id: booking.service_id });
+              if (services.length > 0) {
+                serviceName = services[0].name || 'Service';
+              }
+            }
+
+            // Calculate ETA
+            const destination = {
+              latitude: booking.latitude,
+              longitude: booking.longitude,
+              address: booking.address || `${booking.city || ''} ${booking.state || ''} ${booking.pincode || ''}`.trim() || 'Address not available',
+            };
+
+            let etaMinutes = null;
+            let distanceKm = null;
+            let etaCalculationMethod = 'none';
+
+            if (currentLocation.latitude && currentLocation.longitude && 
+                destination.latitude && destination.longitude) {
+              try {
+                const commuteResult = await calculateCommuteTime(
+                  {
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                  },
+                  {
+                    latitude: destination.latitude,
+                    longitude: destination.longitude,
+                  },
+                  {
+                    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
+                    averageSpeedKmh: 30,
+                    trafficMultiplier: 1.25,
+                  }
+                );
+
+                etaMinutes = commuteResult.durationMinutes;
+                distanceKm = commuteResult.distanceKm;
+                etaCalculationMethod = commuteResult.method;
+              } catch (error) {
+                console.error('Error calculating ETA:', error);
+                const distance = calculateDistance(
+                  currentLocation.latitude,
+                  currentLocation.longitude,
+                  destination.latitude,
+                  destination.longitude
+                );
+                distanceKm = distance / 1000;
+                etaMinutes = Math.ceil((distanceKm / 30) * 60);
+                etaCalculationMethod = 'haversine_fallback';
+              }
+            }
+
+            // Determine status
+            let trackingStatus: 'on_way' | 'arriving' | 'arrived' | 'in_progress' | 'completed' = 'on_way';
+            
+            if (booking.status === 'completed') {
+              trackingStatus = 'completed';
+            } else if (booking.status === 'in_progress') {
+              trackingStatus = 'in_progress';
+            } else if (booking.status === 'confirmed' && distanceKm !== null) {
+              if (distanceKm < 0.1) {
+                trackingStatus = 'arrived';
+              } else if (distanceKm < 1.0) {
+                trackingStatus = 'arriving';
+              } else {
+                trackingStatus = 'on_way';
+              }
+            }
+
+            // Send location update via SSE
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'location',
+                isTracking: true,
+                tracking: {
+                  booking_id: bookingId,
+                  booking_status: booking.status,
+                  staff_name: staffInfo?.name || 'Service Provider',
+                  staff_phone: staffInfo?.phone || null,
+                  staff_photo_url: staffInfo?.photo_url || null,
+                  service_name: serviceName,
+                  current_location: {
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                    timestamp: currentLocation.timestamp,
+                    accuracy: currentLocation.accuracy,
+                  },
+                  destination: {
+                    latitude: destination.latitude,
+                    longitude: destination.longitude,
+                    address: destination.address,
+                  },
+                  eta_minutes: etaMinutes,
+                  distance_km: distanceKm ? parseFloat(distanceKm.toFixed(2)) : null,
+                  status: trackingStatus,
+                  eta_calculation_method: etaCalculationMethod,
+                },
+                timestamp: new Date().toISOString(),
+              }),
+              event: 'location',
+            });
+          }
+        } catch (error: any) {
+          console.error('Error in GPS tracking SSE stream:', error);
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'error',
+              message: error.message || 'Error fetching location update',
+              timestamp: new Date().toISOString(),
+            }),
+            event: 'error',
+          });
+          
+          // Stop polling on critical error
+          if (error.message?.includes('connection') || error.message?.includes('timeout')) {
+            isActive = false;
+            clearInterval(pollInterval);
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+          }
+        }
+      }, 2000); // Poll every 2 seconds for near real-time updates
+
+      // Cleanup on connection close
+      c.req.raw.signal?.addEventListener('abort', () => {
+        isActive = false;
+        clearInterval(pollInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+      });
+    });
   });
 }
 

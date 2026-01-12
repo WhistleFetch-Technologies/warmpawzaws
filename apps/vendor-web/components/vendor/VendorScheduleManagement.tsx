@@ -18,7 +18,7 @@ import {
   MapPin,
   Settings
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// Using apiClient instead of Supabase
 
 interface VendorScheduleManagementProps {
   vendorId: string;
@@ -113,7 +113,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     endTime: '17:00'
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // Using apiClient instead of API_BASE
 
   // Fetch vendor status and availability
   useEffect(() => {
@@ -125,42 +125,42 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       setLoading(true);
       console.log('📥 Loading schedule data for vendor:', vendorId);
 
-      // Fetch vendor status
-      const statusData = await apiClient.get('/vendor/endpoint') as any;
+      // ✅ FIX: Use correct endpoints - GET /vendor/:vendorId/schedule (exists in Lambda)
+      // Fetch vendor schedule
+      const scheduleData = await apiClient.get(`/vendor/${vendorId}/schedule`) as any;
 
-      if (statusData && statusData.success) {
-        setIsOnline(statusData.status?.isOnline || false);
-      }
-
-      // Fetch availability (new format)
-      const availData = await apiClient.get('/vendor/endpoint') as any;
-
-      if (availData) {
-        console.log('📊 Availability API response:', availData);
-        if (availData.success && availData.availability && Array.isArray(availData.availability) && availData.availability.length > 0) {
-          console.log('✅ Setting availability from API:', availData.availability);
-          
-          // Check if schedule has any configured windows
-          const hasSchedule = availData.availability.some((day: DayAvailability) => 
-            day.timeWindows.length > 0 || day.serviceConfigs.length > 0
-          );
-          
-          setAvailability(availData.availability);
-          setVendorServiceStyles(availData.serviceStyles || []);
-          setHasPublishedSchedule(hasSchedule);
-        } else {
-          console.log('⚠️ API returned empty/invalid availability, initializing defaults');
-          const defaultAvail = initializeDefaultAvailability();
-          console.log('✅ Setting default availability:', defaultAvail);
-          setAvailability(defaultAvail);
-        }
+      if (scheduleData && scheduleData.success && scheduleData.schedule) {
+        // Convert schedule format from Lambda (grouped by day_of_week) to UI format
+        const scheduleByDay = scheduleData.schedule; // { 0: [...], 1: [...], ... }
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const convertedAvailability = dayNames.map((dayName, dayIndex) => {
+          const slots = scheduleByDay[dayIndex] || [];
+          return {
+            dayOfWeek: dayName,
+            timeWindows: slots.map((slot: any) => ({
+              id: slot.id,
+              startTime: slot.time_window_start,
+              endTime: slot.time_window_end,
+              isEnabled: slot.is_enabled !== false,
+            })),
+            serviceConfigs: [], // TODO: Extract from slots if needed
+          };
+        });
+        
+        const hasSchedule = convertedAvailability.some((day: DayAvailability) => 
+          day.timeWindows.length > 0
+        );
+        
+        setAvailability(convertedAvailability);
+        setHasPublishedSchedule(hasSchedule);
       } else {
-        // Initialize default availability for all days
-        console.log('⚠️ API call failed, initializing defaults');
+        // Initialize default availability
         const defaultAvail = initializeDefaultAvailability();
-        console.log('✅ Setting default availability:', defaultAvail);
         setAvailability(defaultAvail);
       }
+
+      // Fetch availability (new format) - removed placeholder endpoint
+      // Availability is now loaded from the schedule endpoint above
 
       // Fetch vendor's service styles - handle 404 gracefully
       try {
@@ -218,20 +218,9 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     try {
       const newStatus = !isOnline;
       
-      const res = await fetch(`${API_BASE}/vendor/status/${vendorId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isOnline: newStatus })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setIsOnline(newStatus);
-        }
+      const data = await apiClient.put(`/vendor/status/${vendorId}`, { isOnline: newStatus }) as any;
+      if (data && data.success) {
+        setIsOnline(newStatus);
       }
     } catch (error) {
       console.error('Error toggling online status:', error);
@@ -246,29 +235,45 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       
       setSaving(true);
 
-      const res = await fetch(`${API_BASE}/vendor/availability-v2/${vendorId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ availability })
+      // ✅ FIX: Use POST /vendor/:vendorId/schedule endpoint (exists in Lambda)
+      // Convert UI format to Lambda format
+      const slots: any[] = [];
+      availability.forEach((day: DayAvailability) => {
+        const dayIndex = DAYS.findIndex(d => d.value === day.dayOfWeek);
+        if (dayIndex === -1) return;
+        
+        day.timeWindows.forEach((window: TimeSlot) => {
+          if (window.startTime && window.endTime) {
+            slots.push({
+              dayOfWeek: dayIndex,
+              day_of_week: dayIndex,
+              serviceStyle: day.serviceConfigs[0]?.serviceStyle || 'at_center',
+              service_style: day.serviceConfigs[0]?.serviceStyle || 'at_center',
+              timeWindowStart: window.startTime,
+              time_window_start: window.startTime,
+              timeWindowEnd: window.endTime,
+              time_window_end: window.endTime,
+              slotDurationMinutes: day.serviceConfigs[0]?.slotDuration || 30,
+              slot_duration_minutes: day.serviceConfigs[0]?.slotDuration || 30,
+              maxCapacity: 1,
+              max_capacity: 1,
+              isEnabled: window.isEnabled !== false,
+              is_enabled: window.isEnabled !== false,
+            });
+          }
+        });
       });
 
-      console.log('📡 Save API response status:', res.status);
-      
-      if (res.ok) {
-        const data = await res.json();
-        console.log('📊 Save API response data:', data);
-        if (data.success) {
-          alert('✅ Schedule saved and published to customer app!');
-          setHasPublishedSchedule(true);
-          setIsEditMode(false);
-        }
+      const data = await apiClient.post(`/vendor/${vendorId}/schedule`, { slots }) as any;
+
+      console.log('📊 Save API response data:', data);
+      if (data && data.success) {
+        alert('✅ Schedule saved and published to customer app!');
+        setHasPublishedSchedule(true);
+        setIsEditMode(false);
       } else {
-        const errorText = await res.text();
-        console.error('❌ Save API error response:', errorText);
-        alert('❌ Failed to save schedule: ' + res.status);
+        console.error('❌ Save API error response:', data);
+        alert('❌ Failed to save schedule');
       }
     } catch (error) {
       console.error('❌ Error saving availability:', error);

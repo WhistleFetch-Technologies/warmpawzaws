@@ -214,15 +214,18 @@ export default function ShopPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">🛒 Pet Shop</h1>
+    <div className="min-h-screen bg-white">
+      {/* Header - Match home page pattern: orange gradient */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 py-4 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-white text-2xl font-bold">🛒 Pet Shop</h1>
+              <p className="text-white/90 text-sm mt-1">Browse and shop for your pets</p>
+            </div>
             <button
               onClick={() => setShowCart(true)}
-              className="relative px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+              className="relative px-4 py-2 bg-white/20 backdrop-blur-sm text-white rounded-lg font-medium hover:bg-white/30 transition"
             >
               🛒 Cart
               {cartItemCount > 0 && (
@@ -240,15 +243,15 @@ export default function ShopPage() {
               placeholder="Search products..."
               value={searchTerm}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+              className="w-full px-4 py-3 bg-white/90 backdrop-blur-sm border border-white/30 rounded-xl text-gray-900 placeholder-gray-500 focus:bg-white focus:border-white focus:ring-2 focus:ring-white/50 outline-none"
             />
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Categories */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="bg-white border-b border-gray-200">
+        <div className="px-6 py-3">
           <div className="flex gap-3 overflow-x-auto pb-2">
             <button
               onClick={() => setSelectedCategory('')}
@@ -273,52 +276,56 @@ export default function ShopPage() {
         </div>
       </div>
 
-      {/* Filters Row */}
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <select
-              value={selectedPetType}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedPetType(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
-            >
-              <option value="">All Pets</option>
-              <option value="dog">🐕 Dogs</option>
-              <option value="cat">🐱 Cats</option>
-              <option value="bird">🐦 Birds</option>
-              <option value="fish">🐠 Fish</option>
-            </select>
+      {/* Main Content - Match home page pattern: white with rounded top */}
+      <div className="bg-white rounded-t-[32px] -mt-6 pt-6 pb-24">
+        <div className="px-6">
+          
+          {/* Filters Row */}
+          <div className="mb-6 p-4 bg-white rounded-xl shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <select
+                  value={selectedPetType}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedPetType(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
+                >
+                  <option value="">All Pets</option>
+                  <option value="dog">🐕 Dogs</option>
+                  <option value="cat">🐱 Cats</option>
+                  <option value="bird">🐦 Birds</option>
+                  <option value="fish">🐠 Fish</option>
+                </select>
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
+              >
+                <option value="popular">Most Popular</option>
+                <option value="price_low">Price: Low to High</option>
+                <option value="price_high">Price: High to Low</option>
+                <option value="rating">Highest Rated</option>
+                <option value="newest">Newest</option>
+              </select>
+            </div>
           </div>
-          <select
-            value={sortBy}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value)}
-            className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
-          >
-            <option value="popular">Most Popular</option>
-            <option value="price_low">Price: Low to High</option>
-            <option value="price_high">Price: High to Low</option>
-            <option value="rating">Highest Rated</option>
-            <option value="newest">Newest</option>
-          </select>
-        </div>
-      </div>
 
-      {/* Products Grid */}
-      <main className="max-w-7xl mx-auto px-4 pb-8">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
-            {error}
-          </div>
-        )}
+          {/* Error */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+              {error}
+            </div>
+          )}
 
-        {filteredProducts.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-5xl mb-4">🔍</div>
-            <p className="text-gray-500">No products found</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredProducts.map(product => (
+          {/* Products Grid */}
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-xl shadow-sm">
+              <div className="text-5xl mb-4">🔍</div>
+              <p className="text-gray-500">No products found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filteredProducts.map(product => (
               <div key={product.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition">
                 <div className="aspect-square bg-gray-100 relative">
                   <div className="absolute inset-0 flex items-center justify-center text-6xl">
@@ -366,11 +373,13 @@ export default function ShopPage() {
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </main>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
+      {/* Modals - Outside main content wrapper */}
       {/* Cart Drawer */}
       {showCart && (
         <div className="fixed inset-0 z-50">

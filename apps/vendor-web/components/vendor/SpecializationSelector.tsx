@@ -48,7 +48,7 @@ export function SpecializationSelector({
       const cleanRoleId = roleId.replace('role_', '');
       console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
 
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/problem-grid-specializations/${cleanRoleId}`) as any;
+      const data = await apiClient.get(`/vendor/problem-grid-specializations/${cleanRoleId}`) as any;
 
       if (data && data.specializations) {
         console.log('[CENTER SPEC] Loaded specializations:', data);

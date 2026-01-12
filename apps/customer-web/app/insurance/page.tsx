@@ -168,7 +168,7 @@ export default function InsurancePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading insurance...</p>
@@ -196,18 +196,27 @@ export default function InsurancePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Pet Insurance</h1>
-          <p className="text-sm text-gray-500">Protect your pet's health</p>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">Pet Insurance</h1>
+              <p className="text-sm text-gray-500 mt-1">Protect your pet's health</p>
+            </div>
+          </div>
         </div>
-      </header>
+      </div>
 
-      {/* Tabs */}
-      <div className="max-w-6xl mx-auto px-4 mt-4">
-        <div className="flex bg-white rounded-xl p-1 shadow-sm">
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
+          
+          {/* Tabs */}
+          <div className="mb-6">
+            <div className="flex bg-white rounded-xl p-1 shadow-sm">
           {[
             { id: 'plans', label: 'Insurance Plans', icon: '🛡️' },
             { id: 'policies', label: 'My Policies', icon: '📄' },
@@ -228,24 +237,20 @@ export default function InsurancePage() {
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="max-w-6xl mx-auto px-4 mt-4">
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
-          </div>
-        )}
-        
-        {success && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
-            <span>{success}</span>
-            <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
-          </div>
-        )}
-      </div>
-
-      <main className="max-w-6xl mx-auto px-4 py-6">
+          {/* Messages */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
+          
+          {success && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
+              <span>{success}</span>
+              <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
+            </div>
+          )}
         {/* Plans Tab */}
         {activeTab === 'plans' && (
           <div className="space-y-6">
@@ -476,7 +481,10 @@ export default function InsurancePage() {
             )}
           </div>
         )}
-      </main>
+        </div>
+      </div>
+
+      {/* Modals - Outside main content wrapper */}
 
       {/* Plan Details Modal */}
       {showPlanDetails && (

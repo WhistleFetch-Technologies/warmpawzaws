@@ -243,8 +243,8 @@ export const BookingActionsApi = {
     ApiService.post(`/bookings/${bookingId}/start-session`, { staffId, otp }),
   endSession: (bookingId: string, staffId?: string) => 
     ApiService.post(`/bookings/${bookingId}/end-session`, { staffId }),
-  checkIn: (bookingId: string, staffId?: string, notes?: string, petCondition?: string) => 
-    ApiService.post(`/bookings/${bookingId}/check-in`, { staffId, notes, petCondition }),
+  checkIn: (bookingId: string, vendorId: string, staffId?: string, notes?: string, petCondition?: string) => 
+    ApiService.post(`/vendor/bookings/${bookingId}/check-in`, { vendorId, staffId, notes, petCondition }),
 };
 
 // ✅ NEW: Appointment Detail API (Batch 1)

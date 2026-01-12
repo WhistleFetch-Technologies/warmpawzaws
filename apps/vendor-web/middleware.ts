@@ -70,10 +70,11 @@ function requiresAuth(pathname: string): boolean {
 
 /**
  * Get phone number from request
- * Checks cookies first, then falls back to other methods
+ * For static exports, we can't access cookies/headers on server
+ * This middleware will allow the request to proceed and let client-side handle auth
  */
 function getPhoneFromRequest(request: NextRequest): string | null {
-  // Check cookie (set after OTP verification)
+  // Check cookie (set after OTP verification) - may not work in static export
   const phoneCookie = request.cookies.get('vendor_phone')?.value;
   if (phoneCookie) return phoneCookie;
 
@@ -84,6 +85,9 @@ function getPhoneFromRequest(request: NextRequest): string | null {
     // This would depend on your token structure
   }
 
+  // For static exports, we can't read localStorage on server
+  // Return null and let the client-side component handle the redirect
+  // This allows the page to load first, then client checks localStorage
   return null;
 }
 
@@ -117,35 +121,38 @@ export async function middleware(request: NextRequest) {
 
   // Protected routes - check authentication
   if (requiresAuth(pathname)) {
-    // If no phone, redirect to auth
-    if (!phone) {
-      const authUrl = new URL('/auth', request.url);
-      authUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(authUrl);
+    // For static exports, middleware can't access localStorage
+    // Allow request to proceed - client-side components will handle auth checks
+    // If phone is available (from cookie/header), validate onboarding status
+    if (phone) {
+      // Get onboarding status
+      const status = await getOnboardingStatus(phone, apiBaseUrl);
+
+      // If status check failed, allow request to proceed
+      // Component-level checks will handle validation
+      if (!status) {
+        console.warn('Could not determine onboarding status, allowing request');
+        return NextResponse.next();
+      }
+
+      // Check if current route is allowed for this status
+      const redirectRoute = getRedirectRoute(pathname, status);
+
+      // If route needs to be changed, redirect
+      if (redirectRoute !== pathname) {
+        const redirectUrl = new URL(redirectRoute, request.url);
+        // Preserve query parameters if needed
+        request.nextUrl.searchParams.forEach((value, key) => {
+          redirectUrl.searchParams.set(key, value);
+        });
+        return NextResponse.redirect(redirectUrl);
+      }
     }
-
-    // Get onboarding status
-    const status = await getOnboardingStatus(phone, apiBaseUrl);
-
-    // If status check failed, allow request to proceed
-    // Component-level checks will handle validation
-    if (!status) {
-      console.warn('Could not determine onboarding status, allowing request');
-      return NextResponse.next();
-    }
-
-    // Check if current route is allowed for this status
-    const redirectRoute = getRedirectRoute(pathname, status);
-
-    // If route needs to be changed, redirect
-    if (redirectRoute !== pathname) {
-      const redirectUrl = new URL(redirectRoute, request.url);
-      // Preserve query parameters if needed
-      request.nextUrl.searchParams.forEach((value, key) => {
-        redirectUrl.searchParams.set(key, value);
-      });
-      return NextResponse.redirect(redirectUrl);
-    }
+    
+    // If no phone found, allow request to proceed anyway
+    // Client-side component will check localStorage and redirect if needed
+    // This works for static exports where server can't access localStorage
+    return NextResponse.next();
   }
 
   // Allow request to proceed

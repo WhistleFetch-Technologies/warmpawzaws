@@ -110,35 +110,44 @@ export default function EarningsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800">Earnings</h1>
-            <p className="text-gray-500 mt-1">Track your revenue and settlements</p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => router.push('/')}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              ← Back
-            </button>
-            <div className="flex bg-white rounded-lg shadow-sm">
-              {(['week', 'month', 'year'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-4 py-2 capitalize ${
-                    period === p ? 'bg-orange-500 text-white rounded-lg' : 'text-gray-600'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">Earnings</h1>
+              <p className="text-sm text-gray-500 mt-1">Track your revenue and settlements</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => router.push('/')}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
+              >
+                ← Back
+              </button>
+              <div className="flex bg-white rounded-lg shadow-sm">
+                {(['week', 'month', 'year'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-4 py-2 capitalize transition ${
+                      period === p ? 'bg-orange-500 text-white rounded-lg' : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -218,6 +227,7 @@ export default function EarningsPage() {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

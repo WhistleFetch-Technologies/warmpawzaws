@@ -203,20 +203,19 @@ export default function PetIntelligenceSystem() {
 
 	return (
 		<AdminLayout>
-			<div className="flex-1 bg-gray-50">
-				{/* Header */}
-				<div className="bg-white border-b sticky top-0 z-10 px-20">
-					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-						<div className="flex items-center justify-between h-16">
-							<div className="flex items-center gap-4">
-								<div>
-									<h1 className="text-xl font-semibold">
-										Pet Intelligence System
-									</h1>
-									<p className="text-sm text-gray-500">
-										Pet database & breed insights
-									</p>
-								</div>
+			<div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+				{/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
+				<div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+					<div className="max-w-7xl mx-auto px-6 py-4">
+						<div className="flex items-center justify-between">
+							<div>
+								{/* ✅ FIX: Match wireframe - text-2xl font-bold text-gray-900 */}
+								<h1 className="text-2xl font-bold text-gray-900">
+									Pet Intelligence System
+								</h1>
+								<p className="text-sm text-gray-500 mt-1">
+									Pet database & breed insights
+								</p>
 							</div>
 							<div className="flex items-center gap-3">
 								<span className="text-sm text-gray-600">
@@ -231,7 +230,9 @@ export default function PetIntelligenceSystem() {
 					</div>
 				</div>
 
-				<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+				{/* Content - Match wireframe: max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 					{/* Stats Cards */}
 					<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
 						<Card className="p-6">
@@ -624,6 +625,7 @@ export default function PetIntelligenceSystem() {
 							</div>
 						</TabsContent>
 					</Tabs>
+					</div>
 				</div>
 			</div>
 		</AdminLayout>

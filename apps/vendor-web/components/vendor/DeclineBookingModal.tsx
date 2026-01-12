@@ -7,8 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { XCircle, AlertTriangle } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 
 interface DeclineBookingModalProps {
   booking: any;
@@ -32,8 +32,6 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
   const [suggestAlternative, setSuggestAlternative] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   const handleDecline = async () => {
     const finalReason = selectedReason === 'Other (please specify)' 
       ? customReason 
@@ -47,32 +45,22 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `${API_BASE}/bookings/${booking.id}/decline`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            vendorId,
-            reason: finalReason,
-            suggestAlternative: suggestAlternative || null
-          })
-        }
-      );
-      if (response.ok) {
-        const data = await response.json();
+      const { apiClient } = await import('@/lib/api-client');
+      const data = await apiClient.post(`/vendor/bookings/${booking.id}/decline`, {
+        vendorId,
+        reason: finalReason,
+        suggestAlternative: suggestAlternative || null
+      }) as any;
+
+      if (data && data.success) {
         toast.success('Booking declined. Customer will be notified.');
         onSuccess();
       } else {
-        const error = await response.json().catch(() => ({ error: "Unknown error" }));
-        toast.error(error.error || 'Failed to decline booking');
+        toast.error(data?.error || 'Failed to decline booking');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error declining booking:', error);
-      toast.error('Network error');
+      toast.error(error?.message || 'Network error');
     } finally {
       setLoading(false);
     }

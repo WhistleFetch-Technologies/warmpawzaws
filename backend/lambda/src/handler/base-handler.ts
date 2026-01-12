@@ -199,6 +199,18 @@ export abstract class BaseHandler {
       (event as any).path ||
       (event as APIGatewayProxyEventV2).rawPath ||
       '/';
+    
+    // Import error tracking (dynamic to avoid circular dependencies)
+    const { captureException } = require('../utils/error-tracking');
+    
+    // Capture error in error tracking
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      path,
+      method,
+      requestId: (context as any).awsRequestId || 'unknown',
+      statusCode: error.statusCode || 500,
+    });
+    
     console.error('Handler error:', {
       error: error.message,
       stack: error.stack,

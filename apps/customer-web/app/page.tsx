@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
 
@@ -19,38 +19,49 @@ export default function HomePage() {
   const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
-    // Get session data from localStorage
+    // Get session data from localStorage - run only once on mount
     const loadSession = () => {
-      const storedPhone = localStorage.getItem('customerPhone');
-      const storedToken = localStorage.getItem('authToken');
-      const storedCustomer = localStorage.getItem('customerData');
-      const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
-      const storedPets = localStorage.getItem('customerPets');
+      try {
+        const storedPhone = localStorage.getItem('customerPhone');
+        const storedToken = localStorage.getItem('authToken');
+        const storedCustomer = localStorage.getItem('customerData');
+        const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
+        const storedPets = localStorage.getItem('customerPets');
 
-      if (storedPhone && storedToken) {
-        const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
-        const petsData = storedPets ? JSON.parse(storedPets) : null;
-        
-        setSession({
-          phone: storedPhone,
-          sessionToken: storedToken,
-          verified: true,
-          customer: customerData,
-          hasCompletedOnboarding: storedOnboarding === 'true',
-          hasPets: petsData && petsData.length > 0,
-          isNewUser: !storedOnboarding
-        });
-      } else {
-        // Redirect to auth if no session
-        router.push('/auth');
+        if (storedPhone && storedToken) {
+          const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
+          const petsData = storedPets ? JSON.parse(storedPets) : null;
+          
+          setSession({
+            phone: storedPhone,
+            sessionToken: storedToken,
+            verified: true,
+            customer: customerData,
+            hasCompletedOnboarding: storedOnboarding === 'true',
+            hasPets: petsData && petsData.length > 0,
+            isNewUser: !storedOnboarding
+          });
+        }
+      } catch (error) {
+        console.error('Error loading session:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     loadSession();
-  }, [router]);
+  }, []);
+
+  // Redirect to auth if no session (after loading completes) - only once
+  useEffect(() => {
+    if (!isLoading && !session && !hasRedirected.current) {
+      hasRedirected.current = true;
+      router.replace('/auth');
+    }
+  }, [isLoading, session, router]);
 
   if (isLoading) {
     return (
@@ -64,7 +75,7 @@ export default function HomePage() {
   }
 
   if (!session) {
-    return null; // Will redirect to /auth
+    return null; // Will redirect to /auth via useEffect
   }
 
   return <CustomerApp initialSession={session} />;

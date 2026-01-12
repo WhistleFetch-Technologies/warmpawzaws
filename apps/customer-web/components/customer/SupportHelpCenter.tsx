@@ -1,0 +1,338 @@
+"use client";
+
+import { useState } from 'react';
+import { ArrowLeft, Search, HelpCircle, MessageCircle, Phone, Mail, FileText, ChevronRight, Send } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+
+interface SupportHelpCenterProps {
+  phone?: string;
+  onBack: () => void;
+}
+
+export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
+  const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    subject: '',
+    message: '',
+    category: 'general'
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const faqCategories = [
+    {
+      id: 'booking',
+      title: 'Booking & Services',
+      icon: FileText,
+      questions: [
+        { q: 'How do I book a service?', a: 'Navigate to the service you need, select a vendor, choose a date and time, and complete the booking. You can track your booking in the "My Bookings" section.' },
+        { q: 'Can I cancel or reschedule a booking?', a: 'Yes, you can cancel or reschedule bookings from the "My Bookings" section. Cancellation policies may vary by service type.' },
+        { q: 'What payment methods are accepted?', a: 'We accept credit/debit cards, UPI, net banking, and wallet payments through Razorpay.' }
+      ]
+    },
+    {
+      id: 'orders',
+      title: 'Orders & Products',
+      icon: FileText,
+      questions: [
+        { q: 'How do I track my order?', a: 'Go to "My Orders" and click on your order to see real-time tracking information and delivery status.' },
+        { q: 'What is the return policy?', a: 'Most products can be returned within 7 days of delivery if unopened. Pharmacy items may have different policies.' },
+        { q: 'How is GST calculated?', a: 'GST is calculated at 18% on the subtotal of your order, in compliance with Indian tax regulations.' }
+      ]
+    },
+    {
+      id: 'account',
+      title: 'Account & Payments',
+      icon: FileText,
+      questions: [
+        { q: 'How do I update my profile?', a: 'Go to your profile section and edit your personal information, addresses, and payment methods.' },
+        { q: 'How do I add a pet?', a: 'Navigate to "Pet Profile" and click "Add Pet" to register your pet\'s information and medical records.' },
+        { q: 'What are loyalty points?', a: 'Loyalty points are earned on bookings and purchases. You can redeem them for discounts on future services.' }
+      ]
+    },
+    {
+      id: 'technical',
+      title: 'Technical Support',
+      icon: FileText,
+      questions: [
+        { q: 'The app is not loading properly', a: 'Try clearing your browser cache, checking your internet connection, or updating to the latest version of the app.' },
+        { q: 'I forgot my password', a: 'Use the "Forgot Password" option on the login screen. You will receive an OTP to reset your password.' },
+        { q: 'Payment failed but money was deducted', a: 'Contact support immediately. In most cases, the money is automatically refunded within 5-7 business days.' }
+      ]
+    }
+  ];
+
+  const filteredFAQs = faqCategories.map(category => ({
+    ...category,
+    questions: category.questions.filter(q => 
+      q.q.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      q.a.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  })).filter(category => category.questions.length > 0);
+
+  const handleSubmitContact = async () => {
+    if (!contactForm.subject.trim() || !contactForm.message.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const response = await apiClient.post<any>('/customer/support/tickets', {
+        ...contactForm,
+        phone,
+        status: 'open'
+      });
+
+      if (response.success || response.ticketId) {
+        toast.success('Support ticket created successfully! We will get back to you soon.');
+        setContactForm({ subject: '', message: '', category: 'general' });
+        setShowContactForm(false);
+        setActiveTab('tickets');
+      }
+    } catch (error: any) {
+      console.error('Error creating support ticket:', error);
+      toast.error(error.message || 'Failed to create support ticket');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white px-4 py-4 sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            className="rounded-full text-white hover:bg-white/20"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div className="flex-1">
+            <h1 className="text-xl font-bold">Help & Support</h1>
+            <p className="text-white/90 text-sm">We're here to help</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white border-b border-gray-200 sticky top-[72px] z-40">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('faq')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'faq'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            FAQ
+          </button>
+          <button
+            onClick={() => setActiveTab('contact')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'contact'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Contact
+          </button>
+          <button
+            onClick={() => setActiveTab('tickets')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'tickets'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            My Tickets
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {activeTab === 'faq' && (
+          <>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search FAQ..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {/* FAQ Categories */}
+            {filteredFAQs.length === 0 ? (
+              <Card className="p-8 text-center">
+                <HelpCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No FAQs found</p>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {filteredFAQs.map((category) => (
+                  <Card key={category.id} className="p-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-[#FF8C42]/10 rounded-lg flex items-center justify-center">
+                        <category.icon className="w-5 h-5 text-[#FF8C42]" />
+                      </div>
+                      <h3 className="font-semibold text-gray-900">{category.title}</h3>
+                    </div>
+                    <div className="space-y-4">
+                      {category.questions.map((faq, idx) => (
+                        <div key={idx} className="border-t border-gray-100 pt-4 first:border-t-0 first:pt-0">
+                          <h4 className="font-medium text-gray-900 mb-2">{faq.q}</h4>
+                          <p className="text-sm text-gray-600">{faq.a}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'contact' && (
+          <>
+            {!showContactForm ? (
+              <>
+                <Card className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+                  <h3 className="font-semibold text-gray-900 mb-4">Contact Us</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Phone className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Phone</p>
+                        <p className="text-sm text-gray-600">+91 1800-XXX-XXXX</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Mail className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Email</p>
+                        <p className="text-sm text-gray-600">support@warmpawz.com</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <MessageCircle className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Live Chat</p>
+                        <p className="text-sm text-gray-600">Available 24/7</p>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                <Button
+                  onClick={() => setShowContactForm(true)}
+                  className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
+                >
+                  Create Support Ticket
+                </Button>
+              </>
+            ) : (
+              <Card className="p-4">
+                <h3 className="font-semibold text-gray-900 mb-4">Create Support Ticket</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                    <select
+                      value={contactForm.category}
+                      onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42]"
+                    >
+                      <option value="general">General Inquiry</option>
+                      <option value="booking">Booking Issue</option>
+                      <option value="order">Order Issue</option>
+                      <option value="payment">Payment Issue</option>
+                      <option value="technical">Technical Support</option>
+                      <option value="refund">Refund Request</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Subject *</label>
+                    <Input
+                      type="text"
+                      value={contactForm.subject}
+                      onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
+                      placeholder="Brief description of your issue"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Message *</label>
+                    <Textarea
+                      value={contactForm.message}
+                      onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                      rows={6}
+                      placeholder="Please provide detailed information about your issue..."
+                      className="resize-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowContactForm(false);
+                        setContactForm({ subject: '', message: '', category: 'general' });
+                      }}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSubmitContact}
+                      disabled={submitting}
+                      className="flex-1 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
+                    >
+                      {submitting ? 'Submitting...' : 'Submit'}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+          </>
+        )}
+
+        {activeTab === 'tickets' && (
+          <Card className="p-8 text-center">
+            <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 mb-4">Your support tickets will appear here</p>
+            <Button
+              onClick={() => {
+                setActiveTab('contact');
+                setShowContactForm(true);
+              }}
+              className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
+            >
+              Create New Ticket
+            </Button>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+

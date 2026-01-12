@@ -1,5 +1,4 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
@@ -127,21 +126,8 @@ export default function NotificationsPage() {
   };
 
   // ============================================================================
-  // RENDER
+  // RENDER HELPERS
   // ============================================================================
-
-  if (loading) {
-    return (
-      <AdminLayout>
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading notifications...</p>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
 
   const typeIcons: Record<string, string> = {
     info: 'ℹ️',
@@ -158,26 +144,48 @@ export default function NotificationsPage() {
     failed: 'bg-red-100 text-red-700',
   };
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading notifications...</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-slate-50">
-        {/* Header */}
-        <header className="bg-white border-b px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Notification Broadcast</h1>
-              <p className="text-gray-500">Send notifications to users</p>
+      <div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+        {/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                {/* ✅ FIX: Match wireframe - text-2xl font-bold text-gray-900 */}
+                <h1 className="text-2xl font-bold text-gray-900">Notification Broadcast</h1>
+                <p className="text-sm text-gray-500 mt-1">Send notifications to users</p>
+              </div>
+              <button
+                onClick={handleCreate}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+              >
+                + Send Notification
+              </button>
             </div>
-            <button
-              onClick={handleCreate}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
-            >
-              + Send Notification
-            </button>
           </div>
         </header>
 
-        <main className="p-8">
+        {/* Main Content - Match wireframe: max-w-7xl mx-auto p-6 or p-8 */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto p-8">
           {/* Messages */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
@@ -256,6 +264,7 @@ export default function NotificationsPage() {
                 </div>
               ))
             )}
+          </div>
           </div>
         </main>
       </div>

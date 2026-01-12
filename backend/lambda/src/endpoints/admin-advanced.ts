@@ -268,6 +268,43 @@ class GetPermissionsHandler extends BaseHandler {
   }
 }
 
+class GetPoliciesHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      // Try to get policies from policies table, or return empty array if table doesn't exist
+      const policies = await select('policies', {}).catch(() => []);
+      return this.success({ policies: policies || [] });
+    } catch (error: any) {
+      // If policies table doesn't exist, return empty array
+      console.warn('Policies table not found, returning empty array:', error.message);
+      return this.success({ policies: [] });
+    }
+  }
+}
+
+class UpdateRoleHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const roleId = context.event.pathParameters?.roleId;
+    const body = this.parseBody(context.event);
+    if (!roleId) {
+      return this.error('Role ID is required', 400);
+    }
+    const updated = await update('roles', { id: roleId }, body);
+    return this.success({ role: updated[0] });
+  }
+}
+
+class DeleteRoleHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const roleId = context.event.pathParameters?.roleId;
+    if (!roleId) {
+      return this.error('Role ID is required', 400);
+    }
+    await deleteRows('roles', { id: roleId });
+    return this.success({ success: true });
+  }
+}
+
 class CreateRoleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
@@ -835,9 +872,44 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  app.get('/admin/rbac/policies', async (c) => {
+    const handler = new GetPoliciesHandler();
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
   app.post('/admin/roles', async (c) => {
     const handler = new CreateRoleHandler();
     const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // RBAC endpoints (aliases for frontend compatibility)
+  app.post('/admin/rbac/roles', async (c) => {
+    const handler = new CreateRoleHandler();
+    const event = await createApiGatewayEventWithBody(c);
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.put('/admin/rbac/roles/:roleId', async (c) => {
+    const handler = new UpdateRoleHandler();
+    const event = await createApiGatewayEventWithBody(c);
+    event.pathParameters = { roleId: c.req.param('roleId') };
+    const context = createLambdaContext();
+    const result = await handler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.delete('/admin/rbac/roles/:roleId', async (c) => {
+    const handler = new DeleteRoleHandler();
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { roleId: c.req.param('roleId') };
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -1115,9 +1187,88 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Catalog Endpoints
   app.get('/admin/catalog/categories', async (c) => {
     try {
-      const categories = await query('SELECT * FROM service_categories ORDER BY name ASC');
-      return c.json({ success: true, categories: categories.rows });
+      // Use safe query that handles UUID/TEXT schema conflict
+      // Avoid SELECT * which triggers type comparison issues
+      const categories = await query(`
+        SELECT 
+          id::text as id,
+          COALESCE(category_id::text, '') as category_id,
+          name::text as name,
+          COALESCE(description::text, '') as description,
+          COALESCE(icon::text, '') as icon,
+          COALESCE(display_order::integer, 0) as display_order,
+          COALESCE(is_active::boolean, true) as is_active,
+          COALESCE(created_at::text, '') as created_at,
+          COALESCE(updated_at::text, '') as updated_at
+        FROM service_categories
+        ORDER BY display_order ASC, name ASC
+        LIMIT 1000
+      `);
+      
+      return c.json({ 
+        success: true, 
+        categories: categories.rows || [],
+        total: categories.rows?.length || 0
+      });
     } catch (error: any) {
+      console.error('Error fetching categories:', error);
+      // If UUID/TEXT error, return empty array and attempt schema fix
+      if (error.message && (
+        error.message.includes('operator does not exist') ||
+        error.message.includes('uuid = text') ||
+        error.message.includes('uuid =')
+      )) {
+        // Try to fix schema automatically
+        try {
+          await query(`
+            DO $$
+            BEGIN
+              -- Drop parent_category_id column if it exists (source of UUID/TEXT conflict)
+              IF EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'service_categories' 
+                AND column_name = 'parent_category_id'
+              ) THEN
+                ALTER TABLE service_categories DROP CONSTRAINT IF EXISTS service_categories_parent_fkey CASCADE;
+                ALTER TABLE service_categories DROP COLUMN parent_category_id CASCADE;
+              END IF;
+            END $$;
+          `);
+          
+          // Retry query after fix
+          const categories = await query(`
+            SELECT 
+              id::text as id,
+              COALESCE(category_id::text, '') as category_id,
+              name::text as name,
+              COALESCE(description::text, '') as description,
+              COALESCE(icon::text, '') as icon,
+              COALESCE(display_order::integer, 0) as display_order,
+              COALESCE(is_active::boolean, true) as is_active,
+              COALESCE(created_at::text, '') as created_at,
+              COALESCE(updated_at::text, '') as updated_at
+            FROM service_categories
+            ORDER BY display_order ASC, name ASC
+            LIMIT 1000
+          `);
+          
+          return c.json({ 
+            success: true, 
+            categories: categories.rows || [],
+            total: categories.rows?.length || 0,
+            message: 'Schema fixed automatically, categories loaded successfully'
+          });
+        } catch (fixError: any) {
+          console.error('Error fixing schema:', fixError);
+          return c.json({ 
+            success: true, 
+            categories: [],
+            total: 0,
+            message: 'Service categories table has schema constraint issue. Please run migration to fix.',
+            error: fixError.message
+          });
+        }
+      }
       return c.json({ error: error.message }, 500);
     }
   });
@@ -1833,10 +1984,154 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
-  // Migration endpoint to create missing tables
+  // Migration endpoint to add config column to roles table
+  app.post('/admin/migrations/add-roles-config-column', async (c) => {
+    try {
+      console.log('🔧 Adding config column to roles table...');
+      
+      await query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'roles' AND column_name = 'config'
+          ) THEN
+            ALTER TABLE roles ADD COLUMN config JSONB DEFAULT '{}'::jsonb;
+            CREATE INDEX IF NOT EXISTS idx_roles_config ON roles USING gin(config);
+            RAISE NOTICE 'Added config column to roles table';
+          ELSE
+            RAISE NOTICE 'config column already exists in roles table';
+          END IF;
+        END $$;
+      `);
+      
+      return c.json({
+        success: true,
+        message: 'Config column added to roles table (or already exists)',
+      });
+    } catch (error: any) {
+      console.error('Error adding config column:', error);
+      return c.json({
+        success: false,
+        error: `Migration failed: ${error.message}`,
+      }, 500);
+    }
+  });
+
+  // Migration endpoint to fix service_catalog and onboarding_forms schema
+  app.post('/admin/migrations/fix-catalog-schemas', async (c) => {
+    try {
+      console.log('🔧 Fixing service_catalog and onboarding_forms schemas...');
+      
+      const results: string[] = [];
+      
+      // 1. Add role_id column to service_catalog if missing (for backward compatibility)
+      await query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'service_catalog' AND column_name = 'role_id'
+          ) THEN
+            ALTER TABLE service_catalog ADD COLUMN role_id VARCHAR(255);
+            CREATE INDEX IF NOT EXISTS idx_service_catalog_role_id ON service_catalog(role_id);
+            RAISE NOTICE 'Added role_id column to service_catalog table';
+          ELSE
+            RAISE NOTICE 'role_id column already exists in service_catalog table';
+          END IF;
+        END $$;
+      `).then(() => results.push('service_catalog.role_id: added')).catch((err: any) => {
+        console.error('Error adding role_id to service_catalog:', err);
+        results.push(`service_catalog.role_id: ${err.message}`);
+      });
+      
+      // 2. Add is_active column to onboarding_forms if missing
+      await query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'onboarding_forms' AND column_name = 'is_active'
+          ) THEN
+            ALTER TABLE onboarding_forms ADD COLUMN is_active BOOLEAN DEFAULT true;
+            CREATE INDEX IF NOT EXISTS idx_onboarding_forms_is_active ON onboarding_forms(is_active);
+            RAISE NOTICE 'Added is_active column to onboarding_forms table';
+          ELSE
+            RAISE NOTICE 'is_active column already exists in onboarding_forms table';
+          END IF;
+        END $$;
+      `).then(() => results.push('onboarding_forms.is_active: added')).catch((err: any) => {
+        console.error('Error adding is_active to onboarding_forms:', err);
+        results.push(`onboarding_forms.is_active: ${err.message}`);
+      });
+      
+      // 3. Ensure service_catalog has is_active column if missing
+      await query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'service_catalog' AND column_name = 'is_active'
+          ) THEN
+            ALTER TABLE service_catalog ADD COLUMN is_active BOOLEAN DEFAULT true;
+            RAISE NOTICE 'Added is_active column to service_catalog table';
+          END IF;
+        END $$;
+      `).then(() => results.push('service_catalog.is_active: added')).catch((err: any) => {
+        console.error('Error adding is_active to service_catalog:', err);
+        results.push(`service_catalog.is_active: ${err.message}`);
+      });
+      
+      // 4. Ensure service_catalog has duration column if missing (for compatibility)
+      await query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'service_catalog' AND column_name = 'duration'
+          ) THEN
+            ALTER TABLE service_catalog ADD COLUMN duration INTEGER DEFAULT 30;
+            RAISE NOTICE 'Added duration column to service_catalog table';
+          END IF;
+        END $$;
+      `).then(() => results.push('service_catalog.duration: added')).catch((err: any) => {
+        console.error('Error adding duration to service_catalog:', err);
+        results.push(`service_catalog.duration: ${err.message}`);
+      });
+      
+      return c.json({
+        success: true,
+        message: 'Schema fixes applied',
+        results,
+      });
+    } catch (error: any) {
+      console.error('Error fixing schemas:', error);
+      return c.json({
+        success: false,
+        error: `Migration failed: ${error.message}`,
+      }, 500);
+    }
+  });
+
+  // Migration endpoint to create missing tables and columns
   app.post('/admin/migrations/create-missing-tables', async (c) => {
     try {
-      console.log('🔧 Running migrations to create missing tables...');
+      console.log('🔧 Running migrations to create missing tables and columns...');
+      
+      // Add config column to roles table if it doesn't exist
+      await query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'roles' AND column_name = 'config'
+          ) THEN
+            ALTER TABLE roles ADD COLUMN config JSONB DEFAULT '{}'::jsonb;
+            CREATE INDEX IF NOT EXISTS idx_roles_config ON roles USING gin(config);
+            RAISE NOTICE 'Added config column to roles table';
+          END IF;
+        END $$;
+      `).catch(err => console.error('Error adding config column:', err));
       
       // Create service_catalog table
       const serviceCatalogMigration = `

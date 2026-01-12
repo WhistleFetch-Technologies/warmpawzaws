@@ -237,6 +237,121 @@ class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
   }
 }
 
+class DeactivateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const customerId = context.event.pathParameters?.customerId;
+    const body = this.parseBody(context.event);
+    const requestId = context.requestId;
+
+    if (!customerId) {
+      return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    const reason = body.reason || body.deactivationReason || 'Customer request';
+    const actorId = context.userId || body.actorId;
+    const actorType = context.userRole || body.actorType || 'customer';
+    const permanentDelete = body.permanentDelete === true; // Only if explicitly requested
+
+    try {
+      // Get current customer
+      const existingCustomers = await select('customers', { id: customerId });
+      if (existingCustomers.length === 0) {
+        return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
+      }
+
+      const currentCustomer = existingCustomers[0];
+
+      if (permanentDelete) {
+        // Hard delete - only allowed by admins or system
+        if (actorType !== 'admin' && actorType !== 'system') {
+          return this.error(
+            'Permanent deletion is only allowed by administrators',
+            403,
+            'FORBIDDEN',
+            undefined,
+            requestId
+          );
+        }
+
+        // Check for active bookings/orders before deletion
+        const activeBookings = await query(
+          `SELECT COUNT(*) as count FROM bookings 
+           WHERE customer_id = $1 AND status NOT IN ('cancelled', 'completed', 'no_show')`,
+          [customerId]
+        );
+
+        const activeOrders = await query(
+          `SELECT COUNT(*) as count FROM orders 
+           WHERE customer_id = $1 AND order_status NOT IN ('cancelled', 'delivered', 'refunded')`,
+          [customerId]
+        );
+
+        if (parseInt(activeBookings.rows[0]?.count || '0', 10) > 0 ||
+            parseInt(activeOrders.rows[0]?.count || '0', 10) > 0) {
+          return this.error(
+            'Cannot delete customer with active bookings or orders. Please cancel them first.',
+            400,
+            'VALIDATION_ERROR',
+            undefined,
+            requestId
+          );
+        }
+
+        // Soft delete by setting is_active = false and updating
+        await update('customers', { id: customerId }, {
+          is_active: false,
+          updated_at: new Date(),
+        });
+
+        return this.success({
+          customerId,
+          message: 'Customer account deactivated successfully',
+          deactivated: true,
+        }, requestId);
+      } else {
+        // Soft delete - deactivate account
+        await update('customers', { id: customerId }, {
+          is_active: false,
+          updated_at: new Date(),
+        });
+
+        // Log audit entry
+        try {
+          const { logAuditEntry } = await import('../utils/audit-log');
+          await logAuditEntry({
+            entityType: 'customer',
+            entityId: customerId,
+            action: 'deactivate',
+            oldValues: { is_active: currentCustomer.is_active },
+            newValues: { is_active: false, reason },
+            changedFields: ['is_active'],
+            actorId,
+            actorType,
+            requestId,
+          });
+        } catch (error) {
+          console.error('Error logging audit entry:', error);
+        }
+
+        return this.success({
+          customerId,
+          message: 'Customer account deactivated successfully',
+          deactivated: true,
+        }, requestId);
+      }
+    } catch (error: any) {
+      console.error('Error deactivating customer:', error);
+      return this.error(
+        error.message || 'Failed to deactivate customer',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        requestId
+      );
+    }
+  }
+}
+
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -247,6 +362,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   const updateHandler = new UpdateCustomerHandlerEnhanced();
   const getPetsHandler = new GetCustomerPetsHandlerEnhanced();
   const addPetHandler = new AddPetHandlerEnhanced();
+  const deactivateHandler = new DeactivateCustomerHandlerEnhanced();
 
   app.get('/customer/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
@@ -271,6 +387,15 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result: any = await updateHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
+  app.delete('/customer/:customerId', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { customerId: c.req.param('customerId') };
+    const context = createLambdaContext();
+    const result: any = await deactivateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });

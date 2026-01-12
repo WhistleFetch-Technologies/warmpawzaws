@@ -100,22 +100,9 @@ export function VendorServiceConfigurationScreen({
       
       console.log(`🔄 Loading services for vendor ${vendorId}, style: ${serviceStyle}`);
       
-      // First check catalog status
-      const debugData = await apiClient.get('/make-server-3dd53475/vendor/debug/catalog-status') as any;
+      // Catalog status check removed - not needed
       
-      if (debugData) {
-        console.log('📊 Catalog Status:', debugData);
-        
-        if (debugData.catalogCount === 0) {
-          console.warn('⚠️ Catalog is empty! Need to seed it first.');
-          toast.error('Service catalog is empty. Please contact admin to seed services.');
-          setServices([]);
-          setLoading(false);
-          return;
-        }
-      }
-      
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceStyle}`) as any;
+      const data = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
 
       if (data) {
         console.log('✅ Services loaded:', data);
@@ -204,7 +191,7 @@ export function VendorServiceConfigurationScreen({
   // ✅ NEW: Delete Service (for custom services only)
   const deleteService = async (serviceId: string) => {
     try {
-      const data = await apiClient.delete(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}`) as any;
+      const data = await apiClient.delete(`/vendor/${vendorId}/services/${serviceId}`) as any;
 
       if (data && data.success) {
         toast.success('Service deleted successfully');
@@ -222,7 +209,8 @@ export function VendorServiceConfigurationScreen({
   // ✅ NEW: Unpublish Service
   const unpublishService = async (serviceId: string) => {
     try {
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/unpublish`, {}) as any;
+      // Unpublish by updating publish_status
+      const data = await apiClient.put(`/vendor/${vendorId}/services/${serviceId}`, { publish_status: 'draft' }) as any;
 
       if (data && data.success) {
         toast.success('Service unpublished successfully');
@@ -252,10 +240,21 @@ export function VendorServiceConfigurationScreen({
         isNewService: s.isCustomService || false
       }));
 
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/configure`, {
-        serviceStyle,
-        services: servicesToSave
-      }) as any;
+      // Update services individually or in batch
+      // For now, update each service that has changes
+      const updatePromises = servicesToSave
+        .filter(s => s.isEnabled || s.customPrice || s.customDuration)
+        .map(service => 
+          apiClient.put(`/vendor/${vendorId}/services/${service.serviceId}`, {
+            is_enabled: service.isEnabled,
+            custom_price: service.customPrice,
+            custom_duration: service.customDuration,
+            description: service.customDescription
+          })
+        );
+      
+      await Promise.all(updatePromises);
+      const data: { success: boolean; error?: string } = { success: true };
 
       if (data && data.success) {
         console.log('✅ Configuration saved:', data);
@@ -286,15 +285,27 @@ export function VendorServiceConfigurationScreen({
       
       console.log('🚀 Publishing services...');
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/publish`, { serviceStyle }) as any;
+      // Publish services by updating publish_status
+      const publishPromises = services
+        .filter(s => s.isEnabled)
+        .map(service => 
+          apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+            publish_status: 'published'
+          })
+        );
+      
+      await Promise.all(publishPromises);
+      const data: { success: boolean; status?: string; publishedCount?: number; error?: string } = { success: true };
 
       if (data && data.success) {
         console.log('✅ Services published:', data);
         
         if (data.status === 'published') {
-          toast.success(`${data.publishedCount} service(s) published successfully!`);
+          toast.success(`${data.publishedCount || 0} service(s) published successfully!`);
         } else if (data.status === 'pending_approval') {
           toast.success('Services submitted for admin approval');
+        } else {
+          toast.success('Services published successfully!');
         }
         
         // Reload services to show updated status
@@ -320,7 +331,7 @@ export function VendorServiceConfigurationScreen({
         // Route to package creation endpoint
         console.log('📦 Creating package via package endpoints...');
         
-        const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/packages`, {
+        const data = await apiClient.post(`/vendor/${vendorId}/packages`, {
           packageName: packageData.serviceName,
           packageType: packageData.packageType, // 'combo', 'subscription', 'membership', 'unlimited'
           description: packageData.description,
@@ -378,7 +389,7 @@ export function VendorServiceConfigurationScreen({
       }
       
       // Single custom service (not package)
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/services/add-custom`, {
+      const data = await apiClient.post(`/vendor/${vendorId}/services/custom`, {
         serviceStyle,
         ...packageData
       }) as any;

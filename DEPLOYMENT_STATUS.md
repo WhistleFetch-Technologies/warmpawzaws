@@ -1,329 +1,123 @@
-# 🚀 **DEPLOYMENT STATUS - READY TO DEPLOY**
+# Deployment Status - UI Fixes & Service Catalog
 
-**Date:** January 3, 2026  
-**Status:** ✅ **AWS Setup Complete** | ⚠️ **GitHub Setup Required**
+## ✅ COMPLETED FIXES
 
----
+### 1. **UI Styling - White Backgrounds & Black Text/Borders**
 
-## ✅ **What's Been Completed**
+#### OnboardingDesigner Component (`apps/admin-web/components/admin/onboarding/OnboardingDesigner.tsx`)
+- ✅ Modal Card: Added `bg-white border border-gray-300`
+- ✅ Modal Content: Added `bg-white` to CardContent
+- ✅ All Labels: Changed to `text-gray-900 font-medium`
+- ✅ All Inputs: Added `bg-white border-gray-300 text-gray-900`
+- ✅ All Selects: Added `bg-white border-gray-300 text-gray-900`
+- ✅ Section Dividers: Added `border-gray-200`
+- ✅ Form Container: Added `bg-white p-6 rounded-lg`
+- ✅ Role Selector Card: Added `bg-white border border-gray-300`
+- ✅ Field Items: Added `bg-white border border-gray-300 text-gray-900`
+- ✅ Buttons: Proper styling with borders (`border-gray-300`, `border-red-300`)
 
-### 1. Infrastructure Code ✅
-- ✅ All Terraform modules created (VPC, Lambda, API Gateway, RDS, DynamoDB, S3, SQS, SNS, OpenSearch, Cognito)
-- ✅ Environment configurations (dev, stage, prod)
-- ✅ Backend state configurations
-- ✅ Account ID updated: **023394150666**
+#### ServiceCatalogTab Component (`apps/admin-web/components/admin/catalog/ServiceCatalogTab.tsx`)
+- ✅ Container: Added `bg-white p-6 rounded-lg`
+- ✅ Header: Added `bg-white pb-4 border-b border-gray-300`
+- ✅ Search Input: Added `bg-white border-gray-300 text-gray-900`
+- ✅ Service Cards: Added `bg-white border border-gray-300`
+- ✅ All Text: Changed to `text-gray-900` or `text-gray-600`
+- ✅ Empty State: Added `bg-white border border-gray-300 rounded-lg`
+- ✅ Buttons: Proper borders and hover states
 
-### 2. CI/CD Pipelines ✅
-- ✅ Dev workflow (`.github/workflows/dev.yml`)
-- ✅ Stage workflow (`.github/workflows/stage.yml`)
-- ✅ Production workflow (`.github/workflows/prod.yml`)
-- ✅ All with proper testing, approval gates, and readiness checks
+#### Catalog Page (`apps/admin-web/app/catalog/page.tsx`)
+- ✅ Updated to use `ServiceCatalogTab` component
+- ✅ Removed unused legacy code block
+- ✅ Fixed TypeScript errors
 
-### 3. AWS Setup ✅
-- ✅ AWS CLI configured
-- ✅ Account: **023394150666**
-- ✅ Region: **ap-south-1** (Mumbai)
-- ✅ AWS Secrets Manager configured:
-  - `warmpawz/dev/razorpay`
-  - `warmpawz/dev/google-maps`
-  - `warmpawz/dev/shiprocket`
+### 2. **Service Catalog Seeding Logic**
 
-### 4. Documentation ✅
-- ✅ `DEPLOY_MANUAL_STEPS.md` - Complete step-by-step guide
-- ✅ `DEPLOY_GUIDE.sh` - Interactive deployment guide
-- ✅ `SETUP_GITHUB_SECRETS_COMMANDS.sh` - Copy/paste GitHub CLI commands
-- ✅ `SECURITY_WARNING.md` - Credential rotation instructions
-- ✅ `GITHUB_SECRETS_COMPLETE_LIST.md` - All secrets reference
-- ✅ `QUICK_SETUP_CREDENTIALS.md` - Quick setup guide
-- ✅ `docs/DEPLOYMENT_GUIDE.md` - Comprehensive deployment guide
-- ✅ `DEPLOYMENT_CHECKLIST.md` - Pre-deployment checklist
+#### Seeding Function (`backend/lambda/src/endpoints/role-seeding.ts`)
+- ✅ `seedServiceCatalog` now returns count of created services
+- ✅ Added logging for debugging service creation
+- ✅ Added service style mapping (`at_clinic` → `at_center`, `home_visit` → `at_home`)
+- ✅ Added fallback to mapped style if direct style not found
+- ✅ Fixed service ID generation to be unique
+- ✅ Added error handling and logging
 
----
+#### Seeding Endpoint
+- ✅ Updated to track `formsCreated` and `catalogsCreated` in stats
+- ✅ `seedOnboardingForm` now returns boolean (true if created, false if updated/exists)
+- ✅ Stats tracking: `formsCreated` and `catalogsCreated` are now tracked
 
-## ⚠️ **What You Need to Do Next**
+## ⚠️ ISSUES IDENTIFIED
 
-### Option 1: Automated Setup (Recommended if you install GitHub CLI)
+### 1. **Service Catalog Not Populating**
+**Status**: Services show `catalogsCreated: 0` even after seeding
 
-```bash
-# 1. Install GitHub CLI
-# Download from: https://cli.github.com/
+**Possible Causes**:
+- Services may already exist in database (exists check returns true)
+- Service styles mapping may not be working correctly
+- Insert operation may be failing silently
 
-# 2. Authenticate
-gh auth login
+**Next Steps**:
+1. Check CloudWatch logs for service catalog creation errors
+2. Query database directly to see if services exist
+3. Add debug endpoint to list all services in database
+4. Consider force-recreating services by deleting existing ones first
+5. Verify service style mapping is working correctly
 
-# 3. Run automated setup
-./SETUP_GITHUB_SECRETS_COMMANDS.sh
+### 2. **Onboarding Forms Not Tracking Creation**
+**Status**: `formsCreated: 0` because forms already exist (updated, not created)
 
-# 4. Install Terraform
-# Download from: https://www.terraform.io/downloads
+**Solution**: This is expected behavior - forms exist from previous seeding. The function correctly returns `false` for existing forms.
 
-# 5. Create GitHub Environments (manual step via web UI)
-# See step 3 below
+## 🔧 RECOMMENDED FIXES
 
-# 6. Bootstrap and Deploy
-cd infra/bootstrap
-terraform init
-terraform apply -var='create_state_backend=true' -var='aws_account_id=023394150666'
+### 1. **Force Re-seed Service Catalog**
+Create a new endpoint or modify existing one to:
+- Delete existing services for a role before creating new ones
+- Or: Add a `force: true` parameter to bypass existence check
 
-cd ../..
-git checkout -b develop
-git add .
-git commit -m "feat: initial CI/CD infrastructure"
-git push origin develop
+### 2. **Add Debug Endpoint**
+```typescript
+GET /admin/debug/service-catalog
+- Returns all services in database
+- Shows services by role
+- Shows count per role
 ```
 
-### Option 2: Manual Setup (No additional tools needed)
+### 3. **Verify Database Schema**
+Ensure `service_catalog` table has correct columns:
+- `role_id` (VARCHAR)
+- `service_style` (TEXT with CHECK constraint)
+- `applicable_roles` (TEXT[])
 
-**Follow the guide:**
-```bash
-./DEPLOY_GUIDE.sh
-```
+## 📋 TESTING CHECKLIST
 
-Or read: `DEPLOY_MANUAL_STEPS.md`
+### UI Testing
+- [x] Modal has white background
+- [x] All text is black/gray
+- [x] All borders are visible (gray/black)
+- [x] Input fields have white backgrounds
+- [x] Dropdowns have white backgrounds
+- [x] Service catalog tab renders correctly
+- [x] Onboarding designer modal renders correctly
 
----
+### Service Catalog Testing
+- [ ] Verify services are created during seeding
+- [ ] Verify services are queryable via `/service-catalog/role/:roleId`
+- [ ] Verify services show in admin UI
+- [ ] Verify service styles mapping works (`at_clinic` → `at_center`)
+- [ ] Check CloudWatch logs for errors
 
-## 📋 **Quick Checklist**
+## 🚀 DEPLOYMENT STATUS
 
-### Before First Deployment:
+- ✅ Lambda deployed with updated seeding logic (version with logging)
+- ✅ Admin-web deployed with UI fixes
+- ✅ CloudFront invalidation created for admin-web
+- ⏳ Waiting for CloudFront propagation (5-15 minutes)
+- ⏳ Service catalog needs verification after Lambda deployment
 
-- [ ] **Step 1:** Install Terraform
-  - Download: https://www.terraform.io/downloads
+## 📝 NEXT ACTIONS
 
-- [ ] **Step 2:** Set up GitHub Secrets (choose one)
-  - [ ] Option A: Web Interface (Settings → Secrets)
-  - [ ] Option B: GitHub CLI (`gh` commands)
-  
-  Required secrets:
-  - [ ] `AWS_ACCESS_KEY_ID`
-  - [ ] `AWS_SECRET_ACCESS_KEY`
-  - [ ] `AWS_REGION`
-  - [ ] `AWS_ACCOUNT_ID`
-  - [ ] `RAZORPAY_KEY_ID`
-  - [ ] `RAZORPAY_KEY_SECRET`
-  - [ ] `GOOGLE_MAPS_API_KEY`
-  - [ ] `SHIPROCKET_EMAIL`
-  - [ ] `SHIPROCKET_PASSWORD`
-  - [ ] `DEV_OPENSEARCH_PASSWORD`
-  - [ ] `STAGE_OPENSEARCH_PASSWORD`
-  - [ ] `PROD_OPENSEARCH_PASSWORD`
-
-- [ ] **Step 3:** Create GitHub Environments
-  - [ ] `dev` (no protection)
-  - [ ] `stage` (1 required reviewer)
-  - [ ] `stage-approval` (1 required reviewer)
-  - [ ] `production` (2 required reviewers)
-  - [ ] `production-approval` (2 required reviewers)
-
-- [ ] **Step 4:** Bootstrap Terraform State
-  ```bash
-  cd infra/bootstrap
-  terraform init
-  terraform apply -var='create_state_backend=true' -var='aws_account_id=023394150666'
-  ```
-
-### Deploy to Dev:
-
-- [ ] **Step 5:** Push to `develop` branch
-  ```bash
-  git checkout -b develop
-  git add .
-  git commit -m "feat: initial infrastructure setup"
-  git push origin develop
-  ```
-
-- [ ] **Step 6:** Monitor GitHub Actions
-  - Go to: https://github.com/YOUR_USERNAME/warmpawzecodev/actions
-  - Watch the workflow progress
-
-### Deploy to Stage:
-
-- [ ] **Step 7:** Merge to `main` branch
-  ```bash
-  git checkout main
-  git merge develop
-  git push origin main
-  ```
-
-- [ ] **Step 8:** Get 1 reviewer approval in GitHub Actions
-
-### Deploy to Production:
-
-- [ ] **Step 9:** Trigger manual workflow
-  - GitHub Actions → "Deploy to Production" → Run workflow
-  - Type: `DEPLOY_TO_PRODUCTION`
-
-- [ ] **Step 10:** Get 2 reviewer approvals
-
-### Post-Deployment (CRITICAL):
-
-- [ ] **Step 11:** Rotate ALL credentials immediately
-  - [ ] AWS Access Key
-  - [ ] Razorpay API Keys
-  - [ ] Google Maps API Key (add restrictions)
-  - [ ] Shiprocket Password
-  
-  See: `SECURITY_WARNING.md`
-
----
-
-## 🎯 **Quick Start Commands**
-
-```bash
-# Check current status
-./DEPLOY_GUIDE.sh
-
-# View detailed manual steps
-cat DEPLOY_MANUAL_STEPS.md
-
-# View AWS secrets
-aws secretsmanager list-secrets --region ap-south-1
-
-# View GitHub CLI secret commands
-cat SETUP_GITHUB_SECRETS_COMMANDS.sh
-```
-
----
-
-## 📚 **Documentation Reference**
-
-| Document | Purpose |
-|----------|---------|
-| `DEPLOY_GUIDE.sh` | Interactive deployment guide (run this first!) |
-| `DEPLOY_MANUAL_STEPS.md` | Complete step-by-step manual setup |
-| `SETUP_GITHUB_SECRETS_COMMANDS.sh` | GitHub CLI commands for secrets |
-| `SECURITY_WARNING.md` | Credential rotation instructions |
-| `GITHUB_SECRETS_COMPLETE_LIST.md` | All secrets reference |
-| `docs/DEPLOYMENT_GUIDE.md` | Comprehensive deployment guide |
-| `DEPLOYMENT_CHECKLIST.md` | Pre-deployment checklist |
-| `docs/BOOTSTRAP_GUIDE.md` | Bootstrap process details |
-
----
-
-## 🔍 **Verification Commands**
-
-```bash
-# Check AWS configuration
-aws sts get-caller-identity
-
-# Check AWS secrets
-aws secretsmanager list-secrets --region ap-south-1
-
-# Check Terraform state (after bootstrap)
-aws s3 ls | grep terraform-state
-
-# Check GitHub secrets (requires GitHub CLI)
-gh secret list
-
-# Check current git branch
-git branch --show-current
-
-# Check GitHub workflows
-ls -la .github/workflows/
-```
-
----
-
-## ⚠️ **Known Requirements**
-
-### Tools Needed:
-1. **Terraform** (required for infrastructure)
-   - Download: https://www.terraform.io/downloads
-
-2. **GitHub CLI** (optional, for automated secret setup)
-   - Download: https://cli.github.com/
-   - Alternative: Use GitHub web interface
-
-3. **Git** (already installed ✅)
-
-4. **AWS CLI** (already configured ✅)
-   - Account: 023394150666
-   - Region: ap-south-1
-
-### Services Used:
-- AWS Lambda
-- API Gateway
-- Aurora Serverless v2
-- DynamoDB
-- S3
-- SQS
-- SNS
-- OpenSearch
-- Cognito
-- CloudWatch
-- IAM
-
----
-
-## 🆘 **Troubleshooting**
-
-### "Terraform not found"
-```bash
-# Download from: https://www.terraform.io/downloads
-# Or install via package manager
-```
-
-### "GitHub CLI not found"
-```bash
-# Download from: https://cli.github.com/
-# Or use GitHub web interface (see DEPLOY_MANUAL_STEPS.md)
-```
-
-### "AWS credentials invalid"
-```bash
-aws sts get-caller-identity
-# Should show Account: 023394150666
-```
-
-### "Terraform state bucket not found"
-```bash
-# Run bootstrap first:
-cd infra/bootstrap
-terraform init
-terraform apply -var='create_state_backend=true' -var='aws_account_id=023394150666'
-```
-
-### "GitHub Actions workflow fails"
-- Check GitHub Actions logs for specific errors
-- Verify all GitHub secrets are set
-- Verify GitHub environments are created
-- Check CloudWatch logs for Lambda errors
-
----
-
-## 🎉 **Success Criteria**
-
-After completing all steps, you should have:
-
-✅ Dev environment deployed and accessible  
-✅ Stage environment deployed (after approval)  
-✅ Production environment deployed (after 2 approvals)  
-✅ All tests passing (unit, integration, E2E, smoke)  
-✅ Readiness checks passing  
-✅ CloudWatch logs showing successful deployments  
-✅ API Gateway endpoints returning 200 OK  
-✅ All credentials rotated  
-
----
-
-## 🚀 **You're Ready!**
-
-**Start with:**
-```bash
-./DEPLOY_GUIDE.sh
-```
-
-Then follow the numbered steps!
-
-**Need help?** Check the documentation files listed above or GitHub Actions logs.
-
----
-
-**Last Updated:** January 3, 2026  
-**AWS Account:** 023394150666  
-**AWS Region:** ap-south-1  
-**AWS Secrets:** ✅ Created  
-**GitHub Secrets:** ⚠️ Needs setup  
-**Infrastructure Code:** ✅ Complete  
-**CI/CD Workflows:** ✅ Complete  
-
+1. **Check CloudWatch Logs**: Review Lambda logs for service catalog creation errors
+2. **Query Database**: Directly query `service_catalog` table to see if services exist
+3. **Force Re-seed**: If services exist but aren't queryable, force delete and re-seed
+4. **Verify Endpoints**: Test `/service-catalog/role/:roleId` endpoint returns services
+5. **Test Admin UI**: Verify service catalog tab shows services after seeding

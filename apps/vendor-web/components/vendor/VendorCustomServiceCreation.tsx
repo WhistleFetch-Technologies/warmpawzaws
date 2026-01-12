@@ -123,7 +123,7 @@ export function VendorCustomServiceCreation({
     const loadCatalogCategories = async () => {
       try {
         console.log('📚 [CUSTOM-SERVICE] Loading catalog categories...');
-        const data = await apiClient.get('/make-server-3dd53475/admin/service-catalog') as any;
+        const data = await apiClient.get('/admin/service-catalog') as any;
 
         if (data && data.success) {
           // data already available
@@ -213,7 +213,7 @@ export function VendorCustomServiceCreation({
       setLoading(true);
       console.log(`📋 Loading custom services for vendor: ${vendorId}`);
       
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/custom-services`) as any;
+      const data = await apiClient.get(`/vendor/${vendorId}/services?custom=true`) as any;
 
       if (data && data.success) {
         // data already available
@@ -339,7 +339,7 @@ export function VendorCustomServiceCreation({
       
       console.log('📤 Sending custom service:', customService);
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/custom-services`, customService) as any;
+      const data = await apiClient.post(`/vendor/${vendorId}/services/custom`, customService) as any;
 
       if (data && data.success) {
         // data already available
@@ -369,7 +369,7 @@ export function VendorCustomServiceCreation({
     try {
       console.log(`📤 Publishing custom service: ${serviceId}`);
       
-      const data = await apiClient.post(`/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}/publish`, {}) as any;
+      const data = await apiClient.post(`/vendor/${vendorId}/services/custom/${serviceId}/publish`, {}) as any;
 
       if (data && data.success) {
         // data already available
@@ -392,7 +392,7 @@ export function VendorCustomServiceCreation({
     try {
       console.log(`🗑️ Deleting custom service: ${serviceId}`);
       
-      const data = await apiClient.delete(`/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}`) as any;
+      const data = await apiClient.delete(`/vendor/${vendorId}/services/${serviceId}`) as any;
 
       if (data && data.success) {
         console.log('✅ Service deleted');

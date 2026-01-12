@@ -25,26 +25,138 @@ import { query, select, insert, update } from '../database/rds-connection';
 
 class GetRolesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    // ✅ SQL: Get all active roles
-    const roles = await select('roles', { is_active: true }, {
+    // ✅ SQL: Get all roles (both active and inactive for admin view)
+    const queryParams = context.event.queryStringParameters || {};
+    const onlyActive = queryParams.active === 'true' || !queryParams.active;
+    
+    const roles = await select('roles', onlyActive ? { is_active: true } : {}, {
       orderBy: 'display_name',
       orderDirection: 'ASC',
     });
 
-    // Get capabilities for each role
-    const rolesWithCapabilities = await Promise.all(
-      roles.map(async (role) => {
-        const permissions = await select('role_permissions', { role_id: role.id });
-        const capabilities = permissions.map(p => p.permission_name);
+    // OPTIMIZATION: Batch load all permissions in a single query instead of N+1 queries
+    // This reduces database round trips from N+1 to just 2 queries (roles + permissions)
+    let permissionsByRole: Map<string, string[]> = new Map();
+    
+    if (roles.length > 0) {
+      const roleIds = roles.map(r => r.id);
+      let allPermissions;
+      
+      try {
+        // Try PostgreSQL array syntax (preferred, more efficient)
+        allPermissions = await query(
+          `SELECT role_id, permission_name 
+           FROM role_permissions 
+           WHERE role_id = ANY($1::text[])`,
+          [roleIds]
+        );
+      } catch (error: any) {
+        // Fallback to IN clause if array syntax not supported
+        console.warn('[Roles] Array syntax failed, using IN clause fallback:', error.message);
+        const placeholders = roleIds.map((_, i) => `$${i + 1}`).join(',');
+        allPermissions = await query(
+          `SELECT role_id, permission_name 
+           FROM role_permissions 
+           WHERE role_id IN (${placeholders})`,
+          roleIds
+        );
+      }
+      
+      // Group permissions by role_id
+      allPermissions.rows.forEach((p: any) => {
+        const roleId = p.role_id;
+        if (!permissionsByRole.has(roleId)) {
+          permissionsByRole.set(roleId, []);
+        }
+        permissionsByRole.get(roleId)!.push(p.permission_name);
+      });
+    }
+
+    // Map roles with their permissions (no async operations needed now)
+    const rolesWithFullData = roles.map((role) => {
+      const capabilities = permissionsByRole.get(role.id) || [];
+        
+        // Extract config fields from JSONB config column
+        const config = role.config || {};
+        const vendorTypes = config.vendorTypes || config.vendor_types || [];
+        const serviceStyles = config.serviceStyles || config.service_styles || [];
+        const pricingControl = config.pricingControl || config.pricing_control || {
+          canControlPrice: false,
+          canControlDuration: false,
+        };
+        const category = config.category || 'general';
+        const icon = config.icon || role.icon || null;
+        
+        // Parse vendorTypes to match reference (organization, Service Provider, Seller, Healthcare Provider)
+        // Backend stores: healthcare_provider, service_provider, seller, ngo, organization, business
+        // Frontend displays: Healthcare Provider, Service Provider, Seller, NGO, organization, Business
+        const normalizedVendorTypes = Array.isArray(vendorTypes) 
+          ? vendorTypes.map((vt: string) => {
+              const mapping: Record<string, string> = {
+                'healthcare_provider': 'Healthcare Provider',
+                'service_provider': 'Service Provider',
+                'solo_provider': 'Service Provider',
+                'center': 'Healthcare Provider',
+                'organization': 'organization',
+                'seller': 'Seller',
+                'business': 'Business',
+                'ngo': 'NGO',
+              };
+              return mapping[vt] || vt;
+            })
+          : [];
+        
+        // Parse serviceStyles to match reference (At Center, At Home, Tele Consultation)
+        // Backend stores: at_clinic, at_center, at_home, video_consultation, tele, online, delivery, pickup
+        // Frontend displays: At Center, At Home, Tele Consultation, Video Consultation, Online, Delivery, Pickup
+        const normalizedServiceStyles = Array.isArray(serviceStyles)
+          ? serviceStyles.map((ss: string) => {
+              const mapping: Record<string, string> = {
+                'at_center': 'At Center',
+                'at_clinic': 'At Center',
+                'at_home': 'At Home',
+                'home_visit': 'At Home',
+                'tele': 'Tele Consultation',
+                'video_consultation': 'Video Consultation',
+                'online': 'Online',
+                'delivery': 'Delivery',
+                'pickup': 'Pickup',
+                'outdoor': 'Outdoor',
+              };
+              return mapping[ss] || ss;
+            })
+          : [];
         
         return {
           ...role,
+          id: role.id,
+          roleId: role.id,
+          roleName: role.display_name || role.name,
+          roleCode: role.name,
+          display_name: role.display_name || role.name,
+          name: role.name,
+          description: role.description || '',
+          category,
+          icon,
+          vendorTypes: normalizedVendorTypes,
+          serviceStyles: normalizedServiceStyles,
+          pricingControl: {
+            canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
+            canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
+          },
           capabilities,
+          isActive: role.is_active !== false,
+          isSystem: role.is_system_role || false,
+          userCount: 0, // TODO: Count users with this role
+          createdAt: role.created_at || new Date().toISOString(),
         };
-      })
-    );
+    });
 
-    return this.success({ roles: rolesWithCapabilities });
+    return this.success({ 
+      success: true,
+      roles: rolesWithFullData,
+      total: rolesWithFullData.length 
+    });
   }
 }
 
@@ -65,10 +177,70 @@ class GetRoleByIdHandler extends BaseHandler {
     const role = roles[0];
     const permissions = await select('role_permissions', { role_id: roleId });
     const capabilities = permissions.map(p => p.permission_name);
+    
+    // Extract config fields from JSONB config column (same as GetRolesHandler)
+    const config = role.config || {};
+    const vendorTypes = config.vendorTypes || config.vendor_types || [];
+    const serviceStyles = config.serviceStyles || config.service_styles || [];
+    const pricingControl = config.pricingControl || config.pricing_control || {
+      canControlPrice: false,
+      canControlDuration: false,
+    };
+    const category = config.category || 'general';
+    const icon = config.icon || role.icon || null;
+    
+    // Normalize vendorTypes and serviceStyles to match reference screens
+    const normalizedVendorTypes = Array.isArray(vendorTypes) 
+      ? vendorTypes.map((vt: string) => {
+          const mapping: Record<string, string> = {
+            'healthcare_provider': 'Healthcare Provider',
+            'service_provider': 'Service Provider',
+            'solo_provider': 'Service Provider',
+            'center': 'Healthcare Provider',
+            'organization': 'organization',
+            'seller': 'Seller',
+            'business': 'Business',
+            'ngo': 'NGO',
+          };
+          return mapping[vt] || vt;
+        })
+      : [];
+    
+    const normalizedServiceStyles = Array.isArray(serviceStyles)
+      ? serviceStyles.map((ss: string) => {
+          const mapping: Record<string, string> = {
+            'at_center': 'At Center',
+            'at_clinic': 'At Center',
+            'at_home': 'At Home',
+            'home_visit': 'At Home',
+            'tele': 'Tele Consultation',
+            'video_consultation': 'Video Consultation',
+            'online': 'Online',
+            'delivery': 'Delivery',
+            'pickup': 'Pickup',
+            'outdoor': 'Outdoor',
+          };
+          return mapping[ss] || ss;
+        })
+      : [];
 
     return this.success({
+      success: true,
       ...role,
+      roleId: role.id,
+      roleName: role.display_name || role.name,
+      roleCode: role.name,
+      category,
+      icon,
+      vendorTypes: normalizedVendorTypes,
+      serviceStyles: normalizedServiceStyles,
+      pricingControl: {
+        canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
+        canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
+      },
       capabilities,
+      isActive: role.is_active !== false,
+      isSystem: role.is_system_role || false,
     });
   }
 }
@@ -76,28 +248,58 @@ class GetRoleByIdHandler extends BaseHandler {
 class CreateRoleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { name, display_name, description, category, capabilities, config } = body;
+    const { 
+      name, 
+      display_name, 
+      roleName,
+      roleCode,
+      description, 
+      category, 
+      capabilities, 
+      config,
+      vendorTypes,
+      serviceStyles,
+      pricingControl,
+      icon,
+      isActive,
+      is_active
+    } = body;
 
-    // Validation
-    if (!name || !display_name) {
-      return this.error('Name and display_name are required', 400);
+    // Validation - support both naming conventions
+    const roleNameFinal = name || roleCode || '';
+    const displayNameFinal = display_name || roleName || '';
+    
+    if (!roleNameFinal || !displayNameFinal) {
+      return this.error('Name (or roleCode) and display_name (or roleName) are required', 400);
     }
 
     // Check if role already exists
-    const existing = await select('roles', { name });
+    const existing = await select('roles', { name: roleNameFinal });
     if (existing.length > 0) {
       return this.error('Role with this name already exists', 409);
     }
 
     try {
+      // Build config object
+      const roleConfig: any = config || {
+        category: category || 'general',
+        icon: icon || null,
+        vendorTypes: vendorTypes || [],
+        serviceStyles: serviceStyles || [],
+        pricingControl: pricingControl || {
+          canControlPrice: false,
+          canControlDuration: false,
+        },
+      };
+
       // Insert role
       const roleData: any = {
-        name,
-        display_name,
+        name: roleNameFinal,
+        display_name: displayNameFinal,
         description: description || '',
         is_system_role: false,
-        is_active: true,
-        config: config || {},
+        is_active: is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true),
+        config: roleConfig,
       };
 
       const newRole = await insert('roles', roleData);
@@ -116,8 +318,22 @@ class CreateRoleHandler extends BaseHandler {
       }
 
       return this.success({
+        success: true,
         message: 'Role created successfully',
-        role: { ...newRole[0], capabilities: capabilities || [] },
+        role: {
+          ...newRole[0],
+          roleId: newRole[0].id,
+          roleName: newRole[0].display_name || newRole[0].name,
+          roleCode: newRole[0].name,
+          vendorTypes: roleConfig.vendorTypes || [],
+          serviceStyles: roleConfig.serviceStyles || [],
+          pricingControl: roleConfig.pricingControl || {
+            canControlPrice: false,
+            canControlDuration: false,
+          },
+          capabilities: capabilities || [],
+          isActive: newRole[0].is_active !== false,
+        },
       });
     } catch (error: any) {
       console.error('Error creating role:', error);
@@ -130,7 +346,20 @@ class UpdateRoleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const roleId = context.event.pathParameters?.roleId;
     const body = this.parseBody(context.event);
-    const { display_name, description, is_active, capabilities, config } = body;
+    const { 
+      display_name, 
+      roleName,
+      description, 
+      is_active, 
+      isActive,
+      capabilities, 
+      config,
+      vendorTypes,
+      serviceStyles,
+      pricingControl,
+      category,
+      icon
+    } = body;
 
     if (!roleId) {
       return this.error('Role ID is required', 400);
@@ -142,13 +371,40 @@ class UpdateRoleHandler extends BaseHandler {
       return this.error('Role not found', 404);
     }
 
+    const existingRole = roles[0];
+    const existingConfig = existingRole.config || {};
+
     try {
+      // Build config object from request body (merge with existing)
+      const updatedConfig: any = {
+        ...existingConfig,
+        category: category !== undefined ? category : existingConfig.category,
+        icon: icon !== undefined ? icon : existingConfig.icon,
+        vendorTypes: vendorTypes !== undefined ? vendorTypes : existingConfig.vendorTypes || [],
+        serviceStyles: serviceStyles !== undefined ? serviceStyles : existingConfig.serviceStyles || [],
+        pricingControl: pricingControl !== undefined ? pricingControl : (existingConfig.pricingControl || {
+          canControlPrice: false,
+          canControlDuration: false,
+        }),
+      };
+
+      // If config object provided directly, merge it
+      if (config && typeof config === 'object') {
+        Object.assign(updatedConfig, config);
+      }
+
       // Update role
       const updateData: any = {};
-      if (display_name !== undefined) updateData.display_name = display_name;
-      if (description !== undefined) updateData.description = description;
-      if (is_active !== undefined) updateData.is_active = is_active;
-      if (config !== undefined) updateData.config = config;
+      if (display_name !== undefined || roleName !== undefined) {
+        updateData.display_name = display_name || roleName;
+      }
+      if (description !== undefined) {
+        updateData.description = description;
+      }
+      if (is_active !== undefined || isActive !== undefined) {
+        updateData.is_active = is_active !== undefined ? is_active : isActive;
+      }
+      updateData.config = updatedConfig;
 
       if (Object.keys(updateData).length > 0) {
         await update('roles', { id: roleId }, updateData);
@@ -157,7 +413,7 @@ class UpdateRoleHandler extends BaseHandler {
       // Update capabilities if provided
       if (capabilities && Array.isArray(capabilities)) {
         // Delete existing permissions
-        await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
+        await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]).catch(() => {});
 
         // Insert new permissions
         for (const capName of capabilities) {
@@ -170,14 +426,64 @@ class UpdateRoleHandler extends BaseHandler {
         }
       }
 
-      // Fetch updated role
+      // Fetch updated role with full data
       const updatedRole = await select('roles', { id: roleId });
       const permissions = await select('role_permissions', { role_id: roleId });
       const caps = permissions.map(p => p.permission_name);
+      const roleConfig = updatedRole[0].config || {};
+
+      // Normalize vendor types and service styles for response
+      const normalizedVendorTypes = Array.isArray(roleConfig.vendorTypes) 
+        ? roleConfig.vendorTypes.map((vt: string) => {
+            const mapping: Record<string, string> = {
+              'healthcare_provider': 'Healthcare Provider',
+              'service_provider': 'Service Provider',
+              'solo_provider': 'Service Provider',
+              'center': 'Healthcare Provider',
+              'organization': 'organization',
+              'seller': 'Seller',
+              'business': 'Business',
+              'ngo': 'NGO',
+            };
+            return mapping[vt] || vt;
+          })
+        : [];
+
+      const normalizedServiceStyles = Array.isArray(roleConfig.serviceStyles)
+        ? roleConfig.serviceStyles.map((ss: string) => {
+            const mapping: Record<string, string> = {
+              'at_center': 'At Center',
+              'at_clinic': 'At Center',
+              'at_home': 'At Home',
+              'home_visit': 'At Home',
+              'tele': 'Tele Consultation',
+              'video_consultation': 'Video Consultation',
+              'online': 'Online',
+              'delivery': 'Delivery',
+              'pickup': 'Pickup',
+              'outdoor': 'Outdoor',
+            };
+            return mapping[ss] || ss;
+          })
+        : [];
 
       return this.success({
+        success: true,
         message: 'Role updated successfully',
-        role: { ...updatedRole[0], capabilities: caps },
+        role: {
+          ...updatedRole[0],
+          roleId: updatedRole[0].id,
+          roleName: updatedRole[0].display_name || updatedRole[0].name,
+          roleCode: updatedRole[0].name,
+          vendorTypes: normalizedVendorTypes,
+          serviceStyles: normalizedServiceStyles,
+          pricingControl: roleConfig.pricingControl || {
+            canControlPrice: false,
+            canControlDuration: false,
+          },
+          capabilities: caps,
+          isActive: updatedRole[0].is_active !== false,
+        },
       });
     } catch (error: any) {
       console.error('Error updating role:', error);

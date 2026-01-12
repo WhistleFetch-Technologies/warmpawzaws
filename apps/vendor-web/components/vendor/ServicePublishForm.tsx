@@ -101,7 +101,7 @@ export function ServicePublishForm({
       setLoading(true);
       
       // Load role configuration to determine allowed service categories
-      const roleData = await apiClient.get(`/make-server-3dd53475/config/roles`) as any;
+      const roleData = await apiClient.get(`/config/roles`) as any;
 
       if (roleData) {
         const rolesData = roleData;
@@ -199,7 +199,7 @@ export function ServicePublishForm({
 
   const loadCentres = async () => {
     try {
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/centres`) as any;
+      const data = await apiClient.get(`/vendor/${vendorId}/centres`) as any;
 
       if (data && data.centres) {
         setCentres(data.centres || []);
@@ -211,7 +211,7 @@ export function ServicePublishForm({
 
   const loadCentreServices = async (centreId: string) => {
     try {
-      const data = await apiClient.get(`/make-server-3dd53475/centre/${centreId}/services`) as any;
+      const data = await apiClient.get(`/centre/${centreId}/services`) as any;
 
       if (data && data.services) {
         setCentreServices(data.services || []);
@@ -266,7 +266,7 @@ export function ServicePublishForm({
           : undefined
       };
 
-      const data = await apiClient.post('/make-server-3dd53475/vendor/services/publish', payload) as any;
+      const data = await apiClient.post('/vendor/services/publish', payload) as any;
 
       if (data && data.success) {
         toast.success(

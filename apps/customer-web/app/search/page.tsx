@@ -155,9 +155,14 @@ function SearchContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="mb-4">
+            {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">Search Services</h1>
+            <p className="text-sm text-gray-500">Find vendors and services for your pets</p>
+          </div>
           <form onSubmit={handleSearch} className="flex gap-3">
             <a href="/" className="p-2 hover:bg-gray-100 rounded-full">
               <span className="text-2xl">←</span>
@@ -180,11 +185,11 @@ function SearchContent() {
             </button>
           </form>
         </div>
-      </header>
+      </div>
 
       {/* Category Tabs */}
-      <div className="bg-white border-b sticky top-[76px] z-40 overflow-x-auto">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex gap-3">
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-[120px] z-40 overflow-x-auto">
+        <div className="max-w-7xl mx-auto px-6 py-3 flex gap-3">
           {categories.map((cat) => (
             <button
               key={cat.id}
@@ -332,7 +337,7 @@ function SearchContent() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
         <div className="max-w-7xl mx-auto flex justify-around py-3">
           {[
             { icon: '🏠', label: 'Home', href: '/' },

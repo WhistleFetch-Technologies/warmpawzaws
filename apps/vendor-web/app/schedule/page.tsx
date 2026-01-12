@@ -47,10 +47,31 @@ export default function SchedulePage() {
     try {
       const vendorId = localStorage.getItem('vendorId');
       if (vendorId) {
-        const response = await apiClient.get<{ schedules: ScheduleConfig[] }>(
-          `/vendor/${vendorId}/schedules`
+        // ✅ FIX: Use correct endpoint - GET /vendor/:vendorId/schedule (singular, not plural)
+        const response = await apiClient.get<{ schedule: any; totalSlots: number }>(
+          `/vendor/${vendorId}/schedule`
         );
-        setSchedules(response.schedules || []);
+        // Convert schedule format (grouped by day_of_week) to ScheduleConfig format
+        if (response.schedule && typeof response.schedule === 'object') {
+          const scheduleByDay = response.schedule;
+          const schedules: ScheduleConfig[] = DAYS.map((day, idx) => ({
+            id: `schedule-${idx}`,
+            vendor_id: vendorId,
+            schedule_type: 'vendor',
+            day_of_week: idx,
+            time_slots: (scheduleByDay[idx] || []).map((slot: any) => ({
+              day: day,
+              start_time: slot.time_window_start,
+              end_time: slot.time_window_end,
+              is_available: slot.is_enabled !== false,
+            })),
+            slot_duration_minutes: (scheduleByDay[idx]?.[0]?.slot_duration_minutes) || 30,
+            buffer_minutes: 10,
+          }));
+          setSchedules(schedules);
+        } else {
+          setSchedules([]);
+        }
       }
     } catch (err) {
       console.error('Error loading schedules:', err);
@@ -109,20 +130,29 @@ export default function SchedulePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800">Schedule Management</h1>
-            <p className="text-gray-500 mt-1">Configure your availability and working hours</p>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">Schedule Management</h1>
+              <p className="text-sm text-gray-500 mt-1">Configure your availability and working hours</p>
+            </div>
+            <button
+              onClick={() => router.push('/')}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
+            >
+              ← Back
+            </button>
           </div>
-          <button
-            onClick={() => router.push('/')}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
-          >
-            ← Back
-          </button>
         </div>
+      </div>
+
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
 
         {schedules.map((schedule) => (
           <div key={schedule.id} className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -177,11 +207,14 @@ export default function SchedulePage() {
             )}
           </div>
         ))}
+        </div>
+      </div>
 
-        {/* Edit Modal */}
-        {editingSchedule && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Modals - Outside main content wrapper */}
+      {/* Edit Modal */}
+      {editingSchedule && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold mb-4">Edit Schedule</h2>
               
               <div className="grid grid-cols-2 gap-4 mb-6">
@@ -286,7 +319,6 @@ export default function SchedulePage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

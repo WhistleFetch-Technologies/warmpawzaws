@@ -39,6 +39,44 @@ class VendorDashboardHandler extends BaseHandler {
     }
     const vendor = vendors[0];
 
+    // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
+    let role = null;
+    let capabilities: string[] = [];
+    let roleConfig: any = {};
+    
+    if (vendor.role_id) {
+      try {
+        // Get role from DB
+        const roles = await select('roles', { id: vendor.role_id });
+        if (roles.length > 0) {
+          role = roles[0];
+          roleConfig = role.config || {};
+          
+          // Get capabilities from DB (batch query for efficiency)
+          const roleIds = [vendor.role_id];
+          const allPermissions = await query(
+            `SELECT role_id, permission_name 
+             FROM role_permissions 
+             WHERE role_id = ANY($1::text[])`,
+            [roleIds]
+          ).catch(() => {
+            // Fallback to individual query if array syntax fails
+            return query(
+              `SELECT role_id, permission_name 
+               FROM role_permissions 
+               WHERE role_id = $1`,
+              [vendor.role_id]
+            );
+          });
+          
+          capabilities = allPermissions.rows.map((p: any) => p.permission_name);
+        }
+      } catch (roleError: any) {
+        console.warn(`[Vendor Dashboard] Failed to load role ${vendor.role_id}:`, roleError.message);
+        // Continue without role - dashboard still works with basic stats
+      }
+    }
+
     // ✅ SQL: Get bookings for vendor
     const bookings = await select('bookings', { vendor_id: vendorId });
 
@@ -73,6 +111,19 @@ class VendorDashboardHandler extends BaseHandler {
         ownerName: vendor.owner_name,
         status: vendor.status,
         tier: vendor.tier,
+        role_id: vendor.role_id,
+        vendor_type: vendor.vendor_type,
+        // Include role info directly in response
+        role: role ? {
+          id: role.id,
+          name: role.name,
+          display_name: role.display_name,
+          description: role.description,
+          config: roleConfig,
+        } : null,
+        capabilities, // Include capabilities directly
+        vendorTypes: roleConfig?.vendorTypes || [],
+        serviceStyles: roleConfig?.serviceStyles || [],
       },
       stats: {
         appointments: todayBookings.length,

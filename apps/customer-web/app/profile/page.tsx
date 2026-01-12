@@ -76,9 +76,23 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-800 mb-6">My Profile</h1>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">My Profile</h1>
+              <p className="text-sm text-gray-500 mt-1">Manage your account information</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
 
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center gap-4 mb-6 pb-6 border-b">
@@ -242,6 +256,7 @@ export default function ProfilePage() {
             <span>🚪</span>
             <span className="font-medium">Logout</span>
           </button>
+        </div>
         </div>
       </div>
     </div>

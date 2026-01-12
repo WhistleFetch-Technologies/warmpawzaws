@@ -9,8 +9,8 @@ import {
   Calendar, Clock, User, Phone, MapPin, DollarSign,
   Check, X, AlertCircle, ChevronRight, PawPrint
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 import { AcceptBookingModal } from './AcceptBookingModal';
 import { DeclineBookingModal } from './DeclineBookingModal';
 
@@ -28,8 +28,6 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'today'>('pending');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadBookings();
     
@@ -43,17 +41,10 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `${API_BASE}/vendor/${vendorId}/bookings?status=${filter}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (!response.ok) throw new Error('Failed to load bookings');
-
-      const data = await response.json();
-      setBookings(data.bookings || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load bookings');
+      const data = await apiClient.get<any>(`/vendor/bookings/${vendorId}?status=${filter}`);
+      setBookings(data.bookings || data || []);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load bookings');
     } finally {
       setLoading(false);
     }

@@ -65,22 +65,23 @@ export default function ECommerceManagement() {
 		{ id: "products", label: "Product Approval", icon: Package },
 		{ id: "service-approval", label: "Service Approval", icon: CheckCircle2 },
 		{ id: "orders", label: "Orders", icon: ShoppingCart },
-		{ id: "commission", label: "% Commission", icon: Percent },
+		{ id: "commission", label: "Commission", icon: Percent },
 		{ id: "categories", label: "Categories", icon: FileText },
 		{ id: "analytics", label: "Analytics", icon: BarChart3 },
-		{ id: "policies", label: "Pol", icon: Settings },
+		{ id: "policies", label: "Policies", icon: Settings },
 	];
 
 	return (
 		<AdminLayout>
 			{/* Main Content */}
-			<div className="flex-1 flex flex-col">
-				{/* Header */}
+			<div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+				{/* Header - Match wireframe: px-20 border-b, max-w-7xl mx-auto px-6 py-4 */}
 				<div className="bg-white border-b border-gray-200">
-					<div className="px-6 py-4">
+					<div className="max-w-7xl mx-auto px-6 py-4">
 						<div className="flex items-center justify-between">
 							<div>
-								<h1 className="text-black text-2xl font-semibold">E-Commerce Management</h1>
+								{/* ✅ FIX: Match wireframe - text-black without text-2xl font-semibold */}
+								<h1 className="text-black">E-Commerce Management</h1>
 								<p className="text-gray-500 text-sm mt-1">
 									Manage your multi-vendor marketplace
 								</p>
@@ -94,10 +95,10 @@ export default function ECommerceManagement() {
 					</div>
 				</div>
 
-				{/* Tabs */}
+				{/* Tabs - Match wireframe: max-w-7xl mx-auto px-6 */}
 				<div className="bg-white border-b border-gray-200">
-					<div className="px-6">
-						<div className="flex gap-1 overflow-x-auto scrollbar-hide">
+					<div className="max-w-7xl mx-auto px-6">
+						<div className="flex gap-1 overflow-x-auto">
 							{tabs.map((tab) => {
 								const Icon = tab.icon;
 								const isActive = activeTab === tab.id;
@@ -105,11 +106,7 @@ export default function ECommerceManagement() {
 								return (
 									<button
 										key={tab.id}
-										onClick={(e) => {
-											e.preventDefault();
-											console.log('🔧 Tab clicked:', tab.id);
-											setActiveTab(tab.id as TabType);
-										}}
+										onClick={() => setActiveTab(tab.id as TabType)}
 										className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
 											isActive
 												? "border-[#FF8C42] text-[#FF8C42]"
@@ -125,54 +122,18 @@ export default function ECommerceManagement() {
 					</div>
 				</div>
 
-				{/* Content */}
+				{/* Content - Match wireframe: max-w-7xl mx-auto */}
 				<div className="flex-1 overflow-y-auto">
-					<div className="p-6">
-						{activeTab === "dashboard" && (
-							<div key="dashboard">
-								<ECommerceDashboard />
-							</div>
-						)}
-						{activeTab === "sellers" && (
-							<div key="sellers">
-								<SellerManagement />
-							</div>
-						)}
-						{activeTab === "products" && (
-							<div key="products">
-								<ProductApproval />
-							</div>
-						)}
-						{activeTab === "service-approval" && (
-							<div key="service-approval">
-								<CustomServiceApproval />
-							</div>
-						)}
-						{activeTab === "orders" && (
-							<div key="orders">
-								<OrderManagementAdmin />
-							</div>
-						)}
-						{activeTab === "commission" && (
-							<div key="commission">
-								<CommissionSettings />
-							</div>
-						)}
-						{activeTab === "categories" && (
-							<div key="categories">
-								<CategoryManagement />
-							</div>
-						)}
-						{activeTab === "analytics" && (
-							<div key="analytics">
-								<ECommerceAnalytics />
-							</div>
-						)}
-						{activeTab === "policies" && (
-							<div key="policies">
-								<PolicyManagement />
-							</div>
-						)}
+					<div className="max-w-7xl mx-auto">
+						{activeTab === "dashboard" && <ECommerceDashboard />}
+						{activeTab === "sellers" && <SellerManagement />}
+						{activeTab === "products" && <ProductApproval />}
+						{activeTab === "service-approval" && <CustomServiceApproval />}
+						{activeTab === "orders" && <OrderManagementAdmin />}
+						{activeTab === "commission" && <CommissionSettings />}
+						{activeTab === "categories" && <CategoryManagement />}
+						{activeTab === "analytics" && <ECommerceAnalytics />}
+						{activeTab === "policies" && <PolicyManagement />}
 					</div>
 				</div>
 			</div>

@@ -32,7 +32,7 @@ export function CenterAvailabilityManager({
   const loadAvailability = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/${vendorId}/center-availability`) as any;
+      const data = await apiClient.get(`/vendor/${vendorId}/center-availability`) as any;
 
       if (data && data.availability) {
         setAvailability(data.availability);
@@ -50,7 +50,7 @@ export function CenterAvailabilityManager({
   const handleSave = async () => {
     try {
       setSaving(true);
-      await apiClient.put(`/make-server-3dd53475/vendor/${vendorId}/center-availability`, { availability }) as any;
+      await apiClient.put(`/vendor/${vendorId}/center-availability`, { availability }) as any;
       toast.success('Settings saved successfully');
     } catch (error) {
       toast.error('Network error');

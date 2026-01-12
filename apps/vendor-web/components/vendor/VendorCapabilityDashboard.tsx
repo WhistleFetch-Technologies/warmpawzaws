@@ -435,6 +435,14 @@ function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capa
         {capability.name === 'earnings' && <EarningsSection vendorId={vendorId} />}
         {capability.name === 'schedule' && <ScheduleSection vendorId={vendorId} />}
         {capability.name === 'profile' && <ProfileSection vendor={vendor} />}
+        {capability.name === 'prescriptions' && <PrescriptionsSection vendorId={vendorId} />}
+        {capability.name === 'medical_records' && <MedicalRecordsSection vendorId={vendorId} />}
+        {capability.name === 'vaccination' && <VaccinationSection vendorId={vendorId} />}
+        {capability.name === 'diagnostics' && <DiagnosticsSection vendorId={vendorId} />}
+        {capability.name === 'pricing' && <PricingSection vendorId={vendorId} />}
+        {capability.name === 'reviews' && <ReviewsSection vendorId={vendorId} />}
+        {capability.name === 'analytics' && <AnalyticsSection vendorId={vendorId} />}
+        {capability.name === 'reports' && <ReportsSection vendorId={vendorId} />}
         {capability.name === 'cafe_tables' && <CafeTablesSection vendorId={vendorId} />}
         {capability.name === 'rooms' && <RoomsSection vendorId={vendorId} />}
         {capability.name === 'insurance_plans' && <InsurancePlansSection vendorId={vendorId} />}
@@ -442,18 +450,46 @@ function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capa
         {capability.name === 'meal_plans' && <MealPlansSection vendorId={vendorId} />}
         {capability.name === 'walking' && <WalkingSection vendorId={vendorId} />}
         {capability.name === 'ambulance' && <AmbulanceSection vendorId={vendorId} />}
-        {capability.name === 'diagnostics' && <DiagnosticsSection vendorId={vendorId} />}
         {capability.name === 'holiday_packages' && <HolidaysSection vendorId={vendorId} />}
         {capability.name === 'products' && <ProductsSection vendorId={vendorId} />}
         {capability.name === 'training_programs' && <TrainingSection vendorId={vendorId} />}
+        {capability.name === 'chat' && <ChatSection vendorId={vendorId} />}
+        {capability.name === 'video_call' && <VideoCallSection vendorId={vendorId} />}
+        {capability.name === 'notifications' && <NotificationsSection vendorId={vendorId} />}
+        {capability.name === 'settlements' && <SettlementsSection vendorId={vendorId} />}
+        {capability.name === 'bank_account' && <BankAccountSection vendorId={vendorId} />}
+        {capability.name === 'orders' && <OrdersSection vendorId={vendorId} />}
+        {capability.name === 'packages' && <PackagesSection vendorId={vendorId} />}
+        {capability.name === 'subscriptions' && <SubscriptionsSection vendorId={vendorId} />}
+        {capability.name === 'inventory' && <InventorySection vendorId={vendorId} />}
+        {capability.name === 'gps_tracking' && <GPSTrackingSection vendorId={vendorId} />}
+        {capability.name === 'centre_booking' && <CentreBookingSection vendorId={vendorId} />}
+        {capability.name === 'home_services' && <HomeServicesSection vendorId={vendorId} />}
+        {capability.name === 'tele_consultation' && <TeleConsultationSection vendorId={vendorId} />}
+        {capability.name === 'reservations' && <ReservationsSection vendorId={vendorId} />}
+        {capability.name === 'checkin_checkout' && <CheckinCheckoutSection vendorId={vendorId} />}
+        {capability.name === 'route_tracking' && <RouteTrackingSection vendorId={vendorId} />}
+        {capability.name === 'service_radius' && <ServiceRadiusSection vendorId={vendorId} />}
+        {capability.name === 'tour_schedule' && <TourScheduleSection vendorId={vendorId} />}
+        {capability.name === 'menu' && <MenuSection vendorId={vendorId} />}
+        {capability.name === 'vehicles' && <VehiclesSection vendorId={vendorId} />}
+        {capability.name === 'boarding' && <BoardingSection vendorId={vendorId} />}
+        {capability.name === 'policies' && <PoliciesSection vendorId={vendorId} />}
+        {capability.name === 'claims' && <ClaimsSection vendorId={vendorId} />}
+        {capability.name === 'pet_profiles' && <PetProfilesSection vendorId={vendorId} />}
+        {capability.name === 'lineage' && <LineageSection vendorId={vendorId} />}
+        {capability.name === 'progress_tracking' && <ProgressTrackingSection vendorId={vendorId} />}
+        {capability.name === 'food_delivery' && <FoodDeliverySection vendorId={vendorId} />}
+        {capability.name === 'seller_hub' && <SellerHubSection vendorId={vendorId} />}
+        {capability.name === 'settings' && <SettingsSection vendorId={vendorId} />}
+        {capability.name === 'test_catalog' && <TestCatalogSection vendorId={vendorId} />}
         
-        {/* Default placeholder for other capabilities */}
-        {!['services', 'staff', 'bookings', 'earnings', 'schedule', 'profile', 'cafe_tables', 'rooms', 'insurance_plans', 'adoption', 'meal_plans', 'walking', 'ambulance', 'diagnostics', 'holiday_packages', 'products', 'training_programs'].includes(capability.name) && (
-          <div className="text-center py-02">
-            <div className="text-5xl mb-4">{capability.icon}</div>
-            <h3 className="text-lg font-semibold text-gray-900">{capability.display_name}</h3>
-            <p className="text-gray-500 mt-0">Coming soon...</p>
-          </div>
+        {/* Skip dashboard - it's the main dashboard itself */}
+        {capability.name === 'dashboard' && null}
+        
+        {/* Default sections for remaining capabilities */}
+        {!['services', 'staff', 'bookings', 'earnings', 'schedule', 'profile', 'prescriptions', 'medical_records', 'vaccination', 'diagnostics', 'pricing', 'reviews', 'analytics', 'reports', 'cafe_tables', 'rooms', 'insurance_plans', 'adoption', 'meal_plans', 'walking', 'ambulance', 'holiday_packages', 'products', 'training_programs', 'chat', 'video_call', 'notifications', 'settlements', 'bank_account', 'orders', 'packages', 'subscriptions', 'inventory', 'gps_tracking', 'centre_booking', 'home_services', 'tele_consultation', 'reservations', 'checkin_checkout', 'route_tracking', 'service_radius', 'tour_schedule', 'menu', 'vehicles', 'boarding', 'policies', 'claims', 'pet_profiles', 'lineage', 'progress_tracking', 'food_delivery', 'seller_hub', 'settings', 'test_catalog', 'dashboard'].includes(capability.name) && (
+          <DefaultCapabilitySection capability={capability} vendorId={vendorId} />
         )}
       </div>
     </div>
@@ -703,13 +739,54 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 }
 
 function ScheduleSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ totalSlots: number; daysConfigured: number }>({ totalSlots: 0, daysConfigured: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadScheduleStats();
+  }, [vendorId]);
+
+  const loadScheduleStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/schedule`).catch(() => ({ schedule: {}, totalSlots: 0 }));
+      const schedule = response.schedule || {};
+      
+      // Count days with configured slots
+      const daysConfigured = Object.keys(schedule).filter((day) => {
+        const slots = schedule[parseInt(day)];
+        return slots && Array.isArray(slots) && slots.length > 0;
+      }).length;
+
+      setStats({
+        totalSlots: response.totalSlots || 0,
+        daysConfigured,
+      });
+    } catch (err) {
+      console.error('Error loading schedule stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
   return (
-    <div className="text-center py-12">
-      <div className="text-5xl mb-4">🗓️</div>
-      <h3 className="font-semibold text-gray-900">Schedule Management</h3>
-      <p className="text-gray-500 mt-0">Configure your working hours and availability</p>
-      <button className="mt-4 px-0 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
-        Set Schedule
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.totalSlots}</p>
+          <p className="text-sm text-gray-500">Time slots configured</p>
+          {stats.daysConfigured > 0 && (
+            <p className="text-sm text-gray-400 mt-1">{stats.daysConfigured} day{stats.daysConfigured !== 1 ? 's' : ''} active</p>
+          )}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/schedule')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Schedule
       </button>
     </div>
   );
@@ -761,59 +838,2128 @@ function ProfileSection({ vendor }: { vendor: Vendor | null }) {
   );
 }
 
-// Specialized Section Stubs (to be fully implemented)
+// ============================================================================
+// NEW SECTIONS FOR CAPABILITIES WITH FULL PAGES
+// ============================================================================
+
+function PrescriptionsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPrescriptionsCount();
+  }, [vendorId]);
+
+  const loadPrescriptionsCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      
+      let totalCount = 0;
+      const prescriptionPromises = bookings.slice(0, 10).map((booking: any) =>
+        apiClient.get<any>(`/prescriptions/booking/${booking.id}`).catch(() => ({ success: false, prescriptions: [] }))
+      );
+      const results = await Promise.all(prescriptionPromises);
+      results.forEach((result) => {
+        if (result.success && result.prescriptions) {
+          totalCount += result.prescriptions.length;
+        }
+      });
+      setCount(totalCount);
+    } catch (err) {
+      console.error('Error loading prescriptions count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Total prescriptions</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/medical/prescriptions')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View All Prescriptions
+      </button>
+    </div>
+  );
+}
+
+function MedicalRecordsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRecordsCount();
+  }, [vendorId]);
+
+  const loadRecordsCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      
+      let totalCount = 0;
+      const recordPromises = bookings.slice(0, 10).map((booking: any) =>
+        apiClient.get<any>(`/bookings/${booking.id}/medical-records`).catch(() => ({ success: false, records: [] }))
+      );
+      const results = await Promise.all(recordPromises);
+      results.forEach((result) => {
+        if (result.success && result.records) {
+          totalCount += result.records.length;
+        }
+      });
+      setCount(totalCount);
+    } catch (err) {
+      console.error('Error loading medical records count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Total medical records</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/medical/records')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View All Records
+      </button>
+    </div>
+  );
+}
+
+function VaccinationSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadVaccinationCount();
+  }, [vendorId]);
+
+  const loadVaccinationCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      
+      let totalCount = 0;
+      const recordPromises = bookings.slice(0, 10).map((booking: any) =>
+        apiClient.get<any>(`/bookings/${booking.id}/medical-records`).catch(() => ({ success: false, records: [] }))
+      );
+      const results = await Promise.all(recordPromises);
+      results.forEach((result) => {
+        if (result.success && result.records) {
+          const vaccinationRecords = result.records.filter((record: any) => 
+            record.record_type?.toLowerCase().includes('vaccination') ||
+            record.record_type?.toLowerCase().includes('vaccine')
+          );
+          totalCount += vaccinationRecords.length;
+        }
+      });
+      setCount(totalCount);
+    } catch (err) {
+      console.error('Error loading vaccination count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Total vaccination records</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/medical/vaccination')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View All Vaccinations
+      </button>
+    </div>
+  );
+}
+
+function PricingSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [servicesCount, setServicesCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadServicesCount();
+  }, [vendorId]);
+
+  const loadServicesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
+      setServicesCount(response.services?.length || 0);
+    } catch (err) {
+      console.error('Error loading services count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{servicesCount}</p>
+          <p className="text-sm text-gray-500">Services configured</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services/pricing')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Pricing
+      </button>
+    </div>
+  );
+}
+
+function ReviewsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ total: number; avgRating: number }>({ total: 0, avgRating: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadReviewsStats();
+  }, [vendorId]);
+
+  const loadReviewsStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/reviews?vendorId=${vendorId}&limit=100`).catch(() => ({ reviews: [], averageRating: 0 }));
+      setStats({
+        total: response.reviews?.length || 0,
+        avgRating: response.averageRating || 0,
+      });
+    } catch (err) {
+      console.error('Error loading reviews stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+          <p className="text-sm text-gray-500">Total reviews</p>
+          {stats.avgRating > 0 && (
+            <p className="text-sm text-orange-600 mt-1">⭐ {stats.avgRating.toFixed(1)} average</p>
+          )}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/operations/reviews')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View All Reviews
+      </button>
+    </div>
+  );
+}
+
+function AnalyticsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-lg font-semibold text-gray-900">Business Analytics</p>
+          <p className="text-sm text-gray-500">View performance metrics and insights</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/operations/analytics')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Analytics
+      </button>
+    </div>
+  );
+}
+
+function ReportsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-lg font-semibold text-gray-900">Business Reports</p>
+          <p className="text-sm text-gray-500">Generate and download reports</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/operations/reports')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Reports
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// SPECIALIZED SECTIONS - FUNCTIONAL IMPLEMENTATIONS
+// ============================================================================
+
 function CafeTablesSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🪑" title="Table Management" description="Manage your cafe tables and seating capacity" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTablesCount();
+  }, [vendorId]);
+
+  const loadTablesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/tables`).catch(() => ({ tables: [], count: 0 }));
+      setCount(response.count || response.tables?.length || 0);
+    } catch (err) {
+      console.error('Error loading tables count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Cafe tables configured</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/cafe/tables')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Tables
+      </button>
+    </div>
+  );
 }
 
 function RoomsSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🛏️" title="Room Management" description="Configure rooms, pricing, and availability" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRoomsCount();
+  }, [vendorId]);
+
+  const loadRoomsCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/rooms`).catch(() => ({ rooms: [], count: 0 }));
+      setCount(response.count || response.rooms?.length || 0);
+    } catch (err) {
+      console.error('Error loading rooms count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Resort rooms configured</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/resort/rooms')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Rooms
+      </button>
+    </div>
+  );
 }
 
 function InsurancePlansSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="📋" title="Insurance Plans" description="Manage insurance plans and policies" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPlansCount();
+  }, [vendorId]);
+
+  const loadPlansCount = async () => {
+    try {
+      // Note: Insurance plans might be global, but we can filter by vendor if needed
+      const response = await apiClient.get<any>(`/insurance/plans?vendorId=${vendorId}`).catch(() => ({ plans: [], total: 0 }));
+      setCount(response.total || response.plans?.length || 0);
+    } catch (err) {
+      console.error('Error loading insurance plans count:', err);
+      // Try alternative endpoint
+      try {
+        const altResponse = await apiClient.get<any>(`/vendor/${vendorId}/insurance/plans`).catch(() => ({ plans: [] }));
+        setCount(altResponse.plans?.length || 0);
+      } catch (altErr) {
+        console.error('Error loading insurance plans (alt):', altErr);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Insurance plans available</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/insurance/plans')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Plans
+      </button>
+    </div>
+  );
 }
 
 function AdoptionSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🏠" title="Adoption Listings" description="Manage pet profiles for adoption" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadAdoptionCount();
+  }, [vendorId]);
+
+  const loadAdoptionCount = async () => {
+    try {
+      // Try adoption-specific endpoint
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/adoption/listings`).catch(() => null);
+      if (response && (response.listings || response.count !== undefined)) {
+        setCount(response.count || response.listings?.length || 0);
+      } else {
+        // Alternative: count pets with adoption status
+        const petsRes = await apiClient.get<any>(`/vendor/${vendorId}/pets?status=adoption`).catch(() => ({ pets: [] }));
+        setCount(petsRes.pets?.length || 0);
+      }
+    } catch (err) {
+      console.error('Error loading adoption count:', err);
+      // If no API exists yet, show 0 with link to services
+      setCount(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Adoption listings active</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Listings
+      </button>
+    </div>
+  );
 }
 
 function MealPlansSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🍲" title="Meal Plans" description="Create and manage diet plans" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMealPlansCount();
+  }, [vendorId]);
+
+  const loadMealPlansCount = async () => {
+    try {
+      // Try nutritionist meal plans endpoint
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`).catch(() => null);
+      if (response && (response.mealPlans || response.plans || response.count !== undefined)) {
+        setCount(response.count || response.mealPlans?.length || response.plans?.length || 0);
+      } else {
+        // Alternative: count services with meal plan type
+        const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
+        const mealPlanServices = (servicesRes.services || []).filter((s: any) => 
+          s.service_type?.toLowerCase().includes('meal') ||
+          s.service_type?.toLowerCase().includes('diet') ||
+          s.category?.toLowerCase().includes('nutrition')
+        );
+        setCount(mealPlanServices.length);
+      }
+    } catch (err) {
+      console.error('Error loading meal plans count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Meal plans available</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/nutrition/plans')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Meal Plans
+      </button>
+    </div>
+  );
 }
 
 function WalkingSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🚶" title="Walking Sessions" description="Manage pet walking bookings" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadWalkingCount();
+  }, [vendorId]);
+
+  const loadWalkingCount = async () => {
+    try {
+      // Walking sessions are typically tracked through bookings with walking service type
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`).catch(() => ({ bookings: [] }));
+      const walkingBookings = (bookingsRes.bookings || []).filter((b: any) => 
+        b.service_category?.toLowerCase().includes('walking') ||
+        b.service_name?.toLowerCase().includes('walking') ||
+        b.service_type?.toLowerCase().includes('walking')
+      );
+      setCount(walkingBookings.length);
+    } catch (err) {
+      console.error('Error loading walking count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Walking sessions booked</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Bookings
+      </button>
+    </div>
+  );
 }
 
 function AmbulanceSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🚑" title="Ambulance Dispatch" description="Emergency dispatch management" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadAmbulanceCount();
+  }, [vendorId]);
+
+  const loadAmbulanceCount = async () => {
+    try {
+      // Try ambulance-specific endpoint
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/ambulance/dispatches`).catch(() => null);
+      if (response && (response.dispatches || response.count !== undefined)) {
+        setCount(response.count || response.dispatches?.length || 0);
+      } else {
+        // Alternative: count bookings with ambulance/emergency service type
+        const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`).catch(() => ({ bookings: [] }));
+        const ambulanceBookings = (bookingsRes.bookings || []).filter((b: any) => 
+          b.service_category?.toLowerCase().includes('ambulance') ||
+          b.service_category?.toLowerCase().includes('emergency') ||
+          b.service_name?.toLowerCase().includes('ambulance') ||
+          b.service_type?.toLowerCase().includes('ambulance')
+        );
+        setCount(ambulanceBookings.length);
+      }
+    } catch (err) {
+      console.error('Error loading ambulance count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Emergency dispatches</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Dispatches
+      </button>
+    </div>
+  );
 }
 
 function DiagnosticsSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🔬" title="Diagnostics" description="Manage lab tests and results" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTestsCount();
+  }, [vendorId]);
+
+  const loadTestsCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests`).catch(() => ({ tests: [] }));
+      setCount(response.tests?.length || 0);
+    } catch (err) {
+      console.error('Error loading tests count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Diagnostic tests available</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services/tests')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Tests
+      </button>
+    </div>
+  );
 }
 
 function HolidaysSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="✈️" title="Holiday Packages" description="Create and manage tour packages" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPackagesCount();
+  }, [vendorId]);
+
+  const loadPackagesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/holiday-packages`).catch(() => ({ packages: [], count: 0 }));
+      setCount(response.count || response.packages?.length || 0);
+    } catch (err) {
+      console.error('Error loading holiday packages count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Holiday packages created</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/packages')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Packages
+      </button>
+    </div>
+  );
 }
 
 function ProductsSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🛍️" title="Products" description="Manage your product catalog" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadProductsCount();
+  }, [vendorId]);
+
+  const loadProductsCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/products?limit=1`).catch(() => ({ products: [], total: 0 }));
+      // Try to get total from response
+      setCount(response.total || response.products?.length || 0);
+      // If we got products but no total, we might need a separate count query
+      if (response.products && response.products.length > 0 && !response.total) {
+        const fullResponse = await apiClient.get<any>(`/vendor/${vendorId}/products?limit=1000`).catch(() => ({ products: [] }));
+        setCount(fullResponse.products?.length || 0);
+      }
+    } catch (err) {
+      console.error('Error loading products count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Products in catalog</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/products')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Products
+      </button>
+    </div>
+  );
 }
 
 function TrainingSection({ vendorId }: { vendorId: string }) {
-  return <SpecializedPlaceholder icon="🎓" title="Training Programs" description="Manage training packages and progress" />;
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTrainingCount();
+  }, [vendorId]);
+
+  const loadTrainingCount = async () => {
+    try {
+      // Training might be tracked through bookings with training service type
+      // Or through training_progress table
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/trainings`).catch(() => null);
+      if (response && (response.trainings || response.count !== undefined)) {
+        setCount(response.count || response.trainings?.length || 0);
+      } else {
+        // Alternative: count training-related bookings
+        const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`).catch(() => ({ bookings: [] }));
+        const trainingBookings = (bookingsRes.bookings || []).filter((b: any) => 
+          b.service_category?.toLowerCase().includes('training') ||
+          b.service_name?.toLowerCase().includes('training')
+        );
+        setCount(trainingBookings.length);
+      }
+    } catch (err) {
+      console.error('Error loading training count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Training programs active</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Training
+      </button>
+    </div>
+  );
 }
 
-function SpecializedPlaceholder({ icon, title, description }: { icon: string; title: string; description: string }) {
+// ============================================================================
+// PHASE 5: ADDITIONAL FUNCTIONAL SECTIONS (10 capabilities)
+// ============================================================================
+
+function ChatSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadChatStats();
+  }, [vendorId]);
+
+  const loadChatStats = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      let totalUnread = 0;
+      const chatPromises = bookings.slice(0, 10).map((booking: any) =>
+        apiClient.get<any>(`/chat/booking/${booking.id}/conversation`).catch(() => ({ messages: [] }))
+      );
+      const results = await Promise.all(chatPromises);
+      results.forEach((result) => {
+        if (result.messages) {
+          const unread = result.messages.filter((msg: any) => !msg.is_read && msg.sender_type !== 'vendor');
+          totalUnread += unread.length;
+        }
+      });
+      setUnreadCount(totalUnread);
+    } catch (err) {
+      console.error('Error loading chat stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
   return (
-    <div className="text-center py-12">
-      <div className="text-5xl mb-4">{icon}</div>
-      <h3 className="font-semibold text-gray-900">{title}</h3>
-      <p className="text-gray-500 mt-0">{description}</p>
-      <button className="mt-4 px-0 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
-        Get Started
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{unreadCount}</p>
+          <p className="text-sm text-gray-500">Unread messages</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/communication/messages')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Messages
+      </button>
+    </div>
+  );
+}
+
+function VideoCallSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [upcomingCount, setUpcomingCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadVideoCallStats();
+  }, [vendorId]);
+
+  const loadVideoCallStats = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=confirmed`).catch(() => ({ bookings: [] }));
+      const upcomingBookings = (bookingsRes.bookings || []).filter((b: any) => {
+        const bookingDate = new Date(b.booking_date + ' ' + b.booking_time);
+        const now = new Date();
+        return bookingDate > now && (b.service_style === 'tele_consultation' || b.service_type?.toLowerCase().includes('video'));
+      });
+      setUpcomingCount(upcomingBookings.length);
+    } catch (err) {
+      console.error('Error loading video call stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{upcomingCount}</p>
+          <p className="text-sm text-gray-500">Upcoming video calls</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/communication/video')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Calls
+      </button>
+    </div>
+  );
+}
+
+function NotificationsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadNotificationsStats();
+  }, [vendorId]);
+
+  const loadNotificationsStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/notifications?userId=${vendorId}&userType=vendor&limit=1`).catch(() => ({ unreadCount: 0 }));
+      setUnreadCount(response.unreadCount || 0);
+    } catch (err) {
+      console.error('Error loading notifications stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{unreadCount}</p>
+          <p className="text-sm text-gray-500">Unread notifications</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/communication/notifications')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Notifications
+      </button>
+    </div>
+  );
+}
+
+function SettlementsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ pending: number; total: number }>({ pending: 0, total: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSettlementsStats();
+  }, [vendorId]);
+
+  const loadSettlementsStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements`).catch(() => ({ settlements: [] }));
+      const settlements = response.settlements || [];
+      const pending = settlements.filter((s: any) => s.status === 'pending' || s.status === 'processing').length;
+      setStats({ pending, total: settlements.length });
+    } catch (err) {
+      console.error('Error loading settlements stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
+          <p className="text-sm text-gray-500">Pending settlements</p>
+          {stats.total > 0 && <p className="text-sm text-gray-400 mt-1">{stats.total} total</p>}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/finance/settlements')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Settlements
+      </button>
+    </div>
+  );
+}
+
+function BankAccountSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [status, setStatus] = useState<{ verified: boolean; accountNumber?: string }>({ verified: false });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBankAccountStatus();
+  }, [vendorId]);
+
+  const loadBankAccountStatus = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/bank-details`).catch(() => ({ bankDetails: null }));
+      const bankDetails = response.bankDetails || response;
+      if (bankDetails) {
+        setStatus({
+          verified: bankDetails.verification_status === 'verified' || bankDetails.is_verified === true,
+          accountNumber: bankDetails.account_number ? `****${bankDetails.account_number.slice(-4)}` : undefined,
+        });
+      }
+    } catch (err) {
+      console.error('Error loading bank account status:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className={`text-lg font-semibold ${status.verified ? 'text-green-600' : 'text-orange-600'}`}>
+            {status.verified ? '✓ Verified' : 'Not Verified'}
+          </p>
+          {status.accountNumber && <p className="text-sm text-gray-500 mt-1">Account: {status.accountNumber}</p>}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/finance/bank')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Bank Account
+      </button>
+    </div>
+  );
+}
+
+function OrdersSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ pending: number; total: number }>({ pending: 0, total: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadOrdersStats();
+  }, [vendorId]);
+
+  const loadOrdersStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/orders/stats`).catch(() => ({ stats: { pending: 0, total: 0 } }));
+      const statsData = response.stats || {};
+      setStats({ pending: statsData.pending || 0, total: statsData.total || 0 });
+    } catch (err) {
+      console.error('Error loading orders stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
+          <p className="text-sm text-gray-500">Pending orders</p>
+          {stats.total > 0 && <p className="text-sm text-gray-400 mt-1">{stats.total} total orders</p>}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/pharmacy/orders')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Orders
+      </button>
+    </div>
+  );
+}
+
+function PackagesSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPackagesCount();
+  }, [vendorId]);
+
+  const loadPackagesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/packages`).catch(() => null);
+      if (response && (response.packages || response.count !== undefined)) {
+        setCount(response.count || response.packages?.length || 0);
+      } else {
+        const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
+        const packageServices = (servicesRes.services || []).filter((s: any) => 
+          s.is_package === true || s.service_type?.toLowerCase().includes('package')
+        );
+        setCount(packageServices.length);
+      }
+    } catch (err) {
+      console.error('Error loading packages count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Service packages</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services/packages')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Packages
+      </button>
+    </div>
+  );
+}
+
+function SubscriptionsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSubscriptionsCount();
+  }, [vendorId]);
+
+  const loadSubscriptionsCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/subscriptions/plans/vendor/${vendorId}`).catch(() => ({ plans: [] }));
+      setCount(response.plans?.length || response.total || 0);
+    } catch (err) {
+      console.error('Error loading subscriptions count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Active subscription plans</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services/subscriptions')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Subscriptions
+      </button>
+    </div>
+  );
+}
+
+function InventorySection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ total: number; lowStock: number }>({ total: 0, lowStock: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadInventoryStats();
+  }, [vendorId]);
+
+  const loadInventoryStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/products`).catch(() => ({ products: [] }));
+      const products = response.products || [];
+      const lowStock = products.filter((p: any) => 
+        p.stock_quantity !== undefined && p.stock_quantity < (p.min_stock || 10)
+      ).length;
+      setStats({ total: products.length, lowStock });
+    } catch (err) {
+      console.error('Error loading inventory stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+          <p className="text-sm text-gray-500">Products in inventory</p>
+          {stats.lowStock > 0 && <p className="text-sm text-orange-600 mt-1">⚠️ {stats.lowStock} low stock</p>}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/pharmacy/inventory')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Inventory
+      </button>
+    </div>
+  );
+}
+
+function GPSTrackingSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [activeCount, setActiveCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadGPSTrackingStats();
+  }, [vendorId]);
+
+  const loadGPSTrackingStats = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=in_progress`).catch(() => ({ bookings: [] }));
+      const activeBookings = (bookingsRes.bookings || []).filter((b: any) => 
+        b.service_style === 'home_services' || b.service_style === 'at_home'
+      );
+      setActiveCount(activeBookings.length);
+    } catch (err) {
+      console.error('Error loading GPS tracking stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{activeCount}</p>
+          <p className="text-sm text-gray-500">Active tracking sessions</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/schedule/gps')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Tracking
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// PHASE 6: COMPLETE REMAINING DEFAULT SECTIONS (21 capabilities)
+// ============================================================================
+
+// Service Styles (Booking Routes) - 8 capabilities
+function CentreBookingSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBookingCount();
+  }, [vendorId]);
+
+  const loadBookingCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      const filteredBookings = bookings.filter((b: any) => 
+        b.service_style === 'centre_booking' || b.service_style === 'centre' || b.service_type === 'centre' || b.booking_type === 'centre'
+      );
+      setCount(filteredBookings.length);
+    } catch (err) {
+      console.error('Error loading centre bookings count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Centre bookings</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings/centre')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Centre Bookings
+      </button>
+    </div>
+  );
+}
+
+function HomeServicesSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBookingCount();
+  }, [vendorId]);
+
+  const loadBookingCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      const filteredBookings = bookings.filter((b: any) => 
+        b.service_style === 'home_services' || b.service_style === 'home' || b.service_style === 'at_home' || b.service_type === 'home'
+      );
+      setCount(filteredBookings.length);
+    } catch (err) {
+      console.error('Error loading home services count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Home service bookings</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings/home')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Home Services
+      </button>
+    </div>
+  );
+}
+
+function TeleConsultationSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBookingCount();
+  }, [vendorId]);
+
+  const loadBookingCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      const filteredBookings = bookings.filter((b: any) => 
+        b.service_style === 'tele_consultation' || b.service_style === 'tele' || b.service_style === 'video' || b.service_type === 'tele'
+      );
+      setCount(filteredBookings.length);
+    } catch (err) {
+      console.error('Error loading tele consultation count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Tele consultations</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings/tele')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Tele Consultations
+      </button>
+    </div>
+  );
+}
+
+function ReservationsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBookingCount();
+  }, [vendorId]);
+
+  const loadBookingCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      const filteredBookings = bookings.filter((b: any) => 
+        b.service_style === 'reservations' || b.service_type?.toLowerCase().includes('reservation') || b.service?.category?.toLowerCase().includes('cafe')
+      );
+      setCount(filteredBookings.length);
+    } catch (err) {
+      console.error('Error loading reservations count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Table reservations</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings/reservations')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Reservations
+      </button>
+    </div>
+  );
+}
+
+function CheckinCheckoutSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBookingCount();
+  }, [vendorId]);
+
+  const loadBookingCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      const filteredBookings = bookings.filter((b: any) => 
+        b.service_style === 'checkin_checkout' || b.service_style === 'checkin' || b.service?.category?.toLowerCase().includes('resort') || b.service?.category?.toLowerCase().includes('boarding')
+      );
+      setCount(filteredBookings.length);
+    } catch (err) {
+      console.error('Error loading checkin/checkout count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Check-in/Check-out bookings</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings/checkin')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Check-ins
+      </button>
+    </div>
+  );
+}
+
+function RouteTrackingSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [activeCount, setActiveCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRouteTrackingStats();
+  }, [vendorId]);
+
+  const loadRouteTrackingStats = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=in_progress`).catch(() => ({ bookings: [] }));
+      const activeBookings = (bookingsRes.bookings || []).filter((b: any) => 
+        b.service_style === 'home_services' || b.service_style === 'walking'
+      );
+      setActiveCount(activeBookings.length);
+    } catch (err) {
+      console.error('Error loading route tracking stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{activeCount}</p>
+          <p className="text-sm text-gray-500">Active route tracking</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/bookings/routes')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Routes
+      </button>
+    </div>
+  );
+}
+
+function ServiceRadiusSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [radius, setRadius] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadServiceRadius();
+  }, [vendorId]);
+
+  const loadServiceRadius = async () => {
+    try {
+      const vendorRes = await apiClient.get<any>(`/vendor/${vendorId}/profile`).catch(() => ({ vendor: null }));
+      const vendor = vendorRes.vendor || vendorRes;
+      setRadius(vendor?.service_radius || vendor?.coverage_radius || null);
+    } catch (err) {
+      console.error('Error loading service radius:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{radius ? `${radius} km` : 'Not Set'}</p>
+          <p className="text-sm text-gray-500">Service coverage radius</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/schedule/radius')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Configure Radius
+      </button>
+    </div>
+  );
+}
+
+function TourScheduleSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [upcomingCount, setUpcomingCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTourScheduleStats();
+  }, [vendorId]);
+
+  const loadTourScheduleStats = async () => {
+    try {
+      const packagesRes = await apiClient.get<any>(`/vendor/${vendorId}/holiday-packages`).catch(() => ({ packages: [] }));
+      const packages = packagesRes.packages || packagesRes.holidayPackages || [];
+      const today = new Date();
+      const upcoming = packages.filter((pkg: any) => {
+        if (!pkg.start_date) return false;
+        const startDate = new Date(pkg.start_date);
+        return startDate >= today;
+      });
+      setUpcomingCount(upcoming.length);
+    } catch (err) {
+      console.error('Error loading tour schedule stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{upcomingCount}</p>
+          <p className="text-sm text-gray-500">Upcoming tours</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/holidays/schedule')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Tour Schedule
+      </button>
+    </div>
+  );
+}
+
+// Specialized Services - 9 capabilities
+function MenuSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMenuCount();
+  }, [vendorId]);
+
+  const loadMenuCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/cafe/menu`).catch(() => null);
+      if (response && (response.menu || response.items || response.count !== undefined)) {
+        setCount(response.count || response.items?.length || response.menu?.length || 0);
+      } else {
+        const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
+        const menuServices = (servicesRes.services || []).filter((s: any) => 
+          s.category?.toLowerCase().includes('cafe') || s.service_category?.toLowerCase().includes('menu')
+        );
+        setCount(menuServices.length);
+      }
+    } catch (err) {
+      console.error('Error loading menu count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Menu items</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services/menu')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Menu
+      </button>
+    </div>
+  );
+}
+
+function VehiclesSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadVehiclesCount();
+  }, [vendorId]);
+
+  const loadVehiclesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/ambulance/vehicles`).catch(() => ({ vehicles: [] }));
+      setCount(response.vehicles?.length || response.count || 0);
+    } catch (err) {
+      console.error('Error loading vehicles count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Ambulance vehicles</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/ambulance/vehicles')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Vehicles
+      </button>
+    </div>
+  );
+}
+
+function BoardingSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBoardingCount();
+  }, [vendorId]);
+
+  const loadBoardingCount = async () => {
+    try {
+      const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
+      const bookings = bookingsRes.bookings || [];
+      const boardingBookings = bookings.filter((b: any) => 
+        b.service?.category?.toLowerCase().includes('boarding') || b.service_type?.toLowerCase().includes('boarding')
+      );
+      setCount(boardingBookings.length);
+    } catch (err) {
+      console.error('Error loading boarding count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Boarding bookings</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/resort/boarding')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Boarding
+      </button>
+    </div>
+  );
+}
+
+function PoliciesSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPoliciesCount();
+  }, [vendorId]);
+
+  const loadPoliciesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/insurance/policies`).catch(() => ({ policies: [] }));
+      setCount(response.policies?.length || response.count || 0);
+    } catch (err) {
+      console.error('Error loading policies count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Active insurance policies</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/insurance/policies')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Policies
+      </button>
+    </div>
+  );
+}
+
+function ClaimsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ pending: number; total: number }>({ pending: 0, total: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadClaimsStats();
+  }, [vendorId]);
+
+  const loadClaimsStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/insurance/claims`).catch(() => ({ claims: [] }));
+      const claims = response.claims || [];
+      const pending = claims.filter((c: any) => c.status === 'pending' || c.status === 'processing').length;
+      setStats({ pending, total: claims.length });
+    } catch (err) {
+      console.error('Error loading claims stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
+          <p className="text-sm text-gray-500">Pending claims</p>
+          {stats.total > 0 && <p className="text-sm text-gray-400 mt-1">{stats.total} total</p>}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/insurance/claims')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Claims
+      </button>
+    </div>
+  );
+}
+
+function PetProfilesSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPetProfilesCount();
+  }, [vendorId]);
+
+  const loadPetProfilesCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/adoption/pets`).catch(() => ({ pets: [] }));
+      setCount(response.pets?.length || response.count || 0);
+    } catch (err) {
+      console.error('Error loading pet profiles count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Pet profiles</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/adoption/pets')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Pet Profiles
+      </button>
+    </div>
+  );
+}
+
+function LineageSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadLineageCount();
+  }, [vendorId]);
+
+  const loadLineageCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/adoption/lineage`).catch(() => ({ lineage: [] }));
+      setCount(response.lineage?.length || response.count || 0);
+    } catch (err) {
+      console.error('Error loading lineage count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Lineage records</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/adoption/lineage')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Lineage
+      </button>
+    </div>
+  );
+}
+
+function ProgressTrackingSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [activeCount, setActiveCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadProgressTrackingStats();
+  }, [vendorId]);
+
+  const loadProgressTrackingStats = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/training/progress`).catch(() => ({ progress: [] }));
+      const progress = response.progress || response.trainingProgress || [];
+      const active = progress.filter((p: any) => p.status === 'active' || p.status === 'in_progress');
+      setActiveCount(active.length);
+    } catch (err) {
+      console.error('Error loading progress tracking stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{activeCount}</p>
+          <p className="text-sm text-gray-500">Active training sessions</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/training/progress')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Progress
+      </button>
+    </div>
+  );
+}
+
+function FoodDeliverySection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [activeCount, setActiveCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadFoodDeliveryStats();
+  }, [vendorId]);
+
+  const loadFoodDeliveryStats = async () => {
+    try {
+      const ordersRes = await apiClient.get<any>(`/vendor/${vendorId}/orders?status=processing`).catch(() => ({ orders: [] }));
+      const orders = ordersRes.orders || [];
+      const deliveryOrders = orders.filter((o: any) => 
+        o.order_type?.toLowerCase().includes('delivery') || o.service_category?.toLowerCase().includes('nutrition')
+      );
+      setActiveCount(deliveryOrders.length);
+    } catch (err) {
+      console.error('Error loading food delivery stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{activeCount}</p>
+          <p className="text-sm text-gray-500">Active delivery orders</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/nutrition/delivery')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        View Deliveries
+      </button>
+    </div>
+  );
+}
+
+// E-commerce - 1 capability
+function SellerHubSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [stats, setStats] = useState<{ products: number; orders: number }>({ products: 0, orders: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSellerHubStats();
+  }, [vendorId]);
+
+  const loadSellerHubStats = async () => {
+    try {
+      const [productsRes, ordersRes] = await Promise.all([
+        apiClient.get<any>(`/vendor/${vendorId}/products`).catch(() => ({ products: [] })),
+        apiClient.get<any>(`/vendor/${vendorId}/orders/stats`).catch(() => ({ stats: { total: 0 } })),
+      ]);
+      setStats({
+        products: productsRes.products?.length || 0,
+        orders: ordersRes.stats?.total || 0,
+      });
+    } catch (err) {
+      console.error('Error loading seller hub stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{stats.products}</p>
+          <p className="text-sm text-gray-500">Products listed</p>
+          {stats.orders > 0 && <p className="text-sm text-gray-400 mt-1">{stats.orders} orders</p>}
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/seller')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Open Seller Hub
+      </button>
+    </div>
+  );
+}
+
+// Operations - 1 capability
+function SettingsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-lg font-semibold text-gray-900">Settings</p>
+          <p className="text-sm text-gray-500">Configure app settings</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/operations/settings')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Open Settings
+      </button>
+    </div>
+  );
+}
+
+// Test Catalog (already has full page, enhance dashboard section)
+function TestCatalogSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTestCatalogCount();
+  }, [vendorId]);
+
+  const loadTestCatalogCount = async () => {
+    try {
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/services/tests`).catch(() => ({ tests: [] }));
+      setCount(response.tests?.length || response.count || 0);
+    } catch (err) {
+      console.error('Error loading test catalog count:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{count}</p>
+          <p className="text-sm text-gray-500">Diagnostic tests</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push('/services/tests')}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        Manage Test Catalog
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// DEFAULT CAPABILITY SECTION - Standard Design Pattern
+// ============================================================================
+
+function DefaultCapabilitySection({ capability, vendorId }: { capability: Capability; vendorId: string }) {
+  const router = useRouter();
+  const route = capability.route || '/';
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="text-lg font-semibold text-gray-900">{capability.display_name}</p>
+          <p className="text-sm text-gray-500">{capability.description}</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => router.push(route)}
+        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+      >
+        {capability.category === 'communication' ? 'Open' : capability.category === 'finance' ? 'View Details' : 'Get Started'}
       </button>
     </div>
   );

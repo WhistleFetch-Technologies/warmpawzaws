@@ -343,6 +343,8 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       const orderRes = await apiClient.post<any>('/payments/create-order', {
         booking_id: newBookingId,
         amount: amountToPay,
+        useWallet: useWallet,
+        walletAmount: useWallet && wallet ? Math.min(wallet.balance, service.price) : 0,
       });
 
       if (!orderRes.order_id) {

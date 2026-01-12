@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// Removed Supabase imports - using API Gateway
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
 import { SpecializationSelector } from './SpecializationSelector';
@@ -90,7 +90,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // Using apiClient instead of API_BASE
   const availableAmenities = getAmenitiesForVendorType(vendorData?.roleId);
   const MAX_PHOTOS = 10;
 
@@ -118,20 +118,17 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       }
 
       // Load center availability (timings)
-      const availabilityRes = await fetch(
-        `${API_BASE}/vendor/${vendorId}/center-availability`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (availabilityRes.ok) {
-        const availabilityData = await availabilityRes.json();
-        if (availabilityData.availability) {
+      try {
+        const availabilityData = await apiClient.get(`/vendor/${vendorId}/center-availability`) as any;
+        if (availabilityData && availabilityData.availability) {
           setProfile(prev => ({
             ...prev,
             operatingHours: availabilityData.availability.operatingHours || prev.operatingHours,
             emergencyServices: availabilityData.availability.emergencyServices || prev.emergencyServices
           }));
         }
+      } catch (error) {
+        console.warn('Failed to load center availability:', error);
       }
     } catch (error) {
       console.error('Error loading center profile:', error);
@@ -152,18 +149,10 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         const formData = new FormData();
         newPhotos.forEach(photo => formData.append('photos', photo));
 
-        const uploadRes = await fetch(
-          `${API_BASE}/vendor/facility/${vendorId}/upload-photos`,
-          {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` },
-            body: formData
-          }
-        );
-
-        if (uploadRes.ok) {
-          const data = await uploadRes.json();
-          uploadedPhotoUrls = data.photoUrls || [];
+        // Upload photos using apiClient
+        const uploadData = await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData) as any;
+        if (uploadData && uploadData.success) {
+          uploadedPhotoUrls = uploadData.photoUrls || [];
         }
         setUploading(false);
       }
@@ -171,50 +160,26 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       const allPhotos = [...profile.photos, ...uploadedPhotoUrls];
 
       // 2. Save facility data
-      const facilityRes = await fetch(
-        `${API_BASE}/vendor/facility/${vendorId}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            description: profile.description,
-            address: profile.address,
-            operatingHours: generateOperatingHoursText(profile.operatingHours),
-            amenities: profile.amenities,
-            customAmenities: profile.customAmenities,
-            photos: allPhotos,
-            specializations: profile.specializations,
-            city: profile.city,
-            state: profile.state,
-            pincode: profile.pincode
-          })
-        }
-      );
-
-      if (!facilityRes.ok) {
-        throw new Error('Failed to save facility data');
-      }
+      await apiClient.put(`/vendor/facility/${vendorId}`, {
+        description: profile.description,
+        address: profile.address,
+        operatingHours: generateOperatingHoursText(profile.operatingHours),
+        amenities: profile.amenities,
+        customAmenities: profile.customAmenities,
+        photos: allPhotos,
+        specializations: profile.specializations,
+        city: profile.city,
+        state: profile.state,
+        pincode: profile.pincode
+      });
 
       // 3. Save center availability (detailed timings)
-      const availabilityRes = await fetch(
-        `${API_BASE}/vendor/${vendorId}/center-availability`,
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            operatingHours: profile.operatingHours,
-            emergencyServices: profile.emergencyServices
-          })
-        }
-      );
+      const availabilityRes = await apiClient.put(`/vendor/${vendorId}/center-availability`, {
+        operatingHours: profile.operatingHours,
+        emergencyServices: profile.emergencyServices
+      });
 
-      if (!availabilityRes.ok) {
+      if (!availabilityRes || (availabilityRes as any).error) {
         throw new Error('Failed to save availability settings');
       }
 

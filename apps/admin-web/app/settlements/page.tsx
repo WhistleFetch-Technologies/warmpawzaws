@@ -234,34 +234,39 @@ export default function SettlementsPage() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-slate-50">
-        {/* Header */}
-        <header className="bg-white border-b px-8 py-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Settlements Dashboard</h1>
-            <p className="text-gray-500">Process and track vendor payouts</p>
+      <div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+        {/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                {/* ✅ FIX: Match wireframe - text-2xl font-bold text-gray-900 */}
+                <h1 className="text-2xl font-bold text-gray-900">Settlements Dashboard</h1>
+                <p className="text-sm text-gray-500 mt-1">Process and track vendor payouts</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRunAutoSettlement}
+                  disabled={processing}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition disabled:opacity-50"
+                >
+                  ⚡ Run Daily Settlement
+                </button>
+                <button
+                  onClick={handleProcessSelected}
+                  disabled={processing || selectedIds.length === 0}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
+                >
+                  {processing ? 'Processing...' : `Process Selected (${selectedIds.length})`}
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleRunAutoSettlement}
-              disabled={processing}
-              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition disabled:opacity-50"
-            >
-              ⚡ Run Daily Settlement
-            </button>
-            <button
-              onClick={handleProcessSelected}
-              disabled={processing || selectedIds.length === 0}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
-            >
-              {processing ? 'Processing...' : `Process Selected (${selectedIds.length})`}
-            </button>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="p-8">
+        {/* Main Content - Match wireframe: max-w-7xl mx-auto p-6 or p-8 */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto p-8">
         {/* Messages */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
@@ -463,7 +468,8 @@ export default function SettlementsPage() {
             </tbody>
           </table>
         </div>
-      </main>
+          </div>
+        </main>
 
       {/* Detail Modal */}
       {showDetailModal && selectedSettlement && (

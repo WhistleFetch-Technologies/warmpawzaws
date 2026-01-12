@@ -42,6 +42,7 @@ export default function SettlementsPage() {
   const [summary, setSummary] = useState<SettlementSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [vendorData, setVendorData] = useState<any>(null);
   
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -49,6 +50,27 @@ export default function SettlementsPage() {
   
   // Download state
   const [downloading, setDownloading] = useState<string | null>(null);
+
+  // ✅ PHASE 3: Role-based conditional features
+  useEffect(() => {
+    const loadVendorData = async () => {
+      try {
+        const vendorId = localStorage.getItem('vendorId') || '';
+        if (vendorId) {
+          const response = await apiClient.get<any>(`/vendor/${vendorId}/profile`);
+          setVendorData(response.vendor || response);
+        }
+      } catch (err) {
+        console.error('Error loading vendor data:', err);
+      }
+    };
+    loadVendorData();
+  }, []);
+
+  const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
+  const isRetail = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller';
+  const isPharmacy = vendorRoleId === 'pet_pharmacy' || vendorRoleId === 'pharmacy';
+  const showOrderBasedSettlements = isRetail || isPharmacy; // Retail and Pharmacy have order-based settlements
 
   // ============================================================================
   // DATA LOADING
@@ -172,22 +194,30 @@ export default function SettlementsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Settlements</h1>
-            <p className="text-gray-500">Track your payouts and download statements</p>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
+      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+              <h1 className="text-2xl font-bold text-gray-800">Settlements</h1>
+              <p className="text-sm text-gray-500 mt-1">Track your payouts and download statements</p>
+            </div>
+            <button
+              onClick={handleDownloadAllStatements}
+              disabled={downloading === 'all'}
+              className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
+            >
+              {downloading === 'all' ? '⏳ Downloading...' : '📥 Download Annual Statement'}
+            </button>
           </div>
-          <button
-            onClick={handleDownloadAllStatements}
-            disabled={downloading === 'all'}
-            className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
-          >
-            {downloading === 'all' ? '⏳ Downloading...' : '📥 Download Annual Statement'}
-          </button>
         </div>
+      </div>
+
+      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
 
         {/* Error */}
         {error && (
@@ -343,6 +373,7 @@ export default function SettlementsPage() {
               </ul>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

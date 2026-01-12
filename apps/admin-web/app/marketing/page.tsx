@@ -333,92 +333,108 @@ export default function MarketingPromotionsTab() {
 
 	return (
 		<AdminLayout>
-			<div className="flex-1 flex flex-col p-6">
+			<div className="flex-1 flex flex-col min-h-screen bg-gray-50">
 				<Toaster position="top-right" richColors />
-			<div className="flex justify-between items-center px-20 bg-gray-100 rounded-md">
-				<div>
-					<h2 className="text-2xl font-bold text-gray-900">
-						Marketing & Promotions
-					</h2>
-					<p className="text-gray-500">
-						Manage promotions and customize customer dashboard experience
-					</p>
+				
+				{/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
+				<div className="bg-white border-b border-gray-200">
+					<div className="max-w-7xl mx-auto px-6 py-4">
+						<div className="flex items-center justify-between mb-4">
+							<div>
+								{/* ✅ FIX: Match wireframe - text-2xl font-bold for marketing page */}
+								<h1 className="text-2xl font-bold text-gray-900">
+									Marketing & Promotions
+								</h1>
+								<p className="text-gray-500 text-sm mt-1">
+									Manage promotions and customize customer dashboard experience
+								</p>
+							</div>
+							<div className="flex items-center gap-2">
+								<div className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+									Live
+								</div>
+							</div>
+						</div>
+
+						{/* Tabs - Match wireframe: Integrated into header with border-b pattern */}
+						<div className="flex gap-1 overflow-x-auto">
+							<button
+								onClick={() => setActiveTab("promotions")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+									activeTab === "promotions"
+										? "border-[#FF8C42] text-[#FF8C42]"
+										: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
+							>
+								<Megaphone className="w-5 h-5" />
+								<span className="font-medium">Promotions</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("ui-config")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+									activeTab === "ui-config"
+										? "border-[#FF8C42] text-[#FF8C42]"
+										: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
+							>
+								<LayoutTemplate className="w-5 h-5" />
+								<span className="font-medium">Dashboard UI</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("spotlight")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+									activeTab === "spotlight"
+										? "border-[#FF8C42] text-[#FF8C42]"
+										: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
+							>
+								<Star className="w-5 h-5" />
+								<span className="font-medium">Spotlight</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("coupons")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+									activeTab === "coupons"
+										? "border-[#FF8C42] text-[#FF8C42]"
+										: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
+							>
+								<Tag className="w-5 h-5" />
+								<span className="font-medium">Coupons</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("banners")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+									activeTab === "banners"
+										? "border-[#FF8C42] text-[#FF8C42]"
+										: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
+							>
+								<ImageIcon className="w-5 h-5" />
+								<span className="font-medium">Banners</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("advanced")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+									activeTab === "advanced"
+										? "border-[#FF8C42] text-[#FF8C42]"
+										: "border-transparent text-gray-600 hover:text-gray-900"
+								}`}
+							>
+								<Zap className="w-5 h-5" />
+								<span className="font-medium">Advanced</span>
+							</button>
+						</div>
+					</div>
 				</div>
 
-				<div className="flex gap-2 bg-white p-1 rounded-lg border">
-					<button
-						onClick={() => setActiveTab("promotions")}
-						className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-							activeTab === "promotions"
-								? "bg-[#FF8C42] text-white shadow-sm"
-								: "text-gray-600 hover:bg-gray-50"
-						}`}
-					>
-						<Megaphone className="w-4 h-4 inline mr-2" />
-						Promotions
-					</button>
-					<button
-						onClick={() => setActiveTab("ui-config")}
-						className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-							activeTab === "ui-config"
-								? "bg-[#FF8C42] text-white shadow-sm"
-								: "text-gray-600 hover:bg-gray-50"
-						}`}
-					>
-						<LayoutTemplate className="w-4 h-4 inline mr-2" />
-						Dashboard UI
-					</button>
-					<button
-						onClick={() => setActiveTab("spotlight")}
-						className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-							activeTab === "spotlight"
-								? "bg-[#FF8C42] text-white shadow-sm"
-								: "text-gray-600 hover:bg-gray-50"
-						}`}
-					>
-						<Star className="w-4 h-4 inline mr-2" />
-						Spotlight
-					</button>
-					<button
-						onClick={() => setActiveTab("coupons")}
-						className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-							activeTab === "coupons"
-								? "bg-[#FF8C42] text-white shadow-sm"
-								: "text-gray-600 hover:bg-gray-50"
-						}`}
-					>
-						<Tag className="w-4 h-4 inline mr-2" />
-						Coupons
-					</button>
-					<button
-						onClick={() => setActiveTab("banners")}
-						className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-							activeTab === "banners"
-								? "bg-[#FF8C42] text-white shadow-sm"
-								: "text-gray-600 hover:bg-gray-50"
-						}`}
-					>
-						<ImageIcon className="w-4 h-4 inline mr-2" />
-						Banners
-					</button>
-					<button
-						onClick={() => setActiveTab("advanced")}
-						className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-							activeTab === "advanced"
-								? "bg-[#FF8C42] text-white shadow-sm"
-								: "text-gray-600 hover:bg-gray-50"
-						}`}
-					>
-						<Zap className="w-4 h-4 inline mr-2" />
-						Advanced
-					</button>
-				</div>
-			</div>
-
-			{/* PROMOTIONS TAB */}
-			{activeTab === "promotions" && (
-				<Card className="p-6">
-					<div className="flex justify-between items-center mb-6">
+				{/* Content - Match wireframe: max-w-7xl mx-auto p-6 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-7xl mx-auto p-6">
+						{/* PROMOTIONS TAB */}
+						{activeTab === "promotions" && (
+							<Card className="p-6">
+								<div className="flex justify-between items-center mb-6">
 						<div className="relative w-64">
 							<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
 							<Input placeholder="Search promotions..." className="pl-9" />
@@ -514,213 +530,224 @@ export default function MarketingPromotionsTab() {
 											No promotions found. Create one to get started.
 										</TableCell>
 									</TableRow>
-								)}
-							</TableBody>
-						</Table>
-					)}
-				</Card>
-			)}
-
-			{/* UI CONFIG TAB */}
-			{activeTab === "ui-config" && (
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-					<Card className="p-6 col-span-1 h-fit">
-						<h3 className="font-semibold mb-4">Configuration Scope</h3>
-						<div className="space-y-4">
-							<div>
-								<Label>Target Role</Label>
-								<Select value={selectedRole} onValueChange={setSelectedRole}>
-									<SelectTrigger>
-										<SelectValue placeholder="Select a role" />
-									</SelectTrigger>
-									<SelectContent>
-										{availableRoles.length > 0 ? (
-											availableRoles.map((role) => (
-												<SelectItem key={role.id} value={role.id}>
-													{role.name}
-												</SelectItem>
-											))
-										) : (
-											<>
-												<SelectItem value="veterinarian">
-													Veterinarian
-												</SelectItem>
-												<SelectItem value="groomer">Groomer</SelectItem>
-												<SelectItem value="walker">Walker</SelectItem>
-												<SelectItem value="trainer">Trainer</SelectItem>
-											</>
 										)}
-									</SelectContent>
-								</Select>
-							</div>
-							<div className="pt-4 border-t text-sm text-gray-500">
-								Use this section to show or hide service buttons on the customer
-								dashboard. Changes reflect immediately in the app.
-							</div>
-						</div>
-					</Card>
+									</TableBody>
+								</Table>
+							)}
+						</Card>
+						)}
 
-					<Card className="p-6 col-span-2">
-						<div className="flex justify-between items-center mb-6">
-							<h3 className="font-semibold">Dashboard Buttons</h3>
-							<Button
-								onClick={handleSaveConfig}
-								disabled={configLoading}
-								className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
-							>
-								<Save className="w-4 h-4 mr-2" />
-								Save Changes
-							</Button>
-						</div>
-
-						{configLoading ? (
-							<div className="text-center py-12">Loading configuration...</div>
-						) : (
-							<div className="space-y-4">
-								{uiConfig &&
-									uiConfig.map((btn: any, index: number) => (
-										<div
-											key={btn.id}
-											className="flex items-center justify-between p-4 border rounded-lg bg-gray-50"
-										>
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 bg-white rounded-lg border flex items-center justify-center">
-													{/* Icon placeholder since we can't dynamically render icon component easily here without mapping */}
-													<span className="text-xs font-bold text-gray-500">
-														{btn.icon}
-													</span>
-												</div>
-												<div>
-													<div className="font-medium">{btn.label}</div>
-													<div className="text-xs text-gray-500 font-mono">
-														{btn.id}
-													</div>
-												</div>
-											</div>
-											<div className="flex items-center gap-2">
-												<span
-													className={`text-xs font-medium ${btn.enabled ? "text-green-600" : "text-gray-400"}`}
-												>
-													{btn.enabled ? "Visible" : "Hidden"}
-												</span>
-												<Switch
-													checked={btn.enabled}
-													onCheckedChange={() => handleToggleService(index)}
-												/>
-											</div>
+						{/* UI CONFIG TAB */}
+						{activeTab === "ui-config" && (
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+								<Card className="p-6 col-span-1 h-fit">
+									<h3 className="font-semibold mb-4">Configuration Scope</h3>
+									<div className="space-y-4">
+										<div>
+											<Label>Target Role</Label>
+											<Select value={selectedRole} onValueChange={setSelectedRole}>
+												<SelectTrigger>
+													<SelectValue placeholder="Select a role" />
+												</SelectTrigger>
+												<SelectContent>
+													{availableRoles.length > 0 ? (
+														availableRoles.map((role) => (
+															<SelectItem key={role.id} value={role.id}>
+																{role.name}
+															</SelectItem>
+														))
+													) : (
+														<>
+															<SelectItem value="veterinarian">
+																Veterinarian
+															</SelectItem>
+															<SelectItem value="groomer">Groomer</SelectItem>
+															<SelectItem value="walker">Walker</SelectItem>
+															<SelectItem value="trainer">Trainer</SelectItem>
+														</>
+													)}
+												</SelectContent>
+											</Select>
 										</div>
-									))}
-								{(!uiConfig || uiConfig.length === 0) && (
-									<div className="text-center py-8 text-gray-500">
-										No configuration found for this role.
+										<div className="pt-4 border-t text-sm text-gray-500">
+											Use this section to show or hide service buttons on the customer
+											dashboard. Changes reflect immediately in the app.
+										</div>
+									</div>
+								</Card>
+
+								<Card className="p-6 col-span-2">
+									<div className="flex justify-between items-center mb-6">
+										<h3 className="font-semibold">Dashboard Buttons</h3>
 										<Button
-											variant="outline"
-											onClick={loadUiConfig}
-											className="mt-2"
+											onClick={handleSaveConfig}
+											disabled={configLoading}
+											className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
 										>
-											<RotateCcw className="w-4 h-4 mr-2" /> Retry
+											<Save className="w-4 h-4 mr-2" />
+											Save Changes
 										</Button>
 									</div>
-								)}
+
+									{configLoading ? (
+										<div className="text-center py-12">Loading configuration...</div>
+									) : (
+										<div className="space-y-4">
+											{uiConfig &&
+												uiConfig.map((btn: any, index: number) => (
+													<div
+														key={btn.id}
+														className="flex items-center justify-between p-4 border rounded-lg bg-gray-50"
+													>
+														<div className="flex items-center gap-3">
+															<div className="w-10 h-10 bg-white rounded-lg border flex items-center justify-center">
+																<span className="text-xs font-bold text-gray-500">
+																	{btn.icon}
+																</span>
+															</div>
+															<div>
+																<div className="font-medium">{btn.label}</div>
+																<div className="text-xs text-gray-500 font-mono">
+																	{btn.id}
+																</div>
+															</div>
+														</div>
+														<div className="flex items-center gap-2">
+															<span
+																className={`text-xs font-medium ${btn.enabled ? "text-green-600" : "text-gray-400"}`}
+															>
+																{btn.enabled ? "Visible" : "Hidden"}
+															</span>
+															<Switch
+																checked={btn.enabled}
+																onCheckedChange={() => handleToggleService(index)}
+															/>
+														</div>
+													</div>
+												))}
+											{(!uiConfig || uiConfig.length === 0) && (
+												<div className="text-center py-8 text-gray-500">
+													No configuration found for this role.
+													<Button
+														variant="outline"
+														onClick={loadUiConfig}
+														className="mt-2"
+													>
+														<RotateCcw className="w-4 h-4 mr-2" /> Retry
+													</Button>
+												</div>
+											)}
+										</div>
+									)}
+								</Card>
 							</div>
 						)}
-					</Card>
-				</div>
-			)}
 
-			{/* SPOTLIGHT TAB */}
-			{activeTab === "spotlight" && (
-				<div className="space-y-6">
-					<div className="flex justify-between items-center">
-						<div>
-							<h3 className="text-lg font-medium">Featured Vendors</h3>
-							<p className="text-sm text-gray-500">
-								Highlight top performing vendors on the home screen
-							</p>
-						</div>
-						<Button
-							className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
-							onClick={() => setSpotlightModal(true)}
-						>
-							<Plus className="w-4 h-4 mr-2" />
-							Add Spotlight
-						</Button>
-					</div>
-
-					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-						{spotlights.map((spot) => (
-							<Card
-								key={spot.id}
-								className="overflow-hidden border-orange-100 shadow-sm hover:shadow-md transition-all"
-							>
-								<div className="bg-gradient-to-r from-orange-50 to-white p-4 border-b border-orange-100 flex justify-between items-start">
-									<div className="flex items-center gap-2">
-										<div className="p-2 bg-white rounded-full shadow-sm">
-											<Zap className="w-4 h-4 text-orange-500 fill-orange-500" />
-										</div>
-										<span className="text-xs font-semibold text-orange-600 uppercase tracking-wider">
-											Featured
-										</span>
+						{/* SPOTLIGHT TAB */}
+						{activeTab === "spotlight" && (
+							<div className="space-y-6">
+								<div className="flex justify-between items-center">
+									<div>
+										<h3 className="text-lg font-medium">Featured Vendors</h3>
+										<p className="text-sm text-gray-500">
+											Highlight top performing vendors on the home screen
+										</p>
 									</div>
 									<Button
-										variant="ghost"
-										size="icon"
-										className="h-6 w-6 -mr-2 hover:text-red-600"
-										onClick={() => handleRemoveSpotlight(spot.id)}
+										className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
+										onClick={() => setSpotlightModal(true)}
 									>
-										<Trash2 className="w-3 h-3" />
+										<Plus className="w-4 h-4 mr-2" />
+										Add Spotlight
 									</Button>
 								</div>
-								<div className="p-4">
-									<h4 className="font-bold text-lg mb-1">{spot.vendorName}</h4>
-									<div className="flex items-center gap-2 mb-3">
-										<Badge variant="secondary" className="text-xs">
-											{spot.type === "featured_vendor"
-												? "Vendor Spotlight"
-												: "Service Highlight"}
-										</Badge>
-									</div>
-									<div className="text-sm text-gray-500 flex justify-between items-center pt-2 border-t mt-2">
-										<span>Expires in:</span>
-										<span className="font-medium text-gray-900">
-											{Math.max(
-												0,
-												Math.ceil(
-													(new Date(
-														new Date(spot.startDate).getTime() +
-															spot.durationDays * 86400000
-													).getTime() -
-														new Date().getTime()) /
-														(1000 * 3600 * 24)
-												)
-											)}{" "}
-											days
-										</span>
-									</div>
-								</div>
-							</Card>
-						))}
 
-						{spotlights.length === 0 && (
-							<div className="col-span-3 text-center py-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
-								<Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-								<h3 className="text-gray-900 font-medium">
-									No Active Spotlights
-								</h3>
-								<p className="text-gray-500 text-sm mt-1 mb-4">
-									Feature your best vendors to boost their visibility
-								</p>
-								<Button
-									variant="outline"
-									onClick={() => setSpotlightModal(true)}
-								>
-									Add First Spotlight
-								</Button>
+											<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+									{spotlights.map((spot) => (
+										<Card
+											key={spot.id}
+											className="overflow-hidden border-orange-100 shadow-sm hover:shadow-md transition-all"
+										>
+											<div className="bg-gradient-to-r from-orange-50 to-white p-4 border-b border-orange-100 flex justify-between items-start">
+												<div className="flex items-center gap-2">
+													<div className="p-2 bg-white rounded-full shadow-sm">
+														<Zap className="w-4 h-4 text-orange-500 fill-orange-500" />
+													</div>
+													<span className="text-xs font-semibold text-orange-600 uppercase tracking-wider">
+														Featured
+													</span>
+												</div>
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-6 w-6 -mr-2 hover:text-red-600"
+													onClick={() => handleRemoveSpotlight(spot.id)}
+												>
+													<Trash2 className="w-3 h-3" />
+												</Button>
+											</div>
+											<div className="p-4">
+												<h4 className="font-bold text-lg mb-1">{spot.vendorName}</h4>
+												<div className="flex items-center gap-2 mb-3">
+													<Badge variant="secondary" className="text-xs">
+														{spot.type === "featured_vendor"
+															? "Vendor Spotlight"
+															: "Service Highlight"}
+													</Badge>
+												</div>
+												<div className="text-sm text-gray-500 flex justify-between items-center pt-2 border-t mt-2">
+													<span>Expires in:</span>
+													<span className="font-medium text-gray-900">
+														{Math.max(
+															0,
+															Math.ceil(
+																(new Date(
+																	new Date(spot.startDate).getTime() +
+																		spot.durationDays * 86400000
+																).getTime() -
+																	new Date().getTime()) /
+																	(1000 * 3600 * 24)
+															)
+														)}{" "}
+														days
+													</span>
+												</div>
+											</div>
+										</Card>
+									))}
+
+									{spotlights.length === 0 && (
+										<div className="col-span-3 text-center py-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+											<Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+											<h3 className="text-gray-900 font-medium">
+												No Active Spotlights
+											</h3>
+											<p className="text-gray-500 text-sm mt-1 mb-4">
+												Feature your best vendors to boost their visibility
+											</p>
+											<Button
+												variant="outline"
+												onClick={() => setSpotlightModal(true)}
+											>
+												Add First Spotlight
+											</Button>
+										</div>
+									)}
+								</div>
 							</div>
 						)}
+
+						{/* COUPONS TAB */}
+						{activeTab === "coupons" && <CouponManagement />}
+
+						{/* BANNERS TAB */}
+						{activeTab === "banners" && <BannerAdmin />}
+
+						{/* ADVANCED TAB */}
+						{activeTab === "advanced" && <AdvancedPromotionsEngine />}
 					</div>
 				</div>
-			)}
+			</div>
 
 			{/* CREATE/EDIT PROMO MODAL */}
 			<Dialog open={showPromoModal} onOpenChange={setShowPromoModal}>
@@ -777,37 +804,35 @@ export default function MarketingPromotionsTab() {
 								</Select>
 							</div>
 							<div>
-								<Label>Value</Label>
+								<Label>Discount Value</Label>
 								<Input
 									type="number"
 									value={promoForm.discountValue}
 									onChange={(e) =>
 										setPromoForm({
 											...promoForm,
-											discountValue: Number(e.target.value),
+											discountValue: parseFloat(e.target.value) || 0,
 										})
 									}
+									placeholder="0"
 								/>
 							</div>
 						</div>
 
 						<div>
-							<Label>Coupon Code</Label>
+							<Label>Promo Code</Label>
 							<Input
 								value={promoForm.code}
 								onChange={(e) =>
-									setPromoForm({
-										...promoForm,
-										code: e.target.value.toUpperCase(),
-									})
+									setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })
 								}
-								placeholder="SUMMER20"
+								placeholder="SUMMER2024"
 							/>
 						</div>
 
 						<div className="grid grid-cols-2 gap-4">
 							<div>
-								<Label>Target Category</Label>
+								<Label>Category</Label>
 								<Select
 									value={promoForm.serviceCategory}
 									onValueChange={(v) =>
@@ -819,21 +844,11 @@ export default function MarketingPromotionsTab() {
 									</SelectTrigger>
 									<SelectContent>
 										<SelectItem value="all">All Categories</SelectItem>
-										{availableRoles.length > 0 ? (
-											availableRoles.map((role) => (
-												<SelectItem key={role.id} value={role.id}>
-													{role.name}
-												</SelectItem>
-											))
-										) : (
-											<>
-												<SelectItem value="veterinarian">
-													Veterinarian
-												</SelectItem>
-												<SelectItem value="groomer">Groomer</SelectItem>
-												<SelectItem value="walker">Walker</SelectItem>
-											</>
-										)}
+										<SelectItem value="vet">Veterinary</SelectItem>
+										<SelectItem value="grooming">Grooming</SelectItem>
+										<SelectItem value="walking">Walking</SelectItem>
+										<SelectItem value="training">Training</SelectItem>
+										<SelectItem value="boarding">Boarding</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
@@ -850,12 +865,45 @@ export default function MarketingPromotionsTab() {
 									</SelectTrigger>
 									<SelectContent>
 										<SelectItem value="all">All Styles</SelectItem>
-										<SelectItem value="at_home">Home Visit</SelectItem>
-										<SelectItem value="at_center">Center Visit</SelectItem>
-										<SelectItem value="tele">Tele-Consult</SelectItem>
+										<SelectItem value="home_visit">Home Visit</SelectItem>
+										<SelectItem value="clinic">Clinic</SelectItem>
+										<SelectItem value="online">Online</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Valid From</Label>
+								<Input
+									type="datetime-local"
+									value={promoForm.validFrom}
+									onChange={(e) =>
+										setPromoForm({ ...promoForm, validFrom: e.target.value })
+									}
+								/>
+							</div>
+							<div>
+								<Label>Valid Until</Label>
+								<Input
+									type="datetime-local"
+									value={promoForm.validUntil}
+									onChange={(e) =>
+										setPromoForm({ ...promoForm, validUntil: e.target.value })
+									}
+								/>
+							</div>
+						</div>
+
+						<div className="flex items-center gap-2">
+							<Switch
+								checked={promoForm.isActive}
+								onCheckedChange={(checked) =>
+									setPromoForm({ ...promoForm, isActive: checked })
+								}
+							/>
+							<Label>Active</Label>
 						</div>
 					</div>
 
@@ -872,6 +920,7 @@ export default function MarketingPromotionsTab() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
 			{/* SPOTLIGHT MODAL */}
 			<Dialog open={spotlightModal} onOpenChange={setSpotlightModal}>
 				<DialogContent className="max-w-md">
@@ -901,11 +950,6 @@ export default function MarketingPromotionsTab() {
 											{v.businessName || v.fullName} ({v.vendorType})
 										</SelectItem>
 									))}
-									{availableVendors.length === 0 && (
-										<SelectItem value="none" disabled>
-											No active vendors found
-										</SelectItem>
-									)}
 								</SelectContent>
 							</Select>
 						</div>
@@ -917,12 +961,8 @@ export default function MarketingPromotionsTab() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="featured_vendor">
-										Featured Vendor (Top Card)
-									</SelectItem>
-									<SelectItem value="trending_service">
-										Trending Service
-									</SelectItem>
+									<SelectItem value="featured_vendor">Featured Vendor</SelectItem>
+									<SelectItem value="service_highlight">Service Highlight</SelectItem>
 								</SelectContent>
 							</Select>
 						</div>
@@ -959,16 +999,6 @@ export default function MarketingPromotionsTab() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-
-			{/* COUPONS TAB */}
-			{activeTab === "coupons" && <CouponManagement />}
-
-			{/* BANNERS TAB */}
-			{activeTab === "banners" && <BannerAdmin />}
-
-			{/* ADVANCED TAB */}
-			{activeTab === "advanced" && <AdvancedPromotionsEngine />}
-			</div>
 		</AdminLayout>
 	);
 }

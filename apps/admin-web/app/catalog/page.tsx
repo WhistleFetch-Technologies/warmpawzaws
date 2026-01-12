@@ -10,6 +10,8 @@ import { ProductServicesTab } from '@/components/admin/catalog/ProductServicesTa
 import { PricingInventoryTab } from '@/components/admin/catalog/PricingInventoryTab';
 import { BulkOperationsTab } from '@/components/admin/catalog/BulkOperationsTab';
 import { ServiceCatalogTab } from '@/components/admin/catalog/ServiceCatalogTab';
+import { AdminRolesPage } from '@/components/admin/AdminRolesPage';
+import { OnboardingDesigner } from '@/components/admin/onboarding/OnboardingDesigner';
 
 // ============================================================================
 // TYPES
@@ -278,70 +280,72 @@ export default function ServiceCatalogPage() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-slate-50 relative">
+      <div className="flex-1 flex flex-col min-h-screen bg-gray-50 relative">
         {/* Loading overlay - only show when actively loading */}
         {loading && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
-            <div className="text-center">
+          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="text-center bg-white p-8 rounded-lg border border-gray-300 shadow-lg">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading service catalog...</p>
+              <p className="mt-4 text-gray-900 font-medium">Loading service catalog...</p>
             </div>
           </div>
         )}
         
-        {/* Header */}
-        <header className="bg-white border-b px-8 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
+        {/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                {/* ✅ FIX: Match wireframe - text-2xl font-bold text-gray-900 */}
                 <h1 className="text-2xl font-bold text-gray-900">Catalog & Services</h1>
-                <span className="text-sm text-gray-500">/Catalog Management</span>
+                <p className="text-sm text-gray-500 mt-1">
+                  Effortlessly manage categories, products, services, pricing and inventory across the platform.
+                </p>
               </div>
-              <p className="text-sm text-gray-500">
-                Effortlessly manage categories, products, services, pricing and inventory across the platform.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                placeholder="Search services, categories, subcategories..."
-                value={searchTerm}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm w-64"
-              />
-              <button
-                onClick={() => setActiveTab('servicecatalog')}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition text-sm"
-              >
-                Export
-              </button>
-              <button
-                onClick={handleCreate}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
-              >
-                <span>+</span> Add Category
-              </button>
-              <button
-                onClick={handleCreate}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
-              >
-                <span>+</span> Add Product
-              </button>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Search services, categories, subcategories..."
+                  value={searchTerm}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm w-64"
+                />
+                <button
+                  onClick={() => setActiveTab('servicecatalog')}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg font-medium hover:bg-gray-50 transition text-sm"
+                >
+                  Export
+                </button>
+                <button
+                  onClick={handleCreate}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
+                >
+                  <span>+</span> Add Category
+                </button>
+                <button
+                  onClick={handleCreate}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition flex items-center gap-2"
+                >
+                  <span>+</span> Add Product
+                </button>
+              </div>
             </div>
           </div>
         </header>
 
-      <main className="p-8">
+      {/* Main Content - Match wireframe: max-w-7xl mx-auto p-6 or p-8 */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-8">
         {/* Messages */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
+          <div className="mb-6 p-4 bg-white border border-red-300 rounded-xl text-red-700 flex items-center justify-between">
             <span>{error}</span>
             <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600" aria-label="Close">X</button>
           </div>
         )}
         
         {success && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
+          <div className="mb-6 p-4 bg-white border border-green-300 rounded-xl text-green-700 flex items-center justify-between">
             <span>{success}</span>
             <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600" aria-label="Close">X</button>
           </div>
@@ -349,7 +353,7 @@ export default function ServiceCatalogPage() {
 
         {/* Stats Cards - Matching Reference UI */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="bg-white border border-gray-300 rounded-xl p-4 hover:shadow-md transition-shadow text-gray-900">
             <div className="flex items-start justify-between mb-2">
               <div className="p-2 bg-blue-50 rounded-lg">
                 <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -367,7 +371,7 @@ export default function ServiceCatalogPage() {
             <p className="text-2xl font-bold text-gray-900">{stats?.mainCategories?.count || categories.length || 10}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="bg-white border border-gray-300 rounded-xl p-4 hover:shadow-md transition-shadow text-gray-900">
             <div className="flex items-start justify-between mb-2">
               <div className="p-2 bg-green-50 rounded-lg">
                 <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -385,7 +389,7 @@ export default function ServiceCatalogPage() {
             <p className="text-2xl font-bold text-gray-900">{stats?.activeProducts?.count || services.filter(s => s.status === 'active').length || 32}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="bg-white border border-gray-300 rounded-xl p-4 hover:shadow-md transition-shadow text-gray-900">
             <div className="flex items-start justify-between mb-2">
               <div className="p-2 bg-orange-50 rounded-lg">
                 <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -404,7 +408,7 @@ export default function ServiceCatalogPage() {
             <p className="text-2xl font-bold text-gray-900">{stats?.pendingReviews?.count || 10}</p>
           </div>
           
-          <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+          <div className="bg-white border border-gray-300 rounded-xl p-4 hover:shadow-md transition-shadow text-gray-900">
             <div className="flex items-start justify-between mb-2">
               <div className="p-2 bg-red-50 rounded-lg">
                 <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -424,7 +428,7 @@ export default function ServiceCatalogPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+        <div className="bg-white border border-gray-300 rounded-2xl shadow-sm p-6 mb-6 text-gray-900">
           <div className="flex flex-wrap gap-4 items-center">
             <div className="flex-1 min-w-[200px]">
               <input
@@ -467,7 +471,7 @@ export default function ServiceCatalogPage() {
             </select>
             <button
               onClick={loadData}
-              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition"
             >
               Refresh
             </button>
@@ -475,7 +479,7 @@ export default function ServiceCatalogPage() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="bg-white rounded-xl border border-gray-300 shadow-sm text-gray-900">
           <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-4">
             <div className="flex gap-0 overflow-x-auto">
               <button
@@ -584,13 +588,13 @@ export default function ServiceCatalogPage() {
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                       className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm"
                     />
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
+                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
                       Export
                     </button>
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
+                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
                       Seed Vet Only
                     </button>
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
+                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
                       Seed All
                     </button>
                   </div>
@@ -604,26 +608,32 @@ export default function ServiceCatalogPage() {
             {activeTab === 'bulk' && <BulkOperationsTab />}
             
             {activeTab === 'roles' && (
-              <div className="text-center py-12 text-gray-500">
-                <p>Roles management coming soon...</p>
+              <div className="p-6">
+                <AdminRolesPage />
               </div>
             )}
             
             {activeTab === 'onboarding' && (
-              <div className="text-center py-12 text-gray-500">
-                <p>Onboarding management coming soon...</p>
+              <div className="p-6">
+                <OnboardingDesigner />
               </div>
             )}
             
             {activeTab === 'servicecatalog' && (
+              <div className="p-6 bg-white">
+                <ServiceCatalogTab />
+              </div>
+            )}
+            
+            {false && activeTab === 'servicecatalog' && (
               <div>
                 <div className="mb-4 flex items-center justify-between">
                   <p className="text-sm text-gray-600">Search services, categories, subcategories...</p>
                   <div className="flex gap-2">
-                    <button className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                    <button className="px-3 py-1 text-sm bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition">
                       Expand All
                     </button>
-                    <button className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                    <button className="px-3 py-1 text-sm bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition">
                       Collapse All
                     </button>
                   </div>
@@ -681,13 +691,14 @@ export default function ServiceCatalogPage() {
         >
           <span className="text-white text-2xl font-bold">+</span>
         </button>
+        </div>
       </main>
 
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b sticky top-0 bg-white z-10">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto text-gray-900">
+            <div className="p-6 border-b border-gray-300 sticky top-0 bg-white z-10">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold text-gray-900">
                   {editingService ? 'Edit Service' : 'Create Service'}
@@ -801,7 +812,7 @@ export default function ServiceCatalogPage() {
                       className={`px-3 py-1 rounded-lg text-sm transition ${
                         (formData.applicable_roles || []).includes(role)
                           ? 'bg-orange-500 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
                       }`}
                     >
                       {role.replace(/_/g, ' ')}
@@ -838,10 +849,10 @@ export default function ServiceCatalogPage() {
               </div>
             </div>
             
-            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <div className="p-6 border-t border-gray-300 bg-white flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
+                className="px-6 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg font-medium hover:bg-gray-50 transition"
               >
                 Cancel
               </button>

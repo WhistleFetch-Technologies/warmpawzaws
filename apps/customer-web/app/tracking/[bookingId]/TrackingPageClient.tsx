@@ -37,32 +37,154 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
 
-  const loadTracking = useCallback(async () => {
-    try {
-      const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
-      if (response.isTracking && response.tracking) {
-        setTracking(response.tracking);
-        setError(null);
-      } else if (!response.isTracking) {
-        setError(response.message || 'GPS tracking is not active for this booking');
-        setTracking(null);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load tracking data');
-      setTracking(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [bookingId]);
-
+  // ✅ NEW: SSE (Server-Sent Events) for real-time GPS tracking
   useEffect(() => {
-    loadTracking();
-    
-    // Poll for updates every 5 seconds for better real-time feel
-    const interval = setInterval(loadTracking, 5000);
-    return () => clearInterval(interval);
-  }, [loadTracking]);
+    if (!bookingId) return;
+
+    setLoading(true);
+    let eventSource: EventSource | null = null;
+    let pollInterval: NodeJS.Timeout | null = null;
+    let sseSupported = false;
+
+    // Try to connect via SSE first
+    try {
+      const apiBaseUrl = apiClient['baseUrl'] || (process.env.NEXT_PUBLIC_API_BASE_URL || '');
+      const sseUrl = `${apiBaseUrl.replace(/\/+$/, '')}/gps-tracking/booking/${bookingId}/stream`;
+      
+      // Get auth token for SSE connection
+      const token = typeof window !== 'undefined' 
+        ? (localStorage.getItem('authToken') || null)
+        : null;
+
+      // Create EventSource with auth token in URL (SSE doesn't support headers)
+      const urlWithAuth = token ? `${sseUrl}?token=${encodeURIComponent(token)}` : sseUrl;
+      
+      eventSource = new EventSource(urlWithAuth);
+      sseSupported = true;
+
+      eventSource.onopen = () => {
+        console.log('✅ [GPS SSE] Connected to real-time tracking stream');
+        setSseConnected(true);
+        setLoading(false);
+        setError(null);
+      };
+
+      eventSource.addEventListener('connection', (event) => {
+        const data = JSON.parse(event.data);
+        console.log('✅ [GPS SSE] Connection confirmed:', data);
+        setSseConnected(true);
+      });
+
+      eventSource.addEventListener('location', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.tracking) {
+            setTracking(data.tracking);
+            setError(null);
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error('Error parsing location event:', err);
+        }
+      });
+
+      eventSource.addEventListener('status', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (!data.isTracking) {
+            setError(data.message || 'GPS tracking is not active for this booking');
+            setTracking(null);
+          }
+        } catch (err) {
+          console.error('Error parsing status event:', err);
+        }
+      });
+
+      eventSource.addEventListener('heartbeat', () => {
+        // Keep connection alive
+        console.log('💓 [GPS SSE] Heartbeat received');
+      });
+
+      eventSource.addEventListener('error', (event: MessageEvent) => {
+        try {
+          if (event.data) {
+            const data = JSON.parse(event.data);
+            console.error('❌ [GPS SSE] Error event:', data);
+            setError(data.message || 'Error in GPS tracking stream');
+          }
+        } catch (err) {
+          console.error('❌ [GPS SSE] Connection error:', err);
+          // SSE connection failed, fallback to polling
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+            sseSupported = false;
+          }
+        }
+      });
+
+      eventSource.onerror = (err) => {
+        console.error('❌ [GPS SSE] EventSource error:', err);
+        // Fallback to polling if SSE fails
+        if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+          console.log('⚠️ [GPS] SSE connection closed, falling back to polling');
+          setSseConnected(false);
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          sseSupported = false;
+        }
+      };
+    } catch (sseError) {
+      console.warn('⚠️ [GPS] SSE not supported or failed, using polling:', sseError);
+      sseSupported = false;
+    }
+
+    // Fallback to polling if SSE is not supported or failed
+    if (!sseSupported) {
+      console.log('📡 [GPS] Using polling mode (SSE not available)');
+      setSseConnected(false);
+
+      const loadTracking = async () => {
+        try {
+          const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
+          if (response.isTracking && response.tracking) {
+            setTracking(response.tracking);
+            setError(null);
+          } else if (!response.isTracking) {
+            setError(response.message || 'GPS tracking is not active for this booking');
+            setTracking(null);
+          }
+        } catch (err: any) {
+          setError(err.message || 'Failed to load tracking data');
+          setTracking(null);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // Initial load
+      loadTracking();
+
+      // Poll every 3 seconds as fallback
+      pollInterval = setInterval(loadTracking, 3000);
+    }
+
+    // Cleanup
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      setSseConnected(false);
+    };
+  }, [bookingId]);
 
   const getStatusMessage = (status: string) => {
     switch (status) {
@@ -157,7 +279,11 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
                 Open in Google Maps →
               </a>
               <p className="text-xs text-gray-400 mt-2">
-                Real-time location updates every 5 seconds
+                {sseConnected ? (
+                  <span className="text-green-600">🟢 Real-time tracking active</span>
+                ) : (
+                  <span className="text-yellow-600">🟡 Polling mode (updates every 3s)</span>
+                )}
               </p>
             </div>
           </div>

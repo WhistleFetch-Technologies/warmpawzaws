@@ -22,16 +22,17 @@ export default function PlatformSettings() {
 
 	return (
 		<AdminLayout>
-			<div className="flex-1">
-				{/* Header Section */}
+			<div className="flex-1 flex flex-col min-h-screen bg-slate-50/50">
+				{/* Header Section - Match wireframe: sticky top-0 z-10, border-b, max-w-6xl */}
 				<div className="bg-white border-b sticky top-0 z-10">
-					<div className="container mx-auto max-w-6xl px-6 py-4">
+					<div className="max-w-6xl mx-auto px-6 py-4">
 						<div className="flex items-center gap-4">
 							<div className="flex items-center gap-3">
 								<div className="p-2 bg-orange-100 rounded-lg">
 									<Settings className="w-6 h-6 text-orange-600" />
 								</div>
 								<div>
+									{/* ✅ FIX: Match wireframe - text-2xl font-bold text-slate-900 */}
 									<h1 className="text-2xl font-bold text-slate-900">
 										Platform Settings
 									</h1>
@@ -45,8 +46,9 @@ export default function PlatformSettings() {
 					</div>
 				</div>
 
-				{/* Main Content */}
-				<div className="container mx-auto max-w-6xl px-6 py-8">
+				{/* Main Content - Match wireframe: max-w-6xl mx-auto px-6 py-8 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-6xl mx-auto px-6 py-8">
 					<Tabs value={activeTab} onValueChange={(value) => {
 						console.log('🔧 Platform Settings tab clicked:', value);
 						setActiveTab(value);
@@ -151,6 +153,7 @@ export default function PlatformSettings() {
 							</TabsContent>
 						</div>
 					</Tabs>
+					</div>
 				</div>
 			</div>
 		</AdminLayout>

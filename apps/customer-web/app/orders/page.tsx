@@ -122,7 +122,7 @@ export default function CustomerOrdersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading orders...</p>
@@ -132,21 +132,28 @@ export default function CustomerOrdersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800">My Orders</h1>
-            <p className="text-gray-500 mt-1">View and track your orders</p>
+    <div className="min-h-screen bg-white">
+      {/* Header - Match home page pattern: orange gradient */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 py-4 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-white text-2xl font-bold">My Orders</h1>
+              <p className="text-white/90 text-sm mt-1">View and track your orders</p>
+            </div>
+            <Link
+              href="/shop"
+              className="px-4 py-2 text-white/90 hover:text-white transition"
+            >
+              ← Back to Shop
+            </Link>
           </div>
-          <Link
-            href="/shop"
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
-          >
-            ← Back to Shop
-          </Link>
         </div>
+      </div>
+
+      {/* Main Content - Match home page pattern: white with rounded top */}
+      <div className="bg-white rounded-t-[32px] -mt-6 pt-6 pb-24">
+        <div className="px-6">
 
         {/* Error */}
         {error && (
@@ -316,6 +323,7 @@ export default function CustomerOrdersPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

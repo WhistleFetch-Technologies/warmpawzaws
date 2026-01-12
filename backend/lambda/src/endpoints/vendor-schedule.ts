@@ -18,6 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
+import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 
 /**
  * Generate time slots from a time window
@@ -142,10 +143,20 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         staffId ? [vendorId, date, staffId] : [vendorId, date]
       );
 
+      // ✅ ENFORCE: Get scheduling policies for validation
+      const policies = await query(
+        `SELECT * FROM scheduling_policies WHERE is_active = true`
+      ).catch(() => ({ rows: [] }));
+
+      // Get policy configs
+      const bufferPolicy = policies.rows.find((p: any) => p.policy_type === 'buffer_time');
+      const capacityPolicy = policies.rows.find((p: any) => p.policy_type === 'booking_capacity');
+      const minNoticeMinutes = bufferPolicy?.policy_config?.minBufferTime || 30;
+
       // Generate all possible slots
       const allSlots: any[] = [];
       const now = new Date();
-      const minBookingTime = new Date(now.getTime() + 30 * 60 * 1000); // 30 min from now
+      const minBookingTime = new Date(now.getTime() + minNoticeMinutes * 60 * 1000); // Configurable buffer
 
       for (const slot of scheduleSlots.rows) {
         const startTime = staffId ? slot.start_time : slot.time_window_start;
@@ -155,29 +166,34 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         const timeSlots = generateTimeSlots(startTime, endTime, slotDuration);
 
         for (const timeStr of timeSlots) {
-          // Check if slot is in the past
+          // ✅ ENFORCE: Check if slot is in the past (using policy buffer time)
           const slotDateTime = new Date(date);
           const [hour, min] = timeStr.split(':').map(Number);
           slotDateTime.setHours(hour, min, 0, 0);
 
-          if (slotDateTime < minBookingTime) {
+          const isPast = slotDateTime < minBookingTime;
+          if (isPast) {
             continue; // Skip past slots
           }
 
-          // Check if slot is already booked
+          // ✅ ENFORCE: Check if slot is already booked (double booking prevention)
           const bookedCount = bookings.rows.filter(
-            (b: any) => b.booking_time === timeStr
+            (b: any) => b.booking_time === timeStr && 
+            !['cancelled', 'no_show', 'completed'].includes(b.status)
           ).length;
 
-          const maxCapacity = slot.max_capacity || 1;
-          const isAvailable = bookedCount < maxCapacity;
+          // ✅ ENFORCE: Capacity policy
+          const maxCapacityPerSlot = capacityPolicy?.policy_config?.maxConcurrentBookingsPerVendor || 
+                                    slot.max_capacity || 1;
+          const slotMaxCapacity = Math.min(slot.max_capacity || 1, maxCapacityPerSlot);
+          const isAvailable = bookedCount < slotMaxCapacity;
 
           allSlots.push({
             time: timeStr,
             available: isAvailable,
             bookedCount,
-            maxCapacity,
-            isPast: false,
+            maxCapacity: slotMaxCapacity,
+            isPast: false, // Already filtered out past slots above
           });
         }
       }
@@ -204,8 +220,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
+      // ✅ FIX: Use vendor_availability_v2 table (exists in schema, migration 006)
       const schedule = await query(
-        `SELECT * FROM vendor_schedule_slots
+        `SELECT * FROM vendor_availability_v2
          WHERE vendor_id = $1
          ORDER BY day_of_week, time_window_start`,
         [vendorId]
@@ -238,43 +255,93 @@ export function registerVendorScheduleEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/schedule
    * Set vendor schedule
+   * ✅ ENFORCES: Admin policies, past booking prevention, double booking prevention
    */
   app.post("/vendor/:vendorId/schedule", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const scheduleData = await c.req.json();
 
+      // Verify vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
       // Expect array of schedule slots
       const slots = Array.isArray(scheduleData.slots) ? scheduleData.slots : [scheduleData];
 
       const results = [];
+      const validationErrors: string[] = [];
+
+      // ✅ VALIDATION: Validate all slots before making any changes
       for (const slot of slots) {
+        const dayOfWeek = slot.dayOfWeek || slot.day_of_week;
+        const serviceStyle = slot.serviceStyle || slot.service_style || 'at_center';
+        const timeWindowStart = slot.timeWindowStart || slot.time_window_start;
+        const timeWindowEnd = slot.timeWindowEnd || slot.time_window_end;
+        const maxCapacity = slot.maxCapacity || slot.max_capacity || 1;
+
+        // ✅ ENFORCE: Admin policies, past booking, double booking
+        const validation = await validateScheduleSlot(
+          vendorId,
+          dayOfWeek,
+          timeWindowStart,
+          timeWindowEnd,
+          serviceStyle,
+          maxCapacity
+        );
+
+        if (!validation.valid) {
+          validationErrors.push(...validation.errors.map(err => 
+            `Slot ${timeWindowStart}-${timeWindowEnd} (${serviceStyle}): ${err}`
+          ));
+        }
+      }
+
+      // If any validation errors, return them without making changes
+      if (validationErrors.length > 0) {
+        return c.json({
+          success: false,
+          error: 'Schedule validation failed',
+          validationErrors,
+          message: 'Please fix validation errors before saving schedule'
+        }, 400);
+      }
+
+      // ✅ All validations passed - proceed with updates
+      for (const slot of slots) {
+        const dayOfWeek = slot.dayOfWeek || slot.day_of_week;
+        const serviceStyle = slot.serviceStyle || slot.service_style || 'at_center';
+        const timeWindowStart = slot.timeWindowStart || slot.time_window_start;
+        
+        // ✅ FIX: Use vendor_availability_v2 table (exists in schema, migration 006)
         // Delete existing slot for this day/service style if exists
         await query(
-          `DELETE FROM vendor_schedule_slots
+          `DELETE FROM vendor_availability_v2
            WHERE vendor_id = $1
            AND day_of_week = $2
            AND service_style = $3
            AND time_window_start = $4`,
           [
             vendorId,
-            slot.dayOfWeek || slot.day_of_week,
-            slot.serviceStyle || slot.service_style,
-            slot.timeWindowStart || slot.time_window_start,
+            dayOfWeek,
+            serviceStyle,
+            timeWindowStart,
           ]
         );
 
         // Insert new slot
         const result = await query(
-          `INSERT INTO vendor_schedule_slots
+          `INSERT INTO vendor_availability_v2
            (vendor_id, day_of_week, service_style, time_window_start, time_window_end, slot_duration_minutes, max_capacity, is_enabled)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *`,
           [
             vendorId,
-            slot.dayOfWeek || slot.day_of_week,
-            slot.serviceStyle || slot.service_style,
-            slot.timeWindowStart || slot.time_window_start,
+            dayOfWeek,
+            serviceStyle,
+            timeWindowStart,
             slot.timeWindowEnd || slot.time_window_end,
             slot.slotDurationMinutes || slot.slot_duration_minutes || 30,
             slot.maxCapacity || slot.max_capacity || 1,

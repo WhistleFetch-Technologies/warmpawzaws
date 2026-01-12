@@ -462,19 +462,20 @@ export default function AdminVendorManagement() {
 			}
 
 			const vendorId = (vendor as any).vendorId || vendor.id;
+			const vendorApplicationId = (vendor as any).applicationId || vendor.id;
 			console.log("✅ Vendor found in local state:", {
 				id: vendor.id,
 				vendorId: vendorId,
-				applicationId: (vendor as any).applicationId,
+				applicationId: vendorApplicationId,
 				fullName: (vendor as any).fullName,
 				phone: (vendor as any).phone,
 			});
 
 			console.log("🚀 Sending approve request with vendorId:", vendorId);
 
-			const responseData = await apiClient.post("/admin/vendor/approve", {
-				vendorId: vendorId, // Use vendorId, NOT id
-				approvedBy: "Admin",
+			// ✅ FIX: Use correct endpoint pattern /admin/vendors/:vendorId/approve
+			const responseData = await apiClient.post(`/admin/vendors/${vendorId}/approve`, {
+				adminId: "admin", // Admin user ID - should come from auth context
 				notes: "Approved from admin portal",
 			});
 
@@ -813,85 +814,77 @@ export default function AdminVendorManagement() {
 			<Toaster position="top-right" richColors />
 
 			{/* Main Content */}
-			<div className="flex-1 flex flex-col overflow-hidden">
-				{/* Top Bar */}
-				<div className="bg-white border-b border-gray-200 px-20 py-4">
-					<div className="flex items-center justify-between mb-4">
-						<div>
-							<div className="flex items-center gap-3 mb-1">
-								<h1 className="text-xl text-gray-900">Vendor Administration</h1>
-								<select
-									className="text-sm border border-gray-200 rounded-lg px-3 py-1 bg-white"
-									onChange={(e) => setActiveTab(e.target.value as any)}
-									value={activeTab}
-								>
-									<option value="settings">All Vendors</option>
-									<option value="active-vendors">Active Vendors</option>
-									<option value="support">Support Vendor</option>
-									<option value="compliance">Compliance Issues</option>
-									<option value="pending">Pending Applications</option>
-								</select>
+			<div className="flex-1 flex flex-col overflow-hidden min-h-screen bg-gray-50">
+				{/* Top Bar - Match wireframe: px-20 border-b, max-w-7xl mx-auto px-6 py-4 */}
+				<div className="bg-white border-b border-gray-200">
+					<div className="max-w-7xl mx-auto px-6 py-4">
+						<div className="flex items-center justify-between mb-4">
+							<div>
+								{/* ✅ FIX: Match wireframe - text-xl for h1, proper structure */}
+								<h1 className="text-xl text-gray-900 mb-1">Vendor Administration</h1>
+								<p className="text-sm text-gray-500">
+									Complete vendor lifecycle management and administration
+								</p>
 							</div>
-							<p className="text-sm text-gray-500">
-								Complete vendor lifecycle management and administration
-							</p>
+
+							<div className="flex items-center gap-3">
+								<div className="relative">
+									<Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+									<input
+										type="text"
+										placeholder="Search"
+										className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-64"
+									/>
+								</div>
+								<button className="p-2 hover:bg-gray-100 rounded-lg relative">
+									<Bell className="w-5 h-5 text-gray-600" />
+									<span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+								</button>
+								<button className="p-2 hover:bg-gray-100 rounded-lg">
+									<MessageSquare className="w-5 h-5 text-gray-600" />
+								</button>
+								<button className="p-2 hover:bg-gray-100 rounded-lg">
+									<User className="w-5 h-5 text-gray-600" />
+								</button>
+							</div>
 						</div>
 
-						<div className="flex items-center gap-3">
-							<div className="relative">
-								<Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-								<input
-									type="text"
-									placeholder="Search"
-									className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-64"
-								/>
-							</div>
-							<button className="p-2 hover:bg-gray-100 rounded-lg relative">
-								<Bell className="w-5 h-5 text-gray-600" />
-								<span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-							</button>
-							<button className="p-2 hover:bg-gray-100 rounded-lg">
-								<MessageSquare className="w-5 h-5 text-gray-600" />
-							</button>
-							<button className="p-2 hover:bg-gray-100 rounded-lg">
-								<User className="w-5 h-5 text-gray-600" />
-							</button>
-						</div>
-					</div>
-
-					<div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-						<div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-							<Button
-								variant="outline"
-								className="gap-2 flex-1 sm:flex-initial"
-								onClick={loadData}
-							>
-								<RefreshCw className="w-4 h-4" />
-								<span className="hidden sm:inline">Refresh</span>
-							</Button>
-							<Link href={"/platform-settings"}>
+						{/* Action Buttons Row */}
+						<div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4">
+							<div className="flex items-center gap-2 sm:gap-3 flex-wrap">
 								<Button
 									variant="outline"
-									className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50 flex-1 sm:flex-initial"
+									className="gap-2 flex-1 sm:flex-initial"
+									onClick={loadData}
 								>
-									<Settings className="w-4 h-4" />
-									<span className="hidden sm:inline">Platform Settings</span>
+									<RefreshCw className="w-4 h-4" />
+									<span className="hidden sm:inline">Refresh</span>
 								</Button>
-							</Link>
-						</div>
+								<Link href={"/platform-settings"}>
+									<Button
+										variant="outline"
+										className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50 flex-1 sm:flex-initial"
+									>
+										<Settings className="w-4 h-4" />
+										<span className="hidden sm:inline">Platform Settings</span>
+									</Button>
+								</Link>
+							</div>
 
-						<Button
-							className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2 w-full sm:w-auto"
-							onClick={() => setShowAddVendor(true)}
-						>
-							<Plus className="w-4 h-4" />
-							Add Vendor
-						</Button>
+							<Button
+								className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2 w-full sm:w-auto"
+								onClick={() => setShowAddVendor(true)}
+							>
+								<Plus className="w-4 h-4" />
+								Add Vendor
+							</Button>
+						</div>
 					</div>
 				</div>
 
-				{/* Content Area */}
-				<div className="flex-1 overflow-y-auto p-6">
+				{/* Content Area - Match wireframe: max-w-7xl mx-auto p-6 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-7xl mx-auto p-6">
 					{/* Stats Cards - NOW CLICKABLE! */}
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
 						<div
@@ -1116,6 +1109,7 @@ export default function AdminVendorManagement() {
 								<ClarificationRequestedTab />
 							)}
 						</div>
+					</div>
 					</div>
 				</div>
 			</div>

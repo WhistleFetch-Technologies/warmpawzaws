@@ -400,19 +400,20 @@ export default function RegionManager() {
 
 	return (
 		<AdminLayout>
-			<div className="flex-1 bg-gray-50">
-				{/* Header */}
-				<div className="bg-white border-b px-20 border-gray-200">
+			<div className="flex-1 flex flex-col min-h-screen bg-gray-50">
+				{/* Header - Match wireframe: border-b, max-w-7xl mx-auto px-6 py-4 */}
+				<div className="bg-white border-b border-gray-200 sticky top-0 z-10">
 					<div className="max-w-7xl mx-auto px-6 py-4">
 						<div className="flex items-center justify-between">
 							<div className="flex items-center gap-4">
 								<div className="flex items-center gap-3">
 									<div>
-										<h1 className="text-xl flex items-center gap-2 text-[#FF8C42]">
+										{/* ✅ FIX: Match wireframe - text-2xl font-bold text-gray-900 */}
+										<h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
 											<Globe className="w-6 h-6" />
 											Region Manager
 										</h1>
-										<p className="text-sm text-gray-500">
+										<p className="text-sm text-gray-500 mt-1">
 											Launch and manage global markets
 										</p>
 									</div>
@@ -441,8 +442,9 @@ export default function RegionManager() {
 					</div>
 				</div>
 
-				{/* Main Content */}
-				<div className="max-w-7xl mx-auto p-6">
+				{/* Main Content - Match wireframe: max-w-7xl mx-auto p-6 */}
+				<div className="flex-1 overflow-y-auto">
+					<div className="max-w-7xl mx-auto p-6">
 					{/* List View */}
 					{view === "list" && (
 						<div className="space-y-6">
@@ -1123,6 +1125,7 @@ export default function RegionManager() {
 							</Card>
 						</div>
 					)}
+					</div>
 				</div>
 			</div>
 		</AdminLayout>

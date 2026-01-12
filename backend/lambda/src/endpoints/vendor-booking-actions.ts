@@ -88,6 +88,26 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
 
+      // ✅ CRITICAL FIX: Trigger automatic settlement if payment is already paid
+      if (booking.payment_status === 'paid') {
+        try {
+          const { sendToSettlementQueue } = await import('../utils/sqs-client');
+          await sendToSettlementQueue({
+            bookingId,
+            vendorId: booking.vendor_id,
+            amount: parseFloat(booking.total_amount || '0'),
+            trigger: 'booking_completed',
+            completedAt: new Date().toISOString(),
+          });
+          console.log(`✅ [SETTLEMENT] Settlement queued for booking ${bookingId} after completion`);
+        } catch (error: any) {
+          console.error('❌ [SETTLEMENT] Failed to queue settlement after booking completion:', error);
+          // Don't fail booking completion if settlement queue fails
+        }
+      } else {
+        console.warn(`⚠️ [SETTLEMENT] Booking ${bookingId} completed but payment status is not 'paid' (${booking.payment_status}), settlement will be handled by payment verification or daily cron`);
+      }
+
       return c.json({
         success: true,
         booking: updated[0],

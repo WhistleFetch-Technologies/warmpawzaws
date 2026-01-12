@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CustomerOnboarding } from './CustomerOnboarding';
 import { CustomerUserProfile } from './CustomerUserProfile';
 import { CustomerPetProfile } from './CustomerPetProfile';
-import { CustomerHomeComplete } from './CustomerHomeComplete';
+import { CustomerHomeWrapper } from './CustomerHomeWrapper';
 import { isUatMode } from '@/lib/api-client';
 
 interface CustomerSession {
@@ -181,19 +181,27 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
     );
   }
 
-  // Home screen
-  if (currentScreen === 'home') {
-    return (
-      <CustomerHomeComplete 
-        phone={session.phone}
-      />
-    );
-  }
-
-  // Fallback: redirect to home
+  // Home screen and all service screens - Use CustomerHomeWrapper which handles all navigation
+  // CustomerHomeWrapper manages its own internal state for all service screens
   return (
-    <CustomerHomeComplete 
+    <CustomerHomeWrapper 
       phone={session.phone}
+      initialScreen={currentScreen === 'home' ? 'home' : undefined}
+      onNavigate={(screen: string) => {
+        // Handle logout - clear all data and redirect
+        if (screen === 'logout') {
+          localStorage.removeItem('customerPhone');
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('customerData');
+          localStorage.removeItem('customerProfile');
+          localStorage.removeItem('customerPets');
+          localStorage.removeItem('customerOnboardingComplete');
+          localStorage.removeItem('customerJourneyStage');
+          router.push('/auth');
+        }
+        // All other navigation is handled internally by CustomerHomeWrapper
+        // via its handleNavigateToService function
+      }}
     />
   );
 }

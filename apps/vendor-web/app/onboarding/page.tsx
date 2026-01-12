@@ -23,27 +23,48 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     // Get session data from localStorage
+    // Add small delay to ensure localStorage is available after redirect
     const loadSession = () => {
-      const storedPhone = localStorage.getItem('vendorPhone');
-      const storedToken = localStorage.getItem('authToken');
-      const storedVendor = localStorage.getItem('vendorData');
-      const storedVendorId = localStorage.getItem('vendorId');
+      // Try multiple times to handle race condition with localStorage write
+      const checkSession = (attempt = 0) => {
+        const storedPhone = localStorage.getItem('vendorPhone');
+        const storedToken = localStorage.getItem('authToken');
+        const storedVendor = localStorage.getItem('vendorData');
+        const storedVendorId = localStorage.getItem('vendorId');
 
-      if (storedPhone && storedToken) {
-        const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
-        
-        setSession({
-          phone: storedPhone,
-          sessionToken: storedToken,
-          verified: true,
-          vendor: vendorData,
-          vendorId: storedVendorId || vendorData?.id
+        console.log('🔍 [OnboardingPage] Checking session (attempt', attempt + 1, '):', {
+          phone: !!storedPhone,
+          token: !!storedToken,
+          vendor: !!storedVendor,
+          vendorId: !!storedVendorId
         });
-      } else {
-        // Redirect to auth if no session
-        router.push('/auth');
-      }
-      setIsLoading(false);
+
+        if (storedPhone && storedToken) {
+          const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
+          
+          setSession({
+            phone: storedPhone,
+            sessionToken: storedToken,
+            verified: true,
+            vendor: vendorData,
+            vendorId: storedVendorId || vendorData?.id
+          });
+          setIsLoading(false);
+        } else if (attempt < 3) {
+          // Retry up to 3 times with increasing delays
+          const delay = (attempt + 1) * 100; // 100ms, 200ms, 300ms
+          console.log(`⏳ [OnboardingPage] Session not found, retrying in ${delay}ms...`);
+          setTimeout(() => checkSession(attempt + 1), delay);
+        } else {
+          // After 3 attempts, redirect to auth
+          console.warn('⚠️ [OnboardingPage] Session not found after retries, redirecting to /auth');
+          router.push('/auth');
+          setIsLoading(false);
+        }
+      };
+
+      // Start checking with small initial delay
+      setTimeout(() => checkSession(0), 50);
     };
 
     loadSession();

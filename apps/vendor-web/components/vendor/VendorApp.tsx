@@ -54,63 +54,132 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     setIsLoading(true);
     
     try {
-      // Check stored data first
-      const storedVendor = localStorage.getItem('vendorData');
-      const storedRole = localStorage.getItem('vendorRole');
-      const storedStatus = localStorage.getItem('vendorApplicationStatus');
+      // Fetch onboarding status from API (correct endpoint)
+      console.log('📊 [VendorApp] Fetching onboarding status for phone:', session.phone);
       
+      const response = await apiClient.get<any>(`/vendor/onboarding/status?phone=${encodeURIComponent(session.phone)}`);
+      
+      if (response && response.identity) {
+        const { identity, application, role } = response;
+        
+        // Map onboarding status to frontend status
+        const onboardingStatus = identity.onboarding_status;
+        console.log('📊 [VendorApp] Onboarding status:', onboardingStatus);
+        
+        // Update localStorage with identity and application data
+        const vendorData: any = {
+          id: identity.vendor_id || identity.id,
+          phone: identity.phone,
+          email: identity.email,
+          onboarding_status: onboardingStatus,
+          role_id: identity.selected_role_id,
+          vendor_type: identity.vendor_type,
+          application_id: application?.id,
+        };
+        
+        // Add application data if exists
+        if (application) {
+          vendorData.applicationStatus = application.status;
+          vendorData.application = application;
+          
+          // Map application status
+          if (application.status === 'APPROVED') {
+            vendorData.status = 'approved';
+            vendorData.isActive = true;
+          } else if (application.status === 'REJECTED') {
+            vendorData.status = 'rejected';
+            vendorData.rejectionReason = application.rejection_reason;
+          } else if (application.status === 'CLARIFICATION_REQUIRED') {
+            vendorData.status = 'clarification';
+            vendorData.clarificationNotes = application.admin_comments;
+            vendorData.reviewerName = application.reviewed_by;
+          }
+          
+          // Add application payload data
+          if (application.application_payload) {
+            Object.assign(vendorData, application.application_payload);
+          }
+        }
+        
+        // Add role data
+        if (role) {
+          vendorData.role = role;
+          localStorage.setItem('vendorRole', role.id || role.name);
+        }
+        
+        // Map onboarding status to frontend status
+        if (onboardingStatus === 'ACTIVATED') {
+          setStatus('active');
+          vendorData.isActive = true;
+          vendorData.status = 'active';
+        } else if (onboardingStatus === 'APPROVED') {
+          setStatus('approved');
+          vendorData.isActive = false; // Not yet activated
+          vendorData.status = 'approved';
+        } else if (onboardingStatus === 'UNDER_REVIEW') {
+          setStatus('pending');
+          vendorData.status = 'pending';
+          vendorData.applicationStatus = 'under_review';
+        } else if (onboardingStatus === 'REJECTED') {
+          setStatus('rejected');
+          vendorData.status = 'rejected';
+          setApplicationData({
+            rejectionReason: application?.rejection_reason || 'Your application was not approved.',
+            allowResubmit: true
+          });
+        } else if (onboardingStatus === 'CLARIFICATION_REQUIRED') {
+          setStatus('clarification');
+          vendorData.status = 'clarification';
+          setApplicationData({
+            clarificationNotes: application?.admin_comments || 'Please provide additional information.',
+            reviewerName: application?.reviewed_by || 'Admin'
+          });
+        } else if (onboardingStatus === 'FORM_PENDING' || onboardingStatus === 'ROLE_PENDING') {
+          // Still in onboarding
+          setStatus('new');
+          if (identity.selected_role_id && role) {
+            setSelectedRole(role.id || role.name);
+            setShowOnboarding(true);
+          }
+        } else {
+          // INIT or other
+          setStatus('new');
+        }
+        
+        // Store vendor data
+        setVendorData(vendorData);
+        localStorage.setItem('vendorData', JSON.stringify(vendorData));
+        localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+        localStorage.setItem('vendorId', vendorData.id || identity.id);
+        
+        console.log('✅ [VendorApp] Status updated:', {
+          onboardingStatus,
+          frontendStatus: status,
+          vendorId: vendorData.id
+        });
+      }
+    } catch (err: any) {
+      console.error('❌ [VendorApp] Error checking vendor status:', err);
+      
+      // Fallback to stored data on error
+      const storedVendor = localStorage.getItem('vendorData');
       if (storedVendor) {
         const vendor = JSON.parse(storedVendor);
         setVendorData(vendor);
         
-        if (storedRole) setSelectedRole(storedRole);
-        if (storedStatus) setStatus(storedStatus as VendorStatus);
-        else if (vendor.isActive) setStatus('active');
-        else if (vendor.applicationStatus === 'pending') setStatus('pending');
-        else if (vendor.applicationStatus === 'approved') setStatus('approved');
-        else if (vendor.applicationStatus === 'rejected') setStatus('rejected');
-        else if (vendor.applicationStatus === 'clarification') setStatus('clarification');
-        else setStatus('profile_incomplete');
-      }
-      
-      // UAT Mode: Skip API call
-      if (isUatMode()) {
-        console.log('🔧 [UAT Mode] Using local vendor status');
-        setIsLoading(false);
-        return;
-      }
-
-      // Fetch actual vendor status from API
-      const response = await apiClient.get<any>(`/vendor/status/${session.phone}`);
-      
-      if (response.vendor) {
-        setVendorData(response.vendor);
-        localStorage.setItem('vendorData', JSON.stringify(response.vendor));
-        
-        const appStatus = response.vendor.applicationStatus || response.vendor.status;
-        if (response.vendor.isActive || appStatus === 'active') {
+        const storedStatus = localStorage.getItem('vendorApplicationStatus');
+        if (storedStatus) {
+          setStatus(storedStatus as VendorStatus);
+        } else if (vendor.isActive) {
           setStatus('active');
-        } else if (appStatus === 'pending' || appStatus === 'under_review') {
-          setStatus('pending');
-        } else if (appStatus === 'approved') {
+        } else if (vendor.status === 'approved') {
           setStatus('approved');
-        } else if (appStatus === 'rejected') {
-          setStatus('rejected');
-          setApplicationData({
-            rejectionReason: response.vendor.rejectionReason || 'Your application was not approved.',
-            allowResubmit: response.vendor.allowResubmit !== false
-          });
-        } else if (appStatus === 'clarification') {
-          setStatus('clarification');
-          setApplicationData({
-            clarificationNotes: response.vendor.clarificationNotes || '',
-            reviewerName: response.vendor.reviewerName
-          });
+        } else if (vendor.status === 'pending' || vendor.status === 'under_review') {
+          setStatus('pending');
+        } else {
+          setStatus('new');
         }
       }
-    } catch (err) {
-      console.error('Error checking vendor status:', err);
-      // Keep local state on error
     } finally {
       setIsLoading(false);
     }

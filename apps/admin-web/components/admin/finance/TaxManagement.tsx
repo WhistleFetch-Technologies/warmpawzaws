@@ -14,11 +14,14 @@ import { useTaxCategories } from '../../../hooks/useTaxCategories';
 import { TaxRulesManager } from './TaxRulesManager';
 import { HSNCodesManager } from './HSNCodesManager';
 import { TaxCategoriesManager } from './TaxCategoriesManager';
+import { FlexibleTaxRulesManager } from './FlexibleTaxRulesManager';
+import { FlexibleTaxConfigurationManager } from './FlexibleTaxConfigurationManager';
+import { TaxCalculatorPreview } from './TaxCalculatorPreview';
 
-type TabType = 'rules' | 'hsn' | 'categories';
+type TabType = 'rules' | 'hsn' | 'categories' | 'flexible-rules' | 'flexible-config' | 'calculator';
 
 export function TaxManagement() {
-  const [activeTab, setActiveTab] = useState<TabType>('rules');
+  const [activeTab, setActiveTab] = useState<TabType>('flexible-rules');
 
   return (
     <div className="space-y-6">
@@ -64,6 +67,36 @@ export function TaxManagement() {
             >
               Tax Categories
             </button>
+            <button
+              onClick={() => setActiveTab('flexible-rules')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'flexible-rules'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Flexible Tax Rules
+            </button>
+            <button
+              onClick={() => setActiveTab('flexible-config')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'flexible-config'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Tax Configuration
+            </button>
+            <button
+              onClick={() => setActiveTab('calculator')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'calculator'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Tax Calculator
+            </button>
           </nav>
         </div>
 
@@ -72,6 +105,9 @@ export function TaxManagement() {
           {activeTab === 'rules' && <TaxRulesManager />}
           {activeTab === 'hsn' && <HSNCodesManager />}
           {activeTab === 'categories' && <TaxCategoriesManager />}
+          {activeTab === 'flexible-rules' && <FlexibleTaxRulesManager />}
+          {activeTab === 'flexible-config' && <FlexibleTaxConfigurationManager />}
+          {activeTab === 'calculator' && <TaxCalculatorPreview />}
         </div>
       </div>
     </div>

@@ -189,7 +189,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                 maxLength={6}
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
-                className="text-center text-2xl tracking-widest h-14 border-gray-300 focus:border-[#FF8C42] focus:ring-[#FF8C42]"
+                className="text-center text-2xl tracking-widest h-14 border-gray-300 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 transition-all"
                 placeholder="••••••"
                 required
                 autoFocus
@@ -199,7 +199,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
             <Button
               type="submit"
               disabled={loading || otpCode.length !== 6}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-14 rounded-xl text-base disabled:opacity-50 shadow-lg shadow-[#FF8C42]/30 transition-all"
             >
               {loading ? 'Verifying...' : 'Verify Code'}
             </Button>
@@ -208,7 +208,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
               type="button"
               onClick={handleSendCode}
               disabled={loading}
-              className="w-full mt-4 text-[#FF8C42] hover:text-[#FF7A29] text-sm disabled:opacity-50"
+              className="w-full mt-4 text-[#FF8C42] hover:text-[#FF6B9D] text-sm disabled:opacity-50 transition-colors"
             >
               Resend code
             </button>
@@ -278,7 +278,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                 maxLength={10}
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                className="flex-1 h-12 border-gray-300 focus:border-[#FF8C42] focus:ring-[#FF8C42]"
+                className="flex-1 h-12 border-gray-300 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 transition-all"
                 placeholder="9876543210"
                 required
                 autoFocus
@@ -289,11 +289,11 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
             </p>
           </div>
 
-          <Button
-            type="submit"
-            disabled={loading || phoneNumber.length !== 10}
-            className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base disabled:opacity-50"
-          >
+            <Button
+              type="submit"
+              disabled={loading || phoneNumber.length !== 10}
+              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-14 rounded-xl text-base disabled:opacity-50 shadow-lg shadow-[#FF8C42]/30 transition-all"
+            >
             {loading ? 'Sending code...' : 'Continue'}
           </Button>
 
@@ -303,7 +303,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
               <button
                 type="button"
                 onClick={() => setShowReferralInput(true)}
-                className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm flex items-center justify-center gap-2"
+                className="w-full text-[#FF8C42] hover:text-[#FF6B9D] text-sm flex items-center justify-center gap-2 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />

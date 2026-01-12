@@ -255,49 +255,106 @@ class SelectVendorTypeHandler extends BaseHandler {
 class GetOnboardingFormSchemaHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const phone = context.event.queryStringParameters?.phone;
+    const roleId = context.event.queryStringParameters?.roleId;
 
-    if (!phone) {
-      return this.error('Phone number is required', 400);
+    if (!phone && !roleId) {
+      return this.error('Phone number or roleId is required', 400);
     }
 
     try {
-      // Get vendor identity
-      const identities = await select('vendor_identity', { phone });
-      if (identities.length === 0) {
-        return this.error('Vendor identity not found', 404);
+      let selectedRoleId = roleId;
+
+      // If phone is provided, get role from vendor identity
+      if (phone && !roleId) {
+        const identities = await select('vendor_identity', { phone });
+        if (identities.length === 0) {
+          return this.error('Vendor identity not found', 404);
+        }
+
+        const identity = identities[0];
+
+        if (!identity.selected_role_id) {
+          return this.error('Role must be selected first. Please select a role.', 400);
+        }
+
+        selectedRoleId = identity.selected_role_id;
       }
 
-      const identity = identities[0];
-
-      if (!identity.selected_role_id || !identity.vendor_type) {
-        return this.error('Role and vendor type must be selected first', 400);
+      if (!selectedRoleId) {
+        return this.error('Role ID is required', 400);
       }
 
-      // Get form schema from role config
-      const schemaResult = await query(
-        `SELECT get_onboarding_form_schema($1, $2) as schema`,
-        [identity.selected_role_id, identity.vendor_type]
-      );
+      // Get onboarding form for this role using the new endpoint structure
+      // This matches the reference implementation: /onboarding-form/:roleId
+      const forms = await select('onboarding_forms', { role_id: selectedRoleId });
+      let fields: any[] = [];
 
-      const schema = schemaResult.rows[0]?.schema;
-
-      if (!schema) {
-        return this.error('Form schema not found for this role and vendor type', 404);
+      if (forms.length > 0) {
+        // Parse JSONB fields
+        fields = typeof forms[0].fields === 'string' 
+          ? JSON.parse(forms[0].fields) 
+          : forms[0].fields || [];
       }
 
-      // Get existing application if any
+      // Filter active fields only
+      const activeFields = fields.filter((f: any) => f.isActive !== false);
+
+      // Group fields by section (matching reference structure)
+      const sections: Record<string, any> = {};
+      const sectionMeta: Record<string, any> = {
+        'business_information': { title: 'Business Information', order: 1 },
+        'location_information': { title: 'Location', order: 2 },
+        'banking_information': { title: 'Banking Details', order: 3 },
+        'document_verification': { title: 'Documents', order: 4 },
+        'documents': { title: 'Documents', order: 4 },
+        'additional_information': { title: 'Additional Info', order: 5 },
+      };
+
+      for (const field of activeFields) {
+        const secKey = field.section || 'business_information';
+        if (!sections[secKey]) {
+          sections[secKey] = {
+            id: secKey,
+            name: secKey,
+            title: sectionMeta[secKey]?.title || secKey.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            order: sectionMeta[secKey]?.order || 99,
+            fields: [],
+          };
+        }
+        sections[secKey].fields.push(field);
+      }
+
+      const sectionsArray = Object.values(sections).sort((a: any, b: any) => a.order - b.order);
+
+      // Get role info
+      const roles = await select('roles', { name: selectedRoleId });
+      const role = roles.length > 0 ? roles[0] : null;
+
+      // Get existing application if phone was provided
       let application = null;
-      if (identity.application_id) {
-        const apps = await select('vendor_onboarding_applications', {
-          id: identity.application_id,
-        });
-        application = apps.length > 0 ? apps[0] : null;
+      if (phone) {
+        const identities = await select('vendor_identity', { phone });
+        if (identities.length > 0 && identities[0].application_id) {
+          const apps = await select('vendor_onboarding_applications', {
+            id: identities[0].application_id,
+          });
+          application = apps.length > 0 ? apps[0] : null;
+        }
       }
 
       return this.success({
-        schema,
+        success: true,
+        roleId: selectedRoleId,
+        roleName: role?.display_name || role?.name || selectedRoleId,
+        fields: activeFields,
+        sections: sectionsArray,
+        schema: {
+          fields: activeFields,
+          sections: sectionsArray,
+        },
         existingApplication: application,
         canEdit: !application || application.status === 'DRAFT' || application.status === 'CLARIFICATION_REQUIRED',
+        version: forms.length > 0 ? (forms[0].version || 1) : 1,
       });
     } catch (error: any) {
       console.error('Error getting form schema:', error);

@@ -12,7 +12,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gradient-to-b from-[#FF8C42] to-[#FF6B9D] flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
       <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-black">09:41</span>
@@ -189,7 +189,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
         <Button
           onClick={() => selectedStage && onComplete(selectedStage)}
           disabled={!selectedStage}
-          className="w-full h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-2xl text-black disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+          className="w-full h-14 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] rounded-2xl text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed mb-6 shadow-lg shadow-[#FF8C42]/30 transition-all"
         >
           Continue
         </Button>

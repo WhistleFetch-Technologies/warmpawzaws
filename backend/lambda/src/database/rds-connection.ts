@@ -110,9 +110,9 @@ export async function getRdsPool(): Promise<Pool> {
       database: DB_NAME,
       user: DB_USER,
       password: DB_PASSWORD,
-      max: 20, // Maximum number of clients in the pool
+      max: 50, // Increased from 20 to handle more concurrent requests
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // Increased from 2000ms to 10000ms for VPC connections
+      connectionTimeoutMillis: 15000, // Increased from 10000ms to 15000ms for better reliability
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     });
 
@@ -164,8 +164,18 @@ export async function query(
     throw new Error(`Database connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
+  // Add query timeout (50 seconds to leave buffer for Lambda timeout of 60s)
+  const QUERY_TIMEOUT_MS = 50000;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Query exceeded ${QUERY_TIMEOUT_MS}ms timeout. Consider optimizing the query.`));
+    }, QUERY_TIMEOUT_MS);
+  });
+  
   try {
-    const result = await pool.query<any>(text, params);
+    const queryPromise = pool.query<any>(text, params);
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    
     const duration = Date.now() - start;
     
     if (duration > 1000) {
@@ -178,7 +188,12 @@ export async function query(
     console.error('[DB] Query error after', duration, 'ms:', error?.message || error);
     console.error('[DB] Error code:', error?.code);
     console.error('[DB] Query:', text.substring(0, 200));
-    console.error('[DB] Params:', params);
+    console.error('[DB] Params:', params?.slice(0, 5)); // Log first 5 params only
+    
+    // Handle query timeout
+    if (error?.message?.includes('Query exceeded') || error?.message?.includes('timeout')) {
+      throw new Error(`Query timeout: ${error.message}. Query took ${duration}ms. Consider optimizing or adding indexes.`);
+    }
     
     // Provide more helpful error messages
     if (error?.code === 'ETIMEDOUT' || error?.code === 'ECONNREFUSED') {

@@ -1,1 +1,0 @@
-self.__REACT_LOADABLE_MANIFEST="{\"lib/api-client.ts -> ./error-handling\":{\"id\":\"lib/api-client.ts -> ./error-handling\",\"files\":[\"static/chunks/_app-pages-browser_lib_error-handling_ts.js\"]}}"
