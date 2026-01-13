@@ -90,7 +90,7 @@ export function CategoriesTab() {
                       </span>
                     )}
                     <span className="text-gray-500">
-                      Created: {new Date(category.createdAt).toLocaleDateString()}
+                      Created: {category.createdAt ? new Date(category.createdAt).toLocaleDateString() : 'N/A'}
                     </span>
                   </div>
                 </div>

@@ -48,16 +48,18 @@ echo -e "${GREEN}✅ Build completed successfully${NC}"
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
 
-# Get API Gateway endpoint
+# Get API Gateway endpoint (HTTP API v2)
+# The warmpawz API is an HTTP API (v2), so we use apigatewayv2
 API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \
   --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
   --output text 2>/dev/null | head -1 || echo "")
 
-if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ]; then
-  API_ENDPOINT="${DEV_API_URL:-https://dev.api.warmpawz.com}"
-  echo -e "${YELLOW}⚠️  Using fallback API endpoint: $API_ENDPOINT${NC}"
-else
+if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
   echo -e "${GREEN}✅ API Gateway endpoint: $API_ENDPOINT${NC}"
+else
+  # Fallback to known API Gateway endpoint
+  API_ENDPOINT="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+  echo -e "${YELLOW}⚠️  Using fallback API endpoint: $API_ENDPOINT${NC}"
 fi
 
 # Inject runtime-config.js into dist folder

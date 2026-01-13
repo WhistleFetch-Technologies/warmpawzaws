@@ -302,17 +302,12 @@ class SelectVendorTypeHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       const role = roles[0];
-      const supportedTypes = role.config?.vendorTypes || [];
-      
-      if (!supportedTypes.includes(vendor_type)) {
-        return this.error(
-          `Vendor type '${vendor_type}' is not supported for this role. Supported: ${supportedTypes.join(', ')}`,
-          400,
-          'VALIDATION_ERROR',
-          undefined,
-          requestId
-        );
-      }
+      // Removed vendorTypes validation since we're no longer distinguishing between solo/business
+      // All vendors will be set to 'business' type by default
+      // const supportedTypes = role.config?.vendorTypes || [];
+      // if (!supportedTypes.includes(vendor_type)) {
+      //   return this.error(...);
+      // }
 
       // Update identity
       await update(
@@ -382,7 +377,21 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       // Get form schema from onboarding forms table (matching reference implementation)
-      const forms = await select('onboarding_forms', { role_id: identity.selected_role_id });
+      // First, get the role to find its name
+      const roles = await select('roles', { id: identity.selected_role_id });
+      if (roles.length === 0) {
+        return this.error('Role not found', 404, 'NOT_FOUND', undefined, requestId);
+      }
+      
+      const role = roles[0];
+      const roleName = role.name;
+      
+      // Forms are stored by role name, not UUID
+      const formsResult = await query(
+        `SELECT * FROM onboarding_forms WHERE role_id = $1`,
+        [roleName]
+      );
+      const forms = formsResult.rows || [];
       let fields: any[] = [];
 
       if (forms.length > 0) {
@@ -812,7 +821,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/vendor/onboarding/select-role', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await selectRoleHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -821,7 +830,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
 
   // Phase 3: Vendor Type
   app.post('/vendor/onboarding/select-vendor-type', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await selectVendorTypeHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -838,7 +847,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/vendor/onboarding/submit-application', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await submitHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -847,7 +856,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
 
   // Phase 6: Admin Review
   app.post('/admin/vendor/onboarding/:applicationId/review', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     event.pathParameters = { applicationId: c.req.param('applicationId') };
     const context = createLambdaContext();
     const result: any = await reviewHandler.execute(event, context);
@@ -864,6 +873,43 @@ function createApiGatewayEvent(req: any): any {
     body: JSON.stringify(req.body || {}),
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    requestContext: {
+      requestId: crypto.randomUUID(),
+    },
+  };
+}
+
+async function createApiGatewayEventWithBody(c: any): Promise<any> {
+  const body = await c.req.json().catch(() => ({}));
+  
+  // Get headers
+  const headers: Record<string, string> = {};
+  try {
+    if (c.req.raw && c.req.raw.headers) {
+      const rawHeaders = c.req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else {
+      const contentType = c.req.header('content-type');
+      const authorization = c.req.header('authorization');
+      if (contentType) headers['content-type'] = contentType;
+      if (authorization) headers['authorization'] = authorization;
+    }
+  } catch (e) {
+    console.warn('[VENDOR-ONBOARDING] Error processing headers:', e);
+  }
+
+  const url = new URL(c.req.url);
+  return {
+    rawPath: url.pathname,
+    rawQueryString: url.search.substring(1),
+    headers,
+    body: JSON.stringify(body),
+    isBase64Encoded: false,
     requestContext: {
       requestId: crypto.randomUUID(),
     },

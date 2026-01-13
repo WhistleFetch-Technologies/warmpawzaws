@@ -74,9 +74,17 @@ export default function EventsPage() {
       setLoading(true);
       setError(null);
       
+      // Get customer ID
+      const customerId = localStorage.getItem('customerId');
+      const customerData = localStorage.getItem('customerData');
+      const customer = customerData ? JSON.parse(customerData) : null;
+      const finalCustomerId = customerId || customer?.id;
+
       const [eventsRes, registrationsRes] = await Promise.all([
-        apiClient.get<any>('/events'),
-        apiClient.get<any>('/events/registrations'),
+        apiClient.get<any>('/events/discover'),
+        finalCustomerId
+          ? apiClient.get<any>(`/events/my-registrations?customerId=${finalCustomerId}`).catch(() => ({ registrations: [] }))
+          : Promise.resolve({ registrations: [] }),
       ]);
       
       setEvents(eventsRes.events || eventsRes || []);
@@ -98,7 +106,23 @@ export default function EventsPage() {
       setRegistering(eventId);
       setError(null);
       
-      await apiClient.post(`/events/${eventId}/register`, {});
+      // Get customer ID from localStorage
+      const customerId = localStorage.getItem('customerId');
+      const customerData = localStorage.getItem('customerData');
+      const customer = customerData ? JSON.parse(customerData) : null;
+      
+      if (!customerId && !customer) {
+        setError('Please login to register for events');
+        return;
+      }
+
+      await apiClient.post(`/events/${eventId}/register`, {
+        customerId: customerId || customer?.id,
+        attendeeName: customer?.name || 'Customer',
+        attendeePhone: customer?.phone || '',
+        attendeeEmail: customer?.email || null,
+        numberOfPeople: 1,
+      });
       setSuccess('Successfully registered for the event!');
       loadData();
     } catch (err: any) {

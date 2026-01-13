@@ -53,16 +53,16 @@ interface BannerFormData {
 
 export default function BannersPage() {
   // Filters
-  const [filterPosition, setFilterPosition] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterPosition, setFilterPosition] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   // Reusable hooks
   const { data: banners, loading, error: dataError, refetch } = useApiData<Banner>({
     endpoint: '/admin/banners',
     dataKey: 'banners',
     params: {
-      ...(filterPosition && { position: filterPosition }),
-      ...(filterStatus && { isActive: filterStatus }),
+      ...(filterPosition && filterPosition !== 'all' && { position: filterPosition }),
+      ...(filterStatus && filterStatus !== 'all' && { isActive: filterStatus }),
     },
   });
 
@@ -258,7 +258,7 @@ export default function BannersPage() {
                       <SelectValue placeholder="All Positions" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Positions</SelectItem>
+                      <SelectItem value="all">All Positions</SelectItem>
                       <SelectItem value="home_top">Home Top</SelectItem>
                       <SelectItem value="home_middle">Home Middle</SelectItem>
                       <SelectItem value="category">Category Page</SelectItem>
@@ -273,7 +273,7 @@ export default function BannersPage() {
                       <SelectValue placeholder="All Status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Status</SelectItem>
+                      <SelectItem value="all">All Status</SelectItem>
                       <SelectItem value="true">Active</SelectItem>
                       <SelectItem value="false">Inactive</SelectItem>
                     </SelectContent>

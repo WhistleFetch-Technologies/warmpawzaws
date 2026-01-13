@@ -4,6 +4,7 @@ import React, { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
+import { ServiceEvents } from '@/components/customer/ServiceEvents';
 
 interface SearchResult {
   id: string;
@@ -233,26 +234,32 @@ function SearchContent() {
                 <p className="text-gray-500">No services available for this vendor</p>
               </div>
             ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {vendorServices.map((service: any) => (
-                  <a
-                    key={service.id}
-                    href={`/booking/${service.id}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      updateSearchContextSelection(vendorIdParam, service.id);
-                      router.push(`/booking/${service.id}`);
-                    }}
-                    className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
-                  >
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900">{service.service_name}</h3>
-                      {service.price && (
-                        <p className="text-orange-500 font-semibold mt-2">₹{service.price}</p>
-                      )}
-                    </div>
-                  </a>
-                ))}
+              <div className="space-y-6">
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {vendorServices.map((service: any) => (
+                    <a
+                      key={service.id}
+                      href={`/booking/${service.id}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        updateSearchContextSelection(vendorIdParam, service.id);
+                        router.push(`/booking/${service.id}`);
+                      }}
+                      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
+                    >
+                      <div className="p-4">
+                        <h3 className="font-semibold text-gray-900">{service.service_name}</h3>
+                        {service.price && (
+                          <p className="text-orange-500 font-semibold mt-2">₹{service.price}</p>
+                        )}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+                {/* Show events related to vendor services */}
+                {vendorServices.length > 0 && vendorIdParam && (
+                  <ServiceEvents serviceId={vendorServices[0]?.id} vendorId={vendorIdParam} />
+                )}
               </div>
             )}
           </div>

@@ -467,6 +467,144 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   });
 
   /**
+   * GET /customer/pets/:phone
+   * Get customer pets by phone (path parameter for frontend compatibility)
+   */
+  app.get('/customer/pets/:phone', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // Get customer by phone
+      const customers = await select('customers', { phone });
+      if (customers.length === 0) {
+        return c.json({ pets: [], count: 0 });
+      }
+
+      const customer = customers[0];
+
+      // Get pets
+      const pets = await select('pets',
+        { customer_id: customer.id },
+        { orderBy: 'created_at', orderDirection: 'DESC' }
+      );
+
+      return c.json({
+        success: true,
+        pets: pets.map((pet: any) => ({
+          id: pet.id,
+          name: pet.name,
+          type: pet.species || 'Dog',
+          species: pet.species,
+          breed: pet.breed,
+          age: pet.age_years?.toString() || '',
+          gender: pet.gender,
+          weight: pet.weight_kg?.toString() || '',
+          photo: pet.profile_photo_url,
+          microchipId: pet.microchip_id,
+          healthRecords: pet.medical_history || {},
+          vaccinations: pet.vaccination_records || {},
+          createdAt: pet.created_at,
+        })),
+        count: pets.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer pets by phone:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/pets
+   * Save customer pets (accepts phone and pets array from frontend)
+   */
+  app.post('/customer/pets', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { phone, pets } = body;
+
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      if (!pets || !Array.isArray(pets)) {
+        return c.json({ error: 'pets array is required' }, 400);
+      }
+
+      // Get customer by phone
+      const customers = await select('customers', { phone });
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found. Please create profile first.' }, 404);
+      }
+
+      const customer = customers[0];
+      const savedPets = [];
+
+      for (const pet of pets) {
+        try {
+          // Check if pet already exists
+          const existingPets = await select('pets', { customer_id: customer.id, name: pet.name });
+          
+          // Normalize gender to lowercase for DB constraint
+          const normalizedGender = pet.gender ? pet.gender.toLowerCase() : null;
+          // Validate gender against allowed values
+          const allowedGenders = ['male', 'female', 'neutered', 'spayed'];
+          const validGender = normalizedGender && allowedGenders.includes(normalizedGender) ? normalizedGender : null;
+          
+          // Build pet data matching the pets table schema
+          const petData: Record<string, any> = {
+            customer_id: customer.id,
+            name: pet.name,
+            species: (pet.type || pet.species || 'dog').toLowerCase(),
+            breed: pet.breed || null,
+            age_years: pet.age ? parseInt(pet.age) : null,
+            gender: validGender,
+            weight_kg: pet.weight ? parseFloat(pet.weight) : null,
+            profile_photo_url: pet.photo && pet.photo.startsWith('http') ? pet.photo : null,
+            // Store health records and vaccinations in medical_history JSONB
+            medical_history: {
+              ...pet.healthRecords,
+              vaccinations: pet.vaccinations,
+              microchip_id: pet.microchipId || null,
+            },
+          };
+
+          if (existingPets.length > 0) {
+            // Update existing pet
+            const updated = await update('pets', { id: existingPets[0].id }, petData);
+            savedPets.push({ ...updated[0], id: existingPets[0].id });
+          } else {
+            // Insert new pet
+            const inserted = await insert('pets', petData);
+            savedPets.push(inserted[0]);
+          }
+        } catch (petError: any) {
+          console.error(`Error saving pet ${pet.name}:`, petError);
+        }
+      }
+
+      // Update customer onboarding status
+      try {
+        const { updateCustomerOnboardingStatus } = await import('../utils/customer-state');
+        await updateCustomerOnboardingStatus(customer.id, 'PET_PENDING', 'preferences');
+      } catch (stateError) {
+        console.error('Error updating onboarding status:', stateError);
+      }
+
+      return c.json({
+        success: true,
+        message: `${savedPets.length} pet(s) saved successfully`,
+        pets: savedPets,
+      });
+    } catch (error: any) {
+      console.error('Error saving customer pets:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /customer/questionnaire/planning
    * Save customer planning journey questionnaire
    */

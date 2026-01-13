@@ -17,7 +17,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, update, query } from '../database/rds-connection';
+import { select, update, query, insert } from '../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 
 function normalizePhone(phone: string): string {
@@ -193,6 +193,169 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   });
 
   /**
+   * POST /customer/profile
+   * Create or update customer profile (for frontend compatibility)
+   * This endpoint accepts phone in body and creates/updates profile
+   */
+  app.post("/customer/profile", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      
+      // Handle nested profile structure from frontend
+      // Frontend sends: { phone, profile: { firstName, lastName, ... }, journeyType }
+      // Backend expects: { firstName, lastName, ... }
+      const rawProfilePayload = body.profile || body;
+      
+      // Clean the payload - remove empty strings for optional URL fields (photo)
+      // and remove extra fields (phone) that aren't in the schema
+      const profilePayload: Record<string, any> = {};
+      if (rawProfilePayload.firstName) profilePayload.firstName = rawProfilePayload.firstName;
+      if (rawProfilePayload.lastName) profilePayload.lastName = rawProfilePayload.lastName;
+      if (rawProfilePayload.email) profilePayload.email = rawProfilePayload.email;
+      if (rawProfilePayload.address) profilePayload.address = rawProfilePayload.address;
+      if (rawProfilePayload.pincode) profilePayload.pincode = rawProfilePayload.pincode;
+      if (rawProfilePayload.photo && rawProfilePayload.photo.startsWith('http')) {
+        profilePayload.photo = rawProfilePayload.photo;
+      }
+      
+      console.log('[PROFILE] Cleaned payload:', profilePayload);
+      
+      // Validate request with Zod schema
+      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(profilePayload);
+      if (!validationResult.success) {
+        console.error('[PROFILE] Validation failed:', validationResult.error.errors);
+        return c.json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: {
+              errors: validationResult.error.errors,
+            },
+          },
+        }, 400);
+      }
+      
+      const profileData = validationResult.data;
+      
+      // Get phone from body (required for POST endpoint)
+      const phone = body.phone || profileData.phone;
+      if (!phone) {
+        return c.json({ error: 'Phone number is required' }, 400);
+      }
+
+      const cleanPhone = normalizePhone(phone);
+      let customerId = await resolveCustomerId(cleanPhone);
+      
+      if (!customerId) {
+        // Customer doesn't exist - create it (for UAT mode or when OTP verification didn't create customer)
+        try {
+          // Create customer identity first (same pattern as OTP verification)
+          const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
+          const identityId = await createOrUpdateCustomerIdentity(cleanPhone, undefined);
+          
+          // Create customer record with all required fields (matching OTP verification pattern)
+          const fullName = profileData.firstName && profileData.lastName 
+            ? `${profileData.firstName} ${profileData.lastName}`.trim()
+            : `Customer ${cleanPhone.slice(-4)}`;
+          
+          const newCustomer = await insert('customers', {
+            phone: cleanPhone,
+            full_name: fullName,
+            email: profileData.email || null,
+            is_active: true,
+            status: 'new',
+            onboarding_status: 'PHONE_VERIFIED',
+            profile_completed: false,
+            customer_identity_id: identityId,
+            // Don't set created_at/updated_at - let database defaults handle it
+          });
+          
+          customerId = newCustomer[0].id;
+          
+          console.log(`[PROFILE] Created new customer ${customerId} for phone ${cleanPhone}`);
+        } catch (createError: any) {
+          console.error('[PROFILE] Error creating customer:', createError);
+          console.error('[PROFILE] Error details:', {
+            message: createError.message,
+            stack: createError.stack,
+            phone: cleanPhone
+          });
+          return c.json({ 
+            error: 'Failed to create customer. Please try again.',
+            code: 'CUSTOMER_CREATION_FAILED',
+            details: process.env.NODE_ENV === 'development' ? createError.message : undefined
+          }, 500);
+        }
+      }
+
+      // Use PUT logic to update profile
+      const updateData: any = {};
+
+      if (profileData.firstName || profileData.lastName) {
+        updateData.full_name = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim();
+      }
+
+      if (profileData.email) {
+        updateData.email = profileData.email;
+      }
+
+      if (profileData.photo) {
+        const customers = await select('customers', { id: customerId });
+        const existingPreferences = (customers[0]?.preferences as any) || {};
+        updateData.preferences = {
+          ...existingPreferences,
+          profile_photo_url: profileData.photo,
+        };
+      }
+
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../utils/customer-state');
+      
+      const completionUpdates: any = {};
+      if (profileData.firstName || profileData.lastName || profileData.email) {
+        completionUpdates.basic_info = true;
+      }
+      if (profileData.address || profileData.pincode) {
+        completionUpdates.address = true;
+      }
+
+      // Handle address - customers table has address (TEXT) and pincode (TEXT) as separate fields
+      if (profileData.address) {
+        updateData.address = profileData.address;
+      }
+      if (profileData.pincode) {
+        updateData.pincode = profileData.pincode;
+      }
+
+      const updated = await update('customers', { id: customerId }, updateData);
+
+      if (Object.keys(completionUpdates).length > 0) {
+        try {
+          await updateProfileCompletion(customerId, completionUpdates);
+          
+          const customers = await select('customers', { id: customerId });
+          const customer = customers[0];
+          
+          if (customer.onboarding_status === 'PHONE_VERIFIED' && completionUpdates.basic_info) {
+            await updateCustomerOnboardingStatus(customerId, 'PROFILE_PENDING', 'profile');
+          }
+        } catch (stateError) {
+          console.error('Error updating customer state:', stateError);
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Profile updated successfully',
+        profile: updated[0],
+      });
+    } catch (error: any) {
+      console.error('Error updating customer profile:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * PUT /customer/profile/:identifier
    * Update customer profile
    */
@@ -257,15 +420,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         completionUpdates.address = true;
       }
 
-      if (profileData.address || profileData.pincode) {
-        // Store address in address JSONB
-        const customers = await select('customers', { id: customerId });
-        const existingAddress = (customers[0]?.address as any) || {};
-        updateData.address = {
-          ...existingAddress,
-          street: profileData.address || existingAddress.street,
-          pincode: profileData.pincode || existingAddress.pincode,
-        };
+      // Handle address - customers table has address (TEXT) and pincode (TEXT) as separate fields
+      if (profileData.address) {
+        updateData.address = profileData.address;
+      }
+      if (profileData.pincode) {
+        updateData.pincode = profileData.pincode;
       }
 
       const updated = await update('customers', { id: customerId }, updateData);

@@ -47,6 +47,10 @@ export default function EventManagementPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewingEvent, setViewingEvent] = useState<Event | null>(null);
 
   useEffect(() => {
     loadEvents();
@@ -95,6 +99,35 @@ export default function EventManagementPage() {
     return matchesSearch && matchesFilter;
   });
 
+  const handleEdit = (event: Event) => {
+    setEditingEvent(event);
+    setEditModalOpen(true);
+  };
+
+  const handleDelete = async (eventId: string) => {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+    
+    try {
+      await apiClient.delete(`/admin/events/${eventId}`);
+      toast.success('Event deleted successfully');
+      loadEvents();
+    } catch (error: any) {
+      console.error('Error deleting event:', error);
+      toast.error(error.message || 'Failed to delete event');
+    }
+  };
+
+  const handleView = async (eventId: string) => {
+    try {
+      const event = await apiClient.get<any>(`/admin/events/${eventId}`);
+      setViewingEvent(event);
+      setViewModalOpen(true);
+    } catch (error: any) {
+      console.error('Error fetching event:', error);
+      toast.error('Failed to load event details');
+    }
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
@@ -107,6 +140,23 @@ export default function EventManagementPage() {
       });
     } catch {
       return dateString;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'upcoming':
+        return 'bg-blue-100 text-blue-800';
+      case 'ongoing':
+        return 'bg-green-100 text-green-800';
+      case 'completed':
+        return 'bg-gray-100 text-gray-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
+      case 'draft':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -141,10 +191,24 @@ export default function EventManagementPage() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="Search"
+                    placeholder="Search events..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                     className="px-4 py-2 pl-10 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20 outline-none text-sm w-64"
                   />
                 </div>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20 outline-none text-sm"
+                >
+                  <option value="all">All Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="upcoming">Upcoming</option>
+                  <option value="ongoing">Ongoing</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
               </div>
             </div>
           </div>
@@ -262,16 +326,98 @@ export default function EventManagementPage() {
             </div>
           </div>
 
+          {/* Events List */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">All Events</h3>
+              <span className="text-sm text-gray-500">{filteredEvents.length} events</span>
+            </div>
+            {filteredEvents.length === 0 ? (
+              <div className="text-center py-12">
+                <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No Events Found</h3>
+                <p className="text-gray-600 mb-6">
+                  {events.length === 0
+                    ? 'Get started by creating your first event'
+                    : 'Try adjusting your search or filter criteria'}
+                </p>
+                <EnhancedButton icon={Plus} onClick={() => setCreateModalOpen(true)}>
+                  Create Event
+                </EnhancedButton>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h4 className="font-semibold text-gray-900">{event.title}</h4>
+                        <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(event.status)}`}>
+                          {event.status}
+                        </span>
+                        {event.category && (
+                          <span className="px-2 py-1 text-xs font-medium bg-gray-200 text-gray-700 rounded">
+                            {event.category}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-gray-600">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-4 h-4" />
+                          {formatDate(event.start_date)}
+                        </span>
+                        {event.location && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-4 h-4" />
+                            {event.location}
+                          </span>
+                        )}
+                        {(event.max_participants || event.current_participants) && (
+                          <span className="flex items-center gap-1">
+                            <Users className="w-4 h-4" />
+                            {event.current_participants || 0} / {event.max_participants || '∞'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <EnhancedButton
+                        variant="outline"
+                        size="sm"
+                        icon={Edit}
+                        onClick={() => handleEdit(event)}
+                      >
+                        Edit
+                      </EnhancedButton>
+                      <EnhancedButton
+                        variant="outline"
+                        size="sm"
+                        icon={Trash2}
+                        onClick={() => handleDelete(event.id)}
+                        className="text-red-600 hover:text-red-700 hover:border-red-300"
+                      >
+                        Delete
+                      </EnhancedButton>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Today's Events */}
           {todayEvents.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="bg-white border border-gray-200 rounded-xl p-6 mt-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">Upcoming Events for Today</h3>
               <div className="space-y-3">
                 {todayEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                    onClick={() => setSelectedEvent(event)}
+                    onClick={() => handleView(event.id)}
                   >
                     <div className="flex-1">
                       <h4 className="font-semibold text-gray-900">{event.title}</h4>
@@ -301,6 +447,43 @@ export default function EventManagementPage() {
           />
         )}
 
+        {/* Edit Event Modal */}
+        {editModalOpen && editingEvent && (
+          <CreateEventModal
+            isOpen={editModalOpen}
+            onClose={() => {
+              setEditModalOpen(false);
+              setEditingEvent(null);
+            }}
+            onSuccess={() => {
+              loadEvents();
+              setEditModalOpen(false);
+              setEditingEvent(null);
+            }}
+            event={editingEvent}
+          />
+        )}
+
+        {/* View Event Modal */}
+        {viewModalOpen && viewingEvent && (
+          <ViewEventModal
+            isOpen={viewModalOpen}
+            onClose={() => {
+              setViewModalOpen(false);
+              setViewingEvent(null);
+            }}
+            event={viewingEvent}
+            onEdit={() => {
+              setViewModalOpen(false);
+              handleEdit(viewingEvent);
+            }}
+            onDelete={() => {
+              setViewModalOpen(false);
+              handleDelete(viewingEvent.id);
+            }}
+          />
+        )}
+
         {/* Floating Action Button */}
         <button
           onClick={() => setCreateModalOpen(true)}
@@ -313,15 +496,17 @@ export default function EventManagementPage() {
   );
 }
 
-// Create Event Modal Component
+// Create/Edit Event Modal Component
 function CreateEventModal({
   isOpen,
   onClose,
   onSuccess,
+  event,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  event?: Event | null;
 }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -333,8 +518,43 @@ function CreateEventModal({
     end_time: '',
     location: '',
     expected_attendees: '',
+    status: 'draft',
     banner: null as File | null,
   });
+
+  useEffect(() => {
+    if (event) {
+      const eventDate = event.start_date.split('T')[0];
+      const startTime = event.start_date.includes('T') ? event.start_date.split('T')[1].substring(0, 5) : '';
+      const endTime = event.end_date && event.end_date.includes('T') ? event.end_date.split('T')[1].substring(0, 5) : '';
+      
+      setFormData({
+        title: event.title || '',
+        description: event.description || '',
+        category: event.category || '',
+        date: eventDate,
+        start_time: startTime,
+        end_time: endTime,
+        location: event.location || '',
+        expected_attendees: event.max_participants?.toString() || '',
+        status: event.status || 'draft',
+        banner: null,
+      });
+    } else {
+      setFormData({
+        title: '',
+        description: '',
+        category: '',
+        date: '',
+        start_time: '',
+        end_time: '',
+        location: '',
+        expected_attendees: '',
+        status: 'draft',
+        banner: null,
+      });
+    }
+  }, [event, isOpen]);
 
   const handleSubmit = async () => {
     if (!formData.title || !formData.date || !formData.start_time) {
@@ -344,20 +564,30 @@ function CreateEventModal({
 
     try {
       setLoading(true);
-      await apiClient.post('/admin/events', {
+      const payload = {
         title: formData.title,
         description: formData.description,
-        category: formData.category,
-        start_date: `${formData.date}T${formData.start_time}`,
-        end_date: `${formData.date}T${formData.end_time || formData.start_time}`,
+        category: formData.category || 'other',
+        start_date: formData.date,
+        start_time: formData.start_time,
+        end_date: formData.date,
+        end_time: formData.end_time || formData.start_time,
         location: formData.location,
         max_participants: parseInt(formData.expected_attendees) || undefined,
-      });
-      toast.success('Event created successfully!');
+        status: formData.status,
+      };
+
+      if (event) {
+        await apiClient.put(`/admin/events/${event.id}`, payload);
+        toast.success('Event updated successfully!');
+      } else {
+        await apiClient.post('/admin/events', payload);
+        toast.success('Event created successfully!');
+      }
       onSuccess();
     } catch (error: any) {
-      console.error('Error creating event:', error);
-      toast.error(error.message || 'Failed to create event');
+      console.error('Error saving event:', error);
+      toast.error(error.message || `Failed to ${event ? 'update' : 'create'} event`);
     } finally {
       setLoading(false);
     }
@@ -367,8 +597,8 @@ function CreateEventModal({
     <EnhancedModal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create New Event"
-      subtitle="Create a new event for customer engagement"
+      title={event ? "Edit Event" : "Create New Event"}
+      subtitle={event ? "Update event details" : "Create a new event for customer engagement"}
       icon={<Calendar className="w-5 h-5 text-white" />}
       maxWidth="lg"
       footer={
@@ -382,7 +612,7 @@ function CreateEventModal({
             disabled={loading}
             loading={loading}
           >
-            Create Event
+            {event ? 'Update Event' : 'Create Event'}
           </EnhancedButton>
         </div>
       }
@@ -411,10 +641,29 @@ function CreateEventModal({
             className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
           >
             <option value="">Select Category</option>
-            <option value="conference">Conference</option>
-            <option value="community">Community</option>
-            <option value="training">Training</option>
+            <option value="adoption">Adoption</option>
             <option value="workshop">Workshop</option>
+            <option value="exhibition">Exhibition</option>
+            <option value="charity">Charity</option>
+            <option value="training">Training</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Status
+          </label>
+          <select
+            value={formData.status}
+            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
+          >
+            <option value="draft">Draft</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
           </select>
         </div>
 
@@ -508,6 +757,133 @@ function CreateEventModal({
             <p className="text-sm text-gray-600">No media added yet</p>
             <p className="text-xs text-gray-500 mt-1">Click to upload banner image</p>
           </div>
+        </div>
+      </div>
+    </EnhancedModal>
+  );
+}
+
+// View Event Modal Component
+function ViewEventModal({
+  isOpen,
+  onClose,
+  event,
+  onEdit,
+  onDelete,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  event: Event;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'upcoming':
+        return 'bg-blue-100 text-blue-800';
+      case 'ongoing':
+        return 'bg-green-100 text-green-800';
+      case 'completed':
+        return 'bg-gray-100 text-gray-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
+      case 'draft':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  return (
+    <EnhancedModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={event.title}
+      subtitle={event.category || 'Event Details'}
+      icon={<Calendar className="w-5 h-5 text-white" />}
+      maxWidth="2xl"
+      footer={
+        <div className="flex items-center justify-end gap-3">
+          <EnhancedButton variant="outline" onClick={onDelete} className="text-red-600 hover:text-red-700">
+            Delete
+          </EnhancedButton>
+          <EnhancedButton variant="outline" onClick={onEdit}>
+            Edit
+          </EnhancedButton>
+          <EnhancedButton variant="primary" onClick={onClose}>
+            Close
+          </EnhancedButton>
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1 text-sm font-medium rounded ${getStatusColor(event.status)}`}>
+            {event.status}
+          </span>
+          {event.category && (
+            <span className="px-3 py-1 text-sm font-medium bg-gray-200 text-gray-700 rounded">
+              {event.category}
+            </span>
+          )}
+        </div>
+
+        {event.description && (
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Description</h4>
+            <p className="text-gray-600">{event.description}</p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Start Date</h4>
+            <p className="text-gray-600">{formatDate(event.start_date)}</p>
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">End Date</h4>
+            <p className="text-gray-600">{formatDate(event.end_date || event.start_date)}</p>
+          </div>
+        </div>
+
+        {event.location && (
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              Location
+            </h4>
+            <p className="text-gray-600">{event.location}</p>
+          </div>
+        )}
+
+        {(event.max_participants || event.current_participants !== undefined) && (
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Participants
+            </h4>
+            <p className="text-gray-600">
+              {event.current_participants || 0} / {event.max_participants || '∞'}
+            </p>
+          </div>
+        )}
+
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Created At</h4>
+          <p className="text-gray-600">{formatDate(event.created_at)}</p>
         </div>
       </div>
     </EnhancedModal>
