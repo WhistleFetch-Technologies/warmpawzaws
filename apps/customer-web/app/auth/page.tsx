@@ -24,10 +24,24 @@ export default function AuthPage() {
   }, []);
 
   useEffect(() => {
-    // Check if already logged in
+    // Initialize session (clears on hard refresh)
+    const { initializeSession } = require('@/lib/session-utils');
+    initializeSession();
+    
+    // Check if already logged in (after session init)
     const storedPhone = localStorage.getItem('customerPhone');
-    if (storedPhone) {
-      router.push('/');
+    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken');
+    
+    if (storedPhone && storedToken) {
+      // Verify token is not expired
+      const { isTokenExpired } = require('@/lib/session-utils');
+      if (!isTokenExpired(storedToken)) {
+        router.push('/');
+      } else {
+        // Token expired, clear session
+        const { clearCustomerSession } = require('@/lib/session-utils');
+        clearCustomerSession();
+      }
     }
   }, [router]);
 
@@ -128,12 +142,33 @@ export default function AuthPage() {
           localStorage.setItem('authToken', response.accessToken);
         }
         
-        // Check if customer exists, if not create profile
+        // Set sessionStorage flag to track that user is logged in
+        // This flag is cleared on hard refresh, allowing us to detect it
+        sessionStorage.setItem('_warmpawz_has_session', 'true');
+        
+        // Get customer profile to check onboarding status
         try {
-          await apiClient.get(`/customer/profile/unified/${phone}`);
+          const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+          
+          // Store customer state from database (not localStorage)
+          if (profileResponse.profile) {
+            const onboardingStatus = profileResponse.profile.onboarding_status || profileResponse.profile.onboardingStatus;
+            const profileCompleted = profileResponse.profile.profile_completed || profileResponse.profile.onboardingComplete;
+            
+            // Store in localStorage for CustomerApp to use
+            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
+            localStorage.setItem('customerId', profileResponse.profile.id);
+            
+            // Set onboarding flag based on database state
+            if (onboardingStatus === 'COMPLETED' || profileCompleted) {
+              localStorage.setItem('customerOnboardingComplete', 'true');
+            } else {
+              localStorage.setItem('customerOnboardingComplete', 'false');
+            }
+          }
         } catch {
-          // Create new customer profile
-          await apiClient.post('/customer/profile', { phone });
+          // Customer doesn't exist yet - will be created by backend on first profile access
+          localStorage.setItem('customerOnboardingComplete', 'false');
         }
         
         router.push('/');
@@ -156,9 +191,11 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      {/* Orange/Pink Gradient Header Section - 40% of screen */}
-      <div className="relative bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D] h-[40vh] flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen flex justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D]">
+      {/* Centered Container with max-width for better appearance */}
+      <div className="w-full max-w-md min-h-screen flex flex-col bg-white shadow-2xl">
+        {/* Orange/Pink Gradient Header Section - 40% of screen */}
+        <div className="relative bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D] h-[40vh] flex flex-col items-center justify-center px-6">
         {/* Warmpawz Logo */}
         <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
           <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
@@ -331,6 +368,7 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
+      </div>{/* Close centered container */}
     </div>
   );
 }

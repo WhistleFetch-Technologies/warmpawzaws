@@ -36,6 +36,9 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
         // Store token if provided
         if (result.token) {
           apiClient.setAuthToken(result.token);
+          // Set sessionStorage flag to track that user is logged in
+          // This flag is cleared on hard refresh, allowing us to detect it
+          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
         }
         onAuthSuccess(result.session);
       } else {

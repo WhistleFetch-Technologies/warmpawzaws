@@ -458,7 +458,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
          LEFT JOIN bookings b ON c.id = b.customer_id AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
          LEFT JOIN orders o ON c.id = o.customer_id AND o.created_at >= CURRENT_DATE - INTERVAL '${days} days'
          GROUP BY c.id, c.full_name, c.phone, c.city
-         ORDER BY (booking_spend + order_spend) DESC
+         ORDER BY (COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) + COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0)) DESC
          LIMIT 50`
       );
 

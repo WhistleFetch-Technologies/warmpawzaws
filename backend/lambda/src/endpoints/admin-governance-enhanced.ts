@@ -550,7 +550,7 @@ class DeleteBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'delete',
         bannerId,
-        position: rows[0].position || rows[0].type,
+        position: banner[0].position || banner[0].type,
       });
 
       return this.success({
@@ -605,10 +605,40 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
   app.post('/admin/tax/calculate', async (c) => {
     try {
       const body = await c.req.json();
-      const { taxCalculationService } = await import('../../lib/services/tax-calculation-service');
+      const { amount, gstRate, cgstRate, sgstRate, igstRate } = body;
       
-      const result = await taxCalculationService.calculateTax(body);
-      return c.json({ taxCalculation: result });
+      if (!amount || !gstRate) {
+        return c.json({ error: 'amount and gstRate are required' }, 400);
+      }
+
+      // Simple tax calculation
+      const baseAmount = parseFloat(amount);
+      const gst = (baseAmount * parseFloat(gstRate)) / 100;
+      const total = baseAmount + gst;
+
+      // Calculate CGST/SGST or IGST based on rates provided
+      let cgst = 0;
+      let sgst = 0;
+      let igst = 0;
+
+      if (cgstRate && sgstRate) {
+        cgst = (baseAmount * parseFloat(cgstRate)) / 100;
+        sgst = (baseAmount * parseFloat(sgstRate)) / 100;
+      } else if (igstRate) {
+        igst = (baseAmount * parseFloat(igstRate)) / 100;
+      }
+
+      return c.json({
+        success: true,
+        taxCalculation: {
+          baseAmount,
+          gst,
+          cgst,
+          sgst,
+          igst,
+          total,
+        },
+      });
     } catch (error: any) {
       console.error('Error calculating tax:', error);
       return c.json({ error: error.message || 'Failed to calculate tax' }, 500);

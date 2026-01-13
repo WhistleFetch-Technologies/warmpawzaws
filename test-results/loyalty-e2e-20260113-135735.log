@@ -1,0 +1,20 @@
+=========================================
+LOYALTY E2E TEST - Complete User Journey
+=========================================
+API Base URL: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+Started: Tue Jan 13 13:57:35 IST 2026
+
+Pre-flight check: Verifying loyalty_action_rules table...
+⚠️  WARNING: Could not verify table. Continuing anyway...
+Response: {"error":"Failed to fetch loyalty action rules"}
+
+
+=========================================
+STEP 1: Create Loyalty Action Rule
+=========================================
+[TEST] Create action rule for product purchases
+  → POST /admin/loyalty-action-rules
+  ← HTTP 500
+  ← Response: {"error":"Failed to create loyalty action rule"}
+[0;31m  ✗ Failed (HTTP 500)[0m
+[1;33m  Response body: {"error":"Failed to create loyalty action rule"}[0m

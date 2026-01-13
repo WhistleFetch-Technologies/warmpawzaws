@@ -1,0 +1,34 @@
+ℹ️  Admin Bucket: warmpawz-dev-admin-frontend-ap-south-1
+ℹ️  Vendor Bucket: warmpawz-dev-vendor-frontend-ap-south-1
+ℹ️  Customer Bucket: warmpawz-dev-customer-frontend-ap-south-1
+✅ Admin S3 bucket exists: warmpawz-dev-admin-frontend-ap-south-1
+✅ Admin bucket contains 117 objects
+✅ Admin bucket has index.html
+✅ Vendor S3 bucket exists: warmpawz-dev-vendor-frontend-ap-south-1
+✅ Vendor bucket contains 143 objects
+✅ Vendor bucket has index.html
+✅ Customer S3 bucket exists: warmpawz-dev-customer-frontend-ap-south-1
+✅ Customer bucket contains 107 objects
+✅ Customer bucket has index.html
+ℹ️  Admin CloudFront Distribution ID: E2U5O3GKWJGJ1B
+⚠️  Admin CloudFront status: UNKNOWN
+❌ Admin CloudFront is DISABLED
+ℹ️  Vendor CloudFront Distribution ID: E1SWMKYQ7TCC1A
+⚠️  Vendor CloudFront status: UNKNOWN
+❌ Vendor CloudFront is DISABLED
+ℹ️  Customer CloudFront Distribution ID: E1WL8VURZNZWTA
+⚠️  Customer CloudFront status: UNKNOWN
+❌ Customer CloudFront is DISABLED
+⚠️  Admin CloudFront origin:  (expected: warmpawz-dev-admin-frontend-ap-south-1.s3.ap-south-1.amazonaws.com)
+⚠️  Admin Origin Access Control (OAC) not found
+⚠️  Admin S3 bucket policy may not allow CloudFront
+⚠️  Vendor CloudFront origin:  (expected: warmpawz-dev-vendor-frontend-ap-south-1.s3.ap-south-1.amazonaws.com)
+⚠️  Vendor Origin Access Control (OAC) not found
+⚠️  Vendor S3 bucket policy may not allow CloudFront
+⚠️  Customer CloudFront origin:  (expected: warmpawz-dev-customer-frontend-ap-south-1.s3.ap-south-1.amazonaws.com)
+⚠️  Customer Origin Access Control (OAC) not found
+⚠️  Customer S3 bucket policy may not allow CloudFront
+✅ Admin (CloudFront) URL accessible: https://d3ksurrsmyzszq.cloudfront.net (HTTP 200)
+✅ Vendor (CloudFront) URL accessible: https://d20mk9l733hbwo.cloudfront.net (HTTP 200)
+✅ Customer (CloudFront) URL accessible: https://d1myri3b4uq26g.cloudfront.net (HTTP 200)
+⚠️  Admin (Custom Domain) URL returned: https://dev.admin.warmpawz.com (HTTP 000000)

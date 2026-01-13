@@ -22,6 +22,10 @@ export default function VendorHomePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Initialize session FIRST (clears on hard refresh)
+    const { initializeSession } = require('@/lib/session-utils');
+    initializeSession();
+    
     // Get session data from localStorage
     const loadSession = () => {
       const storedPhone = localStorage.getItem('vendorPhone');

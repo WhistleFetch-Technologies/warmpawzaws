@@ -30,8 +30,9 @@ NC='\033[0m' # No Color
 
 # Step 1: Build the app
 echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
-cd "$(dirname "$0")/.."
-cd "apps/${APP_NAME}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT/apps/${APP_NAME}"
 npm run build
 
 if [ ! -d "dist" ]; then
@@ -43,7 +44,7 @@ echo -e "${GREEN}✅ Build completed successfully${NC}"
 
 # Step 1.5: Inject runtime-config.js
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
-cd "$(dirname "$0")/../.."
+cd "$PROJECT_ROOT"
 
 # Get API Gateway endpoint
 API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \

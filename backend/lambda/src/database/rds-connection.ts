@@ -257,7 +257,17 @@ export async function select(
 
   // Add ORDER BY
   if (options?.orderBy) {
-    queryText += ` ORDER BY ${options.orderBy} ${options.orderDirection || 'ASC'}`;
+    // Check if orderBy already contains direction (DESC/ASC)
+    const orderByLower = options.orderBy.toLowerCase().trim();
+    const hasDirection = /\s+(desc|asc)\s*$/i.test(options.orderBy);
+    
+    if (hasDirection) {
+      // orderBy already contains direction, use it as-is
+      queryText += ` ORDER BY ${options.orderBy}`;
+    } else {
+      // Use orderDirection if provided, otherwise default to ASC
+      queryText += ` ORDER BY ${options.orderBy} ${options.orderDirection || 'ASC'}`;
+    }
   }
 
   // Add LIMIT and OFFSET

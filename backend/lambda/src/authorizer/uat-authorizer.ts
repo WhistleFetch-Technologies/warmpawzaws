@@ -115,9 +115,10 @@ export const authorizer = async (
     }
 
     // Extract user info from token
-    const userId = payload.sub || payload['cognito:username'] || 'unknown';
-    const email = payload.email || payload['cognito:email'] || '';
-    const userType = payload['custom:user_type'] || payload['cognito:groups']?.[0] || '';
+    const userId = payload.sub || (payload as any)['cognito:username'] || 'unknown';
+    const email = payload.email || (payload as any)['cognito:email'] || '';
+    const cognitoGroups = (payload as any)['cognito:groups'] || [];
+    const userType = (payload as any)['custom:user_type'] || (Array.isArray(cognitoGroups) ? cognitoGroups[0] : '') || '';
 
     console.log('✅ Valid Cognito token:', { userId, email, userType });
 

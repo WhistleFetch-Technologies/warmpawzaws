@@ -1,0 +1,77 @@
+[
+  {
+    "testId": "admin-001",
+    "status": "failed",
+    "duration": 8909,
+    "apiResults": [
+      {
+        "endpoint": "/admin/vendors/all",
+        "method": "GET",
+        "status": 0,
+        "responseTime": 0,
+        "passed": false,
+        "error": "API endpoint unreachable: https://dev.api.warmpawz.com/admin/vendors/all. This may be expected if API is not deployed."
+      }
+    ],
+    "dbResults": [],
+    "eventResults": [],
+    "uiResults": [
+      {
+        "element": "vendorList",
+        "state": "not-visible",
+        "expected": "vendorList.visible",
+        "passed": false,
+        "error": "UI element vendorList not found or not visible - UI may be unavailable"
+      }
+    ],
+    "timestamp": "2026-01-13T06:57:42.557Z",
+    "error": "API validation failed",
+    "screenshots": [
+      "./test-results/screenshots/admin-001-1768287471466.png"
+    ]
+  },
+  {
+    "testId": "admin-002",
+    "status": "blocked",
+    "duration": 0,
+    "apiResults": [],
+    "dbResults": [],
+    "eventResults": [],
+    "uiResults": [],
+    "timestamp": "2026-01-13T06:57:51.595Z",
+    "error": "Preconditions not met"
+  },
+  {
+    "testId": "admin-003",
+    "status": "blocked",
+    "duration": 0,
+    "apiResults": [],
+    "dbResults": [],
+    "eventResults": [],
+    "uiResults": [],
+    "timestamp": "2026-01-13T06:57:51.595Z",
+    "error": "Preconditions not met"
+  },
+  {
+    "testId": "admin-004",
+    "status": "blocked",
+    "duration": 0,
+    "apiResults": [],
+    "dbResults": [],
+    "eventResults": [],
+    "uiResults": [],
+    "timestamp": "2026-01-13T06:57:51.595Z",
+    "error": "Preconditions not met"
+  },
+  {
+    "testId": "admin-005",
+    "status": "blocked",
+    "duration": 0,
+    "apiResults": [],
+    "dbResults": [],
+    "eventResults": [],
+    "uiResults": [],
+    "timestamp": "2026-01-13T06:57:51.595Z",
+    "error": "Preconditions not met"
+  }
+]

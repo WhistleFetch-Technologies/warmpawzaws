@@ -31,9 +31,17 @@ export default function AdminHomePage() {
   useEffect(() => {
     // Only check localStorage on client-side after mount
     if (typeof window !== 'undefined') {
+      // Initialize session (clears on hard refresh)
+      const { initializeSession, isTokenExpired } = require('@/lib/session-utils');
+      initializeSession();
+      
       const storedToken = localStorage.getItem('adminAuthToken');
-      if (storedToken) {
+      if (storedToken && !isTokenExpired(storedToken)) {
         setIsAuthenticated(true);
+      } else if (storedToken && isTokenExpired(storedToken)) {
+        // Token expired, clear session
+        const { clearAdminSession } = require('@/lib/session-utils');
+        clearAdminSession();
       }
       setIsLoading(false);
     }
@@ -53,6 +61,9 @@ export default function AdminHomePage() {
           // API calls will still fail with 401, but components handle this gracefully
           localStorage.setItem('adminAuthToken', 'uat-token-admin-' + Date.now());
           localStorage.setItem('adminEmail', email);
+          // Set sessionStorage flag to track that user is logged in
+          // This flag is cleared on hard refresh, allowing us to detect it
+          sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
           setIsAuthenticated(true);
           return;
         } else {

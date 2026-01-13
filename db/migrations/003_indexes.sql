@@ -165,6 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_vendor_stats_vendor_date ON vendor_stats(vendor_i
 
 CREATE INDEX IF NOT EXISTS idx_customer_loyalty_points_customer_id ON customer_loyalty_points(customer_id);
 CREATE INDEX IF NOT EXISTS idx_loyalty_transactions_customer_id ON loyalty_transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_loyalty_transactions_created_at ON loyalty_transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_loyalty_transactions_expires ON loyalty_transactions(expires_at) WHERE expires_at IS NOT NULL AND expires_at > NOW();
 
 -- ============================================================================

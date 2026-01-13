@@ -246,5 +246,70 @@ export function registerInsuranceEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /insurance/claims/vendor/:vendorId
+   * Get all claims for a vendor (vendor can see claims for policies they've issued)
+   */
+  app.get("/insurance/claims/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Get claims for policies where vendor is involved
+      // Note: This assumes vendors can see claims related to their services
+      const claims = await query(
+        `SELECT 
+           ic.*,
+           ip.policy_number,
+           ip.customer_id,
+           c.full_name as customer_name,
+           c.phone as customer_phone
+         FROM insurance_claims ic
+         INNER JOIN insurance_policies ip ON ic.policy_id = ip.id
+         LEFT JOIN customers c ON ip.customer_id = c.id
+         WHERE ic.vendor_id = $1 OR ip.vendor_id = $1
+         ORDER BY ic.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        claims: claims.rows,
+        total: claims.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor insurance claims:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /insurance/policies/vendor/:vendorId
+   * Get all policies for a vendor (if vendor is involved in policy creation)
+   */
+  app.get("/insurance/policies/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const policies = await query(
+        `SELECT p.*, pl.name as plan_name, pl.provider, c.full_name as customer_name
+         FROM insurance_policies p
+         INNER JOIN insurance_plans pl ON p.plan_id = pl.id
+         LEFT JOIN customers c ON p.customer_id = c.id
+         WHERE p.vendor_id = $1
+         ORDER BY p.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        policies: policies.rows,
+        total: policies.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor insurance policies:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

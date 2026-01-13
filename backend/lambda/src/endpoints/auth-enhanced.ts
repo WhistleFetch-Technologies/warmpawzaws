@@ -279,24 +279,51 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
       if (role === 'customer') {
         const customers = await select('customers', { phone });
+        let isNewCustomer = false;
+        
         if (customers.length > 0) {
           userId = customers[0].id;
           userData = customers[0];
+          
           // Update last_login_at timestamp to persist login state
           await update('customers', { id: userId }, { 
             last_login_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });
           console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
+          
+          // Create/update customer identity if needed
+          const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
+          const identityId = await createOrUpdateCustomerIdentity(phone, userId);
+          
+          // Link identity to customer if not linked
+          if (!userData.customer_identity_id) {
+            await update('customers', { id: userId }, { customer_identity_id: identityId });
+          }
         } else {
-          // Create customer
+          // Create customer with proper state
+          isNewCustomer = true;
+          
+          // Create customer identity first
+          const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
+          const identityId = await createOrUpdateCustomerIdentity(phone, undefined);
+          
+          // Create customer with default full_name (will be updated during profile completion)
           const newCustomers = await insert('customers', {
             phone,
+            full_name: `Customer ${phone.slice(-4)}`, // Temporary name until profile is completed
             is_active: true,
+            status: 'new',
+            onboarding_status: 'PHONE_VERIFIED',
+            profile_completed: false,
+            customer_identity_id: identityId,
             last_login_at: new Date().toISOString(),
           });
           userId = newCustomers[0].id;
           userData = newCustomers[0];
+          
+          // Link identity to customer
+          await update('customer_identity', { id: identityId }, { customer_id: userId });
 
           // Award signup bonus (100 points) - auto-converts to wallet
           try {
@@ -361,16 +388,17 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       let cognitoTokens: CognitoTokens;
       
       if (isUATMode) {
-        // UAT MODE: Skip Cognito and use temporary tokens for faster testing
+        // UAT MODE: Generate proper JWT tokens (not just strings)
         // Token expiry set to 60 seconds for UAT testing
-        console.log(`[AUTH] UAT Mode: Skipping Cognito authentication for ${phone} (role: ${role})`);
-        cognitoTokens = {
-          accessToken: `uat_token_${role}_${userId}_${Date.now()}`,
-          idToken: `uat_id_${userId}_${Date.now()}`,
-          refreshToken: `uat_refresh_${userId}_${Date.now()}`,
+        console.log(`[AUTH] UAT Mode: Generating JWT tokens for ${phone} (role: ${role})`);
+        const { generateUATJWTToken } = await import('../utils/jwt-generator');
+        cognitoTokens = await generateUATJWTToken({
+          userId,
+          phone,
+          role: role as 'customer' | 'vendor' | 'admin',
           expiresIn: 60, // 60 seconds for UAT mode testing
-        };
-        console.log('[AUTH] UAT Mode: Generated temporary tokens (Cognito skipped) with 60s expiry');
+        });
+        console.log('[AUTH] UAT Mode: Generated JWT tokens with 60s expiry');
       } else {
         // PRODUCTION MODE: Use full Cognito authentication
         try {
@@ -391,7 +419,18 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // Return standardized response
+      // Determine if user is new or existing using state management
+      let isNewUser = false;
+      if (role === 'customer') {
+        const { getCustomerStateForAuth } = await import('../utils/customer-state');
+        const customerState = await getCustomerStateForAuth(userId);
+        isNewUser = customerState === 'new';
+      } else if (role === 'vendor') {
+        isNewUser = userId.startsWith('temp_vendor_') || !userData.id || !userData.created_at || 
+                    (userData.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
+      }
+
+      // Return standardized response with state information
       return this.success({
         success: true,
         data: {
@@ -405,9 +444,21 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             id: userId,
             phone,
             role,
-            is_active: userData.is_active || true,
+            is_active: userData.is_active !== false,
             created_at: userData.created_at || new Date().toISOString(),
           },
+          state: isNewUser ? 'new' : 'existing',
+          profile: role === 'customer' ? {
+            id: userId,
+            phone,
+            full_name: userData.full_name || null,
+            email: userData.email || null,
+          } : role === 'vendor' ? {
+            id: userId.startsWith('temp_vendor_') ? null : userId,
+            phone,
+            business_name: userData.business_name || null,
+            status: userData.status || 'pending',
+          } : undefined,
         },
         meta: {
           timestamp: new Date().toISOString(),

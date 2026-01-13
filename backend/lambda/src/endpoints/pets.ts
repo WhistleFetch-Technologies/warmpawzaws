@@ -56,6 +56,43 @@ export function registerPetEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/pets/:petId
+   * Get pet details (customer-facing endpoint)
+   */
+  app.get("/customer/pets/:petId", async (c) => {
+    try {
+      const { petId } = c.req.param();
+
+      const pets = await select('pets', { id: petId });
+      if (pets.length === 0) {
+        return c.json({ error: 'Pet not found' }, 404);
+      }
+
+      const pet = pets[0];
+
+      return c.json({
+        success: true,
+        pet: {
+          id: pet.id,
+          name: pet.name,
+          species: pet.species,
+          breed: pet.breed,
+          age_years: pet.age_years,
+          age_months: pet.age_months,
+          gender: pet.gender,
+          weight_kg: pet.weight_kg,
+          profile_photo_url: pet.profile_photo_url,
+          medical_history: pet.medical_history || {},
+          createdAt: pet.created_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching pet:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /pets/:petId
    * Get pet details
    */

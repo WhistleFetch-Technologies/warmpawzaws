@@ -564,6 +564,15 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
+  
+  // Alias for frontend compatibility
+  app.post('/payments/create-order', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result: any = await createHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
 
   app.post('/payments/razorpay/webhook', async (c) => {
     const event = createApiGatewayEvent(c.req);

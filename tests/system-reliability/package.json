@@ -1,0 +1,20 @@
+{
+  "name": "warmpawz-system-reliability-tests",
+  "version": "1.0.0",
+  "description": "100-Test System Reliability Suite for Warmpawz Ecosystem",
+  "main": "run-tests.ts",
+  "scripts": {
+    "test": "ts-node run-tests.ts",
+    "test:category": "ts-node -e \"const { TestExecutor } = require('./test-executor'); const executor = new TestExecutor(); executor.registerAllTests(); executor.executeCategory(process.argv[1]);\"",
+    "test:all": "./execute-tests.sh"
+  },
+  "dependencies": {
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/pg": "^8.10.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

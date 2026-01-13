@@ -62,7 +62,58 @@ export default function RBACDashboard() {
 			// Load roles
 			const rolesRes = await apiClient.get<any>("/admin/rbac/roles");
 			if (rolesRes.success) {
-				setRoles(rolesRes.roles || []);
+				const allRoles = rolesRes.roles || [];
+				
+				// Deduplicate roles: keep only unique roles based on name (case-insensitive)
+				const uniqueRolesMap = new Map<string, any>();
+				allRoles.forEach((role: any) => {
+					const normalizedName = (role.name || '').toLowerCase().trim();
+					if (normalizedName) {
+						// If we haven't seen this name before, or if current role is more recent/active
+						if (!uniqueRolesMap.has(normalizedName)) {
+							uniqueRolesMap.set(normalizedName, role);
+						} else {
+							// If duplicate found, keep the one that is:
+							// 1. Active (if one is active and other isn't)
+							// 2. More recent (based on created_at or updated_at)
+							// 3. Has more complete data
+							const existing = uniqueRolesMap.get(normalizedName);
+							const existingIsActive = existing?.isActive !== false && existing?.is_active !== false;
+							const currentIsActive = role?.isActive !== false && role?.is_active !== false;
+							
+							if (currentIsActive && !existingIsActive) {
+								// Current is active, existing is not - keep current
+								uniqueRolesMap.set(normalizedName, role);
+							} else if (!currentIsActive && existingIsActive) {
+								// Existing is active, current is not - keep existing
+								// Do nothing
+							} else {
+								// Both same active status - keep the one with more recent date
+								const existingDate = existing?.updated_at || existing?.created_at || '';
+								const currentDate = role?.updated_at || role?.created_at || '';
+								if (currentDate > existingDate) {
+									uniqueRolesMap.set(normalizedName, role);
+								}
+							}
+						}
+					}
+				});
+				
+				// Convert map back to array and sort
+				const uniqueRoles = Array.from(uniqueRolesMap.values()).sort((a, b) => {
+					const nameA = (a.name || '').toLowerCase();
+					const nameB = (b.name || '').toLowerCase();
+					return nameA.localeCompare(nameB);
+				});
+				
+				setRoles(uniqueRoles);
+				
+				// Log if duplicates were found
+				if (allRoles.length > uniqueRoles.length) {
+					const duplicateCount = allRoles.length - uniqueRoles.length;
+					console.log(`Removed ${duplicateCount} duplicate role(s). Kept ${uniqueRoles.length} unique roles.`);
+					toast.info(`Removed ${duplicateCount} duplicate role(s)`);
+				}
 			}
 
 			// Load permissions
@@ -106,6 +157,33 @@ export default function RBACDashboard() {
 		} catch (error) {
 			console.error("Error creating role:", error);
 			toast.error("Failed to create role");
+		}
+	};
+
+	const handleDeleteRole = async (roleId: string) => {
+		if (!roleId) {
+			toast.error("Role ID is required");
+			return;
+		}
+
+		// Confirm deletion
+		if (!confirm("Are you sure you want to delete this role? This action cannot be undone.")) {
+			return;
+		}
+
+		try {
+			const res = await apiClient.delete<any>(`/admin/rbac/roles/${roleId}`);
+			
+			if (res.success || res.message) {
+				toast.success(res.message || "Role deleted successfully");
+				loadData(); // Reload roles list
+			} else {
+				throw new Error(res.error || "Failed to delete role");
+			}
+		} catch (error: any) {
+			console.error("Error deleting role:", error);
+			const errorMessage = error?.message || error?.error || "Failed to delete role";
+			toast.error(errorMessage);
 		}
 	};
 
@@ -260,14 +338,24 @@ export default function RBACDashboard() {
 														</TableCell>
 														<TableCell>
 															<div className="flex gap-2">
-																<Button variant="ghost" size="sm">
+																<Button 
+																	variant="ghost" 
+																	size="sm"
+																	onClick={() => {
+																		// TODO: Implement edit functionality
+																		toast.info("Edit functionality coming soon");
+																	}}
+																>
 																	<Edit className="w-4 h-4" />
 																</Button>
-																{!role.isSystem && (
+																{/* Show delete button for all roles except system roles - check all possible property names */}
+																{!(role.isSystem || role.is_system_role || role.isSystemRole || role.is_system || role.system) && (
 																	<Button
 																		variant="ghost"
 																		size="sm"
-																		className="text-red-600"
+																		className="text-red-600 hover:text-red-700 hover:bg-red-50"
+																		onClick={() => handleDeleteRole(role.id)}
+																		title="Delete role"
 																	>
 																		<Trash2 className="w-4 h-4" />
 																	</Button>

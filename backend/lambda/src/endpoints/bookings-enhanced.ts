@@ -347,12 +347,34 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
     }
 
-    const { rows: history } = await query(
-      `SELECT * FROM booking_status_history 
-       WHERE booking_id = $1 
-       ORDER BY created_at ASC`,
-      [bookingId]
-    );
+    // Get status history (check if table exists)
+    let history: any[] = [];
+    try {
+      const tableCheck = await query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'booking_status_history'
+        )`
+      );
+      
+      if (tableCheck.rows[0]?.exists) {
+        const result = await query(
+          `SELECT * FROM booking_status_history 
+           WHERE booking_id = $1 
+           ORDER BY created_at ASC`,
+          [bookingId]
+        );
+        history = result.rows;
+      } else {
+        // Table doesn't exist, return empty history
+        console.warn('[Booking History] booking_status_history table does not exist');
+      }
+    } catch (error: any) {
+      // If query fails, return empty history
+      console.warn('[Booking History] Error querying status history:', error.message);
+      history = [];
+    }
 
     return this.success({
       booking: bookings[0],
@@ -495,6 +517,99 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       message: 'Booking status updated successfully',
       isNew: true,
     }, requestId);
+  }
+}
+
+class GetRefundPreviewHandler extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event);
+    const { bookingId } = body;
+    const requestId = context.requestId;
+
+    if (!bookingId) {
+      return this.error('bookingId is required', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    try {
+      // Get booking details
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
+      }
+
+      const booking = bookings[0];
+
+      // Calculate hours until booking
+      let hoursUntilBooking = 0;
+      if (booking.booking_datetime) {
+        const bookingDateTime = new Date(booking.booking_datetime);
+        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
+      } else if (booking.booking_date && booking.booking_time) {
+        const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
+        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
+      }
+
+      // Get refund rules
+      const rulesResult = await query(
+        `SELECT * FROM booking_cancellation_rules
+         WHERE (vendor_id = $1 OR vendor_id IS NULL)
+           AND (service_id = $2 OR service_id IS NULL)
+         ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+         LIMIT 1`,
+        [booking.vendor_id || null, booking.service_id || null]
+      );
+
+      const rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
+      const fullRefundHours = rule?.full_refund_before_hours || 48;
+      const partialRefundHours = rule?.partial_refund_before_hours || 24;
+      const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
+      const cutoffHours = rule?.cancellation_cutoff_hours || 12;
+
+      // Calculate refund percentage
+      let refundPercentage = 0;
+      let cancellationFee = 0;
+      if (hoursUntilBooking >= fullRefundHours) {
+        refundPercentage = 100;
+      } else if (hoursUntilBooking >= partialRefundHours) {
+        refundPercentage = partialRefundPercentage;
+      } else if (hoursUntilBooking >= cutoffHours) {
+        refundPercentage = partialRefundPercentage;
+      } else {
+        refundPercentage = 0;
+        cancellationFee = parseFloat(booking.total_amount || '0') * 0.1; // 10% cancellation fee
+      }
+
+      const totalAmount = parseFloat(booking.total_amount || '0');
+      const refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100 - cancellationFee);
+
+      return this.success({
+        refund: {
+          eligible: refundPercentage > 0,
+          refundAmount: Math.round(refundAmount * 100) / 100,
+          refundPercentage: Math.round(refundPercentage),
+          hoursUntil: Math.round(hoursUntilBooking),
+          cancellationFee: Math.round(cancellationFee * 100) / 100,
+          message: refundPercentage > 0
+            ? `₹${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method`
+            : 'No refund available for this booking',
+          policy: {
+            fullRefundBeforeHours: fullRefundHours,
+            partialRefundBeforeHours: partialRefundHours,
+            partialRefundPercentage: partialRefundPercentage,
+            cancellationCutoffHours: cutoffHours,
+          },
+        },
+      }, requestId);
+    } catch (error: any) {
+      console.error('Error calculating refund preview:', error);
+      return this.error(
+        error.message || 'Failed to calculate refund preview',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        requestId
+      );
+    }
   }
 }
 
@@ -848,26 +963,136 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   const historyHandler = new GetBookingHistoryHandlerEnhanced();
   const cancelHandler = new CancelBookingHandlerEnhanced();
   const rescheduleHandler = new RescheduleBookingHandlerEnhanced();
+  const refundPreviewHandler = new GetRefundPreviewHandler();
 
   app.post('/bookings/create', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result: any = await createHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
+    try {
+      // CRITICAL FIX: Use pre-parsed body from handler/index.ts global
+      // This avoids the body consumption issue with Hono Request
+      let body = (global as any).__parsedBodyForBookings;
+      
+      // Fallback: try to parse from request if global not available
+      if (!body || Object.keys(body).length === 0) {
+        try {
+          body = await c.req.json();
+        } catch (e) {
+          body = {};
+        }
+      }
+      
+      // Create API Gateway event with validated body
+      const event: any = {
+        httpMethod: 'POST',
+        path: c.req.path,
+        headers: Object.fromEntries(c.req.raw.headers),
+        body: JSON.stringify(body),
+        pathParameters: {},
+        queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
+        requestContext: {
+          requestId: crypto.randomUUID(),
+          http: {
+            method: c.req.method || 'POST',
+            path: c.req.path,
+          },
+        },
+        rawPath: c.req.path,
+        rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
+        isBase64Encoded: false,
+      };
+      
+      const context = createLambdaContext();
+      const result: any = await createHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in bookings/create:', error);
+      return c.json({ error: error.message }, 500);
+    }
   });
 
   // Compatibility endpoint for frontend
   app.post('/booking/create', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result: any = await createHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
+    try {
+      // CRITICAL FIX: Use pre-parsed body from handler/index.ts global
+      let body = (global as any).__parsedBodyForBookings;
+      
+      // Fallback: try to parse from request if global not available
+      if (!body || Object.keys(body).length === 0) {
+        try {
+          body = await c.req.json();
+        } catch (e) {
+          body = {};
+        }
+      }
+      
+      const event: any = {
+        httpMethod: 'POST',
+        path: c.req.path,
+        headers: Object.fromEntries(c.req.raw.headers),
+        body: JSON.stringify(body),
+        pathParameters: {},
+        queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
+        requestContext: {
+          http: {
+            method: c.req.method || 'POST',
+            path: c.req.path,
+          },
+          requestId: crypto.randomUUID(),
+        },
+        rawPath: c.req.path,
+        rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
+        isBase64Encoded: false,
+      };
+      const context = createLambdaContext();
+      const result: any = await createHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in booking/create:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  
+  // Customer-facing alias for booking creation
+  app.post('/customer/booking/create', async (c) => {
+    try {
+      let body = (global as any).__parsedBodyForBookings;
+      
+      if (!body || Object.keys(body).length === 0) {
+        try {
+          body = await c.req.json();
+        } catch (e) {
+          body = {};
+        }
+      }
+      
+      const event: any = {
+        httpMethod: 'POST',
+        path: c.req.path,
+        headers: Object.fromEntries(c.req.raw.headers),
+        body: JSON.stringify(body),
+        pathParameters: {},
+        queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
+        requestContext: {
+          http: {
+            method: c.req.method || 'POST',
+            path: c.req.path,
+          },
+          requestId: crypto.randomUUID(),
+        },
+        rawPath: c.req.path,
+        rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
+        isBase64Encoded: false,
+      };
+      const context = createLambdaContext();
+      const result: any = await createHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in customer/booking/create:', error);
+      return c.json({ error: error.message }, 500);
+    }
   });
 
   app.get('/bookings/:bookingId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result: any = await getHandler.execute(event, context);
@@ -876,7 +1101,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 
   app.get('/bookings/:bookingId/history', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result: any = await historyHandler.execute(event, context);
@@ -885,7 +1110,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 
   app.put('/bookings/:bookingId/status', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result: any = await updateHandler.execute(event, context);
@@ -893,8 +1118,16 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
+  app.post('/customer/bookings/refund-preview', async (c) => {
+    const event = await createApiGatewayEvent(c);
+    const context = createLambdaContext();
+    const result: any = await refundPreviewHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
   app.post('/bookings/:bookingId/cancel', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result: any = await cancelHandler.execute(event, context);
@@ -903,7 +1136,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/bookings/:bookingId/reschedule', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result: any = await rescheduleHandler.execute(event, context);
@@ -912,18 +1145,61 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+// Create API Gateway event with pre-parsed body from global
+async function createApiGatewayEventWithBody(c: any): Promise<any> {
+  // Get headers
+  const headers: Record<string, string> = {};
+  try {
+    if (c.req.raw && c.req.raw.headers) {
+      const rawHeaders = c.req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else {
+      const contentType = c.req.header('content-type');
+      const authorization = c.req.header('authorization');
+      if (contentType) headers['content-type'] = contentType;
+      if (authorization) headers['authorization'] = authorization;
+    }
+  } catch (e) {
+    console.warn('[BOOKINGS] Error processing headers:', e);
+  }
+
+  // CRITICAL FIX: Use pre-parsed body from handler/index.ts global
+  let body = (global as any).__parsedBodyForBookings;
+  
+  // Fallback: try to parse from request if global not available
+  if (!body || Object.keys(body).length === 0) {
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      body = {};
+    }
+  }
+
+  const url = new URL(c.req.url, 'http://localhost');
   return {
-    httpMethod: req.method,
-    path: req.url,
-    headers: req.headers,
-    body: JSON.stringify(req.body || {}),
-    pathParameters: req.param() || {},
-    queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    rawPath: url.pathname,
+    rawQueryString: url.search.substring(1),
     requestContext: {
+      http: {
+        method: c.req.method || 'POST',
+        path: url.pathname,
+      },
       requestId: crypto.randomUUID(),
     },
+    headers: headers,
+    body: JSON.stringify(body),
+    isBase64Encoded: false,
   };
+}
+
+// Legacy function for endpoints that need body parsing
+async function createApiGatewayEvent(c: any): Promise<any> {
+  return createApiGatewayEventWithBody(c);
 }
 
 function createLambdaContext(): any {

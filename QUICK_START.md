@@ -1,85 +1,122 @@
-# Quick Start - Execute Tests
+# Quick Start - Hard Refresh Fix Deployment
 
-**Time Required:** 5 minutes to get started
+## 🚀 Quick Commands
 
----
-
-## 🚀 3-Step Quick Start
-
-### Step 1: Set Environment Variables (1 min)
-
+### Step 1: Deploy Backend Fix
 ```bash
-# Set API base URL
-export API_BASE="http://localhost:3000/api"
-
-# Set test vendor ID (get from database or create one)
-export VENDOR_ID="your-vendor-id-here"
-
-# Optional: Set authentication
-export AUTH_TOKEN="your-token"  # OR
-export UAT_MODE="true"
-export UAT_TOKEN="uat-token-admin"
+cd backend/lambda
+npm run build
+npm run deploy  # or your deployment command
 ```
 
-### Step 2: Run Tests (2 min)
+**What this fixes**: Customer creation error (missing `full_name` field)
 
+### Step 2: Test API Endpoints
 ```bash
-# Quick test
-./execute-tests.sh
-
-# Or with options
-./execute-tests.sh --api-base "https://api.warmpawz.com/api" --vendor-id "vendor-123"
+cd ../..
+./test-login-flows.sh
 ```
 
-### Step 3: Review Results (2 min)
+**Expected**: All tests should pass ✅
 
+### Step 3: Deploy Frontend (All 3 Apps)
+
+**Customer Web:**
 ```bash
-# View results
-cat test-results-*.log
-
-# Or check summary in terminal output
+cd apps/customer-web
+npm run build
+npm run deploy
 ```
 
+**Vendor Web:**
+```bash
+cd ../vendor-web
+npm run build
+npm run deploy
+```
+
+**Admin Web:**
+```bash
+cd ../admin-web
+npm run build
+npm run deploy
+```
+
+### Step 4: Browser Testing (Required)
+
+1. **Open Browser DevTools** (F12)
+   - Chrome: Application → Storage
+   - Firefox: Storage tab
+
+2. **Test Customer Login:**
+   - Go to customer login page
+   - Phone: `9876543210`, OTP: `123456`
+   - After login, check:
+     - ✅ localStorage has `authToken`
+     - ✅ sessionStorage has `_warmpawz_has_session: "true"`
+   - Press **F5** (hard refresh)
+   - ✅ sessionStorage cleared
+   - ✅ localStorage cleared
+   - ✅ Redirected to login
+
+3. **Test Vendor Login:**
+   - Go to vendor login page
+   - Phone: `9876543211`, OTP: `123456`
+   - After login, check:
+     - ✅ localStorage has `authToken`
+     - ✅ sessionStorage has `_warmpawz_vendor_has_session: "true"`
+   - Press **F5** (hard refresh)
+   - ✅ Session cleared, redirected to login
+
+4. **Test Admin Login:**
+   - Go to admin login page
+   - Email: `admin@warmpawz.com`, Password: `Warmpawz2025`
+   - After login, check:
+     - ✅ localStorage has `adminAuthToken`
+     - ✅ sessionStorage has `_warmpawz_admin_has_session: "true"`
+   - Press **F5** (hard refresh)
+   - ✅ Session cleared, redirected to login
+
+## ✅ Success Criteria
+
+- [ ] Backend deployed (customer OTP verify works)
+- [ ] API tests pass (`./test-login-flows.sh`)
+- [ ] Frontend deployed (all 3 apps)
+- [ ] Hard refresh clears session (all user types)
+- [ ] Soft navigation preserves session (all user types)
+
+## 🐛 Troubleshooting
+
+**Issue**: Customer OTP verify still fails
+- **Fix**: Verify backend deployment completed
+- **Check**: `grep "full_name.*Customer" backend/lambda/src/endpoints/auth-enhanced.ts`
+
+**Issue**: Hard refresh doesn't clear session
+- **Fix**: Verify frontend deployment completed
+- **Check**: DevTools → sessionStorage should have flag after login
+
+**Issue**: False positive on first visit
+- **Fix**: This is expected - detection only triggers if tokens exist
+
+## 📋 One-Liner Test
+
+```bash
+# Test customer login (after backend deployment)
+curl -X POST "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/auth/verify-otp" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "9876543210", "otp": "123456", "role": "customer"}' | jq '.success'
+```
+
+**Expected**: `true` (not database error)
+
+## ⏱️ Estimated Time
+
+- Backend deployment: 15-30 min
+- API testing: 5 min
+- Frontend deployment: 30-60 min
+- Browser testing: 30-45 min
+- **Total**: ~2 hours
+
 ---
 
-## 📋 What Gets Tested
-
-### Automatically Tested:
-- ✅ API Health
-- ✅ Vendor Profile
-- ✅ Dashboard
-- ✅ Bookings
-- ✅ Services
-- ✅ Staff
-- ✅ Schedule
-- ✅ Analytics
-- ✅ Settlements
-- ✅ Prescriptions
-
-### Results Include:
-- ✅ Pass/Fail status
-- ✅ HTTP status codes
-- ✅ Response validation
-- ✅ Detailed logs
-
----
-
-## 🎯 Next Steps
-
-1. **Review Results:** Check `test-results-*.log` file
-2. **Fix Issues:** Address any failed tests
-3. **Expand Tests:** Add more capabilities to test suite
-4. **Document:** Update test report with results
-
----
-
-## 💡 Tips
-
-- **Use UAT Mode:** For testing without full authentication
-- **Check Logs:** Review detailed logs for debugging
-- **Incremental Testing:** Test one capability at a time
-- **Database Verification:** Cross-check API responses with DB
-
----
-
-**Ready?** Run `./execute-tests.sh` now!
+**Ready?** Start with Step 1! 🚀

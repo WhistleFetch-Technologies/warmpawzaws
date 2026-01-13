@@ -18,6 +18,7 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert, deleteRows } from '../database/rds-connection';
+import { getErrorMessage, createSafeErrorResponse } from '../utils/error-serialization';
 
 // ============================================================================
 // PHASE 24: CATALOG SELECTORS
@@ -263,8 +264,27 @@ class GetRBACUsersHandler extends BaseHandler {
 
 class GetPermissionsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const permissions = await select('permissions', {});
-    return this.success({ permissions });
+    try {
+      // Query role_permissions table and get distinct permission names
+      // There's no standalone 'permissions' table - permissions are stored in role_permissions
+      const result = await query(
+        `SELECT DISTINCT permission_name, resource, action 
+         FROM role_permissions 
+         ORDER BY permission_name`
+      );
+      
+      const permissions = result.rows.map((p: any) => ({
+        name: p.permission_name,
+        resource: p.resource || 'general',
+        action: p.action || 'access',
+      }));
+      
+      return this.success({ permissions });
+    } catch (error: any) {
+      console.error('[GetPermissionsHandler] Error:', error);
+      // Return empty array if table doesn't exist or query fails
+      return this.success({ permissions: [] });
+    }
   }
 }
 
@@ -538,12 +558,14 @@ class ResolvePaymentDisputeHandler extends BaseHandler {
     if (!id) {
       return this.error('Dispute ID is required', 400);
     }
+    const status = body.status || 'resolved';
     await update('payment_disputes', { id }, {
-      status: 'resolved',
+      status: status,
       resolution: body.resolution,
       resolved_at: new Date().toISOString(),
+      resolved_by: body.resolvedBy || 'admin',
     });
-    return this.success({ success: true });
+    return this.success({ success: true, status });
   }
 }
 
@@ -933,20 +955,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   // RBAC endpoints (aliases for frontend compatibility)
   app.post('/admin/rbac/roles', async (c) => {
-    const handler = new CreateRoleHandler();
-    const event = await createApiGatewayEventWithBody(c);
-    const context = createLambdaContext();
-    const result = await handler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const role = await insert('roles', {
+        ...body,
+        created_at: new Date().toISOString(),
+      });
+      return c.json({ success: true, role: role[0] });
+    } catch (error: unknown) {
+      console.error('Error creating role:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
   });
 
   app.put('/admin/rbac/roles/:roleId', async (c) => {
-    const handler = new UpdateRoleHandler();
-    const event = await createApiGatewayEventWithBody(c);
-    event.pathParameters = { roleId: c.req.param('roleId') };
-    const context = createLambdaContext();
-    const result = await handler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const roleId = c.req.param('roleId');
+      const body = await c.req.json().catch(() => ({}));
+      const updated = await update('roles', { id: roleId }, {
+        ...body,
+        updated_at: new Date().toISOString(),
+      });
+      return c.json({ success: true, role: updated[0] });
+    } catch (error: unknown) {
+      console.error('Error updating role:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to update role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
   });
 
   app.delete('/admin/rbac/roles/:roleId', async (c) => {
@@ -1500,7 +1536,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/catalog/categories', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { name, description, icon, status, vendorType, serviceStyle } = body;
 
       if (!name) {
@@ -1530,16 +1566,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Category created successfully',
         category: newCategory[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating category:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create category', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.put('/admin/catalog/categories/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
@@ -1557,9 +1594,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Category updated successfully',
         category: updated[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating category:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to update category', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1577,9 +1615,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         success: true,
         message: 'Category deleted successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting category:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to delete category', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1619,7 +1658,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/catalog/products', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { name, description, categoryId, price, stock, status } = body;
 
       if (!name || !price) {
@@ -1643,16 +1682,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Product created successfully',
         product: newProduct[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating product:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create product', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.put('/admin/catalog/products/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
@@ -1673,9 +1713,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Product updated successfully',
         product: updated[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating product:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to update product', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1751,7 +1792,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/catalog/services', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status } = body;
 
       if (!name || !price) {
@@ -1783,16 +1824,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Service created successfully',
         service: newService[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating service:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create service', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.put('/admin/catalog/services/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
@@ -1823,9 +1865,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           service: updated[0],
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating service:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to update service', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1852,9 +1895,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         success: true,
         message: 'Service deleted successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting service:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to delete service', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1951,8 +1995,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const tags = await query('SELECT DISTINCT tag FROM service_tags ORDER BY tag ASC');
       return c.json({ success: true, tags: tags.rows.map(r => r.tag) });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1964,8 +2009,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ORDER BY p.created_at DESC LIMIT 50
       `);
       return c.json({ success: true, data: data.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1978,8 +2024,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ORDER BY p.created_at DESC
       `);
       return c.json({ success: true, data: data.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -1995,7 +2042,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/catalog/pricing-rules', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { name, description, ruleType, ruleConfig, isActive } = body;
 
       if (!name || !ruleType || !ruleConfig) {
@@ -2017,16 +2064,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Pricing rule created successfully',
         rule: newRule[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating pricing rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create pricing rule', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.put('/admin/catalog/pricing-rules/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
@@ -2044,9 +2092,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: 'Pricing rule updated successfully',
         rule: updated[0],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating pricing rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to update pricing rule', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2064,9 +2113,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         success: true,
         message: 'Pricing rule deleted successfully',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting pricing rule:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to delete pricing rule', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2083,7 +2133,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/catalog/:itemType/bulk-edit', async (c) => {
     try {
       const itemType = c.req.param('itemType'); // 'categories', 'services', 'products'
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { ids, updates } = body; // ids: array of IDs, updates: object with fields to update
 
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -2160,9 +2210,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         message: `Bulk update completed for ${ids.length} ${itemType}`,
         affected: ids.length,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error in bulk edit:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to perform bulk edit', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2171,8 +2222,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const settlements = await query('SELECT * FROM settlements ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, settlements: settlements.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2180,17 +2232,275 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const schedule = await query('SELECT * FROM settlement_schedules ORDER BY created_at DESC');
       return c.json({ success: true, schedule: schedule.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.get('/admin/finance/settlement-rules', async (c) => {
     try {
-      const rules = await query('SELECT * FROM settlement_rules ORDER BY created_at DESC');
-      return c.json({ success: true, rules: rules.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      // Check if settlement_rules table exists, fallback to querying from settings
+      const rules = await query('SELECT * FROM settlement_rules ORDER BY created_at DESC').catch(async () => {
+        // Fallback: check admin_settings for settlement rules
+        try {
+          const settings = await query(`
+            SELECT setting_value 
+            FROM admin_settings 
+            WHERE setting_category = 'settlement' AND setting_key = 'rules'
+          `);
+          return { rows: settings.rows.length > 0 ? JSON.parse(settings.rows[0].setting_value) : [] };
+        } catch {
+          return { rows: [] };
+        }
+      });
+      return c.json({ success: true, rules: rules.rows || [] });
+    } catch (error: unknown) {
+      console.error('Error fetching settlement rules:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to fetch settlement rules', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.post('/admin/finance/settlement-rules', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
+
+      if (!name || !ruleType) {
+        return c.json({ success: false, error: 'Rule name and type are required' }, 400);
+      }
+
+      // Try to insert into settlement_rules table if it exists
+      try {
+        const newRule = await insert('settlement_rules', {
+          rule_name: name,
+          description: description || '',
+          rule_type: ruleType,
+          conditions: JSON.stringify(conditions || {}),
+          actions: JSON.stringify(actions || {}),
+          is_active: isActive !== false,
+          priority: priority || 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+        return c.json({
+          success: true,
+          message: 'Settlement rule created successfully',
+          rule: newRule[0],
+        });
+      } catch (tableError: unknown) {
+        // Fallback: store in admin_settings
+        try {
+          const existing = await query(`
+            SELECT id, setting_value 
+            FROM admin_settings 
+            WHERE setting_category = 'settlement' AND setting_key = 'rules'
+          `);
+
+          const existingRules = existing.rows.length > 0 
+            ? JSON.parse(existing.rows[0].setting_value) 
+            : [];
+
+          const newRule = {
+            id: `rule-${Date.now()}`,
+            name,
+            description,
+            ruleType,
+            conditions: conditions || {},
+            actions: actions || {},
+            isActive: isActive !== false,
+            priority: priority || 1,
+            createdAt: new Date().toISOString(),
+          };
+
+          existingRules.push(newRule);
+
+          if (existing.rows.length > 0) {
+            await update('admin_settings', 
+              { id: existing.rows[0].id },
+              { setting_value: JSON.stringify(existingRules) }
+            );
+          } else {
+            await insert('admin_settings', {
+              setting_category: 'settlement',
+              setting_key: 'rules',
+              setting_value: JSON.stringify(existingRules),
+              is_active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+
+          return c.json({
+            success: true,
+            message: 'Settlement rule created successfully',
+            rule: newRule,
+          });
+        } catch (fallbackError: unknown) {
+          console.error('Error in fallback settlement rule creation:', fallbackError);
+          const errorResponse = createSafeErrorResponse(fallbackError, 'Failed to create settlement rule', 500);
+          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+        }
+      }
+    } catch (error: unknown) {
+      console.error('Error creating settlement rule:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create settlement rule', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  // PUT endpoint for updating settlement rule
+  app.put('/admin/finance/settlement-rules/:id', async (c) => {
+    try {
+      const ruleId = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
+
+      if (!ruleId) {
+        return c.json({ success: false, error: 'Rule ID is required' }, 400);
+      }
+
+      try {
+        const updated = await update(
+          'settlement_rules',
+          { id: ruleId },
+          {
+            ...(name && { rule_name: name }),
+            ...(description !== undefined && { description }),
+            ...(ruleType && { rule_type: ruleType }),
+            ...(conditions && { conditions: JSON.stringify(conditions) }),
+            ...(actions && { actions: JSON.stringify(actions) }),
+            ...(isActive !== undefined && { is_active: isActive }),
+            ...(priority !== undefined && { priority }),
+            updated_at: new Date().toISOString(),
+          }
+        );
+
+        if (updated.length === 0) {
+          return c.json({ success: false, error: 'Settlement rule not found' }, 404);
+        }
+
+        return c.json({
+          success: true,
+          message: 'Settlement rule updated successfully',
+          rule: updated[0],
+        });
+      } catch (tableError: unknown) {
+        // Fallback: update in admin_settings
+        try {
+          const existing = await query(`
+            SELECT id, setting_value 
+            FROM admin_settings 
+            WHERE setting_category = 'settlement' AND setting_key = 'rules'
+          `);
+
+          if (existing.rows.length === 0) {
+            return c.json({ success: false, error: 'Settlement rule not found' }, 404);
+          }
+
+          const existingRules = JSON.parse(existing.rows[0].setting_value);
+          const ruleIndex = existingRules.findIndex((r: any) => r.id === ruleId);
+
+          if (ruleIndex === -1) {
+            return c.json({ success: false, error: 'Settlement rule not found' }, 404);
+          }
+
+          existingRules[ruleIndex] = {
+            ...existingRules[ruleIndex],
+            ...(name && { name }),
+            ...(description !== undefined && { description }),
+            ...(ruleType && { ruleType }),
+            ...(conditions && { conditions }),
+            ...(actions && { actions }),
+            ...(isActive !== undefined && { isActive }),
+            ...(priority !== undefined && { priority }),
+            updatedAt: new Date().toISOString(),
+          };
+
+          await update('admin_settings', 
+            { id: existing.rows[0].id },
+            { setting_value: JSON.stringify(existingRules) }
+          );
+
+          return c.json({
+            success: true,
+            message: 'Settlement rule updated successfully',
+            rule: existingRules[ruleIndex],
+          });
+        } catch (fallbackError: unknown) {
+          console.error('Error in fallback settlement rule update:', fallbackError);
+          const errorResponse = createSafeErrorResponse(fallbackError, 'Failed to update settlement rule', 500);
+          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+        }
+      }
+    } catch (error: unknown) {
+      console.error('Error updating settlement rule:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to update settlement rule', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  // DELETE endpoint for settlement rule
+  app.delete('/admin/finance/settlement-rules/:id', async (c) => {
+    try {
+      const ruleId = c.req.param('id');
+
+      if (!ruleId) {
+        return c.json({ success: false, error: 'Rule ID is required' }, 400);
+      }
+
+      try {
+        const deleted = await deleteRows('settlement_rules', { id: ruleId });
+
+        if (deleted.length === 0) {
+          return c.json({ success: false, error: 'Settlement rule not found' }, 404);
+        }
+
+        return c.json({
+          success: true,
+          message: 'Settlement rule deleted successfully',
+        });
+      } catch (tableError: unknown) {
+        // Fallback: delete from admin_settings
+        try {
+          const existing = await query(`
+            SELECT id, setting_value 
+            FROM admin_settings 
+            WHERE setting_category = 'settlement' AND setting_key = 'rules'
+          `);
+
+          if (existing.rows.length === 0) {
+            return c.json({ success: false, error: 'Settlement rule not found' }, 404);
+          }
+
+          const existingRules = JSON.parse(existing.rows[0].setting_value);
+          const filteredRules = existingRules.filter((r: any) => r.id !== ruleId);
+
+          if (filteredRules.length === existingRules.length) {
+            return c.json({ success: false, error: 'Settlement rule not found' }, 404);
+          }
+
+          await update('admin_settings', 
+            { id: existing.rows[0].id },
+            { setting_value: JSON.stringify(filteredRules) }
+          );
+
+          return c.json({
+            success: true,
+            message: 'Settlement rule deleted successfully',
+          });
+        } catch (fallbackError: unknown) {
+          console.error('Error in fallback settlement rule deletion:', fallbackError);
+          const errorResponse = createSafeErrorResponse(fallbackError, 'Failed to delete settlement rule', 500);
+          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+        }
+      }
+    } catch (error: unknown) {
+      console.error('Error deleting settlement rule:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to delete settlement rule', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2198,8 +2508,84 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const policies = await query('SELECT * FROM cancellation_policies ORDER BY created_at DESC');
       return c.json({ success: true, policies: policies.rows });
+    } catch (error: unknown) {
+      console.error('Error fetching cancellation policies:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to fetch cancellation policies', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.post('/admin/finance/cancellation-policies', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const {
+        name,
+        description,
+        policyType,
+        vendorTypes,
+        serviceTypes,
+        gracePeriodHours,
+        cancellationWindows,
+        vendorCancellationPenalty,
+        noShowPolicy,
+        isActive,
+        priority,
+      } = body;
+
+      if (!name) {
+        return c.json({ success: false, error: 'Policy name is required' }, 400);
+      }
+
+      // Calculate cancellation fee from first window
+      const cancellationFee = cancellationWindows?.[0]?.penaltyPercentage || 0;
+
+      const newPolicy = await insert('cancellation_policies', {
+        policy_name: name,
+        description: description || '',
+        hours_before_booking: gracePeriodHours || 2,
+        cancellation_fee_percentage: cancellationFee,
+        is_active: isActive !== false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Cancellation policy created successfully',
+        policy: newPolicy[0],
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error creating cancellation policy:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.put('/admin/finance/cancellation-policies/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+      if (body.name !== undefined) updateData.policy_name = body.name;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.gracePeriodHours !== undefined) updateData.hours_before_booking = body.gracePeriodHours;
+      if (body.isActive !== undefined) updateData.is_active = body.isActive;
+      if (body.cancellationWindows?.[0]?.penaltyPercentage !== undefined) {
+        updateData.cancellation_fee_percentage = body.cancellationWindows[0].penaltyPercentage;
+      }
+
+      const updated = await update('cancellation_policies', { id }, updateData);
+
+      return c.json({
+        success: true,
+        message: 'Cancellation policy updated successfully',
+        policy: updated[0],
+      });
+    } catch (error: any) {
+      console.error('Error updating cancellation policy:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
@@ -2207,8 +2593,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const disputes = await query('SELECT * FROM payment_disputes ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, disputes: disputes.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2216,8 +2603,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const transactions = await query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 100');
       return c.json({ success: true, transactions: transactions.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2225,26 +2613,144 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const payments = await query('SELECT * FROM payments ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, payments: payments.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
-      const codes = await query('SELECT * FROM hsn_codes ORDER BY code ASC');
+      const codes = await query('SELECT * FROM hsn_codes ORDER BY hsn_code ASC');
       return c.json({ success: true, codes: codes.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.post('/admin/finance/gst/hsn-codes', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { code, description, gstRate, category, cgst, sgst, igst, isActive } = body;
+
+      if (!code || !gstRate) {
+        return c.json({ success: false, error: 'HSN code and GST rate are required' }, 400);
+      }
+
+      const newCode = await insert('hsn_codes', {
+        hsn_code: code,
+        description: description || '',
+        gst_rate: parseFloat(gstRate),
+        is_active: isActive !== false,
+        created_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'HSN code created successfully',
+        code: newCode[0],
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error creating HSN code:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.put('/admin/finance/gst/hsn-codes/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+
+      const updateData: any = {};
+      if (body.code !== undefined) updateData.hsn_code = body.code;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
+      if (body.isActive !== undefined) updateData.is_active = body.isActive;
+
+      const updated = await update('hsn_codes', { id }, updateData);
+
+      return c.json({
+        success: true,
+        message: 'HSN code updated successfully',
+        code: updated[0],
+      });
+    } catch (error: any) {
+      console.error('Error updating HSN code:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.delete('/admin/finance/gst/hsn-codes/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await update('hsn_codes', { id }, { is_active: false });
+      return c.json({ success: true, message: 'HSN code deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting HSN code:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
   app.get('/admin/finance/gst/tax-categories', async (c) => {
     try {
-      const categories = await query('SELECT * FROM tax_categories ORDER BY name ASC');
+      const categories = await query('SELECT * FROM tax_categories ORDER BY category_name ASC');
       return c.json({ success: true, categories: categories.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.post('/admin/finance/gst/tax-categories', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, defaultGSTRate, applicableServices, isActive } = body;
+
+      if (!name || !defaultGSTRate) {
+        return c.json({ success: false, error: 'Category name and default GST rate are required' }, 400);
+      }
+
+      const newCategory = await insert('tax_categories', {
+        category_name: name,
+        description: description || '',
+        tax_rate: parseFloat(defaultGSTRate),
+        is_active: isActive !== false,
+        created_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Tax category created successfully',
+        category: newCategory[0],
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error creating tax category:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.put('/admin/finance/gst/tax-categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+
+      const updateData: any = {};
+      if (body.name !== undefined) updateData.category_name = body.name;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.defaultGSTRate !== undefined) updateData.tax_rate = parseFloat(body.defaultGSTRate);
+      if (body.isActive !== undefined) updateData.is_active = body.isActive;
+
+      const updated = await update('tax_categories', { id }, updateData);
+
+      return c.json({
+        success: true,
+        message: 'Tax category updated successfully',
+        category: updated[0],
+      });
+    } catch (error: any) {
+      console.error('Error updating tax category:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
@@ -2252,8 +2758,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const changes = await query('SELECT * FROM rate_changes ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, changes: changes.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2261,8 +2768,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       // Placeholder - should process settlements
       return c.json({ success: true, message: 'Settlements processed' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2376,6 +2884,159 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.get('/admin/enterprise/inventory', async (c) => {
+    try {
+      // Get all products with inventory information
+      const products = await query(`
+        SELECT 
+          p.id,
+          p.name,
+          p.sku,
+          p.stock,
+          p.stock_quantity,
+          p.price,
+          p.status,
+          p.category_id,
+          p.created_at,
+          p.updated_at
+        FROM products p
+        WHERE p.status != 'deleted'
+        ORDER BY p.created_at DESC
+        LIMIT 100
+      `).catch(() => ({ rows: [] }));
+
+      const safeProducts = (products.rows || []).map((p: any) => ({
+        id: String(p.id || ''),
+        name: String(p.name || ''),
+        sku: String(p.sku || `SKU-${p.id}`),
+        stock: parseInt(p.stock || p.stock_quantity || '0', 10),
+        price: parseFloat(p.price || '0'),
+        status: String(p.status || 'active'),
+        categoryId: String(p.category_id || ''),
+        lastUpdated: String(p.updated_at || p.created_at || new Date().toISOString()),
+      }));
+
+      return c.json({
+        success: true,
+        products: safeProducts,
+      });
+    } catch (error: any) {
+      console.error('Error fetching enterprise inventory:', error);
+      return c.json({ success: true, products: [] });
+    }
+  });
+
+  app.put('/admin/enterprise/inventory', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { products } = body;
+
+      if (!products || !Array.isArray(products)) {
+        return c.json({ error: 'products array is required' }, 400);
+      }
+
+      const updatedProducts = [];
+      for (const product of products) {
+        if (!product.id) continue;
+
+        const updateData: any = {
+          updated_at: new Date().toISOString(),
+        };
+        if (product.stock !== undefined) {
+          updateData.stock = parseInt(product.stock, 10);
+          updateData.stock_quantity = parseInt(product.stock, 10);
+        }
+        if (product.status !== undefined) {
+          updateData.status = product.status;
+          updateData.is_active = product.status !== 'inactive';
+        }
+
+        const updated = await update('products', { id: product.id }, updateData);
+        updatedProducts.push(updated[0]);
+      }
+
+      return c.json({
+        success: true,
+        message: `Updated ${updatedProducts.length} products`,
+        products: updatedProducts,
+      });
+    } catch (error: any) {
+      console.error('Error updating enterprise inventory:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  app.get('/admin/enterprise/pricing-rules', async (c) => {
+    try {
+      // Get pricing rules from platform_settings or pricing_rules table
+      const settings = await query(`
+        SELECT setting_value 
+        FROM platform_settings 
+        WHERE setting_key = 'admin:enterprise:pricing-rules'
+      `).catch(() => ({ rows: [] }));
+
+      if (settings.rows.length > 0) {
+        const rules = typeof settings.rows[0].setting_value === 'string'
+          ? JSON.parse(settings.rows[0].setting_value)
+          : settings.rows[0].setting_value;
+        return c.json({ success: true, rules: rules.rules || rules || [] });
+      }
+
+      // Fallback: get from pricing_rules table
+      const pricingRules = await query('SELECT * FROM pricing_rules WHERE is_active = true ORDER BY created_at DESC').catch(() => ({ rows: [] }));
+      return c.json({ success: true, rules: pricingRules.rows || [] });
+    } catch (error: any) {
+      console.error('Error fetching enterprise pricing rules:', error);
+      return c.json({ success: true, rules: [] });
+    }
+  });
+
+  app.put('/admin/enterprise/pricing-rules', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { rules } = body;
+
+      if (!rules || !Array.isArray(rules)) {
+        return c.json({ error: 'rules array is required' }, 400);
+      }
+
+      // Store in platform_settings
+      const existing = await query(`
+        SELECT id 
+        FROM platform_settings 
+        WHERE setting_key = 'admin:enterprise:pricing-rules'
+      `).catch(() => ({ rows: [] }));
+
+      if (existing.rows.length > 0) {
+        await update('platform_settings',
+          { id: existing.rows[0].id },
+          {
+            setting_value: JSON.stringify({ rules }),
+            updated_at: new Date().toISOString(),
+          }
+        );
+      } else {
+        await insert('platform_settings', {
+          setting_key: 'admin:enterprise:pricing-rules',
+          setting_value: JSON.stringify({ rules }),
+          setting_type: 'object',
+          is_public: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      return c.json({
+        success: true,
+        message: 'Pricing rules updated successfully',
+        rules,
+      });
+    } catch (error: any) {
+      console.error('Error updating enterprise pricing rules:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.get('/admin/logistics/stats', async (c) => {
     try {
       const stats = await query(`
@@ -2384,10 +3045,72 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           COUNT(*) FILTER (WHERE status = 'delivered') as delivered,
           COUNT(*) FILTER (WHERE status = 'in_transit') as in_transit
         FROM shipments
-      `);
-      return c.json({ success: true, stats: stats.rows[0] });
+      `).catch(() => ({ rows: [{ total_shipments: '0', delivered: '0', in_transit: '0' }] }));
+      return c.json({ success: true, stats: stats.rows[0] || { total_shipments: 0, delivered: 0, in_transit: 0 } });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.get('/admin/logistics/orders', async (c) => {
+    try {
+      const status = c.req.query('status');
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let queryStr = `
+        SELECT 
+          o.*,
+          s.tracking_number,
+          s.status as shipment_status,
+          s.awb_number,
+          v.business_name as vendor_name,
+          c.full_name as customer_name
+        FROM orders o
+        LEFT JOIN shipments s ON s.order_id = o.id
+        LEFT JOIN vendors v ON o.vendor_id = v.id
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (status && status !== 'all') {
+        queryStr += ` AND o.order_status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+
+      queryStr += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const orders = await query(queryStr, params).catch(() => ({ rows: [] }));
+
+      const safeOrders = (orders.rows || []).map((o: any) => ({
+        id: String(o.id || ''),
+        orderId: String(o.id || ''),
+        orderNumber: String(o.order_number || o.id || ''),
+        customerId: String(o.customer_id || ''),
+        customerName: String(o.customer_name || ''),
+        vendorId: String(o.vendor_id || ''),
+        vendorName: String(o.vendor_name || ''),
+        totalAmount: parseFloat(o.total_amount || '0'),
+        status: String(o.order_status || o.status || 'pending'),
+        shipmentStatus: String(o.shipment_status || 'pending'),
+        trackingNumber: String(o.tracking_number || ''),
+        awbNumber: String(o.awb_number || ''),
+        createdAt: String(o.created_at || ''),
+      }));
+
+      return c.json({
+        success: true,
+        orders: safeOrders,
+        count: safeOrders.length,
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error fetching logistics orders:', error);
+      return c.json({ success: true, orders: [], count: 0 });
     }
   });
 
@@ -2401,8 +3124,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         FROM loyalty_members
       `);
       return c.json({ success: true, stats: stats.rows[0] });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2437,7 +3161,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/notifications', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const {
         title,
         message,
@@ -2484,8 +3208,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const templates = await query('SELECT * FROM notification_templates ORDER BY name ASC');
       return c.json({ success: true, templates: templates.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2493,8 +3218,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const activity = await query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100');
       return c.json({ success: true, activity: activity.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2511,8 +3237,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           },
         },
       });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2526,17 +3253,33 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ORDER BY package_count DESC
       `);
       return c.json({ success: true, stats: stats.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
+  // NOTE: Primary handler is in payment-gateway-management.ts
+  // This is a fallback with graceful error handling
   app.get('/admin/payment-gateways', async (c) => {
     try {
-      const gateways = await query('SELECT * FROM payment_gateways ORDER BY name ASC');
-      return c.json({ success: true, gateways: gateways.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      // Try payment_gateway_settings first (new table), then payment_gateways (legacy)
+      let gateways;
+      try {
+        gateways = await query('SELECT * FROM payment_gateway_settings ORDER BY gateway_name ASC');
+      } catch (e1) {
+        try {
+          gateways = await query('SELECT * FROM payment_gateways ORDER BY name ASC');
+        } catch (e2) {
+          // Both tables don't exist - return empty array gracefully
+          return c.json({ success: true, gateways: [], message: 'Payment gateway tables not found.' }, 200);
+        }
+      }
+      return c.json({ success: true, gateways: gateways.rows || [] }, 200);
+    } catch (error: unknown) {
+      // GRACEFUL: Return 200 with empty array on any error
+      console.error('[admin-advanced] payment-gateways error:', error);
+      return c.json({ success: true, gateways: [], message: 'Payment gateway query failed.' }, 200);
     }
   });
 
@@ -2550,26 +3293,234 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         FROM payments
       `);
       return c.json({ success: true, analytics: analytics.rows[0] });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.get('/admin/payments/gateway-config', async (c) => {
     try {
-      const config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC');
-      return c.json({ success: true, config: config.rows });
+      // Try payment_gateway_config table first, fallback to payment_gateway_settings
+      const config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC').catch(async () => {
+        return await query('SELECT * FROM payment_gateway_settings ORDER BY created_at DESC').catch(() => ({ rows: [] }));
+      });
+      
+      // If no config found, return default structure
+      if (config.rows.length === 0) {
+        return c.json({ 
+          success: true, 
+          razorpay: {
+            enabled: false,
+            keyId: '',
+            keySecret: '',
+            webhookSecret: '',
+          }
+        });
+      }
+
+      // Parse gateway_config JSONB if it exists
+      const gatewayData = config.rows[0]?.gateway_config 
+        ? (typeof config.rows[0].gateway_config === 'string' 
+            ? JSON.parse(config.rows[0].gateway_config) 
+            : config.rows[0].gateway_config)
+        : config.rows[0];
+
+      return c.json({ success: true, ...gatewayData });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.put('/admin/payments/gateway-config', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { razorpay, stripe, paytm, default_gateway } = body;
+
+      // Try to update payment_gateway_settings table
+      try {
+        const existing = await query('SELECT * FROM payment_gateway_settings WHERE gateway_name = $1', ['razorpay']).catch(() => ({ rows: [] }));
+        
+        const gatewayConfig = {
+          razorpay: razorpay || {},
+          stripe: stripe || {},
+          paytm: paytm || {},
+          default_gateway: default_gateway || 'razorpay',
+        };
+
+        if (existing.rows.length > 0) {
+          await update('payment_gateway_settings', 
+            { id: existing.rows[0].id },
+            { 
+              gateway_config: JSON.stringify(gatewayConfig),
+              updated_at: new Date().toISOString(),
+            }
+          );
+        } else {
+          await insert('payment_gateway_settings', {
+            gateway_name: 'razorpay',
+            gateway_config: JSON.stringify(gatewayConfig),
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (tableError: any) {
+        // Fallback: store in admin_settings
+        const existing = await query(`
+          SELECT id 
+          FROM admin_settings 
+          WHERE setting_category = 'payment' AND setting_key = 'gateway_config'
+        `).catch(() => ({ rows: [] }));
+
+        const gatewayConfig = {
+          razorpay: razorpay || {},
+          stripe: stripe || {},
+          paytm: paytm || {},
+          default_gateway: default_gateway || 'razorpay',
+        };
+
+        if (existing.rows.length > 0) {
+          await update('admin_settings',
+            { id: existing.rows[0].id },
+            { 
+              setting_value: JSON.stringify(gatewayConfig),
+              updated_at: new Date().toISOString(),
+            }
+          );
+        } else {
+          await insert('admin_settings', {
+            setting_category: 'payment',
+            setting_key: 'gateway_config',
+            setting_value: JSON.stringify(gatewayConfig),
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Payment gateway configuration updated successfully',
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error updating gateway config:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
   app.get('/admin/payments/refund-rules', async (c) => {
     try {
-      const rules = await query('SELECT * FROM refund_rules ORDER BY created_at DESC');
-      return c.json({ success: true, rules: rules.rows });
+      // Try refund_rules table first, fallback to admin_settings
+      const rules = await query('SELECT * FROM refund_rules ORDER BY created_at DESC').catch(async () => {
+        const settings = await query(`
+          SELECT setting_value 
+          FROM admin_settings 
+          WHERE setting_category = 'payment' AND setting_key = 'refund_rules'
+        `).catch(() => ({ rows: [] }));
+        return { rows: settings.rows.length > 0 ? JSON.parse(settings.rows[0].setting_value) : [] };
+      });
+      
+      // If no rules found, return default structure
+      if (!rules.rows || rules.rows.length === 0) {
+        return c.json({ 
+          success: true, 
+          rules: {
+            enabled: true,
+            schedule: [
+              { hours: 48, refundPercent: 90, description: 'Full refund > 48h' },
+              { hours: 24, refundPercent: 50, description: 'Partial refund 24-48h' },
+              { hours: 12, refundPercent: 0, description: 'No refund < 12h' },
+            ],
+            autoReconcile: true,
+            reconcilePeriod: 7,
+          }
+        });
+      }
+
+      return c.json({ success: true, rules: rules.rows[0] || rules.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.put('/admin/payments/refund-rules', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { enabled, schedule, autoReconcile, reconcilePeriod } = body;
+
+      // Try to update refund_rules table
+      try {
+        const existing = await query('SELECT * FROM refund_rules LIMIT 1').catch(() => ({ rows: [] }));
+        
+        const rulesData = {
+          enabled: enabled !== false,
+          schedule: schedule || [],
+          autoReconcile: autoReconcile !== false,
+          reconcilePeriod: reconcilePeriod || 7,
+        };
+
+        if (existing.rows.length > 0) {
+          await update('refund_rules',
+            { id: existing.rows[0].id },
+            {
+              rules_config: JSON.stringify(rulesData),
+              updated_at: new Date().toISOString(),
+            }
+          );
+        } else {
+          await insert('refund_rules', {
+            rules_config: JSON.stringify(rulesData),
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (tableError: any) {
+        // Fallback: store in admin_settings
+        const existing = await query(`
+          SELECT id 
+          FROM admin_settings 
+          WHERE setting_category = 'payment' AND setting_key = 'refund_rules'
+        `).catch(() => ({ rows: [] }));
+
+        const rulesData = {
+          enabled: enabled !== false,
+          schedule: schedule || [],
+          autoReconcile: autoReconcile !== false,
+          reconcilePeriod: reconcilePeriod || 7,
+        };
+
+        if (existing.rows.length > 0) {
+          await update('admin_settings',
+            { id: existing.rows[0].id },
+            {
+              setting_value: JSON.stringify(rulesData),
+              updated_at: new Date().toISOString(),
+            }
+          );
+        } else {
+          await insert('admin_settings', {
+            setting_category: 'payment',
+            setting_key: 'refund_rules',
+            setting_value: JSON.stringify(rulesData),
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Refund rules updated successfully',
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error updating refund rules:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
@@ -2577,8 +3528,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const settlements = await query('SELECT * FROM payment_settlements ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, settlements: settlements.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2586,16 +3538,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const tiers = await query('SELECT * FROM payment_tiers ORDER BY created_at DESC');
       return c.json({ success: true, tiers: tiers.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.post('/admin/payments/tiers/seed-defaults', async (c) => {
     try {
       return c.json({ success: true, message: 'Default tiers seeded' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2603,8 +3557,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const payouts = await query('SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, payouts: payouts.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2618,8 +3573,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         FROM payouts
       `);
       return c.json({ success: true, stats: stats.rows[0] });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2627,8 +3583,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const flags = await query('SELECT * FROM feature_flags ORDER BY name ASC');
       return c.json({ success: true, flags: flags.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2636,8 +3593,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const settings = await query('SELECT * FROM platform_settings ORDER BY key ASC');
       return c.json({ success: true, settings: settings.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2645,8 +3603,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const policies = await query('SELECT * FROM policies ORDER BY created_at DESC');
       return c.json({ success: true, policies: policies.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2654,8 +3613,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const categories = await query('SELECT * FROM problem_categories ORDER BY name ASC');
       return c.json({ success: true, categories: categories.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2664,8 +3624,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const adminId = c.req.query('adminId') || 'default';
       const profile = await query('SELECT * FROM admin_profiles WHERE id = $1', [adminId]);
       return c.json({ success: true, profile: profile.rows[0] || {} });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2673,8 +3634,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const promotions = await query('SELECT * FROM promotions ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, promotions: promotions.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2682,8 +3644,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const activity = await query('SELECT * FROM rbac_activity_log ORDER BY created_at DESC LIMIT 100');
       return c.json({ success: true, activity: activity.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2691,24 +3654,27 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const alerts = await query('SELECT * FROM rbac_alerts ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, alerts: alerts.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.get('/admin/rbac/export', async (c) => {
     try {
       return c.json({ success: true, message: 'Export functionality' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.get('/admin/rbac/import', async (c) => {
     try {
       return c.json({ success: true, message: 'Import functionality' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2716,8 +3682,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const history = await query('SELECT * FROM role_migrations ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, history: history.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2833,7 +3800,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/refunds/:refundId/approve', async (c) => {
     try {
       const refundId = c.req.param('refundId');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { notes } = body;
 
       const refunds = await select('refunds', { id: refundId });
@@ -2875,7 +3842,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/refunds/:refundId/reject', async (c) => {
     try {
       const refundId = c.req.param('refundId');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { reason } = body;
 
       if (!reason) {
@@ -2914,8 +3881,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const regions = await query('SELECT * FROM regions ORDER BY name ASC');
       return c.json({ success: true, regions: regions.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2923,8 +3891,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const notices = await query('SELECT * FROM renewal_notices ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, notices: notices.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2932,16 +3901,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const reports = await query('SELECT * FROM reports ORDER BY created_at DESC LIMIT 50');
       return c.json({ success: true, reports: reports.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.post('/admin/reports/generate', async (c) => {
     try {
       return c.json({ success: true, message: 'Report generation started' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2950,16 +3921,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '10', 10);
       const reports = await query('SELECT * FROM generated_reports ORDER BY created_at DESC LIMIT $1', [limit]);
       return c.json({ success: true, reports: reports.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
   app.post('/admin/reports/save', async (c) => {
     try {
       return c.json({ success: true, message: 'Report saved' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2967,8 +3940,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const reports = await query('SELECT * FROM saved_reports ORDER BY created_at DESC');
       return c.json({ success: true, reports: reports.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -2976,8 +3950,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const templates = await query('SELECT * FROM report_templates ORDER BY name ASC');
       return c.json({ success: true, templates: templates.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3396,10 +4371,81 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/settings', async (c) => {
     try {
-      const settings = await query('SELECT * FROM platform_settings ORDER BY key ASC');
+      const settings = await query('SELECT * FROM platform_settings ORDER BY setting_key ASC');
       return c.json({ success: true, settings: settings.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.put('/admin/settings', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      
+      // Update platform settings - can be a single setting or multiple
+      // For JSONB columns, pg library automatically converts JavaScript objects/arrays to JSONB
+      // For strings, we need to pass them as-is (pg will handle JSON string conversion)
+      if (body.setting_key && body.setting_value !== undefined) {
+        // Single setting update
+        const existing = await select('platform_settings', { setting_key: body.setting_key });
+        // Pass value directly - pg will handle JSONB conversion
+        const settingValue = body.setting_value;
+        
+        if (existing.length > 0) {
+          await update('platform_settings',
+            { setting_key: body.setting_key },
+            {
+              setting_value: settingValue,
+              updated_at: new Date().toISOString(),
+            }
+          );
+        } else {
+          await insert('platform_settings', {
+            setting_key: body.setting_key,
+            setting_value: settingValue,
+            setting_type: typeof body.setting_value === 'string' ? 'string' : 'object',
+            is_public: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } else {
+        // Bulk update - update multiple settings
+        for (const [key, value] of Object.entries(body)) {
+          if (value === undefined) continue;
+          
+          const existing = await select('platform_settings', { setting_key: key });
+          // Pass value directly - pg will handle JSONB conversion
+          
+          if (existing.length > 0) {
+            await update('platform_settings',
+              { setting_key: key },
+              {
+                setting_value: value,
+                updated_at: new Date().toISOString(),
+              }
+            );
+          } else {
+            await insert('platform_settings', {
+              setting_key: key,
+              setting_value: value,
+              setting_type: typeof value === 'string' ? 'string' : 'object',
+              is_public: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Settings updated successfully',
+      });
     } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+      console.error('Error updating settings:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 
@@ -3426,7 +4472,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/content/pages', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { title, slug, content, category, isPublished } = body;
 
       if (!title || !slug) {
@@ -3457,7 +4503,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.put('/admin/content/pages/:pageId', async (c) => {
     try {
       const pageId = c.req.param('pageId');
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
 
       const pages = await select('content_pages', { id: pageId });
       if (pages.length === 0) {
@@ -3511,8 +4557,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const integrations = await query('SELECT * FROM integrations ORDER BY name ASC');
       return c.json({ success: true, integrations: integrations.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3520,8 +4567,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const aws = await query('SELECT * FROM aws_integrations ORDER BY created_at DESC');
       return c.json({ success: true, integrations: aws.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3529,8 +4577,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const maps = await query('SELECT * FROM google_maps_integrations ORDER BY created_at DESC');
       return c.json({ success: true, integrations: maps.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3538,8 +4587,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const razorpay = await query('SELECT * FROM razorpay_integrations ORDER BY created_at DESC');
       return c.json({ success: true, integrations: razorpay.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3547,8 +4597,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const shiprocket = await query('SELECT * FROM shiprocket_integrations ORDER BY created_at DESC');
       return c.json({ success: true, integrations: shiprocket.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3556,8 +4607,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const design = await query('SELECT * FROM onboarding_design ORDER BY created_at DESC');
       return c.json({ success: true, design: design.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3566,8 +4618,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const logs = await query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1', [limit]);
       return c.json({ success: true, logs: logs.rows });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3575,8 +4628,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       await query('UPDATE vendors SET status = \'approved\' WHERE status = \'pending\'');
       return c.json({ success: true, message: 'All vendors approved' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3584,8 +4638,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       await query('UPDATE vendor_services SET is_active = true WHERE is_active = false');
       return c.json({ success: true, message: 'Vendor services published' });
-    } catch (error: any) {
-      return c.json({ error: error.message }, 500);
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
 
@@ -3660,7 +4715,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/vendor/reject', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { vendorId, reason } = body;
 
       if (!vendorId) {
@@ -3685,7 +4740,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/vendor/request-info', async (c) => {
     try {
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
       const { vendorId, comment } = body;
 
       if (!vendorId) {

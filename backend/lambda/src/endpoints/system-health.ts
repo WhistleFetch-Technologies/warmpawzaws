@@ -53,6 +53,28 @@ export function registerSystemHealthEndpoints(app: Hono) {
   });
 
   /**
+   * GET /system/health
+   * Alias for /health (for compatibility)
+   */
+  app.get("/system/health", async (c) => {
+    try {
+      const dbHealthy = await checkDbHealth();
+      return c.json({
+        status: dbHealthy ? 'ok' : 'degraded',
+        timestamp: new Date().toISOString(),
+        database: dbHealthy ? 'connected' : 'disconnected',
+        system: 'operational',
+      });
+    } catch (error: any) {
+      return c.json({
+        status: 'down',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      }, 500);
+    }
+  });
+
+  /**
    * GET /health/full
    * Complete system health check
    */

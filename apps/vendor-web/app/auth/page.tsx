@@ -16,25 +16,27 @@ export default function AuthPage() {
     // Only check session once on mount
     if (hasRedirected.current) return;
 
+    // Initialize session (clears on hard refresh)
+    const { initializeSession, isTokenExpired } = require('@/lib/session-utils');
+    initializeSession();
+
     // Check if user is already authenticated
     const checkSession = () => {
       try {
         const storedPhone = localStorage.getItem('vendorPhone');
-        const storedToken = localStorage.getItem('authToken');
+        const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
         
         if (storedPhone && storedToken) {
-          // Validate token format (basic check)
-          if (storedToken && storedToken.length > 10) {
+          // Check token expiry
+          if (!isTokenExpired(storedToken) && storedToken.length > 10) {
             // User is already authenticated, redirect to onboarding
-            // The onboarding page will check status and route accordingly
             hasRedirected.current = true;
-            router.replace('/onboarding'); // Use replace instead of push to avoid history loop
+            router.replace('/onboarding');
             return;
           } else {
-            // Invalid token, clear stale data
-            localStorage.removeItem('vendorPhone');
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('vendorData');
+            // Token expired or invalid, clear stale data
+            const { clearVendorSession } = require('@/lib/session-utils');
+            clearVendorSession();
           }
         }
         
@@ -42,7 +44,6 @@ export default function AuthPage() {
         setIsCheckingSession(false);
       } catch (error) {
         console.error('Error checking session:', error);
-        // On error, show auth UI
         setIsCheckingSession(false);
       }
     };
@@ -124,11 +125,30 @@ export default function AuthPage() {
       return;
     }
     
-    // After successful authentication, redirect to onboarding
-    // The onboarding page will check vendor status and route to appropriate screen
-    console.log('🔄 [AuthPage] Redirecting to /onboarding...');
-    // Use immediate redirect since we verified localStorage is set
-    router.replace('/onboarding');
+    // Check state from backend response to route appropriately
+    // Backend returns: { data: { state: 'new' | 'existing', profile: {...} } }
+    // Also check onboardingStatus from VendorAuth component
+    const responseState = session.state || session.data?.state;
+    const onboardingStatus = session.onboardingStatus || session.profile?.onboarding_status || session.data?.profile?.onboarding_status;
+    
+    console.log('🔄 [AuthPage] Routing decision:', {
+      state: responseState,
+      onboardingStatus,
+      vendorId: session.vendorId,
+      sessionKeys: Object.keys(session)
+    });
+    
+    // Route based on state and onboarding status
+    // For active vendors, go directly to home page (which shows dashboard)
+    if (onboardingStatus === 'ACTIVATED' || (responseState === 'existing' && session.vendorId && !onboardingStatus)) {
+      // Existing active vendor - go directly to home (dashboard)
+      console.log('✅ [AuthPage] Active vendor - routing to home (dashboard)');
+      router.replace('/');
+    } else {
+      // All other cases - go to onboarding (which will route based on status)
+      console.log('🔄 [AuthPage] Routing to onboarding (status:', onboardingStatus, ')');
+      router.replace('/onboarding');
+    }
   };
 
   // Show loading while checking session

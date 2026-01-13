@@ -268,36 +268,85 @@ class InvalidateCacheHandler extends BaseHandler {
 
 class GovernanceStatusHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    // Get recent propagation events
-    const recentEvents = await query(`
-      SELECT * FROM admin_audit_log 
-      WHERE action = 'propagate' 
-      ORDER BY performed_at DESC 
-      LIMIT 20
-    `);
+    // Get recent propagation events (check if table exists)
+    let recentEvents: any[] = [];
+    try {
+      const tableCheck = await query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'admin_audit_log'
+        )`
+      );
+      
+      if (tableCheck.rows[0]?.exists) {
+        const result = await query(`
+          SELECT * FROM admin_audit_log 
+          WHERE action = 'propagate' 
+          ORDER BY performed_at DESC 
+          LIMIT 20
+        `);
+        recentEvents = Array.isArray(result) ? result : (result as any).rows || [];
+      }
+    } catch (error: any) {
+      console.warn('[Governance Status] Error querying admin_audit_log:', error.message);
+    }
 
-    // Get pending queue items (SQS depth)
-    const pendingNotifications = await query(`
-      SELECT COUNT(*) as count FROM notification_queue 
-      WHERE status = 'pending'
-    `);
+    // Get pending queue items (check if table exists)
+    let pendingCount = 0;
+    try {
+      const tableCheck = await query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'notification_queue'
+        )`
+      );
+      
+      if (tableCheck.rows[0]?.exists) {
+        const result = await query(`
+          SELECT COUNT(*) as count FROM notification_queue 
+          WHERE status = 'pending'
+        `);
+        const rows = Array.isArray(result) ? result : (result as any).rows || [];
+        pendingCount = parseInt(rows[0]?.count || '0', 10);
+      }
+    } catch (error: any) {
+      console.warn('[Governance Status] Error querying notification_queue:', error.message);
+    }
 
-    // Get cache invalidation stats
-    const cacheStats = await query(`
-      SELECT COUNT(*) as count, 
-             MAX(invalidated_at) as last_invalidation
-      FROM cache_invalidations 
-      WHERE invalidated_at > NOW() - INTERVAL '1 hour'
-    `);
-
-    const notifRows = Array.isArray(pendingNotifications) ? pendingNotifications : (pendingNotifications as any).rows || [];
-    const cacheRows = Array.isArray(cacheStats) ? cacheStats : (cacheStats as any).rows || [];
+    // Get cache invalidation stats (check if table exists)
+    let cacheCount = 0;
+    let lastCacheInvalidation: any = null;
+    try {
+      const tableCheck = await query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'cache_invalidations'
+        )`
+      );
+      
+      if (tableCheck.rows[0]?.exists) {
+        const result = await query(`
+          SELECT COUNT(*) as count, 
+                 MAX(invalidated_at) as last_invalidation
+          FROM cache_invalidations 
+          WHERE invalidated_at > NOW() - INTERVAL '1 hour'
+        `);
+        const rows = Array.isArray(result) ? result : (result as any).rows || [];
+        cacheCount = parseInt(rows[0]?.count || '0', 10);
+        lastCacheInvalidation = rows[0]?.last_invalidation;
+      }
+    } catch (error: any) {
+      console.warn('[Governance Status] Error querying cache_invalidations:', error.message);
+    }
     
     return this.success({
       recent_propagations: recentEvents,
-      pending_notifications: notifRows[0]?.count || 0,
-      cache_invalidations_last_hour: cacheRows[0]?.count || 0,
-      last_cache_invalidation: cacheRows[0]?.last_invalidation,
+      pending_notifications: pendingCount,
+      cache_invalidations_last_hour: cacheCount,
+      last_cache_invalidation: lastCacheInvalidation,
       system_status: 'healthy',
     });
   }

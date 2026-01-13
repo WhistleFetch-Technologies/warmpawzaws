@@ -43,21 +43,22 @@ class GetRolesHandler extends BaseHandler {
       let allPermissions;
       
       try {
-        // Try PostgreSQL array syntax (preferred, more efficient)
+        // Cast role_id to text to avoid "uuid = text" error
+        // PostgreSQL requires explicit casting when comparing UUID with text array
         allPermissions = await query(
           `SELECT role_id, permission_name 
            FROM role_permissions 
-           WHERE role_id = ANY($1::text[])`,
+           WHERE role_id::text = ANY($1::text[])`,
           [roleIds]
         );
       } catch (error: any) {
-        // Fallback to IN clause if array syntax not supported
+        // Fallback to IN clause with explicit casting
         console.warn('[Roles] Array syntax failed, using IN clause fallback:', error.message);
-        const placeholders = roleIds.map((_, i) => `$${i + 1}`).join(',');
+        const placeholders = roleIds.map((_, i) => `$${i + 1}::text`).join(',');
         allPermissions = await query(
           `SELECT role_id, permission_name 
            FROM role_permissions 
-           WHERE role_id IN (${placeholders})`,
+           WHERE role_id::text IN (${placeholders})`,
           roleIds
         );
       }
@@ -529,57 +530,116 @@ class DeleteRoleHandler extends BaseHandler {
 
 class GetCapabilitiesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    // Return predefined capabilities list
+    // Return ALL 45 capabilities as defined in the platform
+    // This ensures roles can be configured with any combination of capabilities
     const capabilities = [
-      // Booking Management
-      { id: 'booking_create', name: 'Create Bookings', category: 'Booking Management', description: 'Can create new bookings' },
-      { id: 'booking_view', name: 'View Bookings', category: 'Booking Management', description: 'Can view booking details' },
-      { id: 'booking_update', name: 'Update Bookings', category: 'Booking Management', description: 'Can update booking status' },
-      { id: 'booking_cancel', name: 'Cancel Bookings', category: 'Booking Management', description: 'Can cancel bookings' },
+      // ============================================================================
+      // CORE OPERATIONS (6 capabilities)
+      // ============================================================================
+      { id: 'dashboard', name: 'Dashboard', category: 'Core Operations', description: 'Dashboard overview and stats' },
+      { id: 'bookings', name: 'Bookings', category: 'Core Operations', description: 'Manage appointments and bookings' },
+      { id: 'services', name: 'Services', category: 'Core Operations', description: 'Manage services catalog' },
+      { id: 'staff', name: 'Staff Management', category: 'Core Operations', description: 'Manage team members' },
+      { id: 'schedule', name: 'Schedule', category: 'Core Operations', description: 'Manage availability and schedules' },
+      { id: 'profile', name: 'Profile', category: 'Core Operations', description: 'Update vendor profile' },
       
-      // Service Management
-      { id: 'service_create', name: 'Create Services', category: 'Service Management', description: 'Can create custom services' },
-      { id: 'service_view', name: 'View Services', category: 'Service Management', description: 'Can view service catalog' },
-      { id: 'service_update', name: 'Update Services', category: 'Service Management', description: 'Can modify service details' },
-      { id: 'service_pricing', name: 'Manage Pricing', category: 'Service Management', description: 'Can set service prices' },
+      // ============================================================================
+      // FINANCE & PAYMENTS (4 capabilities)
+      // ============================================================================
+      { id: 'earnings', name: 'Earnings', category: 'Finance & Payments', description: 'View earnings and revenue' },
+      { id: 'settlements', name: 'Settlements', category: 'Finance & Payments', description: 'View payouts and settlements' },
+      { id: 'bank_account', name: 'Bank Account', category: 'Finance & Payments', description: 'Manage bank details' },
+      { id: 'pricing', name: 'Pricing', category: 'Finance & Payments', description: 'Manage service pricing' },
       
-      // Staff Management
-      { id: 'staff_create', name: 'Add Staff', category: 'Staff Management', description: 'Can add new staff members' },
-      { id: 'staff_view', name: 'View Staff', category: 'Staff Management', description: 'Can view staff details' },
-      { id: 'staff_update', name: 'Update Staff', category: 'Staff Management', description: 'Can update staff information' },
-      { id: 'staff_schedule', name: 'Manage Schedules', category: 'Staff Management', description: 'Can manage staff schedules' },
+      // ============================================================================
+      // COMMUNICATION (3 capabilities)
+      // ============================================================================
+      { id: 'chat', name: 'Chat', category: 'Communication', description: 'Messages and chat with customers' },
+      { id: 'notifications', name: 'Notifications', category: 'Communication', description: 'Send and manage notifications' },
+      { id: 'video_calling', name: 'Video Calling', category: 'Communication', description: 'Video consultations and calls' },
       
-      // Customer Management
-      { id: 'customer_view', name: 'View Customers', category: 'Customer Management', description: 'Can view customer details' },
-      { id: 'customer_update', name: 'Update Customers', category: 'Customer Management', description: 'Can update customer information' },
+      // ============================================================================
+      // HEALTHCARE (4 capabilities)
+      // ============================================================================
+      { id: 'prescriptions', name: 'Prescriptions', category: 'Healthcare', description: 'Create and manage prescriptions (Vet, Nutritionist)' },
+      { id: 'medical_records', name: 'Medical Records', category: 'Healthcare', description: 'Access and manage medical records (Vet)' },
+      { id: 'diagnostics', name: 'Diagnostics', category: 'Healthcare', description: 'Diagnostic tests and results (Diagnostic centre)' },
+      { id: 'pharmacy', name: 'Pharmacy', category: 'Healthcare', description: 'Pharmacy management and inventory (Pharmacy)' },
       
-      // Financial
-      { id: 'payment_view', name: 'View Payments', category: 'Financial', description: 'Can view payment history' },
-      { id: 'payment_process', name: 'Process Payments', category: 'Financial', description: 'Can process payments' },
-      { id: 'settlement_view', name: 'View Settlements', category: 'Financial', description: 'Can view settlement reports' },
-      { id: 'refund_process', name: 'Process Refunds', category: 'Financial', description: 'Can initiate refunds' },
+      // ============================================================================
+      // SPECIALIZED SERVICES (8 capabilities)
+      // ============================================================================
+      { id: 'ambulance', name: 'Ambulance', category: 'Specialized Services', description: 'Ambulance vehicles and services (Ambulance service)' },
+      { id: 'cafe_tables', name: 'Cafe Tables', category: 'Specialized Services', description: 'Cafe table management (Pet cafe)' },
+      { id: 'table_management', name: 'Table Management', category: 'Specialized Services', description: 'Manage tables, seating, and reservations' },
+      { id: 'rooms', name: 'Rooms', category: 'Specialized Services', description: 'Resort/boarding rooms management (Resort/boarding)' },
+      { id: 'room_management', name: 'Room Management', category: 'Specialized Services', description: 'Manage rooms, occupancy, and bookings' },
+      { id: 'insurance_plans', name: 'Insurance Plans', category: 'Specialized Services', description: 'Insurance plans and policies (Insurance provider)' },
+      { id: 'pet_profiles', name: 'Pet Profiles', category: 'Specialized Services', description: 'Pet profiles for adoption (Breeder/NGO/Shelter)' },
+      { id: 'meal_plans', name: 'Meal Plans', category: 'Specialized Services', description: 'Meal plans and diet charts (Nutritionist)' },
+      { id: 'training_programs', name: 'Training Programs', category: 'Specialized Services', description: 'Training programs and sessions (Trainer)' },
+      { id: 'walking', name: 'Walking', category: 'Specialized Services', description: 'Walking services and routes (Pet walker)' },
       
-      // Healthcare Specific
-      { id: 'medical_records', name: 'Medical Records', category: 'Healthcare', description: 'Can access medical records' },
-      { id: 'prescription_create', name: 'Create Prescriptions', category: 'Healthcare', description: 'Can create prescriptions' },
-      { id: 'diagnostic_results', name: 'Diagnostic Results', category: 'Healthcare', description: 'Can view/upload diagnostic results' },
-      { id: 'vaccination_records', name: 'Vaccination Records', category: 'Healthcare', description: 'Can manage vaccination records' },
+      // ============================================================================
+      // OPERATIONS (6 capabilities)
+      // ============================================================================
+      { id: 'inventory', name: 'Inventory', category: 'Operations', description: 'Inventory management and stock control' },
+      { id: 'orders', name: 'Orders', category: 'Operations', description: 'Order management and processing' },
+      { id: 'delivery', name: 'Delivery', category: 'Operations', description: 'Delivery tracking and management' },
+      { id: 'gps_tracking', name: 'GPS Tracking', category: 'Operations', description: 'GPS tracking for services and deliveries' },
+      { id: 'reports', name: 'Reports', category: 'Operations', description: 'Reports and analytics' },
+      { id: 'settings', name: 'Settings', category: 'Operations', description: 'Vendor settings and configuration' },
       
-      // Location Services
-      { id: 'gps_tracking', name: 'GPS Tracking', category: 'Location Services', description: 'Can use GPS tracking' },
-      { id: 'service_area', name: 'Service Area', category: 'Location Services', description: 'Can define service areas' },
+      // ============================================================================
+      // ADVANCED FEATURES (8 capabilities)
+      // ============================================================================
+      { id: 'packages', name: 'Packages', category: 'Advanced Features', description: 'Package management and bundles' },
+      { id: 'subscriptions', name: 'Subscriptions', category: 'Advanced Features', description: 'Subscription management' },
+      { id: 'coupons', name: 'Coupons', category: 'Advanced Features', description: 'Coupon management and discounts' },
+      { id: 'promotions', name: 'Promotions', category: 'Advanced Features', description: 'Promotions and marketing campaigns' },
+      { id: 'reviews', name: 'Reviews', category: 'Advanced Features', description: 'Review management and responses' },
+      { id: 'analytics', name: 'Analytics', category: 'Advanced Features', description: 'Analytics dashboard and insights' },
+      { id: 'export', name: 'Export', category: 'Advanced Features', description: 'Data export functionality' },
+      { id: 'integrations', name: 'Integrations', category: 'Advanced Features', description: 'Third-party integrations' },
       
-      // Communication
-      { id: 'chat_customer', name: 'Customer Chat', category: 'Communication', description: 'Can chat with customers' },
-      { id: 'notifications', name: 'Send Notifications', category: 'Communication', description: 'Can send notifications' },
-      
-      // Inventory (for retail/pharmacy)
-      { id: 'inventory_manage', name: 'Manage Inventory', category: 'Inventory', description: 'Can manage product inventory' },
-      { id: 'product_catalog', name: 'Product Catalog', category: 'Inventory', description: 'Can manage product catalog' },
-      
-      // Reports & Analytics
-      { id: 'analytics_view', name: 'View Analytics', category: 'Reports', description: 'Can view analytics dashboard' },
-      { id: 'reports_generate', name: 'Generate Reports', category: 'Reports', description: 'Can generate reports' },
+      // ============================================================================
+      // ADDITIONAL SPECIALIZED CAPABILITIES (from role-seeding.ts)
+      // ============================================================================
+      { id: 'tele', name: 'Tele Consultation', category: 'Communication', description: 'Telephone consultations' },
+      { id: 'emergency', name: 'Emergency Services', category: 'Healthcare', description: 'Emergency protocols and services' },
+      { id: 'emergency_protocols', name: 'Emergency Protocols', category: 'Healthcare', description: 'Emergency response protocols' },
+      { id: 'ambulance_services', name: 'Ambulance Services', category: 'Healthcare', description: 'Ambulance and emergency transport' },
+      { id: 'diagnostic_lab', name: 'Diagnostic Lab', category: 'Healthcare', description: 'Diagnostic laboratory services' },
+      { id: 'patient_monitoring', name: 'Patient Monitoring', category: 'Healthcare', description: 'Patient monitoring and tracking' },
+      { id: 'vet_summary', name: 'Vet Summary', category: 'Healthcare', description: 'Veterinary summary and reports' },
+      { id: 'prescription_verification', name: 'Prescription Verification', category: 'Healthcare', description: 'Verify and validate prescriptions' },
+      { id: 'controlled_substances', name: 'Controlled Substances', category: 'Healthcare', description: 'Manage controlled substances' },
+      { id: 'catalog', name: 'Catalog', category: 'Operations', description: 'Product and service catalog management' },
+      { id: 'expiry_management', name: 'Expiry Management', category: 'Operations', description: 'Manage product expiry dates' },
+      { id: 'photo_updates', name: 'Photo Updates', category: 'Media', description: 'Photo updates and sharing' },
+      { id: 'gallery', name: 'Gallery', category: 'Media', description: 'Photo gallery management' },
+      { id: 'portfolio', name: 'Portfolio', category: 'Media', description: 'Portfolio showcase' },
+      { id: 'progress_tracking', name: 'Progress Tracking', category: 'Media', description: 'Track progress with photos/videos' },
+      { id: 'cctv_access', name: 'CCTV Access', category: 'Media', description: 'Access CCTV feeds' },
+      { id: 'distance_pricing', name: 'Distance Pricing', category: 'Operations', description: 'Pricing based on distance' },
+      { id: 'staff_management', name: 'Staff Management', category: 'Core Operations', description: 'Comprehensive staff management' },
+      { id: 'schedule_management', name: 'Schedule Management', category: 'Core Operations', description: 'Advanced schedule management' },
+      { id: 'facility_management', name: 'Facility Management', category: 'Operations', description: 'Facility and location management' },
+      { id: 'multi_doctor_management', name: 'Multi-Doctor Management', category: 'Healthcare', description: 'Manage multiple doctors/staff' },
+      { id: 'custom_services', name: 'Custom Services', category: 'Operations', description: 'Create and manage custom services' },
+      { id: 'package_management', name: 'Package Management', category: 'Advanced Features', description: 'Package and bundle management' },
+      { id: 'pax_management', name: 'PAX Management', category: 'Specialized Services', description: 'Manage party size and capacity' },
+      { id: 'occupancy_tracking', name: 'Occupancy Tracking', category: 'Specialized Services', description: 'Track room/table occupancy' },
+      { id: 'nightly_pricing', name: 'Nightly Pricing', category: 'Specialized Services', description: 'Nightly rates for rooms' },
+      { id: 'menu', name: 'Menu', category: 'Specialized Services', description: 'Menu management for cafes/restaurants' },
+      { id: 'diet_charts', name: 'Diet Charts', category: 'Specialized Services', description: 'Diet charts and meal planning' },
+      { id: 'counseling', name: 'Counseling', category: 'Specialized Services', description: 'Counseling services' },
+      { id: 'adoption', name: 'Adoption', category: 'Specialized Services', description: 'Pet adoption management' },
+      { id: 'donation', name: 'Donation', category: 'Specialized Services', description: 'Donation management' },
+      { id: 'events', name: 'Events', category: 'Specialized Services', description: 'Event management' },
+      { id: 'memorial', name: 'Memorial', category: 'Specialized Services', description: 'Memorial services' },
+      { id: 'claims_management', name: 'Claims Management', category: 'Specialized Services', description: 'Insurance claims management' },
+      { id: 'policy_management', name: 'Policy Management', category: 'Specialized Services', description: 'Insurance policy management' },
     ];
 
     return this.success({

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiClient, bookingsApi } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface BookingActionsProps {
@@ -36,9 +36,10 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
   const fetchRefundPreview = async () => {
     try {
       const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.id }) as any;
-      setRefundPreview(result.refund);
+      setRefundPreview(result.refund || result);
     } catch (error) {
       console.error('Error fetching refund preview:', error);
+      setRefundPreview(null);
     }
   };
 
@@ -55,7 +56,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
     setLoading(true);
     try {
-      const result = await bookingsApi.reschedule(booking.id, {
+      const result = await apiClient.post(`/bookings/${booking.id}/reschedule`, {
         newDate: rescheduleData.newDate,
         newTime: rescheduleData.newTimeSlot,
         reason: rescheduleData.reason,
@@ -81,7 +82,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
     setLoading(true);
     try {
-      const result = await bookingsApi.cancel(booking.id, {
+      const result = await apiClient.post(`/bookings/${booking.id}/cancel`, {
         reason: cancellationReason,
         actorType: 'customer'
       }) as any;

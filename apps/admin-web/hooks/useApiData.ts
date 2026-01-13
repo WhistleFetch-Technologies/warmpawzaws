@@ -36,16 +36,52 @@ export function useApiData<T = any>({
   const [error, setError] = useState<string | null>(null);
   const isRateLimitedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef(0);
+  const lastErrorRef = useRef<Error | null>(null);
 
-  const fetchData = useCallback(async () => {
-    // Don't fetch if we're currently rate limited
-    if (isRateLimitedRef.current) {
+  // Use refs to track if we've already fetched to prevent infinite loops
+  const hasFetchedRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const shouldAutoRetryRef = useRef(false);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Memoize params to prevent unnecessary re-renders
+  const paramsString = params ? JSON.stringify(params) : '';
+  
+  // Store callbacks in refs to prevent dependency issues
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
+  
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+    onErrorRef.current = onError;
+  }, [onSuccess, onError]);
+  
+  // Update fetchData to use refs
+  const fetchDataStable = useCallback(async (isManualRetry = false) => {
+    // Don't fetch if we're currently rate limited or already fetching (unless manual retry)
+    if (!isManualRetry && (isRateLimitedRef.current || isFetchingRef.current)) {
+      return;
+    }
+
+    // If rate limited and not a manual retry, don't proceed
+    if (!isManualRetry && isRateLimitedRef.current) {
       return;
     }
 
     try {
+      isFetchingRef.current = true;
       setLoading(true);
       setError(null);
+      lastErrorRef.current = null;
 
       const queryParams = new URLSearchParams();
       if (params) {
@@ -75,10 +111,15 @@ export function useApiData<T = any>({
       }
 
       setData(extractedData);
-      onSuccess?.(extractedData);
+      onSuccessRef.current?.(extractedData);
       isRateLimitedRef.current = false; // Reset rate limit flag on success
+      retryCountRef.current = 0; // Reset retry count on success
+      hasFetchedRef.current = true;
+      shouldAutoRetryRef.current = false;
     } catch (err: any) {
-      // Handle rate limiting errors specially
+      lastErrorRef.current = err;
+      
+      // Handle rate limiting errors specially - NO automatic retry
       if (err instanceof RateLimitError) {
         isRateLimitedRef.current = true;
         const retryAfter = err.retryAfter || 5000;
@@ -86,7 +127,7 @@ export function useApiData<T = any>({
         
         const errorMessage = `Rate limit exceeded. Please wait ${waitSeconds} second(s) before retrying.`;
         setError(errorMessage);
-        onError?.(err);
+        onErrorRef.current?.(err);
         console.warn(`Rate limited for ${endpoint}. Waiting ${waitSeconds}s before allowing retry.`);
         
         // Clear any existing timeout
@@ -94,13 +135,47 @@ export function useApiData<T = any>({
           clearTimeout(retryTimeoutRef.current);
         }
         
-        // Allow retry after the wait period
+        // Clear rate limit flag after wait period, but DON'T auto-retry
         retryTimeoutRef.current = setTimeout(() => {
           isRateLimitedRef.current = false;
-          setError(null);
+          retryCountRef.current = 0;
+          // Don't automatically retry - user must manually retry or component must re-mount
         }, retryAfter);
         
-        return; // Don't set loading to false immediately - keep it in a "waiting" state
+        setLoading(false);
+        isFetchingRef.current = false;
+        return; // Exit early - no automatic retry
+      }
+      
+      // Handle 503 Service Unavailable with exponential backoff (max 3 retries)
+      if (err.message?.includes('Service Unavailable') || err.message?.includes('503')) {
+        retryCountRef.current += 1;
+        
+        if (retryCountRef.current <= 3 && shouldAutoRetryRef.current) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 10000); // 1s, 2s, 4s, max 10s
+          console.warn(`Service unavailable for ${endpoint}. Retrying in ${backoffDelay}ms (attempt ${retryCountRef.current}/3)...`);
+          
+          if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current);
+          }
+          
+          retryTimeoutRef.current = setTimeout(() => {
+            fetchDataStable(true); // Manual retry flag
+          }, backoffDelay);
+          
+          setLoading(true); // Keep loading during retry
+          return;
+        } else {
+          // Max retries reached or auto-retry disabled
+          const errorMessage = 'Service temporarily unavailable. Please try again later.';
+          setError(errorMessage);
+          onErrorRef.current?.(err);
+          console.error(`❌ Service unavailable for ${endpoint} after ${retryCountRef.current} attempts`);
+          setData([]);
+          setLoading(false);
+          isFetchingRef.current = false;
+          return;
+        }
       }
       
       // Handle other errors normally
@@ -116,37 +191,54 @@ export function useApiData<T = any>({
       }
       
       setError(errorMessage);
-      onError?.(err);
+      onErrorRef.current?.(err);
       console.error(`❌ Error loading data from ${endpoint}:`, err);
       console.error(`   Error message: ${errorMessage}`);
+      // Set empty data on error to prevent infinite loading
+      setData([]);
+      retryCountRef.current = 0; // Reset retry count for non-retryable errors
     } finally {
-      setLoading(false);
-    }
-  }, [endpoint, params, dataKey, onSuccess, onError]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
+      // Only set loading to false if we're not in a retry state
+      if (!shouldAutoRetryRef.current || retryCountRef.current > 3) {
+        setLoading(false);
       }
-    };
-  }, []);
-
-  // Memoize params to prevent unnecessary re-renders
-  const paramsString = params ? JSON.stringify(params) : '';
-  
-  useEffect(() => {
-    if (enabled && !isRateLimitedRef.current) {
-      fetchData();
+      isFetchingRef.current = false;
     }
-  }, [enabled, fetchData]);
+  }, [endpoint, paramsString, dataKey]); // Stable dependencies only
+  
+  // Only fetch once on mount or when endpoint/params change
+  useEffect(() => {
+    if (enabled && !isRateLimitedRef.current && !isFetchingRef.current && !hasFetchedRef.current) {
+      // Reset state for new fetch
+      hasFetchedRef.current = false;
+      retryCountRef.current = 0;
+      shouldAutoRetryRef.current = true; // Allow auto-retry for initial fetch
+      fetchDataStable(false);
+    }
+  }, [enabled, endpoint, paramsString]); // Removed fetchDataStable from deps to prevent loops
+
+  // Manual refetch function that resets rate limit state
+  const refetch = useCallback(async () => {
+    // Clear rate limit state for manual retry
+    isRateLimitedRef.current = false;
+    retryCountRef.current = 0;
+    shouldAutoRetryRef.current = true;
+    hasFetchedRef.current = false;
+    
+    // Clear any pending timeouts
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    
+    await fetchDataStable(true);
+  }, [fetchDataStable]);
 
   return {
     data,
     loading,
     error,
-    refetch: fetchData,
+    refetch,
     setData,
   };
 }

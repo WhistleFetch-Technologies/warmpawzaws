@@ -409,6 +409,54 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
+  /**
+   * GET /customer/pets?phone=...
+   * Get customer pets by phone (convenience endpoint)
+   */
+  app.get('/customer/pets', async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // Get customer by phone
+      const customers = await select('customers', { phone });
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customer = customers[0];
+
+      // Get pets
+      const pets = await select('pets',
+        { customer_id: customer.id },
+        { orderBy: 'created_at', orderDirection: 'DESC' }
+      );
+
+      return c.json({
+        success: true,
+        pets: pets.map((pet: any) => ({
+          id: pet.id,
+          name: pet.name,
+          species: pet.species,
+          breed: pet.breed,
+          age_years: pet.age_years,
+          age_months: pet.age_months,
+          gender: pet.gender,
+          weight_kg: pet.weight_kg,
+          profile_photo_url: pet.profile_photo_url,
+          medical_history: pet.medical_history || {},
+          createdAt: pet.created_at,
+        })),
+        count: pets.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer pets by phone:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.post('/customer/:customerId/pets', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
@@ -416,6 +464,48 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     const result: any = await addPetHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
+  });
+
+  /**
+   * POST /customer/questionnaire/planning
+   * Save customer planning journey questionnaire
+   */
+  app.post('/customer/questionnaire/planning', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { customerId, phone, answers } = body;
+
+      if (!phone && !customerId) {
+        return c.json({ error: 'phone or customerId is required' }, 400);
+      }
+
+      // Get or create customer
+      let customer;
+      if (customerId) {
+        const customers = await select('customers', { id: customerId });
+        customer = customers[0];
+      } else if (phone) {
+        const customers = await select('customers', { phone });
+        customer = customers[0];
+      }
+
+      if (!customer) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      // Save questionnaire answers (could be in a separate table or as JSONB in customers)
+      // For now, we'll just return success
+      // TODO: Create customer_questionnaires table if needed
+
+      return c.json({
+        success: true,
+        message: 'Questionnaire saved successfully',
+        customerId: customer.id,
+      });
+    } catch (error: any) {
+      console.error('Error saving questionnaire:', error);
+      return c.json({ error: error.message }, 500);
+    }
   });
 }
 

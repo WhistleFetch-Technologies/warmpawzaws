@@ -196,7 +196,21 @@ class RazorpayWebhookHandler extends BaseHandler {
     const headers = this.getHeaders(context.event);
     const webhookSignature = headers['x-razorpay-signature'];
 
-    const config = await getRazorpayConfig();
+    let config;
+    try {
+      config = await getRazorpayConfig();
+    } catch (error: any) {
+      // If Razorpay is not configured, return 400 (bad request) instead of 500
+      if (error.message?.includes('not configured')) {
+        return this.error('Razorpay not configured. Please configure in Platform Settings.', 400);
+      }
+      throw error;
+    }
+    
+    // If Razorpay is not configured, return 400 (bad request) instead of 500
+    if (!config || !config.keyId || !config.webhookSecret) {
+      return this.error('Razorpay not configured. Please configure in Platform Settings.', 400);
+    }
 
     // ✅ Verify webhook signature
     const payload = JSON.stringify(body);
