@@ -6,6 +6,8 @@ import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { StatusBadge } from './StatusBadge';
 import { AddServiceModal } from './AddServiceModal';
+import { EnhancedModal } from '../shared/EnhancedModal';
+import { EnhancedButton } from '../shared/EnhancedButton';
 
 interface Service {
   id: string;
@@ -179,59 +181,64 @@ export function ServiceCatalogTab() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3 bg-white">
+        <div className="space-y-4 bg-white">
           {filteredServices.map((service) => (
-            <div key={service.id} className="bg-white border border-gray-300 rounded-lg p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between">
+            <div 
+              key={service.id} 
+              className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200 hover:border-[#FF8C42]/30"
+            >
+              <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h4 className="font-semibold text-gray-900">{service.name}</h4>
+                  <div className="flex items-center gap-3 mb-3">
+                    <h4 className="text-lg font-semibold text-gray-900">{service.name}</h4>
                     <StatusBadge status={service.status} />
-                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full border border-gray-300">
+                    <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full border border-gray-200">
                       {service.category}
                     </span>
                   </div>
                   
                   {service.description && (
-                    <p className="text-sm text-gray-600 mb-2">{service.description}</p>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.description}</p>
                   )}
                   
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-gray-600">
-                      Price: <span className="font-semibold text-gray-900">₹{service.price}</span>
-                    </span>
-                    <span className="text-gray-500">
-                      Created: {service.createdAt ? new Date(service.createdAt).toLocaleDateString() : 'N/A'}
-                    </span>
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500">Price:</span>
+                      <span className="font-bold text-[#FF8C42] text-base">₹{service.price}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <span>Created:</span>
+                      <span className="font-medium">{service.createdAt ? new Date(service.createdAt).toLocaleDateString() : 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="flex gap-2 ml-4">
+                <div className="flex gap-2 ml-6">
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    className="border-gray-300 text-gray-900 hover:bg-gray-100"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-[#FF8C42] hover:text-[#FF8C42] transition-colors"
                     onClick={() => handleViewService(service)}
                   >
-                    <Eye className="w-4 h-4 mr-1" />
+                    <Eye className="w-4 h-4 mr-1.5" />
                     View
                   </Button>
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    className="border-gray-300 text-gray-900 hover:bg-gray-100"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-[#FF8C42] hover:text-[#FF8C42] transition-colors"
                     onClick={() => handleEditService(service)}
                   >
-                    <Edit className="w-4 h-4 mr-1" />
+                    <Edit className="w-4 h-4 mr-1.5" />
                     Edit
                   </Button>
                   <Button 
                     size="sm" 
                     variant="outline" 
-                    className="border-red-300 text-red-600 hover:bg-red-50"
+                    className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-colors"
                     onClick={() => handleDeleteService(service)}
                   >
-                    <Trash2 className="w-4 h-4 mr-1" />
+                    <Trash2 className="w-4 h-4 mr-1.5" />
                     Delete
                   </Button>
                 </div>
@@ -256,88 +263,19 @@ export function ServiceCatalogTab() {
 
       {/* View Service Modal */}
       {viewModalOpen && viewingService && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white">
-              <h3 className="text-xl font-semibold text-gray-900">Service Details</h3>
-              <button
-                onClick={() => {
-                  setViewModalOpen(false);
-                  setViewingService(null);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Service Name</label>
-                <p className="text-gray-900 font-semibold">{viewingService.name}</p>
-              </div>
-
-              {viewingService.description && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <p className="text-gray-600">{viewingService.description}</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                  <p className="text-gray-900">{viewingService.category}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <StatusBadge status={viewingService.status} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
-                  <p className="text-gray-900 font-semibold">₹{viewingService.price}</p>
-                </div>
-                {viewingService.duration && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
-                    <p className="text-gray-900">{viewingService.duration} minutes</p>
-                  </div>
-                )}
-              </div>
-
-              {viewingService.serviceType && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
-                  <p className="text-gray-900">{viewingService.serviceType}</p>
-                </div>
-              )}
-
-              {viewingService.applicableRoles && viewingService.applicableRoles.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Applicable Roles</label>
-                  <div className="flex flex-wrap gap-2">
-                    {viewingService.applicableRoles.map((role, idx) => (
-                      <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                        {role}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Created Date</label>
-                <p className="text-gray-600">
-                  {viewingService.createdAt ? new Date(viewingService.createdAt).toLocaleString() : 'N/A'}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-6 border-t flex justify-end gap-3">
-              <Button
+        <EnhancedModal
+          isOpen={viewModalOpen}
+          onClose={() => {
+            setViewModalOpen(false);
+            setViewingService(null);
+          }}
+          title="Service Details"
+          subtitle="View complete service information"
+          icon={<Eye className="w-5 h-5 text-white" />}
+          maxWidth="lg"
+          footer={
+            <div className="flex items-center justify-end gap-3">
+              <EnhancedButton
                 variant="outline"
                 onClick={() => {
                   setViewModalOpen(false);
@@ -345,20 +283,83 @@ export function ServiceCatalogTab() {
                 }}
               >
                 Close
-              </Button>
-              <Button
-                className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+              </EnhancedButton>
+              <EnhancedButton
+                variant="primary"
                 onClick={() => {
                   setViewModalOpen(false);
                   handleEditService(viewingService);
                 }}
+                icon={Edit}
+                iconPosition="left"
               >
-                <Edit className="w-4 h-4 mr-2" />
                 Edit Service
-              </Button>
+              </EnhancedButton>
+            </div>
+          }
+        >
+
+          <div className="space-y-5">
+            <div className="bg-gradient-to-r from-gray-50 to-white p-4 rounded-lg border border-gray-200">
+              <h4 className="text-lg font-bold text-gray-900 mb-1">{viewingService.name}</h4>
+              <div className="flex items-center gap-3 mt-2">
+                <StatusBadge status={viewingService.status} />
+                <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
+                  {viewingService.category}
+                </span>
+              </div>
+            </div>
+
+            {viewingService.description && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <p className="text-gray-600 bg-gray-50 p-3 rounded-lg">{viewingService.description}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Price</label>
+                <p className="text-xl font-bold text-[#FF8C42]">₹{viewingService.price}</p>
+              </div>
+              {viewingService.duration && (
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Duration</label>
+                  <p className="text-lg font-semibold text-gray-900">{viewingService.duration} minutes</p>
+                </div>
+              )}
+            </div>
+
+            {viewingService.serviceType && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Service Type</label>
+                <span className="inline-block px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium">
+                  {viewingService.serviceType}
+                </span>
+              </div>
+            )}
+
+            {viewingService.applicableRoles && viewingService.applicableRoles.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Applicable Roles</label>
+                <div className="flex flex-wrap gap-2">
+                  {viewingService.applicableRoles.map((role, idx) => (
+                    <span key={idx} className="px-3 py-1.5 bg-orange-50 text-orange-700 rounded-lg text-sm font-medium border border-orange-200">
+                      {role}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-4 border-t border-gray-200">
+              <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Created Date</label>
+              <p className="text-sm text-gray-600">
+                {viewingService.createdAt ? new Date(viewingService.createdAt).toLocaleString() : 'N/A'}
+              </p>
             </div>
           </div>
-        </div>
+        </EnhancedModal>
       )}
     </div>
   );

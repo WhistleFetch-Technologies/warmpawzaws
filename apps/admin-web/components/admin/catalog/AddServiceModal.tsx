@@ -4,6 +4,8 @@ import { X, Package } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedModal } from '../shared/EnhancedModal';
+import { EnhancedButton } from '../shared/EnhancedButton';
 
 interface Service {
   id: string;
@@ -183,77 +185,86 @@ export function AddServiceModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-0 border-b sticky top-0 bg-white">
-          <div className="flex items-center gap-0">
-            <div className="p-0 bg-blue-100 rounded-lg">
-              <Package className="w-5 h-5 text-blue-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900">{service ? 'Edit Service' : 'Add Service'}</h3>
-          </div>
-          <button
+    <EnhancedModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={service ? 'Edit Service' : 'Create New Service'}
+      subtitle={service ? 'Update service details and configuration' : 'Add a new service to the selected category and subcategory'}
+      icon={<Package className="w-5 h-5 text-white" />}
+      maxWidth="lg"
+      footer={
+        <div className="flex items-center justify-end gap-3">
+          <EnhancedButton
+            variant="outline"
             onClick={onClose}
-            className="p-0 hover:bg-gray-100 rounded"
             disabled={loading}
+            icon={X}
+            iconPosition="left"
           >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
+            Cancel
+          </EnhancedButton>
+          <EnhancedButton
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={loading}
+            loading={loading}
+          >
+            {service ? 'Update Service' : 'Add Service'}
+          </EnhancedButton>
         </div>
-
-        <div className="p-0 space-y-4">
+      }
+    >
+      <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Service Name *
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('name', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-                placeholder="e.g., Daily Dog Walking"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors"
+                placeholder="eg, Dental health care"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Service Code
               </label>
               <input
                 type="text"
                 value={formData.code}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('code', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-                placeholder="e.g., WALK-001"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors"
+                placeholder="eg, VET-001"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-0">
-              Description
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Service Description
             </label>
             <textarea
               value={formData.description}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('description', e.target.value)}
-              className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-              rows={3}
-              placeholder="Service description..."
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors resize-none"
+              rows={4}
+              placeholder="Describe your service in detail...."
             />
           </div>
 
           {!categoryId && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Category
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Parent Category
               </label>
               <select
                 value={formData.categoryId}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('categoryId', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
               >
                 <option value="">Select category</option>
                 {categories.map(cat => (
@@ -265,40 +276,46 @@ export function AddServiceModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Price (₹) *
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Base Price <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 value={formData.price}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('price', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors"
                 placeholder="0.00"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
-                Duration
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Duration
               </label>
-              <input
-                type="text"
+              <select
                 value={formData.duration}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('duration', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
-                placeholder="e.g., 30 min"
-              />
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('duration', e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
+              >
+                <option value="">Select duration</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+              </select>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Service Type
               </label>
               <select
                 value={formData.serviceType}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('serviceType', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
               >
                 <option value="at-center">At Center</option>
                 <option value="at-home">At Home</option>
@@ -307,13 +324,13 @@ export function AddServiceModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Status
               </label>
               <select
                 value={formData.status}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('status', e.target.value)}
-                className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -322,58 +339,91 @@ export function AddServiceModal({
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-0">
-              Applicable Roles *
-            </label>
-            <div className="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto">
-              {roles.length === 0 ? (
-                <p className="text-sm text-gray-500">Loading roles...</p>
-              ) : (
-                roles.map(role => (
-                  <label key={role.id} className="flex items-center gap-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={formData.applicableRoles.includes(role.name || role.code)}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                        const roleCode = role.name || role.code;
-                        if (e.target.checked) {
-                          handleChange('applicableRoles', [...formData.applicableRoles, roleCode]);
-                        } else {
-                          handleChange('applicableRoles', formData.applicableRoles.filter(r => r !== roleCode));
-                        }
-                      }}
-                      className="rounded"
-                    />
-                    <span className="text-sm">{role.display_name || role.name}</span>
+          {/* GST & Tax Configuration Section */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <div className="p-1.5 bg-yellow-100 rounded">
+                <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">GST & Tax Configuration</h4>
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      GST Inclusion <span className="text-red-500">*</span>
+                    </label>
+                    <select className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white">
+                      <option value="">Select GST option</option>
+                      <option value="inclusive">Inclusive</option>
+                      <option value="exclusive">Exclusive</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      GST Rate (%)
+                    </label>
+                    <select className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white">
+                      <option value="">Select GST rate</option>
+                      <option value="0">0%</option>
+                      <option value="5">5%</option>
+                      <option value="12">12%</option>
+                      <option value="18">18%</option>
+                      <option value="28">28%</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="show-final-price"
+                    className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
+                  />
+                  <label htmlFor="show-final-price" className="text-sm text-gray-700">
+                    Show final price to customers (including all taxes)
                   </label>
-                ))
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Applicable Roles <span className="text-red-500">*</span>
+            </label>
+            <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto bg-gray-50">
+              {roles.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Loading roles...</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {roles.map(role => (
+                    <label key={role.id} className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={formData.applicableRoles.includes(role.name || role.code)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          const roleCode = role.name || role.code;
+                          if (e.target.checked) {
+                            handleChange('applicableRoles', [...formData.applicableRoles, roleCode]);
+                          } else {
+                            handleChange('applicableRoles', formData.applicableRoles.filter(r => r !== roleCode));
+                          }
+                        }}
+                        className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
+                      />
+                      <span className="text-sm text-gray-700">{role.display_name || role.name}</span>
+                    </label>
+                  ))}
+                </div>
               )}
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-2">
               Select roles that can use this service. Leave empty to create an unassigned service.
             </p>
           </div>
         </div>
-
-        <div className="flex items-center justify-end gap-0 p-0 border-t">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
-            onClick={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (service ? 'Updating...' : 'Creating...') : (service ? 'Update Service' : 'Create Service')}
-          </Button>
-        </div>
-      </div>
-    </div>
+      </EnhancedModal>
   );
 }
 
