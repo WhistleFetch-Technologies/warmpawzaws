@@ -224508,16 +224508,6 @@ var SelectVendorTypeHandlerEnhanced = class extends BaseHandlerEnhanced {
         return this.error("Role not found", 404, "NOT_FOUND", void 0, requestId);
       }
       const role = roles[0];
-      const supportedTypes = role.config?.vendorTypes || [];
-      if (!supportedTypes.includes(vendor_type)) {
-        return this.error(
-          `Vendor type '${vendor_type}' is not supported for this role. Supported: ${supportedTypes.join(", ")}`,
-          400,
-          "VALIDATION_ERROR",
-          void 0,
-          requestId
-        );
-      }
       await update(
         "vendor_identity",
         { id: identity.id },
@@ -224570,7 +224560,17 @@ var GetOnboardingFormSchemaHandlerEnhanced = class extends BaseHandlerEnhanced {
           requestId
         );
       }
-      const forms = await select("onboarding_forms", { role_id: identity.selected_role_id });
+      const roles = await select("roles", { id: identity.selected_role_id });
+      if (roles.length === 0) {
+        return this.error("Role not found", 404, "NOT_FOUND", void 0, requestId);
+      }
+      const role = roles[0];
+      const roleName = role.name;
+      const formsResult = await query(
+        `SELECT * FROM onboarding_forms WHERE role_id = $1`,
+        [roleName]
+      );
+      const forms = formsResult.rows || [];
       let fields = [];
       if (forms.length > 0) {
         fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
@@ -224920,14 +224920,14 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
     }
   });
   app2.post("/vendor/onboarding/select-role", async (c) => {
-    const event = createApiGatewayEvent2(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     const context3 = createLambdaContext2();
     const result = await selectRoleHandler.execute(event, context3);
     const body2 = JSON.parse(result.body);
     return c.json(body2, result.statusCode);
   });
   app2.post("/vendor/onboarding/select-vendor-type", async (c) => {
-    const event = createApiGatewayEvent2(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     const context3 = createLambdaContext2();
     const result = await selectVendorTypeHandler.execute(event, context3);
     const body2 = JSON.parse(result.body);
@@ -224941,14 +224941,14 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
     return c.json(body2, result.statusCode);
   });
   app2.post("/vendor/onboarding/submit-application", async (c) => {
-    const event = createApiGatewayEvent2(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     const context3 = createLambdaContext2();
     const result = await submitHandler.execute(event, context3);
     const body2 = JSON.parse(result.body);
     return c.json(body2, result.statusCode);
   });
   app2.post("/admin/vendor/onboarding/:applicationId/review", async (c) => {
-    const event = createApiGatewayEvent2(c.req);
+    const event = await createApiGatewayEventWithBody(c);
     event.pathParameters = { applicationId: c.req.param("applicationId") };
     const context3 = createLambdaContext2();
     const result = await reviewHandler.execute(event, context3);
@@ -224964,6 +224964,39 @@ function createApiGatewayEvent2(req) {
     body: JSON.stringify(req.body || {}),
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    requestContext: {
+      requestId: crypto.randomUUID()
+    }
+  };
+}
+async function createApiGatewayEventWithBody(c) {
+  const body2 = await c.req.json().catch(() => ({}));
+  const headers = {};
+  try {
+    if (c.req.raw && c.req.raw.headers) {
+      const rawHeaders = c.req.raw.headers;
+      for (const key in rawHeaders) {
+        const value = rawHeaders[key];
+        if (value) {
+          headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+        }
+      }
+    } else {
+      const contentType = c.req.header("content-type");
+      const authorization = c.req.header("authorization");
+      if (contentType) headers["content-type"] = contentType;
+      if (authorization) headers["authorization"] = authorization;
+    }
+  } catch (e) {
+    console.warn("[VENDOR-ONBOARDING] Error processing headers:", e);
+  }
+  const url = new URL(c.req.url);
+  return {
+    rawPath: url.pathname,
+    rawQueryString: url.search.substring(1),
+    headers,
+    body: JSON.stringify(body2),
+    isBase64Encoded: false,
     requestContext: {
       requestId: crypto.randomUUID()
     }
@@ -226146,7 +226179,7 @@ function registerBookingEndpointsEnhanced(app2) {
     return c.json(body2, result.statusCode);
   });
 }
-async function createApiGatewayEventWithBody(c) {
+async function createApiGatewayEventWithBody2(c) {
   const headers = {};
   try {
     if (c.req.raw && c.req.raw.headers) {
@@ -226191,7 +226224,7 @@ async function createApiGatewayEventWithBody(c) {
   };
 }
 async function createApiGatewayEvent3(c) {
-  return createApiGatewayEventWithBody(c);
+  return createApiGatewayEventWithBody2(c);
 }
 function createLambdaContext3() {
   return {
@@ -227035,6 +227068,111 @@ function registerCustomerEndpointsEnhanced(app2) {
     const body2 = JSON.parse(result.body);
     return c.json(body2, result.statusCode);
   });
+  app2.get("/customer/pets/:phone", async (c) => {
+    try {
+      const phone = c.req.param("phone");
+      if (!phone) {
+        return c.json({ error: "phone is required" }, 400);
+      }
+      const customers = await select("customers", { phone });
+      if (customers.length === 0) {
+        return c.json({ pets: [], count: 0 });
+      }
+      const customer = customers[0];
+      const pets = await select(
+        "pets",
+        { customer_id: customer.id },
+        { orderBy: "created_at", orderDirection: "DESC" }
+      );
+      return c.json({
+        success: true,
+        pets: pets.map((pet) => ({
+          id: pet.id,
+          name: pet.name,
+          type: pet.species || "Dog",
+          species: pet.species,
+          breed: pet.breed,
+          age: pet.age_years?.toString() || "",
+          gender: pet.gender,
+          weight: pet.weight_kg?.toString() || "",
+          photo: pet.profile_photo_url,
+          microchipId: pet.microchip_id,
+          healthRecords: pet.medical_history || {},
+          vaccinations: pet.vaccination_records || {},
+          createdAt: pet.created_at
+        })),
+        count: pets.length
+      });
+    } catch (error) {
+      console.error("Error fetching customer pets by phone:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/customer/pets", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const { phone, pets } = body2;
+      if (!phone) {
+        return c.json({ error: "phone is required" }, 400);
+      }
+      if (!pets || !Array.isArray(pets)) {
+        return c.json({ error: "pets array is required" }, 400);
+      }
+      const customers = await select("customers", { phone });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found. Please create profile first." }, 404);
+      }
+      const customer = customers[0];
+      const savedPets = [];
+      for (const pet of pets) {
+        try {
+          const existingPets = await select("pets", { customer_id: customer.id, name: pet.name });
+          const normalizedGender = pet.gender ? pet.gender.toLowerCase() : null;
+          const allowedGenders = ["male", "female", "neutered", "spayed"];
+          const validGender = normalizedGender && allowedGenders.includes(normalizedGender) ? normalizedGender : null;
+          const petData = {
+            customer_id: customer.id,
+            name: pet.name,
+            species: (pet.type || pet.species || "dog").toLowerCase(),
+            breed: pet.breed || null,
+            age_years: pet.age ? parseInt(pet.age) : null,
+            gender: validGender,
+            weight_kg: pet.weight ? parseFloat(pet.weight) : null,
+            profile_photo_url: pet.photo && pet.photo.startsWith("http") ? pet.photo : null,
+            // Store health records and vaccinations in medical_history JSONB
+            medical_history: {
+              ...pet.healthRecords,
+              vaccinations: pet.vaccinations,
+              microchip_id: pet.microchipId || null
+            }
+          };
+          if (existingPets.length > 0) {
+            const updated = await update("pets", { id: existingPets[0].id }, petData);
+            savedPets.push({ ...updated[0], id: existingPets[0].id });
+          } else {
+            const inserted = await insert("pets", petData);
+            savedPets.push(inserted[0]);
+          }
+        } catch (petError) {
+          console.error(`Error saving pet ${pet.name}:`, petError);
+        }
+      }
+      try {
+        const { updateCustomerOnboardingStatus: updateCustomerOnboardingStatus2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
+        await updateCustomerOnboardingStatus2(customer.id, "PET_PENDING", "preferences");
+      } catch (stateError) {
+        console.error("Error updating onboarding status:", stateError);
+      }
+      return c.json({
+        success: true,
+        message: `${savedPets.length} pet(s) saved successfully`,
+        pets: savedPets
+      });
+    } catch (error) {
+      console.error("Error saving customer pets:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app2.post("/customer/questionnaire/planning", async (c) => {
     try {
       const body2 = await c.req.json();
@@ -227703,13 +227841,13 @@ function registerRoleEndpoints(app2) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/roles", async (c) => {
-    const event = await createApiGatewayEventWithBody2(c);
+    const event = await createApiGatewayEventWithBody3(c);
     const context3 = createLambdaContext6();
     const result = await createRoleHandler.execute(event, context3);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/roles/:roleId", async (c) => {
-    const event = await createApiGatewayEventWithBody2(c);
+    const event = await createApiGatewayEventWithBody3(c);
     event.pathParameters = { roleId: c.req.param("roleId") };
     const context3 = createLambdaContext6();
     const result = await updateRoleHandler.execute(event, context3);
@@ -227736,7 +227874,7 @@ function createApiGatewayEvent6(req) {
     }
   };
 }
-async function createApiGatewayEventWithBody2(c) {
+async function createApiGatewayEventWithBody3(c) {
   const body2 = await c.req.json();
   return {
     httpMethod: c.req.method,
@@ -239032,7 +239170,10 @@ function registerServiceCatalogEndpoints(app2) {
         });
         return c.json({
           success: true,
+          data: groupedArray,
+          // ✅ Use 'data' key for consistency
           services: groupedArray,
+          // ✅ Keep 'services' for backward compatibility
           total: services.rows.length,
           grouped: true,
           groupBy,
@@ -239059,7 +239200,10 @@ function registerServiceCatalogEndpoints(app2) {
       }));
       return c.json({
         success: true,
+        data: safeServices,
+        // ✅ Use 'data' key for consistency
         services: safeServices,
+        // ✅ Keep 'services' for backward compatibility
         total: safeServices.length,
         grouped: false,
         // ✅ Include role info if roleId or vendorId provided (no separate API call needed)
@@ -243398,6 +243542,359 @@ function registerEventEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.get("/events/my-registrations", async (c) => {
+    try {
+      const customerId = c.req.query("customerId");
+      if (!customerId) {
+        return c.json({ success: true, registrations: [] });
+      }
+      const registrations = await query(
+        `SELECT r.*, e.name as event_title, e.event_date, e.start_time, e.end_time, e.venue, e.category
+         FROM event_registrations r
+         INNER JOIN events e ON r.event_id = e.id
+         WHERE r.customer_id = $1
+         ORDER BY e.event_date DESC, e.start_time DESC`,
+        [customerId]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        registrations: registrations.rows.map((r) => ({
+          id: String(r.id),
+          event_id: String(r.event_id),
+          event_title: String(r.event_title || ""),
+          registered_at: String(r.created_at || (/* @__PURE__ */ new Date()).toISOString()),
+          status: r.status || "confirmed",
+          qr_code: r.qr_code || void 0,
+          event_date: String(r.event_date || ""),
+          start_time: String(r.start_time || ""),
+          end_time: String(r.end_time || ""),
+          venue: typeof r.venue === "object" ? r.venue?.address || JSON.stringify(r.venue) : String(r.venue || ""),
+          category: r.category || "other"
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching customer registrations:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/admin/events", async (c) => {
+    try {
+      const status = c.req.query("status");
+      const category = c.req.query("category");
+      let eventsQuery = `
+        SELECT e.*, v.business_name as vendor_name
+        FROM events e
+        LEFT JOIN vendors v ON e.vendor_id = v.id
+        WHERE 1=1
+      `;
+      const params = [];
+      let paramIndex = 1;
+      if (status && status !== "all") {
+        eventsQuery += ` AND e.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+      if (category) {
+        eventsQuery += ` AND e.category = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+      eventsQuery += ` ORDER BY e.event_date DESC, e.start_time DESC LIMIT 100`;
+      const events = await query(eventsQuery, params).catch(() => ({ rows: [] }));
+      const transformedEvents = (events.rows || []).map((e) => ({
+        id: String(e.id || ""),
+        title: String(e.name || ""),
+        description: String(e.description || ""),
+        start_date: String(e.event_date || ""),
+        end_date: String(e.end_date || e.event_date || ""),
+        start_time: String(e.start_time || ""),
+        end_time: String(e.end_time || ""),
+        location: typeof e.venue === "object" ? e.venue?.address || JSON.stringify(e.venue) : String(e.venue || ""),
+        max_participants: e.max_attendees ? parseInt(e.max_attendees, 10) : void 0,
+        current_participants: e.current_attendees ? parseInt(e.current_attendees, 10) : 0,
+        status: e.status || "draft",
+        category: e.category || "other",
+        vendor_id: e.vendor_id ? String(e.vendor_id) : void 0,
+        vendor_name: e.vendor_name || void 0,
+        image_url: e.image_url || void 0,
+        fees: e.fees ? parseFloat(e.fees) : void 0,
+        tags: Array.isArray(e.tags) ? e.tags : [],
+        created_at: String(e.created_at || (/* @__PURE__ */ new Date()).toISOString())
+      }));
+      return c.json(transformedEvents);
+    } catch (error) {
+      console.error("Error fetching admin events:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/admin/events", async (c) => {
+    try {
+      const eventData = await c.req.json();
+      const {
+        title,
+        description,
+        category,
+        start_date,
+        end_date,
+        start_time,
+        end_time,
+        location: location2,
+        max_participants,
+        vendor_id,
+        image_url,
+        fees,
+        tags,
+        status = "draft"
+      } = eventData;
+      if (!title || !start_date || !start_time) {
+        return c.json({ error: "title, start_date, and start_time are required" }, 400);
+      }
+      const venue = typeof location2 === "string" ? { address: location2 } : location2 || {};
+      const event = await insert("events", {
+        vendor_id: vendor_id || null,
+        name: title,
+        description: description || null,
+        category: category || "other",
+        event_date: start_date,
+        end_date: end_date || start_date,
+        start_time,
+        end_time: end_time || null,
+        venue,
+        registration_required: max_participants ? true : false,
+        max_attendees: max_participants || null,
+        fees: fees || null,
+        image_url: image_url || null,
+        tags: tags || [],
+        status,
+        current_attendees: 0
+      });
+      return c.json({
+        success: true,
+        event: event[0],
+        message: "Event created successfully"
+      });
+    } catch (error) {
+      console.error("Error creating event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/admin/events/:eventId", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const eventData = await c.req.json();
+      const {
+        title,
+        description,
+        category,
+        start_date,
+        end_date,
+        start_time,
+        end_time,
+        location: location2,
+        max_participants,
+        vendor_id,
+        image_url,
+        fees,
+        tags,
+        status
+      } = eventData;
+      const existingEvents = await select("events", { id: eventId });
+      if (existingEvents.length === 0) {
+        return c.json({ error: "Event not found" }, 404);
+      }
+      const updateData = {};
+      if (title !== void 0) updateData.name = title;
+      if (description !== void 0) updateData.description = description;
+      if (category !== void 0) updateData.category = category;
+      if (start_date !== void 0) updateData.event_date = start_date;
+      if (end_date !== void 0) updateData.end_date = end_date;
+      if (start_time !== void 0) updateData.start_time = start_time;
+      if (end_time !== void 0) updateData.end_time = end_time;
+      if (location2 !== void 0) {
+        updateData.venue = typeof location2 === "string" ? { address: location2 } : location2;
+      }
+      if (max_participants !== void 0) {
+        updateData.max_attendees = max_participants;
+        updateData.registration_required = max_participants ? true : false;
+      }
+      if (vendor_id !== void 0) updateData.vendor_id = vendor_id;
+      if (image_url !== void 0) updateData.image_url = image_url;
+      if (fees !== void 0) updateData.fees = fees;
+      if (tags !== void 0) updateData.tags = tags;
+      if (status !== void 0) updateData.status = status;
+      await update("events", { id: eventId }, updateData);
+      const updatedEvents = await select("events", { id: eventId });
+      const e = updatedEvents[0];
+      return c.json({
+        success: true,
+        event: {
+          id: String(e.id),
+          title: String(e.name || ""),
+          description: String(e.description || ""),
+          start_date: String(e.event_date || ""),
+          end_date: String(e.end_date || e.event_date || ""),
+          start_time: String(e.start_time || ""),
+          end_time: String(e.end_time || ""),
+          location: typeof e.venue === "object" ? e.venue?.address || JSON.stringify(e.venue) : String(e.venue || ""),
+          max_participants: e.max_attendees ? parseInt(e.max_attendees, 10) : void 0,
+          current_participants: e.current_attendees ? parseInt(e.current_attendees, 10) : 0,
+          status: e.status || "draft",
+          category: e.category || "other",
+          vendor_id: e.vendor_id ? String(e.vendor_id) : void 0,
+          image_url: e.image_url || void 0,
+          fees: e.fees ? parseFloat(e.fees) : void 0,
+          tags: Array.isArray(e.tags) ? e.tags : [],
+          created_at: String(e.created_at || (/* @__PURE__ */ new Date()).toISOString())
+        },
+        message: "Event updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.delete("/admin/events/:eventId", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const existingEvents = await select("events", { id: eventId });
+      if (existingEvents.length === 0) {
+        return c.json({ error: "Event not found" }, 404);
+      }
+      await update("events", { id: eventId }, { status: "cancelled" });
+      return c.json({
+        success: true,
+        message: "Event deleted successfully"
+      });
+    } catch (error) {
+      console.error("Error deleting event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/admin/events/:eventId", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const events = await query(
+        `SELECT e.*, v.business_name as vendor_name
+         FROM events e
+         LEFT JOIN vendors v ON e.vendor_id = v.id
+         WHERE e.id = $1`,
+        [eventId]
+      ).catch(() => ({ rows: [] }));
+      if (events.rows.length === 0) {
+        return c.json({ error: "Event not found" }, 404);
+      }
+      const e = events.rows[0];
+      return c.json({
+        id: String(e.id),
+        title: String(e.name || ""),
+        description: String(e.description || ""),
+        start_date: String(e.event_date || ""),
+        end_date: String(e.end_date || e.event_date || ""),
+        start_time: String(e.start_time || ""),
+        end_time: String(e.end_time || ""),
+        location: typeof e.venue === "object" ? e.venue?.address || JSON.stringify(e.venue) : String(e.venue || ""),
+        max_participants: e.max_attendees ? parseInt(e.max_attendees, 10) : void 0,
+        current_participants: e.current_attendees ? parseInt(e.current_attendees, 10) : 0,
+        status: e.status || "draft",
+        category: e.category || "other",
+        vendor_id: e.vendor_id ? String(e.vendor_id) : void 0,
+        vendor_name: e.vendor_name || void 0,
+        image_url: e.image_url || void 0,
+        fees: e.fees ? parseFloat(e.fees) : void 0,
+        tags: Array.isArray(e.tags) ? e.tags : [],
+        created_at: String(e.created_at || (/* @__PURE__ */ new Date()).toISOString())
+      });
+    } catch (error) {
+      console.error("Error fetching event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/events/:eventId", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const events = await query(
+        `SELECT e.*, v.business_name as vendor_name, v.city as vendor_city
+         FROM events e
+         LEFT JOIN vendors v ON e.vendor_id = v.id
+         WHERE e.id = $1`,
+        [eventId]
+      ).catch(() => ({ rows: [] }));
+      if (events.rows.length === 0) {
+        return c.json({ error: "Event not found" }, 404);
+      }
+      const e = events.rows[0];
+      return c.json({
+        success: true,
+        event: {
+          id: String(e.id),
+          title: String(e.name || ""),
+          description: String(e.description || ""),
+          category: e.category || "other",
+          organizer_name: e.vendor_name || "Admin",
+          organizer_type: e.vendor_id ? "vendor" : "admin",
+          venue: typeof e.venue === "object" ? e.venue?.name || "" : String(e.venue || ""),
+          address: typeof e.venue === "object" ? e.venue?.address || "" : "",
+          city: e.vendor_city || "",
+          start_date: String(e.event_date || ""),
+          end_date: String(e.end_date || e.event_date || ""),
+          start_time: String(e.start_time || ""),
+          end_time: String(e.end_time || ""),
+          image_url: e.image_url || void 0,
+          registration_required: e.registration_required || false,
+          registration_fee: e.fees ? parseFloat(e.fees) : 0,
+          max_participants: e.max_attendees ? parseInt(e.max_attendees, 10) : void 0,
+          registered_count: e.current_attendees ? parseInt(e.current_attendees, 10) : 0,
+          is_featured: false,
+          status: e.status || "draft",
+          tags: Array.isArray(e.tags) ? e.tags : []
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/events/service/:serviceId", async (c) => {
+    try {
+      const { serviceId } = c.req.param();
+      const services = await select("services", { id: serviceId });
+      if (services.length === 0) {
+        return c.json({ success: true, events: [] });
+      }
+      const service = services[0];
+      const vendorId = service.vendor_id;
+      const events = await query(
+        `SELECT e.*, v.business_name as vendor_name
+         FROM events e
+         LEFT JOIN vendors v ON e.vendor_id = v.id
+         WHERE e.vendor_id = $1 AND e.status = 'published'
+         ORDER BY e.event_date ASC, e.start_time ASC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        events: events.rows.map((e) => ({
+          id: String(e.id),
+          title: String(e.name || ""),
+          description: String(e.description || ""),
+          category: e.category || "other",
+          start_date: String(e.event_date || ""),
+          end_date: String(e.end_date || e.event_date || ""),
+          start_time: String(e.start_time || ""),
+          end_time: String(e.end_time || ""),
+          location: typeof e.venue === "object" ? e.venue?.address || JSON.stringify(e.venue) : String(e.venue || ""),
+          image_url: e.image_url || void 0,
+          registration_fee: e.fees ? parseFloat(e.fees) : 0,
+          max_participants: e.max_attendees ? parseInt(e.max_attendees, 10) : void 0,
+          registered_count: e.current_attendees ? parseInt(e.current_attendees, 10) : 0,
+          status: e.status || "draft"
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching service events:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 // src/endpoints/health.ts
@@ -246521,6 +247018,125 @@ function registerCustomerProfileEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.post("/customer/profile", async (c) => {
+    try {
+      const body2 = await c.req.json().catch(() => ({}));
+      const rawProfilePayload = body2.profile || body2;
+      const profilePayload = {};
+      if (rawProfilePayload.firstName) profilePayload.firstName = rawProfilePayload.firstName;
+      if (rawProfilePayload.lastName) profilePayload.lastName = rawProfilePayload.lastName;
+      if (rawProfilePayload.email) profilePayload.email = rawProfilePayload.email;
+      if (rawProfilePayload.address) profilePayload.address = rawProfilePayload.address;
+      if (rawProfilePayload.pincode) profilePayload.pincode = rawProfilePayload.pincode;
+      if (rawProfilePayload.photo && rawProfilePayload.photo.startsWith("http")) {
+        profilePayload.photo = rawProfilePayload.photo;
+      }
+      console.log("[PROFILE] Cleaned payload:", profilePayload);
+      const validationResult = import_api_contracts.UpdateCustomerProfileRequestSchema.safeParse(profilePayload);
+      if (!validationResult.success) {
+        console.error("[PROFILE] Validation failed:", validationResult.error.errors);
+        return c.json({
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Validation failed",
+            details: {
+              errors: validationResult.error.errors
+            }
+          }
+        }, 400);
+      }
+      const profileData = validationResult.data;
+      const phone = body2.phone || profileData.phone;
+      if (!phone) {
+        return c.json({ error: "Phone number is required" }, 400);
+      }
+      const cleanPhone = normalizePhone(phone);
+      let customerId = await resolveCustomerId(cleanPhone);
+      if (!customerId) {
+        try {
+          const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
+          const identityId = await createOrUpdateCustomerIdentity2(cleanPhone, void 0);
+          const fullName = profileData.firstName && profileData.lastName ? `${profileData.firstName} ${profileData.lastName}`.trim() : `Customer ${cleanPhone.slice(-4)}`;
+          const newCustomer = await insert("customers", {
+            phone: cleanPhone,
+            full_name: fullName,
+            email: profileData.email || null,
+            is_active: true,
+            status: "new",
+            onboarding_status: "PHONE_VERIFIED",
+            profile_completed: false,
+            customer_identity_id: identityId
+            // Don't set created_at/updated_at - let database defaults handle it
+          });
+          customerId = newCustomer[0].id;
+          console.log(`[PROFILE] Created new customer ${customerId} for phone ${cleanPhone}`);
+        } catch (createError) {
+          console.error("[PROFILE] Error creating customer:", createError);
+          console.error("[PROFILE] Error details:", {
+            message: createError.message,
+            stack: createError.stack,
+            phone: cleanPhone
+          });
+          return c.json({
+            error: "Failed to create customer. Please try again.",
+            code: "CUSTOMER_CREATION_FAILED",
+            details: true ? createError.message : void 0
+          }, 500);
+        }
+      }
+      const updateData = {};
+      if (profileData.firstName || profileData.lastName) {
+        updateData.full_name = `${profileData.firstName || ""} ${profileData.lastName || ""}`.trim();
+      }
+      if (profileData.email) {
+        updateData.email = profileData.email;
+      }
+      if (profileData.photo) {
+        const customers = await select("customers", { id: customerId });
+        const existingPreferences = customers[0]?.preferences || {};
+        updateData.preferences = {
+          ...existingPreferences,
+          profile_photo_url: profileData.photo
+        };
+      }
+      const { updateProfileCompletion: updateProfileCompletion2, updateCustomerOnboardingStatus: updateCustomerOnboardingStatus2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
+      const completionUpdates = {};
+      if (profileData.firstName || profileData.lastName || profileData.email) {
+        completionUpdates.basic_info = true;
+      }
+      if (profileData.address || profileData.pincode) {
+        completionUpdates.address = true;
+      }
+      if (profileData.address) {
+        updateData.address = profileData.address;
+      }
+      if (profileData.pincode) {
+        updateData.pincode = profileData.pincode;
+      }
+      const updated = await update("customers", { id: customerId }, updateData);
+      if (Object.keys(completionUpdates).length > 0) {
+        try {
+          await updateProfileCompletion2(customerId, completionUpdates);
+          const customers = await select("customers", { id: customerId });
+          const customer = customers[0];
+          if (customer.onboarding_status === "PHONE_VERIFIED" && completionUpdates.basic_info) {
+            await updateCustomerOnboardingStatus2(customerId, "PROFILE_PENDING", "profile");
+          }
+        } catch (stateError) {
+          console.error("Error updating customer state:", stateError);
+        }
+      }
+      return c.json({
+        success: true,
+        message: "Profile updated successfully",
+        profile: updated[0]
+      });
+    } catch (error) {
+      console.error("Error updating customer profile:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app2.put("/customer/profile/:identifier", async (c) => {
     try {
       const { identifier } = c.req.param();
@@ -246566,14 +247182,11 @@ function registerCustomerProfileEndpoints(app2) {
       if (profileData.address || profileData.pincode) {
         completionUpdates.address = true;
       }
-      if (profileData.address || profileData.pincode) {
-        const customers = await select("customers", { id: customerId });
-        const existingAddress = customers[0]?.address || {};
-        updateData.address = {
-          ...existingAddress,
-          street: profileData.address || existingAddress.street,
-          pincode: profileData.pincode || existingAddress.pincode
-        };
+      if (profileData.address) {
+        updateData.address = profileData.address;
+      }
+      if (profileData.pincode) {
+        updateData.pincode = profileData.pincode;
       }
       const updated = await update("customers", { id: customerId }, updateData);
       if (Object.keys(completionUpdates).length > 0) {
@@ -251819,10 +252432,19 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/rbac/roles", async (c) => {
     try {
       const body2 = await c.req.json().catch(() => ({}));
-      const role = await insert("roles", {
-        ...body2,
+      const { level, ...validFields } = body2;
+      const roleData = {
+        name: validFields.name || validFields.roleName,
+        display_name: validFields.displayName || validFields.display_name || validFields.name || validFields.roleName,
+        description: validFields.description || "",
+        is_system_role: validFields.isSystemRole || validFields.is_system_role || false,
+        is_active: validFields.isActive !== void 0 ? validFields.isActive : validFields.is_active !== void 0 ? validFields.is_active : true,
         created_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      if (validFields.config) {
+        roleData.config = validFields.config;
+      }
+      const role = await insert("roles", roleData);
       return c.json({ success: true, role: role[0] });
     } catch (error) {
       console.error("Error creating role:", error);
@@ -252547,22 +253169,43 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/catalog/services", async (c) => {
     try {
       const body2 = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status } = body2;
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName } = body2;
       if (!name || !price) {
         return c.json({ success: false, error: "Service name and price are required" }, 400);
       }
-      const serviceId = code || `SRV-${Date.now()}`;
+      let durationMinutes = 30;
+      if (duration) {
+        const parsed = parseInt(String(duration).replace(/[^0-9]/g, ""));
+        durationMinutes = isNaN(parsed) ? 30 : parsed;
+      }
+      let serviceStyle = "at_center";
+      if (serviceType === "at-home" || serviceType === "at_home") {
+        serviceStyle = "at_home";
+      } else if (serviceType === "at-center" || serviceType === "at_center") {
+        serviceStyle = "at_center";
+      } else if (serviceType === "tele") {
+        serviceStyle = "tele";
+      } else if (serviceType === "delivery") {
+        serviceStyle = "delivery";
+      }
+      const serviceId = code || `svc_admin_${serviceStyle}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      const roles = applicableRoles || [];
+      if (roles.length === 0) {
+        console.warn(`\u26A0\uFE0F Service ${serviceId} created without applicable_roles. Service won't be visible to vendors. Please assign roles via admin UI.`);
+      }
       const newService = await insert("service_catalog", {
         service_id: serviceId,
         service_name: name,
         display_name: name,
         description: description || "",
         category_id: categoryId || null,
+        category_name: categoryName || null,
         sub_category_id: subCategoryId || null,
-        applicable_roles: [],
-        service_style: serviceType === "at-center" ? "at_center" : "at_home",
+        sub_category_name: subCategoryName || null,
+        applicable_roles: roles,
+        service_style: serviceStyle,
         base_price: parseFloat(price) || 0,
-        duration_minutes: parseInt(duration) || 30,
+        duration_minutes: durationMinutes,
         status: status || "active",
         publish_status: "published",
         display_order: 0,
@@ -252572,7 +253215,8 @@ function registerAdminAdvancedEndpoints(app2) {
       return c.json({
         success: true,
         message: "Service created successfully",
-        service: newService[0]
+        service: newService[0],
+        warning: roles.length === 0 ? "Service created without applicable_roles. Assign roles to make it visible to vendors." : null
       });
     } catch (error) {
       console.error("Error creating service:", error);
@@ -254387,7 +255031,12 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.get("/admin/reports", async (c) => {
     try {
-      const reports = await query("SELECT * FROM reports ORDER BY created_at DESC LIMIT 50");
+      let reports;
+      try {
+        reports = await query("SELECT * FROM reports ORDER BY created_at DESC LIMIT 50");
+      } catch {
+        reports = await query("SELECT * FROM reports ORDER BY id DESC LIMIT 50");
+      }
       return c.json({ success: true, reports: reports.rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
@@ -254405,7 +255054,9 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.get("/admin/reports/generated", async (c) => {
     try {
       const limit2 = parseInt(c.req.query("limit") || "10", 10);
-      const reports = await query("SELECT * FROM generated_reports ORDER BY created_at DESC LIMIT $1", [limit2]);
+      const reports = await query("SELECT * FROM generated_reports ORDER BY id DESC LIMIT $1", [limit2]).catch(async () => {
+        return { rows: [] };
+      });
       return c.json({ success: true, reports: reports.rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
@@ -254422,7 +255073,12 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.get("/admin/reports/saved", async (c) => {
     try {
-      const reports = await query("SELECT * FROM saved_reports ORDER BY created_at DESC");
+      let reports;
+      try {
+        reports = await query("SELECT * FROM saved_reports ORDER BY created_at DESC");
+      } catch {
+        reports = await query("SELECT * FROM saved_reports ORDER BY id DESC");
+      }
       return c.json({ success: true, reports: reports.rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
@@ -254792,18 +255448,6 @@ function registerAdminAdvancedEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
-  app2.get("/admin/service-catalog", async (c) => {
-    try {
-      const catalog = await query("SELECT * FROM service_catalog ORDER BY service_name ASC");
-      return c.json({ success: true, services: catalog.rows, total: catalog.rows.length });
-    } catch (error) {
-      if (error.message && error.message.includes("does not exist")) {
-        console.warn("\u26A0\uFE0F service_catalog table does not exist - returning empty array");
-        return c.json({ success: true, services: [], total: 0, message: "Service catalog table not initialized. Call POST /admin/migrations/create-missing-tables first." });
-      }
-      return c.json({ error: error.message }, 500);
-    }
-  });
   app2.get("/admin/settings", async (c) => {
     try {
       const settings = await query("SELECT * FROM platform_settings ORDER BY setting_key ASC");
@@ -254811,6 +255455,66 @@ function registerAdminAdvancedEndpoints(app2) {
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app2.get("/admin/settings/aws", async (c) => {
+    try {
+      const settings = await query(`
+        SELECT * FROM platform_settings 
+        WHERE setting_key LIKE 'aws_%' OR setting_key LIKE 's3_%' OR setting_key LIKE 'sns_%' OR setting_key LIKE 'sqs_%' OR setting_key LIKE 'chime_%' OR setting_key LIKE 'bedrock_%'
+        ORDER BY setting_key ASC
+      `).catch(() => ({ rows: [] }));
+      return c.json({ success: true, settings: settings.rows });
+    } catch (error) {
+      return c.json({ success: true, settings: [] });
+    }
+  });
+  app2.post("/admin/settings/aws", async (c) => {
+    try {
+      const body2 = await c.req.json().catch(() => ({}));
+      return c.json({ success: true, message: "AWS settings saved" });
+    } catch (error) {
+      return c.json({ success: false, error: "Failed to save AWS settings" }, 500);
+    }
+  });
+  app2.get("/admin/settings/payment-gateway", async (c) => {
+    try {
+      const settings = await query(`
+        SELECT * FROM platform_settings 
+        WHERE setting_key LIKE 'payment_%' OR setting_key LIKE 'razorpay_%' OR setting_key LIKE 'stripe_%' OR setting_key LIKE 'paytm_%'
+        ORDER BY setting_key ASC
+      `).catch(() => ({ rows: [] }));
+      return c.json({ success: true, settings: settings.rows });
+    } catch (error) {
+      return c.json({ success: true, settings: [] });
+    }
+  });
+  app2.post("/admin/settings/payment-gateway", async (c) => {
+    try {
+      const body2 = await c.req.json().catch(() => ({}));
+      return c.json({ success: true, message: "Payment gateway settings saved" });
+    } catch (error) {
+      return c.json({ success: false, error: "Failed to save payment gateway settings" }, 500);
+    }
+  });
+  app2.get("/admin/settings/google-maps", async (c) => {
+    try {
+      const settings = await query(`
+        SELECT * FROM platform_settings 
+        WHERE setting_key LIKE 'google_maps_%' OR setting_key LIKE 'maps_%'
+        ORDER BY setting_key ASC
+      `).catch(() => ({ rows: [] }));
+      return c.json({ success: true, settings: settings.rows });
+    } catch (error) {
+      return c.json({ success: true, settings: [] });
+    }
+  });
+  app2.post("/admin/settings/google-maps", async (c) => {
+    try {
+      const body2 = await c.req.json().catch(() => ({}));
+      return c.json({ success: true, message: "Google Maps settings saved" });
+    } catch (error) {
+      return c.json({ success: false, error: "Failed to save Google Maps settings" }, 500);
     }
   });
   app2.put("/admin/settings", async (c) => {

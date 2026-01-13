@@ -653,7 +653,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
         return c.json({
           success: true,
-          services: groupedArray,
+          data: groupedArray, // ✅ Use 'data' key for consistency
+          services: groupedArray, // ✅ Keep 'services' for backward compatibility
           total: services.rows.length,
           grouped: true,
           groupBy,
@@ -683,7 +684,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        services: safeServices,
+        data: safeServices, // ✅ Use 'data' key for consistency
+        services: safeServices, // ✅ Keep 'services' for backward compatibility
         total: safeServices.length,
         grouped: false,
         // ✅ Include role info if roleId or vendorId provided (no separate API call needed)

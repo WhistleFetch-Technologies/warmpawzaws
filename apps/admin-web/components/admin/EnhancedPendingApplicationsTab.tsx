@@ -227,7 +227,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
             >
               {tab.label}
               {tab.count > 0 && (
-                <span className={`ml-0 px-0 py-0.5 text-xs rounded-full ${
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
                   activeStatusTab === tab.id ? 'bg-[#FF8C42]/20' : 'bg-gray-100'
                 }`}>
                   {tab.count}

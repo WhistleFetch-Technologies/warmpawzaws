@@ -18,6 +18,8 @@ interface VendorProfile {
   operating_hours?: string;
   description?: string;
   logo_url?: string;
+  is_active?: boolean;
+  status?: string;
 }
 
 interface BankDetails {
@@ -33,11 +35,13 @@ interface VendorSettingsPageProps {
 }
 
 export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'bank' | 'schedule' | 'notifications'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'bank' | 'schedule' | 'notifications' | 'golive'>('profile');
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isLive, setIsLive] = useState(false);
+  const [goLiveLoading, setGoLiveLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -50,12 +54,30 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
         apiClient.get<any>(`/vendor/${vendorId}/profile`),
         apiClient.get<any>(`/vendor/${vendorId}/bank-details`),
       ]);
-      if (profileRes.success) setProfile(profileRes.vendor);
+      if (profileRes.success) {
+        setProfile(profileRes.vendor);
+        setIsLive(profileRes.vendor?.is_active || false);
+      }
       if (bankRes.success) setBankDetails(bankRes.bankDetails);
     } catch (err) {
       console.error('Error loading settings:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoLiveToggle = async () => {
+    setGoLiveLoading(true);
+    try {
+      const newStatus = !isLive;
+      await apiClient.put(`/vendor/${vendorId}/profile`, { is_active: newStatus });
+      setIsLive(newStatus);
+      alert(newStatus ? 'Your services are now LIVE! Customers can discover and book your services.' : 'Your services are now OFFLINE. Customers cannot discover or book your services.');
+    } catch (err) {
+      console.error('Error updating go-live status:', err);
+      alert('Failed to update status. Please try again.');
+    } finally {
+      setGoLiveLoading(false);
     }
   };
 
@@ -99,8 +121,9 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
   return (
     <div>
       {/* Tabs */}
-      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit">
+      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit flex-wrap">
         {[
+          { id: 'golive', label: 'Go Live', icon: '🚀' },
           { id: 'profile', label: 'Profile', icon: '👤' },
           { id: 'bank', label: 'Bank Account', icon: '🏦' },
           { id: 'schedule', label: 'Schedule', icon: '📅' },
@@ -122,8 +145,84 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
       </div>
 
       {/* Profile Tab */}
+      {/* Go Live Tab */}
+      {activeTab === 'golive' && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm mt-4">
+          <h2 className="text-lg font-semibold mb-4">🚀 Go Live Status</h2>
+          
+          <div className="mb-6 p-4 rounded-xl border-2 border-dashed border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">
+                  {isLive ? '✅ Your Business is LIVE' : '⏸️ Your Business is OFFLINE'}
+                </h3>
+                <p className="text-gray-600 mt-1">
+                  {isLive 
+                    ? 'Customers can discover and book your services on the WarmPawz app.' 
+                    : 'Your services are hidden from customers. Toggle to go live when ready.'}
+                </p>
+              </div>
+              <button
+                onClick={handleGoLiveToggle}
+                disabled={goLiveLoading}
+                className={`relative inline-flex h-10 w-20 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                  isLive ? 'bg-green-500' : 'bg-gray-300'
+                } ${goLiveLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <span
+                  className={`inline-block h-8 w-8 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                    isLive ? 'translate-x-11' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="font-semibold text-gray-700">Before Going Live, ensure:</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className={`p-4 rounded-lg border ${profile?.business_name ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
+                <div className="flex items-center gap-2">
+                  <span>{profile?.business_name ? '✓' : '✗'}</span>
+                  <span className="font-medium">Business Profile Complete</span>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">Name, address, and contact details</p>
+              </div>
+              <div className={`p-4 rounded-lg border ${bankDetails?.account_number ? 'border-green-300 bg-green-50' : 'border-yellow-300 bg-yellow-50'}`}>
+                <div className="flex items-center gap-2">
+                  <span>{bankDetails?.account_number ? '✓' : '!'}</span>
+                  <span className="font-medium">Bank Account Added</span>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">Required for receiving payments</p>
+              </div>
+              <div className={`p-4 rounded-lg border ${profile?.operating_hours ? 'border-green-300 bg-green-50' : 'border-yellow-300 bg-yellow-50'}`}>
+                <div className="flex items-center gap-2">
+                  <span>{profile?.operating_hours ? '✓' : '!'}</span>
+                  <span className="font-medium">Operating Hours Set</span>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">Define your availability</p>
+              </div>
+              <div className="p-4 rounded-lg border border-blue-300 bg-blue-50">
+                <div className="flex items-center gap-2">
+                  <span>ℹ️</span>
+                  <span className="font-medium">Services Configured</span>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">Add services from Service Catalog</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
+            <p className="text-sm text-orange-800">
+              <strong>Tip:</strong> You can toggle your status anytime. When offline, existing bookings will still be honored, but no new bookings can be made.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Tab */}
       {activeTab === 'profile' && profile && (
-        <div className="bg-white rounded-2xl p-0 shadow-sm">
+        <div className="bg-white rounded-2xl p-6 shadow-sm mt-4">
           <h2 className="text-lg font-semibold mb-4">Business Profile</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <div>

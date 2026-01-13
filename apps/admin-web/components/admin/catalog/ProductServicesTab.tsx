@@ -114,7 +114,7 @@ export function ProductServicesTab() {
                       </span>
                     )}
                     <span className="text-gray-500">
-                      Created: {new Date(item.createdAt).toLocaleDateString()}
+                      Created: {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
                     </span>
                   </div>
                 </div>

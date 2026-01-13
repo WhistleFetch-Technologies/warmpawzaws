@@ -3,15 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { VendorRoleSelection } from './VendorRoleSelection';
-import { VendorOnboardingFlow } from './VendorOnboardingFlow';
+import { DynamicVendorOnboardingForm } from './DynamicVendorOnboardingForm';
 import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
 import { VendorCapabilityDashboard } from './VendorCapabilityDashboard';
 import { VendorApprovedSetup } from './VendorApprovedSetup';
-import { VendorLandingPage } from './VendorLandingPage';
-import { apiClient, isUatMode } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 
 interface VendorSession {
   phone: string;
@@ -193,11 +192,38 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     }
   };
 
-  const handleRoleSelect = (role: string) => {
+  const handleRoleSelect = async (role: string) => {
     console.log('📋 Role selected:', role);
-    setSelectedRole(role);
-    localStorage.setItem('vendorRole', role);
-    setShowOnboarding(true);
+    
+    // Get phone number from localStorage
+    const phone = localStorage.getItem('vendorPhone');
+    if (!phone) {
+      console.error('❌ No phone number found');
+      return;
+    }
+    
+    try {
+      // Step 1: Save selected role to backend
+      console.log('📤 Saving role selection to backend...');
+      await apiClient.post('/vendor/onboarding/select-role', { phone, role_id: role });
+      console.log('✅ Role saved');
+      
+      // Step 2: Auto-set vendor type to "business" (lowercase, since we removed Solo/Business selection)
+      console.log('📤 Setting vendor type to business...');
+      await apiClient.post('/vendor/onboarding/select-vendor-type', { phone, vendor_type: 'business' });
+      console.log('✅ Vendor type saved');
+      
+      // Now set state and show onboarding form
+      setSelectedRole(role);
+      localStorage.setItem('vendorRole', role);
+      setShowOnboarding(true);
+    } catch (error) {
+      console.error('❌ Error saving role/vendor type:', error);
+      // Still show onboarding form even if API fails
+      setSelectedRole(role);
+      localStorage.setItem('vendorRole', role);
+      setShowOnboarding(true);
+    }
   };
 
   const handleOnboardingComplete = (data: any) => {
@@ -318,16 +344,69 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
-  // Onboarding Flow - VendorOnboardingFlow handles its own state
+  // Onboarding Flow - Load dynamic form directly from DB based on selected role
+  // No Solo/Business selection - all vendors use the same dynamic form for their role
   if (showOnboarding && selectedRole) {
     // Store role for onboarding flow to read
     localStorage.setItem('vendorSelectedRole', selectedRole);
+    
+    // Get initial data if vendor is re-editing (clarification requested)
+    const initialFormData = vendorData?.application?.application_payload || null;
+    
     return (
-      <VendorOnboardingFlow 
-        vendorId={vendorData?.id || session.vendorId || ''}
-        vendorType={vendorData?.vendorType || 'solo'}
-        serviceStyle={vendorData?.serviceStyle || 'both'}
-        onComplete={() => setShowOnboarding(false)}
+      <DynamicVendorOnboardingForm 
+        roleId={selectedRole}
+        vendorId={vendorData?.id || session.vendorId}
+        initialData={initialFormData ? { formData: initialFormData } : undefined}
+        isEditMode={!!initialFormData}
+        onSubmit={async (submissionData) => {
+          console.log('✅ [VendorApp] Onboarding form submitted:', submissionData);
+          
+          // Submit to backend
+          try {
+            const phone = session.phone || localStorage.getItem('vendorPhone');
+            
+            const payload = {
+              phone,
+              application_payload: {
+                ...submissionData.formData,
+                roleId: selectedRole,
+                location: submissionData.coordinates,
+                coordinates: submissionData.coordinates,
+                specializations: submissionData.specializations || [],
+                agreedToTerms: submissionData.agreedToTerms || true,
+              },
+              uploaded_documents: Object.entries(submissionData.documents || {}).map(([key, doc]: [string, any]) => ({
+                type: key,
+                name: doc?.name || key,
+                url: doc?.url || '',
+                size: doc?.size,
+                mime_type: doc?.type,
+              })),
+            };
+
+            const response = await apiClient.post<any>('/vendor/onboarding/submit-application', payload);
+            
+            if (response.success || response.applicationId) {
+              handleOnboardingComplete({
+                ...submissionData,
+                applicationId: response.applicationId,
+                vendorId: response.vendorId,
+                status: 'submitted',
+              });
+            } else {
+              console.error('❌ [VendorApp] Failed to submit:', response);
+              alert(response.error || 'Failed to submit application');
+            }
+          } catch (error: any) {
+            console.error('❌ [VendorApp] Error submitting application:', error);
+            alert(error.message || 'Error submitting application');
+          }
+        }}
+        onBack={() => {
+          setShowOnboarding(false);
+          setSelectedRole(null);
+        }}
       />
     );
   }

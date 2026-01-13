@@ -92,7 +92,7 @@ export function ServicePreviewModal({
             <div className="flex items-center gap-0">
               <span className="text-sm font-medium text-gray-700">Created:</span>
               <span className="text-sm text-gray-600">
-                {new Date(service.createdAt).toLocaleDateString()}
+                {service.createdAt ? new Date(service.createdAt).toLocaleDateString() : 'N/A'}
               </span>
             </div>
           </div>

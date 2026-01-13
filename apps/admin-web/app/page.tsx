@@ -8,14 +8,25 @@ import { NoSSR } from '@/components/NoSSR';
 // Prevent prerendering - this page uses localStorage and React context
 export const dynamic = 'force-dynamic';
 
-// UAT Mode Configuration - DEV ONLY
-const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
-
 // DEV ONLY: Hardcoded credentials for UAT testing
 const UAT_CREDENTIALS = {
   email: 'admin@warmpawz.com',
   password: 'Warmpawz2025',
 };
+
+// Helper function to check UAT mode from runtime config
+function isUatMode(): boolean {
+  if (typeof window === 'undefined') {
+    return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+  }
+  // Check runtime config first (for deployed static builds)
+  const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
+  if (runtimeConfig?.uatMode === true) {
+    return true;
+  }
+  // Fallback to build-time env vars
+  return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+}
 
 export default function AdminHomePage() {
   const pathname = usePathname();
@@ -26,11 +37,15 @@ export default function AdminHomePage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [uatMode, setUatMode] = useState(false);
 
   // Check for existing session on mount (client-side only to prevent hydration mismatch)
   useEffect(() => {
     // Only check localStorage on client-side after mount
     if (typeof window !== 'undefined') {
+      // Check UAT mode from runtime config
+      setUatMode(isUatMode());
+      
       // Initialize session (clears on hard refresh)
       const { initializeSession, isTokenExpired } = require('@/lib/session-utils');
       initializeSession();
@@ -53,8 +68,11 @@ export default function AdminHomePage() {
     setLoginLoading(true);
 
     try {
+      // Check UAT mode dynamically (from runtime config)
+      const currentUatMode = isUatMode();
+      
       // UAT Mode: Use hardcoded credentials
-      if (UAT_MODE) {
+      if (currentUatMode) {
         if (email === UAT_CREDENTIALS.email && password === UAT_CREDENTIALS.password) {
           console.log('🔧 [UAT Mode] Admin login successful (hardcoded)');
           // Store UAT token (note: this is not a real Cognito token, but allows UI to render)
@@ -149,7 +167,7 @@ export default function AdminHomePage() {
               </div>
 
               {/* UAT Mode Banner */}
-              {UAT_MODE && (
+              {uatMode && (
                 <div className="mb-6 p-4 bg-primary-50 border border-primary/30 rounded-xl">
                   <div className="flex items-center gap-2 text-primary font-medium mb-2">
                     <span>🧪</span> UAT Mode Active

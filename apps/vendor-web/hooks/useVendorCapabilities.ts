@@ -1,12 +1,7 @@
 /**
  * useVendorCapabilities Hook
- * Placeholder hook for vendor capabilities
+ * Re-export from main implementation for backwards compatibility
  */
 
-export function useVendorCapabilities(vendorId: string) {
-  return {
-    capabilities: [],
-    loading: false,
-    error: null
-  };
-}
+export { useVendorCapabilities } from '@/components/vendor/hooks/useVendorCapabilities';
+export type { VendorCapabilities } from '@/components/vendor/hooks/useVendorCapabilities';
