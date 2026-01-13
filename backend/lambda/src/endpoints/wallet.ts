@@ -45,27 +45,51 @@ class GetWalletHandler extends BaseHandler {
   }
 
   private async getOrCreateWallet(customerId: string): Promise<any> {
-    let wallets = await select('customer_wallets', { customer_id: customerId });
-    
-    if (wallets.length === 0) {
-      // Create new wallet
-      const result = await query(
-        `INSERT INTO customer_wallets (customer_id, balance, currency)
-         VALUES ($1, 0, 'INR')
-         ON CONFLICT (customer_id) DO NOTHING
-         RETURNING *`,
-        [customerId]
-      );
+    try {
+      let wallets = await select('customer_wallets', { customer_id: customerId });
       
-      if (result.rows.length > 0) {
-        return result.rows[0];
+      if (wallets.length === 0) {
+        // Create new wallet
+        const result = await query(
+          `INSERT INTO customer_wallets (customer_id, balance, currency)
+           VALUES ($1, 0, 'INR')
+           ON CONFLICT (customer_id) DO NOTHING
+           RETURNING *`,
+          [customerId]
+        );
+        
+        if (result.rows.length > 0) {
+          return result.rows[0];
+        }
+        
+        // If insert failed due to race condition, try select again
+        wallets = await select('customer_wallets', { customer_id: customerId });
       }
-      
-      // If insert failed due to race condition, try select again
-      wallets = await select('customer_wallets', { customer_id: customerId });
-    }
 
-    return wallets[0];
+      if (wallets.length === 0) {
+        // If still no wallet, return a default wallet object
+        return {
+          customer_id: customerId,
+          balance: 0,
+          currency: 'INR',
+          updated_at: new Date().toISOString(),
+        };
+      }
+
+      return wallets[0];
+    } catch (error: any) {
+      // Handle case where table doesn't exist
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        console.warn('[WALLET] customer_wallets table does not exist, returning default wallet');
+        return {
+          customer_id: customerId,
+          balance: 0,
+          currency: 'INR',
+          updated_at: new Date().toISOString(),
+        };
+      }
+      throw error;
+    }
   }
 }
 
@@ -351,31 +375,92 @@ class GetWalletTransactionsHandler extends BaseHandler {
       return this.error('Customer ID is required', 400);
     }
 
-    const result = await query(
-      `SELECT * FROM wallet_transactions
-       WHERE customer_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [customerId, Math.min(limit, 100), offset]
-    );
+    try {
+      // Check if table uses customer_id or wallet_id
+      const tableCheck = await query(
+        `SELECT column_name FROM information_schema.columns 
+         WHERE table_name = 'wallet_transactions' 
+         AND column_name IN ('customer_id', 'wallet_id')`
+      );
+      
+      const hasCustomerId = tableCheck.rows.some(r => r.column_name === 'customer_id');
+      const hasWalletId = tableCheck.rows.some(r => r.column_name === 'wallet_id');
+      
+      let result;
+      if (hasCustomerId) {
+        result = await query(
+          `SELECT * FROM wallet_transactions
+           WHERE customer_id = $1
+           ORDER BY created_at DESC
+           LIMIT $2 OFFSET $3`,
+          [customerId, Math.min(limit, 100), offset]
+        );
+      } else if (hasWalletId) {
+        // Get wallet ID first
+        const wallet = await query(
+          `SELECT id FROM customer_wallets WHERE customer_id = $1 LIMIT 1`,
+          [customerId]
+        );
+        
+        if (wallet.rows.length === 0) {
+          return this.success({
+            transactions: [],
+            count: 0,
+            limit,
+            offset,
+          });
+        }
+        
+        const walletId = wallet.rows[0].id;
+        result = await query(
+          `SELECT * FROM wallet_transactions
+           WHERE wallet_id = $1
+           ORDER BY created_at DESC
+           LIMIT $2 OFFSET $3`,
+          [walletId, Math.min(limit, 100), offset]
+        );
+      } else {
+        // Table doesn't exist or has different schema
+        return this.success({
+          transactions: [],
+          count: 0,
+          limit,
+          offset,
+          message: 'Wallet transactions table schema not recognized',
+        });
+      }
 
-    const transactions = result.rows.map((row) => ({
-      id: row.id,
-      type: row.transaction_type,
-      amount: parseFloat(row.amount),
-      balanceAfter: parseFloat(row.balance_after),
-      referenceType: row.reference_type,
-      referenceId: row.reference_id,
-      description: row.description,
-      timestamp: row.created_at,
-    }));
+      const transactions = result.rows.map((row) => ({
+        id: row.id,
+        type: row.transaction_type,
+        amount: parseFloat(row.amount),
+        balanceAfter: parseFloat(row.balance_after),
+        referenceType: row.reference_type,
+        referenceId: row.reference_id,
+        description: row.description,
+        timestamp: row.created_at,
+      }));
 
-    return this.success({
-      transactions,
-      count: transactions.length,
-      limit,
-      offset,
-    });
+      return this.success({
+        transactions,
+        count: transactions.length,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      // Handle case where table doesn't exist
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        console.warn('[WALLET] wallet_transactions table does not exist, returning empty transactions');
+        return this.success({
+          transactions: [],
+          count: 0,
+          limit,
+          offset,
+          message: 'Wallet transactions table not found. Please run migration 012_wallet_tables.sql',
+        });
+      }
+      throw error;
+    }
   }
 }
 

@@ -842,31 +842,129 @@ export function registerPromotionEndpoints(app: Hono) {
       const body = await c.req.json();
       const {
         code,
+        type,
+        value,
         discount_type,
         discount_value,
+        minOrderAmount,
         min_order_value,
+        maxDiscountAmount,
         max_discount,
+        validFrom,
         valid_from,
+        validUntil,
         valid_until,
+        usageLimit,
         usage_limit,
+        isActive,
         is_active = true,
       } = body;
 
-      if (!code || !discount_type || discount_value === undefined) {
-        return c.json({ error: 'code, discount_type, and discount_value are required' }, 400);
+      // Handle both UI format (type, value) and backend format (discount_type, discount_value)
+      const finalCode = code || '';
+      const finalDiscountType = discount_type || type || 'percentage';
+      const finalDiscountValue = discount_value !== undefined ? discount_value : (value !== undefined ? value : 0);
+      const finalMinOrder = min_order_value !== undefined ? min_order_value : (minOrderAmount !== undefined ? minOrderAmount : 0);
+      const finalMaxDiscount = max_discount !== undefined ? max_discount : (maxDiscountAmount !== undefined ? maxDiscountAmount : 0);
+      const finalValidFrom = valid_from || validFrom || new Date().toISOString().split('T')[0];
+      const finalValidUntil = valid_until || validUntil || null;
+      const finalUsageLimit = usage_limit !== undefined ? usage_limit : (usageLimit !== undefined ? usageLimit : 0);
+      const finalIsActive = is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true);
+
+      if (!finalCode || !finalDiscountType || finalDiscountValue === undefined) {
+        return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
       }
 
-      const coupon = await insert('coupons', {
-        code: code.toUpperCase(),
+      // Use correct column names based on schema (no max_discount column in base schema)
+      const couponData: any = {
+        code: finalCode.toUpperCase(),
+        name: finalCode.toUpperCase(), // Required field
+        discount_type: finalDiscountType,
+        discount_value: finalDiscountValue,
+        min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
+        start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
+        end_date: finalValidUntil ? new Date(finalValidUntil) : (finalValidFrom ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : new Date()),
+        max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
+        is_active: finalIsActive,
+      };
+
+      // Remove null values for optional fields
+      if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+      if (couponData.max_uses === null) delete couponData.max_uses;
+
+      const coupon = await insert('coupons', couponData);
+
+      return c.json({
+        success: true,
+        coupon: coupon[0],
+        message: 'Coupon created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating coupon:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/coupons/create
+   * Alias for POST /admin/coupons (UI compatibility)
+   */
+  app.post("/admin/coupons/create", async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        code,
+        type,
+        value,
         discount_type,
         discount_value,
-        min_order_amount: min_order_value,
-        max_discount_amount: max_discount,
-        start_date: valid_from ? new Date(valid_from) : new Date(),
-        end_date: valid_until ? new Date(valid_until) : null,
-        max_uses: usage_limit,
-        is_active,
-      });
+        minOrderAmount,
+        min_order_value,
+        maxDiscountAmount,
+        max_discount,
+        validFrom,
+        valid_from,
+        validUntil,
+        valid_until,
+        usageLimit,
+        usage_limit,
+        isActive,
+        is_active = true,
+      } = body;
+
+      // Handle both UI format (type, value) and backend format (discount_type, discount_value)
+      const finalCode = code || '';
+      const finalDiscountType = discount_type || type || 'percentage';
+      const finalDiscountValue = discount_value !== undefined ? discount_value : (value !== undefined ? value : 0);
+      const finalMinOrder = min_order_value !== undefined ? min_order_value : (minOrderAmount !== undefined ? minOrderAmount : 0);
+      const finalMaxDiscount = max_discount !== undefined ? max_discount : (maxDiscountAmount !== undefined ? maxDiscountAmount : 0);
+      const finalValidFrom = valid_from || validFrom || new Date().toISOString().split('T')[0];
+      const finalValidUntil = valid_until || validUntil || null;
+      const finalUsageLimit = usage_limit !== undefined ? usage_limit : (usageLimit !== undefined ? usageLimit : 0);
+      const finalIsActive = is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true);
+
+      if (!finalCode || !finalDiscountType || finalDiscountValue === undefined) {
+        return c.json({ error: 'code, discount_type/type, and discount_value/value are required' }, 400);
+      }
+
+      // Use correct column names based on schema (no max_discount column in base schema)
+      const couponData: any = {
+        code: finalCode.toUpperCase(),
+        name: finalCode.toUpperCase(), // Required field
+        discount_type: finalDiscountType,
+        discount_value: finalDiscountValue,
+        min_order_amount: finalMinOrder > 0 ? finalMinOrder : null,
+        start_date: finalValidFrom ? new Date(finalValidFrom) : new Date(),
+        end_date: finalValidUntil ? new Date(finalValidUntil) : (finalValidFrom ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : new Date()),
+        max_uses: finalUsageLimit > 0 ? finalUsageLimit : null,
+        is_active: finalIsActive,
+      };
+
+      // Remove null values for optional fields
+      if (couponData.min_order_amount === null) delete couponData.min_order_amount;
+      if (couponData.max_uses === null) delete couponData.max_uses;
+
+      const coupon = await insert('coupons', couponData);
 
       return c.json({
         success: true,

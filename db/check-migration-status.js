@@ -24,7 +24,9 @@ async function checkMigrationStatus() {
 
   const pool = new Pool({ 
     connectionString: DATABASE_URL,
-    ssl: DATABASE_URL.includes('supabase') ? { rejectUnauthorized: false } : undefined
+    ssl: DATABASE_URL.includes('supabase') || DATABASE_URL.includes('rds.amazonaws.com') || DATABASE_URL.includes('sslmode=require') 
+      ? { rejectUnauthorized: false } 
+      : undefined
   });
 
   try {
@@ -45,7 +47,7 @@ async function checkMigrationStatus() {
     // Check key tables exist
     const keyTables = [
       'vendors', 'customers', 'pets', 'bookings', 
-      'services', 'products', 'payments', 'wallets'
+      'services', 'products', 'payments', 'customer_wallets'
     ];
     
     const existingKeyTables = keyTables.filter(table => 

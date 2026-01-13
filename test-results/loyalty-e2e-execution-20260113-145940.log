@@ -1,0 +1,13 @@
+=========================================
+LOYALTY E2E TEST - Complete User Journey
+=========================================
+API Base URL: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+Started: Tue Jan 13 14:59:40 IST 2026
+
+Pre-flight check: Verifying loyalty_action_rules table...
+✅ Table check passed
+
+
+=========================================
+STEP 1: Create Loyalty Action Rule
+=========================================

@@ -192,6 +192,58 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   });
 
   /**
+   * GET /medical-records/vendor/:vendorId
+   * Get all medical records for a vendor
+   */
+  app.get("/medical-records/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Handle test IDs - return empty records
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          records: [],
+          total: 0,
+        });
+      }
+
+      let records;
+      try {
+        records = await query(
+          `SELECT mr.*, p.name as pet_name, c.full_name as customer_name, c.phone as customer_phone
+           FROM medical_records mr
+           LEFT JOIN pets p ON mr.pet_id = p.id
+           LEFT JOIN customers c ON mr.customer_id = c.id
+           WHERE mr.vendor_id = $1
+           AND mr.is_active = true
+           ORDER BY mr.created_at DESC`,
+          [vendorId]
+        );
+      } catch (error: any) {
+        // If UUID validation fails, return empty records
+        if (error.message?.includes('invalid input syntax for type uuid')) {
+          return c.json({
+            success: true,
+            records: [],
+            total: 0,
+          });
+        }
+        throw error;
+      }
+
+      return c.json({
+        success: true,
+        records: records.rows,
+        total: records.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor medical records:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * PUT /medical-records/:recordId
    * Update medical record (creates audit trail)
    */

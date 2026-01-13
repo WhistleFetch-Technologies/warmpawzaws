@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
-import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label, Badge, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@warmpawz/ui';
-import { Gift, Plus, Edit, Trash2, TrendingUp, Users, Award, Coins } from 'lucide-react';
+import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label, Badge, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Select, SelectTrigger, SelectContent, SelectItem, SelectValue, Tabs, TabsList, TabsTrigger, TabsContent } from '@warmpawz/ui';
+import { Gift, Plus, Edit, Trash2, TrendingUp, Users, Award, Coins, Filter } from 'lucide-react';
 import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';
 import { validateRequired } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
+import { LoyaltySegmentsManagement } from '@/components/admin/loyalty/LoyaltySegmentsManagement';
+import { LoyaltyActionRulesManagement } from '@/components/admin/loyalty/LoyaltyActionRulesManagement';
 
 // ============================================================================
 // TYPES
@@ -64,6 +66,7 @@ interface LoyaltyRuleFormData {
 export default function LoyaltyPage() {
   // Additional modal state for transactions
   const [showTransactionsModal, setShowTransactionsModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('rules');
 
   // Reusable hooks for rules
   const { data: rules, loading: rulesLoading, error: rulesError, refetch: refetchRules } = useApiData<LoyaltyRule>({
@@ -142,8 +145,8 @@ export default function LoyaltyPage() {
     }),
   });
 
-  // Combine loading states
-  const loading = rulesLoading || statsLoading || transactionsLoading;
+  // Combine loading states - but don't wait forever if there's an error
+  const loading = (rulesLoading || statsLoading || transactionsLoading) && !rulesError;
   
   // Combine errors and success messages
   const error = rulesError || crudError || notifications.error;
@@ -183,7 +186,8 @@ export default function LoyaltyPage() {
   // RENDER
   // ============================================================================
 
-  if (loading) {
+  // Show loading only if we're actually loading and haven't encountered an error
+  if (loading && !error) {
     return (
       <AdminLayout>
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -289,137 +293,165 @@ export default function LoyaltyPage() {
             </div>
           )}
 
-          {/* Loyalty Rules */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Loyalty Rules</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {rules.length === 0 ? (
-                <div className="text-center py-12">
-                  <Gift className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 mb-4">No loyalty rules configured</p>
-                  <Button onClick={modal.openCreate} variant="default">
-                    Create Your First Rule
-                  </Button>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Points/Rupee</TableHead>
-                      <TableHead>Redemption Rate</TableHead>
-                      <TableHead>Min Points</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rules.map(rule => (
-                      <TableRow key={rule.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{rule.name}</p>
-                            {rule.description && (
-                              <p className="text-sm text-muted-foreground">{rule.description}</p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>{rule.points_per_rupee}</TableCell>
-                        <TableCell>{rule.redemption_rate} pts/₹</TableCell>
-                        <TableCell>{rule.min_points_to_redeem}</TableCell>
-                        <TableCell>
-                          <Badge variant={rule.is_active ? "default" : "secondary"}>
-                            {rule.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => modal.openEdit(rule)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              onClick={() => handleToggleRuleStatus(rule)}
-                              variant={rule.is_active ? "secondary" : "default"}
-                              size="sm"
-                              disabled={saving}
-                            >
-                              {rule.is_active ? 'Deactivate' : 'Activate'}
-                            </Button>
-                            <Button
-                              onClick={() => handleDeleteRule(rule)}
-                              variant="destructive"
-                              size="sm"
-                              disabled={deleting}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          {/* Tabs for Rules, Action Rules, and Segments */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mb-6">
+              <TabsTrigger value="rules">
+                <Gift className="w-4 h-4 mr-2" />
+                Basic Rules
+              </TabsTrigger>
+              <TabsTrigger value="action-rules">
+                <Award className="w-4 h-4 mr-2" />
+                Action Rules
+              </TabsTrigger>
+              <TabsTrigger value="segments">
+                <Filter className="w-4 h-4 mr-2" />
+                Segments
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Recent Transactions */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Recent Transactions</CardTitle>
-                <Button
-                  onClick={() => setShowTransactionsModal(true)}
-                  variant="outline"
-                  size="sm"
-                >
-                  View All
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {transactions.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  No transactions yet
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Points</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.slice(0, 10).map(transaction => (
-                      <TableRow key={transaction.id}>
-                        <TableCell>{transaction.customer_name || transaction.customer_id}</TableCell>
-                        <TableCell>
-                          <Badge variant={transaction.transaction_type === 'earned' ? "default" : "secondary"}>
-                            {transaction.transaction_type === 'earned' ? 'Earned' : 'Redeemed'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className={transaction.transaction_type === 'earned' ? 'text-green-600' : 'text-orange-600'}>
-                          {transaction.transaction_type === 'earned' ? '+' : '-'}{transaction.points}
-                        </TableCell>
-                        <TableCell>{transaction.description}</TableCell>
-                        <TableCell>{new Date(transaction.created_at).toLocaleDateString()}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+            <TabsContent value="rules" className="space-y-6">
+              {/* Loyalty Rules */}
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Loyalty Rules</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {rules.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Gift className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500 mb-4">No loyalty rules configured</p>
+                      <Button onClick={modal.openCreate} variant="default">
+                        Create Your First Rule
+                      </Button>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Points/Rupee</TableHead>
+                          <TableHead>Redemption Rate</TableHead>
+                          <TableHead>Min Points</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rules.map(rule => (
+                          <TableRow key={rule.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{rule.name}</p>
+                                {rule.description && (
+                                  <p className="text-sm text-muted-foreground">{rule.description}</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{rule.points_per_rupee}</TableCell>
+                            <TableCell>{rule.redemption_rate} pts/₹</TableCell>
+                            <TableCell>{rule.min_points_to_redeem}</TableCell>
+                            <TableCell>
+                              <Badge variant={rule.is_active ? "default" : "secondary"}>
+                                {rule.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={() => modal.openEdit(rule)}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleToggleRuleStatus(rule)}
+                                  variant={rule.is_active ? "secondary" : "default"}
+                                  size="sm"
+                                  disabled={saving}
+                                >
+                                  {rule.is_active ? 'Deactivate' : 'Activate'}
+                                </Button>
+                                <Button
+                                  onClick={() => handleDeleteRule(rule)}
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={deleting}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Recent Transactions */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Recent Transactions</CardTitle>
+                    <Button
+                      onClick={() => setShowTransactionsModal(true)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      View All
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {transactions.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No transactions yet
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Points</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {transactions.slice(0, 10).map(transaction => (
+                          <TableRow key={transaction.id}>
+                            <TableCell>{transaction.customer_name || transaction.customer_id}</TableCell>
+                            <TableCell>
+                              <Badge variant={transaction.transaction_type === 'earned' ? "default" : "secondary"}>
+                                {transaction.transaction_type === 'earned' ? 'Earned' : 'Redeemed'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className={transaction.transaction_type === 'earned' ? 'text-green-600' : 'text-orange-600'}>
+                              {transaction.transaction_type === 'earned' ? '+' : '-'}{transaction.points}
+                            </TableCell>
+                            <TableCell>{transaction.description}</TableCell>
+                            <TableCell>{new Date(transaction.created_at).toLocaleDateString()}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="action-rules" className="space-y-6">
+              <LoyaltyActionRulesManagement />
+            </TabsContent>
+
+            <TabsContent value="segments" className="space-y-6">
+              <LoyaltySegmentsManagement />
+            </TabsContent>
+          </Tabs>
           </div>
         </main>
 

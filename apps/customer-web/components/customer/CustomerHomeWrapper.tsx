@@ -889,8 +889,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         }}
         onServiceSelect={(service) => {
           // Handle service selection - navigate to booking flow
-          const vendorId = service.vendorId || service.id;
-          const serviceId = service.serviceId || service.id;
+          const vendorId = (service as any).vendorId || (service as any).id;
+          const serviceId = (service as any).serviceId || (service as any).id;
           
           setSelectedVendorId(vendorId);
           setSelectedService(serviceId);

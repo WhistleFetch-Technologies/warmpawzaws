@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/ui/states';
 import { AlertTriangle, DollarSign, Info, XCircle } from 'lucide-react';
-import { bookingsApi } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface CancelBookingModalProps {
@@ -36,15 +36,19 @@ export function CancelBookingModal({
     try {
       setLoadingRefundInfo(true);
       // Get booking details to show refund info if payment was made
-      const booking = await bookingsApi.get(bookingId) as any;
-      if (booking?.booking?.payment_status === 'paid' && booking?.booking?.total_amount > 0) {
+      const bookingResponse = await apiClient.post('/customer/bookings/refund-preview', { bookingId }) as any;
+      const booking = bookingResponse.booking || bookingResponse;
+      // Use refund preview response
+      if (bookingResponse.refund) {
+        const refund = bookingResponse.refund;
         setRefundInfo({
-          eligible: true,
-          refundAmount: booking.booking.total_amount,
-          refundPercentage: 100,
-          hoursUntil: 24, // TODO: Calculate actual hours until booking
-          cancellationFee: 0,
-          message: `₹${booking.booking.total_amount} will be refunded to your original payment method`
+          eligible: refund.eligible || false,
+          refundAmount: refund.refundAmount || 0,
+          refundPercentage: refund.refundPercentage || 0,
+          hoursUntil: refund.hoursUntil || 0,
+          cancellationFee: refund.cancellationFee || 0,
+          message: refund.message || 'No refund available for this booking',
+          policy: refund.policy || {},
         });
       } else {
         setRefundInfo({
@@ -80,7 +84,7 @@ export function CancelBookingModal({
     try {
       setLoading(true);
 
-      const result = await bookingsApi.cancel(bookingId, {
+      const result = await apiClient.post(`/bookings/${bookingId}/cancel`, {
         reason,
         customerId,
         actorId: customerId,

@@ -58,6 +58,108 @@ function getCategoryFromRole(roleId: string): string {
 
 export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
+   * GET /customer/services
+   * Get customer services list (alias for discover-services)
+   */
+  app.get("/customer/services", async (c) => {
+    try {
+      const category = c.req.query('category');
+      const location = c.req.query('location');
+      const minRating = c.req.query('minRating');
+      const availability = c.req.query('availability');
+      const petType = c.req.query('petType');
+      const sortBy = c.req.query('sortBy') || 'rating';
+      const latitude = c.req.query('latitude');
+      const longitude = c.req.query('longitude');
+      const roleId = c.req.query('roleId');
+      const serviceStyle = c.req.query('serviceStyle');
+
+      // Build vendor query
+      let vendorQuery = `
+        SELECT v.*, r.name as role_name, r.display_name as role_display_name
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        WHERE v.status = 'approved' AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      // Filter by category (role)
+      if (category) {
+        const categoryRoleMap: Record<string, string[]> = {
+          'vet': ['vet_clinic', 'veterinarian'],
+          'grooming': ['grooming_salon', 'pet_groomer', 'groomer'],
+          'training': ['trainer', 'pet_trainer'],
+          'walker': ['dog_walker', 'pet_walker'],
+          'boarding': ['boarding_resort', 'pet_boarding'],
+          'nutrition': ['nutritionist'],
+          'adoption': ['ngo', 'shelter', 'breeder'],
+          'marketplace': ['pet_store'],
+        };
+
+        const targetRoles = categoryRoleMap[category] || [];
+        if (targetRoles.length > 0) {
+          vendorQuery += ` AND (r.name = ANY($${paramIndex}::text[]) OR r.id::text = $${paramIndex + 1})`;
+          params.push(targetRoles, category);
+          paramIndex += 2;
+        }
+      }
+
+      if (roleId) {
+        vendorQuery += ` AND (r.id::text = $${paramIndex} OR r.name = $${paramIndex + 1})`;
+        params.push(roleId, roleId);
+        paramIndex += 2;
+      }
+
+      // Get vendors
+      const vendors = await query(vendorQuery, params);
+
+      // Get services for each vendor
+      const services = await Promise.all(
+        vendors.rows.map(async (vendor: any) => {
+          // Check if is_global column exists
+          const serviceColumns = await query(
+            `SELECT column_name FROM information_schema.columns 
+             WHERE table_name = 'services' AND column_name = 'is_global'`
+          );
+          const hasIsGlobal = serviceColumns.rows.length > 0;
+          
+          const vendorServices = await query(
+            `SELECT s.*, vs.custom_price, vs.custom_duration, vs.service_style
+             FROM services s
+             LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
+             WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
+             AND s.is_active = true
+             ${serviceStyle ? `AND (vs.service_style = $2 OR s.service_style = $2)` : ''}
+             ORDER BY s.name`,
+            serviceStyle ? [vendor.id, serviceStyle] : [vendor.id]
+          );
+
+          return vendorServices.rows.map((service: any) => ({
+            id: service.id,
+            serviceId: service.id,
+            serviceName: service.name,
+            vendorId: vendor.id,
+            vendorName: vendor.business_name,
+            price: service.custom_price || service.base_price || 0,
+            duration: service.custom_duration || service.duration_minutes || 30,
+            serviceStyle: service.service_style || serviceStyle,
+          }));
+        })
+      );
+
+      return c.json({
+        success: true,
+        services: services.flat(),
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer services:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /customer/discover-services
    * Main customer entry point for service discovery
    */
@@ -128,7 +230,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled
              FROM services s
              LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-             WHERE (vs.vendor_id = $1 OR s.is_global = true)
+             WHERE vs.vendor_id = $1
              AND s.is_active = true
              AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
              LIMIT 10`,
@@ -148,18 +250,35 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : 0;
 
           // Check availability (simplified - check if vendor has slots today)
-          const today = new Date();
-          const dayOfWeek = today.getDay();
-          const availabilityCheck = await query(
-            `SELECT 1 FROM vendor_schedule_slots 
-             WHERE vendor_id = $1 
-             AND day_of_week = $2 
-             AND is_enabled = true 
-             LIMIT 1`,
-            [vendor.id, dayOfWeek]
-          );
-
-          const isAvailableToday = availabilityCheck.rows.length > 0;
+          // Gracefully handle missing vendor_schedule_slots table
+          let isAvailableToday = false;
+          try {
+            const tableCheck = await query(
+              `SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'vendor_schedule_slots'
+              )`
+            );
+            
+            if (tableCheck.rows[0]?.exists) {
+              const today = new Date();
+              const dayOfWeek = today.getDay();
+              const availabilityCheck = await query(
+                `SELECT 1 FROM vendor_schedule_slots 
+                 WHERE vendor_id = $1 
+                 AND day_of_week = $2 
+                 AND is_enabled = true 
+                 LIMIT 1`,
+                [vendor.id, dayOfWeek]
+              );
+              isAvailableToday = availabilityCheck.rows.length > 0;
+            }
+          } catch (error: any) {
+            // Table doesn't exist or query failed, assume available
+            console.warn('[Discover Services] vendor_schedule_slots check failed:', error.message);
+            isAvailableToday = true; // Default to available
+          }
 
           // Calculate distance if coordinates provided
           let distance: number | null = null;
@@ -345,7 +464,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   app.get("/customer/vendors/search", async (c) => {
     try {
       const roleId = c.req.query('roleId');
-      const query = c.req.query('query');
+      const searchQuery = c.req.query('query'); // Renamed to avoid shadowing the query function
       const location = c.req.query('location');
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
@@ -372,13 +491,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // Filter by search query (name, business_name, specialization)
-      if (query) {
+      if (searchQuery) {
         vendorQuery += ` AND (
           v.business_name ILIKE $${paramIndex} OR 
           v.owner_name ILIKE $${paramIndex} OR
-          v.specializations::text ILIKE $${paramIndex}
+          v.specialization ILIKE $${paramIndex}
         )`;
-        params.push(`%${query}%`);
+        params.push(`%${searchQuery}%`);
         paramIndex++;
       }
 
@@ -492,6 +611,269 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendors: [],
         total: 0
       }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/autocomplete
+   * Search autocomplete suggestions
+   */
+  app.get("/customer/autocomplete", async (c) => {
+    try {
+      const q = c.req.query('q') || '';
+      const limit = parseInt(c.req.query('limit') || '10', 10);
+
+      if (!q || q.length < 2) {
+        return c.json({ success: true, suggestions: [] });
+      }
+
+      // Search vendors
+      const vendors = await query(
+        `SELECT DISTINCT business_name as name, 'vendor' as type, id
+         FROM vendors
+         WHERE business_name ILIKE $1 AND status = 'approved' AND is_active = true
+         LIMIT $2`,
+        [`%${q}%`, limit]
+      );
+
+      // Search services
+      const services = await query(
+        `SELECT DISTINCT name, 'service' as type, id
+         FROM services
+         WHERE name ILIKE $1 AND is_active = true
+         LIMIT $2`,
+        [`%${q}%`, limit]
+      );
+
+      // Search problems
+      const problems = await query(
+        `SELECT DISTINCT problem_name as name, 'problem' as type, id
+         FROM problem_grid
+         WHERE problem_name ILIKE $1
+         LIMIT $2`,
+        [`%${q}%`, limit]
+      );
+
+      const suggestions = [
+        ...vendors.rows.map((v: any) => ({ text: v.name, type: v.type, id: v.id })),
+        ...services.rows.map((s: any) => ({ text: s.name, type: s.type, id: s.id })),
+        ...problems.rows.map((p: any) => ({ text: p.name, type: p.type, id: p.id })),
+      ].slice(0, limit);
+
+      return c.json({ success: true, suggestions });
+    } catch (error: any) {
+      console.error('Error in autocomplete:', error);
+      return c.json({ success: true, suggestions: [] });
+    }
+  });
+
+  /**
+   * GET /customer/radar/providers
+   * Get providers within radar radius
+   */
+  app.get("/customer/radar/providers", async (c) => {
+    try {
+      const lat = parseFloat(c.req.query('lat') || '0');
+      const lng = parseFloat(c.req.query('lng') || '0');
+      const radius = parseFloat(c.req.query('radius') || '10'); // km
+      const serviceType = c.req.query('serviceType') || '';
+
+      if (!lat || !lng) {
+        return c.json({ error: 'lat and lng are required' }, 400);
+      }
+
+      // Get vendors with location within radius
+      const vendors = await query(
+        `SELECT v.*, r.name as role_name,
+         (6371 * acos(
+           cos(radians($1)) * cos(radians(CAST(v.latitude AS FLOAT))) *
+           cos(radians(CAST(v.longitude AS FLOAT)) - radians($2)) +
+           sin(radians($1)) * sin(radians(CAST(v.latitude AS FLOAT)))
+         )) AS distance_km
+         FROM vendors v
+         INNER JOIN roles r ON v.role_id = r.id
+         WHERE v.status = 'approved' AND v.is_active = true
+           AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+           ${serviceType ? `AND r.name ILIKE $3` : ''}
+         HAVING distance_km <= $4
+         ORDER BY distance_km ASC
+         LIMIT 50`,
+        serviceType ? [lat, lng, `%${serviceType}%`, radius] : [lat, lng, radius]
+      );
+
+      return c.json({
+        success: true,
+        providers: vendors.rows.map((v: any) => ({
+          id: v.id,
+          name: v.business_name,
+          role: v.role_name,
+          distance: parseFloat(v.distance_km?.toFixed(2) || '0'),
+          latitude: v.latitude,
+          longitude: v.longitude,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching radar providers:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/vendors/discover-by-problem
+   * Enhanced vendor discovery by problem
+   */
+  app.get("/customer/vendors/discover-by-problem", async (c) => {
+    try {
+      const problem = c.req.query('problem');
+      const roleId = c.req.query('roleId');
+      const latitude = c.req.query('latitude');
+      const longitude = c.req.query('longitude');
+
+      if (!problem) {
+        return c.json({ error: 'problem is required' }, 400);
+      }
+
+      // Get vendors that handle this problem
+      let queryText = `
+        SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        WHERE v.status = 'approved' AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      // Filter by problem (check specializations, services, or problem_grid)
+      queryText += ` AND (
+        v.specializations::text ILIKE $${paramIdx} OR
+        EXISTS (
+          SELECT 1 FROM services s
+          WHERE s.vendor_id = v.id
+          AND (s.name ILIKE $${paramIdx} OR s.description ILIKE $${paramIdx})
+        )
+      )`;
+      params.push(`%${problem}%`);
+      paramIdx++;
+
+      if (roleId) {
+        queryText += ` AND (r.id::text = $${paramIdx} OR r.name = $${paramIdx})`;
+        params.push(roleId, roleId);
+        paramIdx += 2;
+      }
+
+      // Add distance calculation if location provided
+      if (latitude && longitude) {
+        const lat = parseFloat(latitude);
+        const lng = parseFloat(longitude);
+        queryText = `
+          SELECT *, 
+          (6371 * acos(
+            cos(radians($${paramIdx})) * cos(radians(CAST(latitude AS FLOAT))) *
+            cos(radians(CAST(longitude AS FLOAT)) - radians($${paramIdx + 1})) +
+            sin(radians($${paramIdx})) * sin(radians(CAST(latitude AS FLOAT)))
+          )) AS distance_km
+          FROM (${queryText}) subquery
+          WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+          ORDER BY distance_km ASC
+        `;
+        params.push(lat, lng);
+        paramIdx += 2;
+      } else {
+        queryText += ` ORDER BY v.created_at DESC`;
+      }
+
+      queryText += ` LIMIT 20`;
+
+      const result = await query(queryText, params);
+
+      return c.json({
+        success: true,
+        results: result.rows,
+        roleConfig: roleId ? { roleId } : null,
+      });
+    } catch (error: any) {
+      console.error('Error in discover-by-problem:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/facility
+   * Get vendor facility details
+   */
+  app.get("/vendor/:vendorId/facility", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Get vendor
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Get services
+      const services = await query(
+        `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled
+         FROM services s
+         LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
+         WHERE (vs.vendor_id = $1 OR s.is_global = true)
+         AND s.is_active = true
+         AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
+         ORDER BY s.name`,
+        [vendorId]
+      );
+
+      // Get rating
+      const ratingResult = await query(
+        `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
+         FROM reviews
+         WHERE vendor_id = $1 AND is_approved = true`,
+        [vendorId]
+      );
+
+      // Get recent reviews
+      const recentReviews = await query(
+        `SELECT r.*, c.full_name as customer_name
+         FROM reviews r
+         LEFT JOIN customers c ON r.customer_id = c.id
+         WHERE r.vendor_id = $1 AND r.is_approved = true
+         ORDER BY r.created_at DESC
+         LIMIT 5`,
+        [vendorId]
+      );
+
+      return c.json({
+        success: true,
+        vendor: {
+          id: vendor.id,
+          business_name: vendor.business_name,
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          phone: vendor.phone,
+          email: vendor.email,
+        },
+        facility: {
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          pincode: vendor.pincode,
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+        },
+        services: services.rows || [],
+        rating: {
+          average: parseFloat(ratingResult.rows[0]?.avg_rating || '0'),
+          count: parseInt(ratingResult.rows[0]?.review_count || '0', 10),
+        },
+        recentReviews: recentReviews.rows || [],
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor facility:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 }

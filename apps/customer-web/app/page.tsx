@@ -22,28 +22,79 @@ export default function HomePage() {
   const hasRedirected = useRef(false);
 
   useEffect(() => {
+    // Initialize session FIRST (clears on hard refresh)
+    const { initializeSession } = require('@/lib/session-utils');
+    initializeSession();
+    
     // Get session data from localStorage - run only once on mount
-    const loadSession = () => {
+    const loadSession = async () => {
       try {
         const storedPhone = localStorage.getItem('customerPhone');
         const storedToken = localStorage.getItem('authToken');
-        const storedCustomer = localStorage.getItem('customerData');
-        const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
-        const storedPets = localStorage.getItem('customerPets');
 
         if (storedPhone && storedToken) {
-          const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
-          const petsData = storedPets ? JSON.parse(storedPets) : null;
-          
-          setSession({
-            phone: storedPhone,
-            sessionToken: storedToken,
-            verified: true,
-            customer: customerData,
-            hasCompletedOnboarding: storedOnboarding === 'true',
-            hasPets: petsData && petsData.length > 0,
-            isNewUser: !storedOnboarding
-          });
+          // Get customer state from database (not just localStorage)
+          try {
+            const { apiClient } = require('@/lib/api-client');
+            const profileResponse: any = await apiClient.get(`/customer/profile/unified/${storedPhone}`);
+            
+            if (profileResponse.profile) {
+              const customerData = profileResponse.profile;
+              const onboardingStatus = customerData.onboarding_status || customerData.onboardingStatus;
+              const profileCompleted = customerData.profile_completed || customerData.onboardingComplete;
+              
+              // Update localStorage with fresh data from database
+              localStorage.setItem('customerData', JSON.stringify(customerData));
+              localStorage.setItem('customerId', customerData.id);
+              
+              if (onboardingStatus === 'COMPLETED' || profileCompleted) {
+                localStorage.setItem('customerOnboardingComplete', 'true');
+              } else {
+                localStorage.setItem('customerOnboardingComplete', 'false');
+              }
+              
+              setSession({
+                phone: storedPhone,
+                sessionToken: storedToken,
+                verified: true,
+                customer: customerData,
+                hasCompletedOnboarding: onboardingStatus === 'COMPLETED' || profileCompleted,
+                hasPets: customerData.pets && customerData.pets.length > 0,
+                isNewUser: onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'
+              });
+            } else {
+              // Fallback to localStorage if API fails
+              const storedCustomer = localStorage.getItem('customerData');
+              const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
+              const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
+              
+              setSession({
+                phone: storedPhone,
+                sessionToken: storedToken,
+                verified: true,
+                customer: customerData,
+                hasCompletedOnboarding: storedOnboarding === 'true',
+                hasPets: false,
+                isNewUser: !storedOnboarding
+              });
+            }
+          } catch (apiError) {
+            console.error('Error fetching customer profile:', apiError);
+            // Fallback to localStorage
+            const storedCustomer = localStorage.getItem('customerData');
+            const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
+            const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
+            
+            setSession({
+              phone: storedPhone,
+              sessionToken: storedToken,
+              verified: true,
+              customer: customerData,
+              hasCompletedOnboarding: storedOnboarding === 'true',
+              hasPets: false,
+              isNewUser: !storedOnboarding
+            });
+          }
         }
       } catch (error) {
         console.error('Error loading session:', error);

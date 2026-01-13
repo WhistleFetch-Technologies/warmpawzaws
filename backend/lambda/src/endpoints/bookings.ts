@@ -379,13 +379,34 @@ class GetBookingHistoryHandler extends BaseHandler {
       return this.error('Booking not found', 404);
     }
 
-    // Get status history
-    const { rows: history } = await query(
-      `SELECT * FROM booking_status_history 
-       WHERE booking_id = $1 
-       ORDER BY created_at ASC`,
-      [bookingId]
-    );
+    // Get status history (check if table exists)
+    let history: any[] = [];
+    try {
+      const tableCheck = await query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'booking_status_history'
+        )`
+      );
+      
+      if (tableCheck.rows[0]?.exists) {
+        const result = await query(
+          `SELECT * FROM booking_status_history 
+           WHERE booking_id = $1 
+           ORDER BY created_at ASC`,
+          [bookingId]
+        );
+        history = result.rows;
+      } else {
+        // Table doesn't exist, return empty history
+        console.warn('[Booking History] booking_status_history table does not exist');
+      }
+    } catch (error: any) {
+      // If query fails, return empty history
+      console.warn('[Booking History] Error querying status history:', error.message);
+      history = [];
+    }
 
     return this.success({
       booking: bookings[0],

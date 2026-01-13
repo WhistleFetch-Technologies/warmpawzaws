@@ -1,0 +1,23 @@
+{
+  "name": "warmpawz-validation-scripts",
+  "version": "1.0.0",
+  "description": "Production readiness validation scripts",
+  "private": true,
+  "scripts": {
+    "phase1": "ts-node phase1-schema-validation.ts",
+    "phase2": "ts-node phase2-admin-config-seeding.ts",
+    "phase3": "ts-node phase3-vendor-seeding.ts",
+    "phase4": "ts-node phase4-customer-seeding.ts",
+    "phase5": "ts-node phase5-journey-execution.ts",
+    "all": "npm run phase1 && npm run phase2 && npm run phase3 && npm run phase4 && npm run phase5"
+  },
+  "dependencies": {
+    "@types/node": "^20.10.0",
+    "@types/pg": "^8.10.9",
+    "axios": "^1.6.2",
+    "https": "^1.0.0",
+    "pg": "^8.16.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

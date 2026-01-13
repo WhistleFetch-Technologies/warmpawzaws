@@ -1,0 +1,32 @@
+{
+  "name": "warmpawz-ui-e2e-tests",
+  "version": "1.0.0",
+  "description": "Warmpawz UI End-to-End Testing Framework",
+  "main": "test-runner.ts",
+  "scripts": {
+    "test": "ts-node test-runner.ts",
+    "test:admin": "ts-node test-runner.ts --role admin",
+    "test:customer": "ts-node test-runner.ts --role customer",
+    "test:vendor": "ts-node test-runner.ts --role vendor",
+    "install-browsers": "playwright install chromium",
+    "dashboard": "ts-node dashboard.ts",
+    "progress": "node view-dashboard.js",
+    "watch": "node view-dashboard.js --watch",
+    "live": "node live-dashboard.js",
+    "fix": "ts-node fix-and-test.ts"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0",
+    "playwright": "^1.40.0",
+    "pg": "^8.11.3",
+    "@aws-sdk/client-sns": "^3.490.0",
+    "@aws-sdk/client-eventbridge": "^3.490.0",
+    "@aws-sdk/client-sqs": "^3.490.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.10.9"
+  }
+}

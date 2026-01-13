@@ -1,165 +1,96 @@
 #!/bin/bash
-# Step-by-Step Deployment Guide
-# Run this to see what to do next
 
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║     Warmpawz Deployment - Step by Step Guide              ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo ""
-echo "Current Status Check:"
-echo "━━━━━━━━━━━━━━━━━━━━"
+# ============================================================================
+# DEPLOY HARD REFRESH FIX - QUICK DEPLOYMENT
+# ============================================================================
+
+set -e
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Deploying Hard Refresh Fix${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Check if GitHub CLI is installed
-if command -v gh &> /dev/null; then
-    echo "✅ GitHub CLI installed"
-    if gh auth status &> /dev/null; then
-        echo "✅ GitHub authenticated"
-    else
-        echo "❌ GitHub not authenticated"
-        echo "   Run: gh auth login"
-    fi
+# Step 1: Verify fix is in code
+echo -e "${YELLOW}[1/4] Verifying code fix...${NC}"
+if grep -q "full_name.*Customer.*phone.slice" backend/lambda/src/endpoints/auth-enhanced.ts; then
+  echo -e "${GREEN}✓ Fix confirmed in code${NC}"
 else
-    echo "❌ GitHub CLI not installed"
-    echo "   Run: brew install gh (Mac) or see https://cli.github.com/"
+  echo -e "${RED}✗ Fix not found in code${NC}"
+  exit 1
 fi
 
-# Check if AWS CLI is installed
-if command -v aws &> /dev/null; then
-    echo "✅ AWS CLI installed"
-    if aws sts get-caller-identity &> /dev/null 2>&1; then
-        echo "✅ AWS configured"
-        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-        echo "   Account: $ACCOUNT_ID"
-    else
-        echo "❌ AWS not configured"
-        echo "   Run: aws configure"
-    fi
+# Step 2: Build backend
+echo -e "${YELLOW}[2/4] Building backend...${NC}"
+cd backend/lambda
+npm run build
+if [ -f "api-handler.zip" ]; then
+  echo -e "${GREEN}✓ Build successful${NC}"
 else
-    echo "❌ AWS CLI not installed"
-    echo "   Run: brew install awscli (Mac)"
+  echo -e "${RED}✗ Build failed${NC}"
+  exit 1
+fi
+cd ../..
+
+# Step 3: Deploy backend
+echo -e "${YELLOW}[3/4] Deploying backend...${NC}"
+echo -e "${BLUE}Choose deployment method:${NC}"
+echo "1) AWS Lambda (Serverless Framework)"
+echo "2) Manual upload (you'll upload api-handler.zip)"
+read -p "Enter choice [1 or 2]: " choice
+
+if [ "$choice" = "1" ]; then
+  echo -e "${BLUE}Deploying with Serverless Framework...${NC}"
+  cd backend/lambda
+  if command -v serverless &> /dev/null; then
+    serverless deploy --stage dev --region ap-south-1
+  else
+    echo -e "${YELLOW}Serverless not installed. Installing...${NC}"
+    npm install -g serverless
+    serverless deploy --stage dev --region ap-south-1
+  fi
+  cd ../..
+elif [ "$choice" = "2" ]; then
+  echo -e "${YELLOW}Manual deployment:${NC}"
+  echo -e "${GREEN}Build package ready: backend/lambda/api-handler.zip${NC}"
+  echo "Upload this file to your Lambda function via AWS Console or CLI"
+  exit 0
+else
+  echo -e "${RED}Invalid choice${NC}"
+  exit 1
 fi
 
-# Check if Terraform is installed
-if command -v terraform &> /dev/null; then
-    echo "✅ Terraform installed"
-    terraform version | head -1
+# Step 4: Test deployment
+echo -e "${YELLOW}[4/4] Testing deployment...${NC}"
+echo -e "${BLUE}Testing customer OTP verify...${NC}"
+sleep 3  # Wait for deployment to propagate
+
+TEST_RESULT=$(curl -s -X POST "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/auth/verify-otp" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "9876543210", "otp": "123456", "role": "customer"}')
+
+if echo "$TEST_RESULT" | grep -q '"success":true\|"access_token"'; then
+  echo -e "${GREEN}✓ Deployment successful! Customer login works.${NC}"
 else
-    echo "❌ Terraform not installed"
-    echo "   Run: brew install terraform (Mac)"
+  echo -e "${YELLOW}⚠ Deployment may still be propagating...${NC}"
+  echo "Response: $TEST_RESULT"
+  echo ""
+  echo "Wait a few minutes and test manually:"
+  echo "./test-login-flows.sh"
 fi
 
-# Check if git repo is initialized
-if git rev-parse --git-dir > /dev/null 2>&1; then
-    echo "✅ Git repository"
-    BRANCH=$(git branch --show-current)
-    echo "   Current branch: $BRANCH"
-else
-    echo "❌ Not a git repository"
-fi
-
 echo ""
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║                 DEPLOYMENT STEPS                           ║"
-echo "╚════════════════════════════════════════════════════════════╝"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Backend Deployment Complete${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "📋 STEP 1: Set up GitHub Secrets"
-echo "   Choose ONE method:"
-echo ""
-echo "   Option A - One Command (Recommended):"
-echo "   $ ./scripts/one-command-setup.sh"
-echo ""
-echo "   Option B - Manual Steps:"
-echo "   $ ./scripts/setup-github-secrets.sh"
-echo "   $ ./scripts/setup-aws-secrets.sh"
-echo ""
-echo "   Option C - GitHub Web UI:"
-echo "   See: GITHUB_SECRETS_COMPLETE_LIST.md"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 STEP 2: Bootstrap Terraform State Backend"
-echo "   $ cd infra/bootstrap"
-echo "   $ terraform init"
-echo "   $ terraform apply -var='create_state_backend=true' -var='aws_account_id=YOUR_ACCOUNT_ID'"
-echo "   $ cd ../.."
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 STEP 3: Deploy to DEV (Automatic)"
-echo "   $ git checkout -b develop  # If branch doesn't exist"
-echo "   $ git add ."
-echo "   $ git commit -m 'feat: initial infrastructure setup'"
-echo "   $ git push origin develop"
-echo ""
-echo "   🔄 This triggers: .github/workflows/dev.yml"
-echo "   📊 Monitor: https://github.com/YOUR_USERNAME/warmpawzecodev/actions"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 STEP 4: Deploy to STAGE (Manual Approval)"
-echo "   $ git checkout -b main  # If branch doesn't exist"
-echo "   $ git merge develop"
-echo "   $ git push origin main"
-echo ""
-echo "   ⚠️  Requires: 1 reviewer approval"
-echo "   🔄 This triggers: .github/workflows/stage.yml"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 STEP 5: Deploy to PROD (Strict Approval)"
-echo "   Go to: https://github.com/YOUR_USERNAME/warmpawzecodev/actions"
-echo "   1. Click 'Deploy to Production' workflow"
-echo "   2. Click 'Run workflow'"
-echo "   3. Type: DEPLOY_TO_PRODUCTION"
-echo "   4. Click 'Run workflow'"
-echo ""
-echo "   ⚠️  Requires: 2 reviewers approval"
-echo "   🔄 This triggers: .github/workflows/prod.yml"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 STEP 6: Post-Deployment (CRITICAL)"
-echo "   ⚠️  ROTATE ALL CREDENTIALS:"
-echo "   1. AWS access key"
-echo "   2. Razorpay API keys"
-echo "   3. Restrict Google Maps key"
-echo "   4. Change Shiprocket password"
-echo ""
-echo "   See: SECURITY_WARNING.md for instructions"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "🔍 VERIFICATION COMMANDS"
-echo ""
-echo "Check GitHub Secrets:"
-echo "$ gh secret list"
-echo ""
-echo "Check AWS Secrets:"
-echo "$ aws secretsmanager list-secrets --region ap-south-1"
-echo ""
-echo "Check Terraform State:"
-echo "$ aws s3 ls | grep terraform-state"
-echo ""
-echo "Check Deployments:"
-echo "$ gh run list --limit 5"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📚 HELPFUL DOCUMENTS"
-echo ""
-echo "• QUICK_SETUP_CREDENTIALS.md - Step-by-step setup guide"
-echo "• SECURITY_WARNING.md - Credential rotation instructions"
-echo "• GITHUB_SECRETS_COMPLETE_LIST.md - All secrets reference"
-echo "• docs/DEPLOYMENT_GUIDE.md - Full deployment guide"
-echo "• DEPLOYMENT_CHECKLIST.md - Pre-deployment checklist"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Need help? Check:"
-echo "• GitHub Actions logs for errors"
-echo "• CloudWatch logs for runtime issues"
-echo "• docs/DEPLOYMENT_GUIDE.md troubleshooting section"
-echo ""
-echo "Good luck! 🚀"
-
+echo "Next steps:"
+echo "1. Run: ./test-login-flows.sh"
+echo "2. Deploy frontend apps"
+echo "3. Test in browser"

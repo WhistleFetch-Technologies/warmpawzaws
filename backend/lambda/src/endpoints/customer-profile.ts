@@ -18,6 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
+import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
@@ -93,6 +94,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         walletBalance: parseFloat(wallet.balance || '0'),
       };
 
+      // Get customer state (onboarding_status, profile_completed)
+      const onboardingStatus = customer.onboarding_status || 'INIT';
+      const profileCompleted = customer.profile_completed || false;
+      const customerStatus = customer.status || 'new';
+
       return c.json({
         success: true,
         profile: {
@@ -100,6 +106,10 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           name: customer.full_name,
           email: customer.email,
           phone: customer.phone,
+          status: customerStatus,
+          onboarding_status: onboardingStatus,
+          profile_completed: profileCompleted,
+          onboardingComplete: onboardingStatus === 'COMPLETED',
           wallet: {
             balance: parseFloat(wallet.balance || '0'),
             currency: wallet.currency || 'INR',
@@ -189,7 +199,26 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   app.put("/customer/profile/:identifier", async (c) => {
     try {
       const { identifier } = c.req.param();
-      const profileData = await c.req.json();
+      
+      // Parse body from Hono request
+      const body = await c.req.json().catch(() => ({}));
+      
+      // Validate request with Zod schema
+      const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
+      if (!validationResult.success) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: {
+              errors: validationResult.error.errors,
+            },
+          },
+        }, 400);
+      }
+      
+      const profileData = validationResult.data;
 
       const customerId = await resolveCustomerId(identifier);
       if (!customerId) {
@@ -217,6 +246,17 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         };
       }
 
+      // Update profile completion status
+      const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../utils/customer-state');
+      
+      const completionUpdates: any = {};
+      if (profileData.firstName || profileData.lastName || profileData.email) {
+        completionUpdates.basic_info = true;
+      }
+      if (profileData.address || profileData.pincode) {
+        completionUpdates.address = true;
+      }
+
       if (profileData.address || profileData.pincode) {
         // Store address in address JSONB
         const customers = await select('customers', { id: customerId });
@@ -229,6 +269,24 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const updated = await update('customers', { id: customerId }, updateData);
+
+      // Update profile completion and onboarding status
+      if (Object.keys(completionUpdates).length > 0) {
+        try {
+          await updateProfileCompletion(customerId, completionUpdates);
+          
+          // Check if we should update onboarding status
+          const customers = await select('customers', { id: customerId });
+          const customer = customers[0];
+          
+          if (customer.onboarding_status === 'PHONE_VERIFIED' && completionUpdates.basic_info) {
+            await updateCustomerOnboardingStatus(customerId, 'PROFILE_PENDING', 'profile');
+          }
+        } catch (stateError) {
+          console.error('Error updating customer state:', stateError);
+          // Don't fail profile update if state update fails
+        }
+      }
 
       return c.json({
         success: true,

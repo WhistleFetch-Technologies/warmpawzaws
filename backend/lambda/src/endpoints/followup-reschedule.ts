@@ -150,7 +150,7 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      const vendor = vendors[0];
+      const vendor = vendorResult.rows[0];
 
       // Calculate time until booking
       const bookingDate = new Date(`${booking.booking_date}T${booking.booking_time}`);
@@ -185,6 +185,76 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching reschedule policy:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /bookings/available-slots
+   * Get available time slots for booking (customer-facing endpoint)
+   */
+  app.get("/bookings/available-slots", async (c) => {
+    try {
+      const vendorId = c.req.query('vendorId');
+      const date = c.req.query('date');
+      const serviceId = c.req.query('serviceId');
+      const serviceStyle = c.req.query('serviceStyle') || 'at_center';
+      const staffId = c.req.query('staffId');
+
+      if (!vendorId || !date) {
+        return c.json({ error: 'vendorId and date are required' }, 400);
+      }
+
+      // Check if vendor_schedules table exists
+      const tableCheck = await query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'vendor_schedules'
+        )`
+      );
+      
+      let slots: any[] = [];
+      
+      if (tableCheck.rows[0]?.exists) {
+        // Get vendor schedule for the date
+        const requestedDate = new Date(date);
+        const dayOfWeek = requestedDate.getDay();
+
+        try {
+          const scheduleResult = await query(
+            `SELECT DISTINCT start_time, end_time
+             FROM vendor_schedules
+             WHERE vendor_id::text = $1::text
+             AND day_of_week = $2
+             AND is_available = true
+             ${staffId ? `AND staff_id::text = $3::text` : ''}
+             ORDER BY start_time`,
+            staffId ? [vendorId, dayOfWeek, staffId] : [vendorId, dayOfWeek]
+          );
+
+          slots = scheduleResult.rows.map((row: any) => ({
+            time: row.start_time,
+            available: true,
+          }));
+        } catch (error: any) {
+          // If query fails, return default slots
+          console.warn('[Available Slots] vendor_schedules query failed:', error.message);
+          slots = generateDefaultSlots();
+        }
+      } else {
+        // Table doesn't exist, return default slots
+        slots = generateDefaultSlots();
+      }
+
+      return c.json({
+        success: true,
+        slots: slots,
+        date: date,
+        vendorId: vendorId,
+      });
+    } catch (error: any) {
+      console.error('Error fetching available slots:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -283,6 +353,19 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+}
+
+/**
+ * Generate default time slots (9 AM to 6 PM, 30-minute intervals)
+ */
+function generateDefaultSlots(): string[] {
+  const slots: string[] = [];
+  for (let hour = 9; hour < 18; hour++) {
+    for (let minute = 0; minute < 60; minute += 30) {
+      slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+    }
+  }
+  return slots;
 }
 
 /**

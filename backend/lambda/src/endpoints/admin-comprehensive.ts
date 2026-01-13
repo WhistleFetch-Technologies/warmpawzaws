@@ -228,11 +228,23 @@ class AdminLoginHandler extends BaseHandler {
       // In UAT mode, allow any admin login with 60s token expiry
       if (isUATMode) {
         console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
+        
+        // Generate proper JWT tokens for UAT mode
+        const { generateUATJWTToken } = await import('../utils/jwt-generator');
+        const tokens = await generateUATJWTToken({
+          userId: 'uat-admin',
+          phone: email, // Use email as identifier
+          role: 'admin',
+          expiresIn: 60, // 60 seconds for UAT mode testing
+        });
+        
         return this.success({
           success: true,
           token: {
-            access_token: `uat-token-admin-${Date.now()}`,
-            expires_in: 60, // 60 seconds for UAT mode testing
+            access_token: tokens.accessToken,
+            id_token: tokens.idToken,
+            refresh_token: tokens.refreshToken,
+            expires_in: tokens.expiresIn,
             token_type: 'Bearer',
           },
           admin: {
@@ -261,11 +273,36 @@ class AdminLoginHandler extends BaseHandler {
       });
       console.log(`[ADMIN AUTH] Updated last_login_at for admin ${admin.id}`);
 
+      // Generate proper JWT tokens (use Cognito in production, UAT JWT in dev)
+      let tokens;
+      if (isUATMode) {
+        const { generateUATJWTToken } = await import('../utils/jwt-generator');
+        tokens = await generateUATJWTToken({
+          userId: admin.id,
+          phone: admin.email,
+          role: 'admin',
+          expiresIn: 3600,
+        });
+      } else {
+        // Production: Use Cognito
+        const { getOrCreateCognitoUser, authenticateCognitoUser } = await import('../utils/cognito-client');
+        const cognitoUser = await getOrCreateCognitoUser(admin.email, undefined, 'admin');
+        const cognitoTokens = await authenticateCognitoUser(admin.email);
+        tokens = {
+          accessToken: cognitoTokens.accessToken,
+          idToken: cognitoTokens.idToken,
+          refreshToken: cognitoTokens.refreshToken,
+          expiresIn: cognitoTokens.expiresIn,
+        };
+      }
+
       return this.success({
         success: true,
         token: {
-          access_token: `admin-token-${admin.id}`,
-          expires_in: 3600, // 1 hour for production
+          access_token: tokens.accessToken,
+          id_token: tokens.idToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.expiresIn,
           token_type: 'Bearer',
         },
         admin: {
@@ -705,7 +742,7 @@ class GetTransactionsHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error fetching transactions:', error);
-      return this.success({ success: true, transactions: [], total: 0, limit, offset: 0 }); // Return empty instead of error
+      return this.success({ success: true, transactions: [], total: 0, limit: 50, offset: 0 }); // Return empty instead of error
     }
   }
 }
@@ -1271,6 +1308,53 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/admin/tiers', async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        name,
+        displayName,
+        display_name,
+        level,
+        commissionRate,
+        commission_rate,
+        minBookings,
+        min_bookings,
+        minRevenue,
+        min_revenue,
+        benefits,
+        requirements,
+        isActive,
+        is_active,
+      } = body;
+
+      if (!name) {
+        return c.json({ success: false, error: 'Tier name is required' }, 400);
+      }
+
+      const tierData = {
+        tier_name: name,
+        display_name: displayName || display_name || name,
+        tier_level: level || 1,
+        commission_rate: commissionRate || commission_rate || 10,
+        description: `Tier ${level || 1}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const newTier = await insert('vendor_tiers', tierData);
+
+      return c.json({
+        success: true,
+        message: 'Tier created successfully',
+        tier: newTier[0],
+      });
+    } catch (error: any) {
+      console.error('Error creating tier:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
   });
 
   // Users

@@ -485,11 +485,13 @@ export function registerLoyaltyEndpoints(app: Hono) {
    * Get loyalty transactions (admin)
    */
   app.get("/admin/loyalty/transactions", async (c) => {
+    const startTime = Date.now();
     try {
-      const limit = parseInt(c.req.query('limit') || '50', 10);
-      const offset = parseInt(c.req.query('offset') || '0', 10);
+      const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100); // Cap at 100
+      const offset = Math.max(parseInt(c.req.query('offset') || '0', 10), 0);
 
-      const transactions = await query(
+      // Add query timeout protection
+      const queryPromise = query(
         `SELECT 
           lt.*,
           c.full_name as customer_name
@@ -500,14 +502,61 @@ export function registerLoyaltyEndpoints(app: Hono) {
         [limit, offset]
       );
 
+      // Race against timeout (40 seconds to leave buffer for Lambda)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Query timeout: Request took too long to process'));
+        }, 40000);
+      });
+
+      const transactions = await Promise.race([queryPromise, timeoutPromise]);
+      const duration = Date.now() - startTime;
+
+      if (duration > 5000) {
+        console.warn(`[Loyalty] Slow query for /admin/loyalty/transactions: ${duration}ms`);
+      }
+
       return c.json({
         success: true,
-        transactions: transactions.rows,
-        total: transactions.rows.length,
+        transactions: transactions.rows || [],
+        total: transactions.rows?.length || 0,
       });
     } catch (error: any) {
-      console.error('Error fetching loyalty transactions:', error);
-      return c.json({ error: error.message }, 500);
+      const duration = Date.now() - startTime;
+      console.error(`[Loyalty] Error fetching transactions after ${duration}ms:`, error);
+      
+      // Handle timeout errors with 503
+      if (error?.message?.includes('timeout') || error?.message?.includes('Query exceeded')) {
+        return c.json({ 
+          error: 'Service temporarily unavailable. Please try again later.',
+          message: error.message 
+        }, 503);
+      }
+      
+      // Handle database connection errors with 503
+      if (error?.message?.includes('connection') || error?.message?.includes('ECONNREFUSED') || error?.message?.includes('ETIMEDOUT')) {
+        return c.json({ 
+          error: 'Database connection error. Please try again later.',
+          message: error.message 
+        }, 503);
+      }
+      
+      // Handle table not found errors - return empty array instead of error
+      // This prevents frontend infinite loops when table hasn't been created yet
+      if (error?.message?.includes('does not exist') || error?.message?.includes('relation') || error?.code === '42P01') {
+        console.warn('[Loyalty] Table not found, returning empty array:', error.message);
+        return c.json({
+          success: true,
+          transactions: [],
+          total: 0,
+        }, 200);
+      }
+      
+      // Generic error - return 500 but with safe message
+      return c.json({ 
+        error: 'Failed to fetch loyalty transactions',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred while fetching transactions'
+      }, 500);
     }
   });
 }

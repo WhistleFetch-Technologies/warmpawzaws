@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS gst_rules (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     
     -- Ensure unique priority for enabled rules
-    CONSTRAINT gst_rules_priority_unique UNIQUE NULLS NOT DISTINCT (priority) WHERE enabled = true
+    -- Note: Using partial unique index instead of constraint for better compatibility
 );
 
 COMMENT ON TABLE gst_rules IS 'GST configuration by role and service style combination';
@@ -52,6 +52,8 @@ COMMENT ON COLUMN gst_rules.service_style IS 'Service style (NULL = applies to a
 -- Indexes for GST rules
 CREATE INDEX IF NOT EXISTS idx_gst_rules_role_service ON gst_rules(role_id, service_style) WHERE enabled = true;
 CREATE INDEX IF NOT EXISTS idx_gst_rules_priority ON gst_rules(priority) WHERE enabled = true;
+-- Partial unique index for priority (replaces constraint for compatibility)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gst_rules_priority_unique ON gst_rules(priority) WHERE enabled = true;
 
 -- ============================================================================
 -- 2. VENDOR TIER SYSTEM

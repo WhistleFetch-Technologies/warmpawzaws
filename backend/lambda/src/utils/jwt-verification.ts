@@ -47,6 +47,7 @@ function getJwksClient(userPoolId: string, region: string = 'ap-south-1') {
 
 /**
  * Verify Cognito JWT token with signature validation
+ * Also supports UAT mode tokens
  */
 export async function verifyCognitoToken(
   token: string,
@@ -55,6 +56,18 @@ export async function verifyCognitoToken(
   region: string = 'ap-south-1'
 ): Promise<CognitoTokenPayload | null> {
   try {
+    // Check if this is a UAT token (issued by warmpawz-uat)
+    try {
+      const { verifyUATJWTToken } = await import('./jwt-generator');
+      const uatResult = await verifyUATJWTToken(token);
+      if (uatResult.valid && uatResult.payload) {
+        console.log('[JWT] UAT token verified successfully');
+        return uatResult.payload as CognitoTokenPayload;
+      }
+    } catch (uatError) {
+      // Not a UAT token, continue with Cognito verification
+    }
+
     // Use environment variables if not provided
     userPoolId = userPoolId || process.env.COGNITO_USER_POOL_ID;
     clientId = clientId || process.env.COGNITO_CLIENT_ID;

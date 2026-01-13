@@ -1,0 +1,465 @@
+{
+  "timestamp": "2026-01-13T07:55:47.862Z",
+  "totalChecks": 65,
+  "passed": 65,
+  "failed": 0,
+  "warnings": 0,
+  "results": [
+    {
+      "category": "CONNECTION",
+      "item": "Database",
+      "status": "PASS",
+      "message": "Connected successfully - PostgreSQL 15.12",
+      "timestamp": "2026-01-13T07:55:43.757Z"
+    },
+    {
+      "category": "SCHEMA",
+      "item": "Tables",
+      "status": "PASS",
+      "message": "Found 154 tables in database",
+      "timestamp": "2026-01-13T07:55:43.798Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "customers",
+      "status": "PASS",
+      "message": "Exists with 12 rows",
+      "timestamp": "2026-01-13T07:55:43.872Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "vendors",
+      "status": "PASS",
+      "message": "Exists with 6 rows",
+      "timestamp": "2026-01-13T07:55:43.905Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "staff",
+      "status": "PASS",
+      "message": "Exists with 13 rows",
+      "timestamp": "2026-01-13T07:55:43.937Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "services",
+      "status": "PASS",
+      "message": "Exists with 22 rows",
+      "timestamp": "2026-01-13T07:55:43.969Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "bookings",
+      "status": "PASS",
+      "message": "Exists with 1 rows",
+      "timestamp": "2026-01-13T07:55:44.002Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "payments",
+      "status": "PASS",
+      "message": "Exists with 1 rows",
+      "timestamp": "2026-01-13T07:55:44.053Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "refunds",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.084Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "payouts",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.148Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "settlements",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.178Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "orders",
+      "status": "PASS",
+      "message": "Exists with 1 rows",
+      "timestamp": "2026-01-13T07:55:44.249Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "order_items",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.281Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "products",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.316Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "customer_wallets",
+      "status": "PASS",
+      "message": "Exists with 11 rows",
+      "timestamp": "2026-01-13T07:55:44.352Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "wallet_transactions",
+      "status": "PASS",
+      "message": "Exists with 1 rows",
+      "timestamp": "2026-01-13T07:55:44.387Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "roles",
+      "status": "PASS",
+      "message": "Exists with 35 rows",
+      "timestamp": "2026-01-13T07:55:44.447Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "capabilities",
+      "status": "PASS",
+      "message": "Exists with 46 rows",
+      "timestamp": "2026-01-13T07:55:44.502Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "role_capabilities",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.564Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "platform_settings",
+      "status": "PASS",
+      "message": "Exists with 3 rows",
+      "timestamp": "2026-01-13T07:55:44.610Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "gst_configs",
+      "status": "PASS",
+      "message": "Exists with 8 rows",
+      "timestamp": "2026-01-13T07:55:44.658Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "cancellation_policies",
+      "status": "PASS",
+      "message": "Exists with 4 rows",
+      "timestamp": "2026-01-13T07:55:44.723Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "promotions",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.789Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "coupons",
+      "status": "PASS",
+      "message": "Exists with 1 rows",
+      "timestamp": "2026-01-13T07:55:44.826Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "regions",
+      "status": "PASS",
+      "message": "Exists with 7 rows",
+      "timestamp": "2026-01-13T07:55:44.869Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "notifications",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:44.977Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "otp_tokens",
+      "status": "PASS",
+      "message": "Exists with 21 rows",
+      "timestamp": "2026-01-13T07:55:45.021Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "pets",
+      "status": "PASS",
+      "message": "Exists with 10 rows",
+      "timestamp": "2026-01-13T07:55:45.127Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "loyalty_rules",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.229Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "customer_loyalty_points",
+      "status": "PASS",
+      "message": "Exists with 10 rows",
+      "timestamp": "2026-01-13T07:55:45.276Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "staff_schedules",
+      "status": "PASS",
+      "message": "Exists with 65 rows",
+      "timestamp": "2026-01-13T07:55:45.312Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "staff_availability",
+      "status": "PASS",
+      "message": "Exists with 91 rows",
+      "timestamp": "2026-01-13T07:55:45.383Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "insurance_policies",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.428Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "training_sessions",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.489Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "chat_messages",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.524Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "video_call_rooms",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.604Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "service_packages",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.640Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "prescriptions",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.683Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "medical_records",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.722Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "gps_tracking",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.797Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "reviews",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.843Z"
+    },
+    {
+      "category": "TABLE",
+      "item": "audit_logs",
+      "status": "PASS",
+      "message": "Exists with 0 rows",
+      "timestamp": "2026-01-13T07:55:45.892Z"
+    },
+    {
+      "category": "CONSTRAINTS",
+      "item": "Foreign Keys",
+      "status": "PASS",
+      "message": "Found 171 foreign key constraints",
+      "timestamp": "2026-01-13T07:55:45.935Z"
+    },
+    {
+      "category": "CONSTRAINTS",
+      "item": "Unique Constraints",
+      "status": "PASS",
+      "message": "Found 79 unique constraints",
+      "timestamp": "2026-01-13T07:55:46.013Z"
+    },
+    {
+      "category": "CONSTRAINTS",
+      "item": "Check Constraints",
+      "status": "PASS",
+      "message": "Found 818 check constraints",
+      "timestamp": "2026-01-13T07:55:46.062Z"
+    },
+    {
+      "category": "PERFORMANCE",
+      "item": "Indexes",
+      "status": "PASS",
+      "message": "Found 456 indexes",
+      "timestamp": "2026-01-13T07:55:46.176Z"
+    },
+    {
+      "category": "ADMIN_CONFIG",
+      "item": "Roles",
+      "status": "PASS",
+      "message": "Found 35 roles configured",
+      "timestamp": "2026-01-13T07:55:46.293Z"
+    },
+    {
+      "category": "ADMIN_CONFIG",
+      "item": "Capabilities",
+      "status": "PASS",
+      "message": "Found 46 capabilities (expected 45+)",
+      "timestamp": "2026-01-13T07:55:46.356Z"
+    },
+    {
+      "category": "ADMIN_CONFIG",
+      "item": "Cancellation Policies",
+      "status": "PASS",
+      "message": "Found 4 policies",
+      "timestamp": "2026-01-13T07:55:46.406Z"
+    },
+    {
+      "category": "ADMIN_CONFIG",
+      "item": "GST Configuration",
+      "status": "PASS",
+      "message": "Found 8 GST configs",
+      "timestamp": "2026-01-13T07:55:46.507Z"
+    },
+    {
+      "category": "ADMIN_CONFIG",
+      "item": "Regions",
+      "status": "PASS",
+      "message": "Found 7 regions configured",
+      "timestamp": "2026-01-13T07:55:46.553Z"
+    },
+    {
+      "category": "VENDOR_DATA",
+      "item": "Vendors",
+      "status": "PASS",
+      "message": "Total: 6, Approved: 6, Active: 0, Pending: 0",
+      "timestamp": "2026-01-13T07:55:46.863Z"
+    },
+    {
+      "category": "VENDOR_DATA",
+      "item": "Staff",
+      "status": "PASS",
+      "message": "Found 13 staff members",
+      "timestamp": "2026-01-13T07:55:46.922Z"
+    },
+    {
+      "category": "VENDOR_DATA",
+      "item": "Services",
+      "status": "PASS",
+      "message": "Found 22 active services",
+      "timestamp": "2026-01-13T07:55:46.961Z"
+    },
+    {
+      "category": "CUSTOMER_DATA",
+      "item": "Customers",
+      "status": "PASS",
+      "message": "Found 12 active customers",
+      "timestamp": "2026-01-13T07:55:47.154Z"
+    },
+    {
+      "category": "CUSTOMER_DATA",
+      "item": "Pets",
+      "status": "PASS",
+      "message": "Found 10 pet profiles",
+      "timestamp": "2026-01-13T07:55:47.227Z"
+    },
+    {
+      "category": "CUSTOMER_DATA",
+      "item": "Wallets",
+      "status": "PASS",
+      "message": "Found 11 customer wallets",
+      "timestamp": "2026-01-13T07:55:47.261Z"
+    },
+    {
+      "category": "TRANSACTIONS",
+      "item": "Bookings",
+      "status": "PASS",
+      "message": "Total: 1, Confirmed: 1, Completed: 0, Cancelled: 0",
+      "timestamp": "2026-01-13T07:55:47.294Z"
+    },
+    {
+      "category": "TRANSACTIONS",
+      "item": "Payments",
+      "status": "PASS",
+      "message": "Total: 1, Amount: ₹500.00",
+      "timestamp": "2026-01-13T07:55:47.325Z"
+    },
+    {
+      "category": "TRANSACTIONS",
+      "item": "Refunds",
+      "status": "PASS",
+      "message": "Total: 0, Refunded: ₹0.00",
+      "timestamp": "2026-01-13T07:55:47.358Z"
+    },
+    {
+      "category": "TRANSACTIONS",
+      "item": "Orders",
+      "status": "PASS",
+      "message": "Found 1 e-commerce orders",
+      "timestamp": "2026-01-13T07:55:47.391Z"
+    },
+    {
+      "category": "API",
+      "item": "Health Check",
+      "status": "PASS",
+      "message": "API is healthy (status: 200)",
+      "timestamp": "2026-01-13T07:55:47.630Z"
+    },
+    {
+      "category": "COMPLIANCE",
+      "item": "Audit Logs",
+      "status": "PASS",
+      "message": "Audit table exists with 0 entries",
+      "timestamp": "2026-01-13T07:55:47.740Z"
+    },
+    {
+      "category": "COMPLIANCE",
+      "item": "Timestamp Tracking",
+      "status": "PASS",
+      "message": "141 tables have created_at column",
+      "timestamp": "2026-01-13T07:55:47.830Z"
+    },
+    {
+      "category": "COMPLIANCE",
+      "item": "Settlement Records",
+      "status": "PASS",
+      "message": "Found 0 settlement records",
+      "timestamp": "2026-01-13T07:55:47.861Z"
+    }
+  ],
+  "issues": []
+}

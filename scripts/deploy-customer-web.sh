@@ -28,9 +28,12 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Get project root directory
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 # Step 1: Build the app
 echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
-cd "$(dirname "$0")/.."
 cd "apps/${APP_NAME}"
 npm run build
 
@@ -43,7 +46,7 @@ echo -e "${GREEN}✅ Build completed successfully${NC}"
 
 # Step 1.5: Inject runtime-config.js
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
-cd "$(dirname "$0")/../.."
+cd "$PROJECT_ROOT"
 
 # Get API Gateway endpoint
 API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \

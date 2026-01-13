@@ -47,7 +47,6 @@ import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
 	AdvancedPromotionsEngine,
-	BannerAdmin,
 } from "@/components/admin/marketing";
 
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
@@ -58,7 +57,6 @@ export default function MarketingPromotionsTab() {
 		| "ui-config"
 		| "spotlight"
 		| "coupons"
-		| "banners"
 		| "advanced"
 	>("promotions");
 	const [loading, setLoading] = useState(false);
@@ -416,17 +414,6 @@ export default function MarketingPromotionsTab() {
 								<span className="font-medium">Coupons</span>
 							</button>
 							<button
-								onClick={() => setActiveTab("banners")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
-									activeTab === "banners"
-										? "border-[#FF8C42] text-[#FF8C42]"
-										: "border-transparent text-gray-600 hover:text-gray-900"
-								}`}
-							>
-								<ImageIcon className="w-5 h-5" />
-								<span className="font-medium">Banners</span>
-							</button>
-							<button
 								onClick={() => setActiveTab("advanced")}
 								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
 									activeTab === "advanced"
@@ -752,9 +739,6 @@ export default function MarketingPromotionsTab() {
 
 						{/* COUPONS TAB */}
 						{activeTab === "coupons" && <CouponManagement />}
-
-						{/* BANNERS TAB */}
-						{activeTab === "banners" && <BannerAdmin />}
 
 						{/* ADVANCED TAB */}
 						{activeTab === "advanced" && <AdvancedPromotionsEngine />}

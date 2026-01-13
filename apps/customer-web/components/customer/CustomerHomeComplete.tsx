@@ -557,7 +557,7 @@ export function CustomerHomeComplete({
               onNavigate?.('services_by_problem', { 
                 problemId, 
                 problemTitle: problem?.title || (problem as any)?.name || 'Service',
-                roleId: problem?.roleId || (problem as any)?.vendorType
+                roleId: (problem as any)?.roleId || (problem as any)?.vendorType
               });
             }}
             showTrending={true}

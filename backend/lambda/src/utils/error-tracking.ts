@@ -307,11 +307,10 @@ export function addBreadcrumb(
 ): void {
   // Log to CloudWatch
   console.log(JSON.stringify({
-    level: 'INFO',
+    level: level.toUpperCase() as 'INFO' | 'WARNING' | 'ERROR',
     type: 'breadcrumb',
     message,
     category,
-    level,
     data,
     timestamp: new Date().toISOString(),
     environment: process.env.ENVIRONMENT || 'development',

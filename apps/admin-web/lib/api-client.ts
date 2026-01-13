@@ -194,20 +194,55 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      let error: any;
+      let error: any = {};
+      let errorText = '';
+      
       try {
-        error = await response.json();
-      } catch {
-        // If response is not JSON, create error from status
+        // Try to get response text first
+        errorText = await response.text();
+        
+        // Try to parse as JSON
+        if (errorText) {
+          try {
+            error = JSON.parse(errorText);
+          } catch {
+            // Not JSON, use as string
+            error = { error: errorText || `HTTP ${response.status}: ${response.statusText}` };
+          }
+        } else {
+          error = { 
+            error: `HTTP ${response.status}: ${response.statusText}`,
+            message: `Request failed with status ${response.status}`
+          };
+        }
+      } catch (parseError) {
+        // If all parsing fails, create safe error
         error = { 
           error: `HTTP ${response.status}: ${response.statusText}`,
           message: `Request failed with status ${response.status}`
         };
       }
       
+      // Safely extract error message - prevent "[object Object]" errors
+      const getErrorMessage = (err: any): string => {
+        if (typeof err === 'string') return err;
+        if (err?.error && typeof err.error === 'string') return err.error;
+        if (err?.message && typeof err.message === 'string') return err.message;
+        if (err && typeof err === 'object') {
+          try {
+            const str = JSON.stringify(err);
+            return str.length > 200 ? str.substring(0, 200) + '...' : str;
+          } catch {
+            return `HTTP ${response.status}: ${response.statusText}`;
+          }
+        }
+        return `HTTP ${response.status}: ${response.statusText}`;
+      };
+      
+      const errorMsg = getErrorMessage(error);
+      
       // Handle 404: Endpoint not found - provide helpful error message
       if (response.status === 404) {
-        const errorMsg = error.error || error.message || `Endpoint not found: ${endpoint}`;
         if (UAT_MODE && typeof window !== 'undefined') {
           console.error(`❌ [API Client] 404 Error for ${endpoint}:`, errorMsg);
           console.error('   Full URL:', url);
@@ -236,7 +271,7 @@ export class ApiClient {
         }, retryAfter);
         
         throw new RateLimitError(
-          error.error || error.message || 'Too many requests. Please wait before retrying.',
+          errorMsg,
           retryAfter,
           endpoint
         );
@@ -258,7 +293,6 @@ export class ApiClient {
       
       // Handle 500: Server error
       if (response.status >= 500) {
-        const errorMsg = error.error || error.message || `Server error: ${response.status}`;
         if (UAT_MODE && typeof window !== 'undefined') {
           console.error(`❌ [API Client] Server error for ${endpoint}:`, errorMsg);
         }
@@ -266,7 +300,6 @@ export class ApiClient {
       }
       
       // Generic error for other status codes
-      const errorMsg = error.error || error.message || `HTTP ${response.status}: ${response.statusText}`;
       throw new Error(errorMsg);
     }
 

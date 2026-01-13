@@ -203,7 +203,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
 
   const [availableStaff, setAvailableStaff] = useState<any[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>('');
-  const [commuteInfo, setCommuteInfo] = useState<{ time: number; distance: number; arrival: string } | null>(null);
+  const [commuteInfo, setCommuteInfo] = useState<{ time: number; distance: number; arrival: string; bufferTime?: number; totalTime?: number } | null>(null);
 
   const loadTimeSlots = async () => {
     try {
@@ -261,7 +261,9 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             setCommuteInfo({
               time: staffRes.staff[0].commuteTime,
               distance: staffRes.staff[0].distance || 0,
-              arrival: staffRes.staff[0].estimatedArrival || '',
+              arrival: staffRes.staff[0].estimatedArrivalWithBuffer || staffRes.staff[0].estimatedArrival || '',
+              bufferTime: staffRes.staff[0].bufferTime || 0,
+              totalTime: staffRes.staff[0].totalTime || staffRes.staff[0].commuteTime,
             });
           }
         }
@@ -555,7 +557,9 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                             setCommuteInfo({
                               time: staff.commuteTime || 0,
                               distance: staff.distance || 0,
-                              arrival: staff.estimatedArrival || '',
+                              arrival: staff.estimatedArrivalWithBuffer || staff.estimatedArrival || '',
+                              bufferTime: staff.bufferTime || 0,
+                              totalTime: staff.totalTime || staff.commuteTime || 0,
                             });
                           }}
                           className={`w-full text-left p-0 rounded-lg border-2 transition ${
@@ -588,10 +592,11 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                     {commuteInfo && selectedStaff && (
                       <div className="mt-0 p-0 bg-white rounded border border-orange-200">
                         <p className="text-sm text-gray-700">
-                          <span className="font-medium">Staff will arrive at:</span> {commuteInfo.arrival || 'Calculating...'}
+                          <span className="font-medium">Staff will arrive at:</span> {commuteInfo.arrival ? new Date(commuteInfo.arrival).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Calculating...'}
                         </p>
                         <p className="text-xs text-gray-500 mt-0">
-                          Includes {commuteInfo.time} min commute time
+                          {commuteInfo.totalTime ? `${commuteInfo.totalTime} min total` : `${commuteInfo.time} min commute`}
+                          {commuteInfo.bufferTime && commuteInfo.bufferTime > 0 && ` (${commuteInfo.time} min commute + ${commuteInfo.bufferTime} min buffer)`}
                         </p>
                       </div>
                     )}

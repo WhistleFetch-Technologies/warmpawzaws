@@ -124,26 +124,35 @@ class CalculateRefundPolicyHandler extends BaseHandler {
     partialRefundPercentage: number;
     cancellationCutoffHours: number;
   }> {
-    // Try to get vendor-specific or service-specific rules
-    let rulesResult = await query(
-      `SELECT * FROM booking_cancellation_rules
-       WHERE (vendor_id = $1 OR vendor_id IS NULL)
-         AND (service_id = $2 OR service_id IS NULL)
-       ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-       LIMIT 1`,
-      [vendorId || null, serviceId || null]
-    );
+    try {
+      // Try to get vendor-specific or service-specific rules
+      let rulesResult = await query(
+        `SELECT * FROM booking_cancellation_rules
+         WHERE (vendor_id = $1 OR vendor_id IS NULL)
+           AND (service_id = $2 OR service_id IS NULL)
+         ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+         LIMIT 1`,
+        [vendorId || null, serviceId || null]
+      );
 
-    const rows = Array.isArray(rulesResult) ? rulesResult : (rulesResult as any).rows || [];
+      const rows = Array.isArray(rulesResult) ? rulesResult : (rulesResult as any).rows || [];
 
-    if (rows.length > 0) {
-      const rule = rows[0];
-      return {
-        fullRefundBeforeHours: rule.full_refund_before_hours || 48,
-        partialRefundBeforeHours: rule.partial_refund_before_hours || 24,
-        partialRefundPercentage: parseFloat(rule.partial_refund_percentage || '50'),
-        cancellationCutoffHours: rule.cancellation_cutoff_hours || 12,
-      };
+      if (rows.length > 0) {
+        const rule = rows[0];
+        return {
+          fullRefundBeforeHours: rule.full_refund_before_hours || 48,
+          partialRefundBeforeHours: rule.partial_refund_before_hours || 24,
+          partialRefundPercentage: parseFloat(rule.partial_refund_percentage || '50'),
+          cancellationCutoffHours: rule.cancellation_cutoff_hours || 12,
+        };
+      }
+    } catch (error: any) {
+      // If table doesn't exist, use defaults
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        console.warn('[RefundPolicy] booking_cancellation_rules table not found, using defaults');
+      } else {
+        throw error;
+      }
     }
 
     // Default rules
@@ -162,31 +171,43 @@ class CalculateRefundPolicyHandler extends BaseHandler {
 
 class GetRefundRulesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.queryStringParameters?.vendorId;
-    const serviceId = context.event.queryStringParameters?.serviceId;
+    try {
+      const vendorId = context.event.queryStringParameters?.vendorId;
+      const serviceId = context.event.queryStringParameters?.serviceId;
 
-    let queryStr = 'SELECT * FROM booking_cancellation_rules WHERE 1=1';
-    const params: any[] = [];
-    let paramIndex = 1;
+      let queryStr = 'SELECT * FROM booking_cancellation_rules WHERE 1=1';
+      const params: any[] = [];
+      let paramIndex = 1;
 
-    if (vendorId) {
-      queryStr += ` AND (vendor_id = $${paramIndex} OR vendor_id IS NULL)`;
-      params.push(vendorId);
-      paramIndex++;
+      if (vendorId) {
+        queryStr += ` AND (vendor_id = $${paramIndex} OR vendor_id IS NULL)`;
+        params.push(vendorId);
+        paramIndex++;
+      }
+
+      if (serviceId) {
+        queryStr += ` AND (service_id = $${paramIndex} OR service_id IS NULL)`;
+        params.push(serviceId);
+        paramIndex++;
+      }
+
+      queryStr += ' ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST';
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return this.success({ rules: rows });
+    } catch (error: any) {
+      // Handle case where table doesn't exist
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        console.warn('[RefundRules] booking_cancellation_rules table not found, returning empty rules');
+        return this.success({ 
+          rules: [],
+          message: 'Refund rules table not found. Please run migration 060_create_refund_rules_tables.sql'
+        });
+      }
+      throw error;
     }
-
-    if (serviceId) {
-      queryStr += ` AND (service_id = $${paramIndex} OR service_id IS NULL)`;
-      params.push(serviceId);
-      paramIndex++;
-    }
-
-    queryStr += ' ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST';
-
-    const result = await query(queryStr, params);
-    const rows = Array.isArray(result) ? result : (result as any).rows || [];
-
-    return this.success({ rules: rows });
   }
 }
 
@@ -275,10 +296,30 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
 
   // Calculate refund policy for a booking
   app.post('/refund-policy/calculate', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await calculateHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      // Parse body from Hono request
+      const body = await c.req.json().catch(() => ({}));
+      
+      // Create API Gateway event with parsed body
+      const event: any = {
+        httpMethod: 'POST',
+        path: c.req.path,
+        headers: Object.fromEntries(c.req.raw.headers),
+        body: JSON.stringify(body),
+        pathParameters: {},
+        queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
+        requestContext: {
+          requestId: crypto.randomUUID(),
+        },
+      };
+      
+      const context = createLambdaContext();
+      const result = await calculateHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in refund policy calculate:', error);
+      return c.json({ error: error.message }, 500);
+    }
   });
 
   // Admin: Get refund rules

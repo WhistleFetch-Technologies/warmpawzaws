@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { LoadingState } from '@/components/ui/states';
 import { Calendar as CalendarIcon, Clock } from 'lucide-react';
-import { bookingsApi } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface RescheduleBookingModalProps {
@@ -40,15 +40,35 @@ export function RescheduleBookingModal({
   const loadAvailableSlots = async (date: string) => {
     try {
       setLoadingSlots(true);
-      // TODO: Get available slots from vendor schedule API
-      // For now, generate default time slots
+      
+      // Get booking to get vendor ID
+      const bookingResponse = await apiClient.get(`/bookings/${bookingId}`) as any;
+      const booking = bookingResponse.booking || bookingResponse;
+      if (!booking?.vendor_id) {
+        throw new Error('Booking vendor not found');
+      }
+
+      // Get available slots from vendor schedule API
+      const params = new URLSearchParams({
+        vendorId: booking.vendor_id,
+        date: date,
+      });
+
+      const response = await apiClient.get(`/bookings/available-slots?${params.toString()}`);
+      const slots = (response as any).slots || [];
+      
+      setAvailableSlots(slots.map((slot: any) => ({
+        time: slot.time || slot,
+        available: slot.available !== false,
+      })));
+    } catch (error) {
+      console.error('Error loading slots:', error);
+      // Fallback to default slots
       const defaultSlots = [
         '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
       ].map(time => ({ time, available: true }));
       setAvailableSlots(defaultSlots);
-    } catch (error) {
-      console.error('Error loading slots:', error);
-      toast.error('Failed to load available slots');
+      toast.error('Failed to load available slots, showing default times');
     } finally {
       setLoadingSlots(false);
     }
@@ -63,7 +83,7 @@ export function RescheduleBookingModal({
     try {
       setLoading(true);
 
-      const result = await bookingsApi.reschedule(bookingId, {
+      const result = await apiClient.post(`/bookings/${bookingId}/reschedule`, {
         newDate: selectedDate.toISOString().split('T')[0],
         newTime: selectedSlot,
         reason,

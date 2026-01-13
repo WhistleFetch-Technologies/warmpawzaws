@@ -185,7 +185,79 @@ class VendorStatsHandler extends BaseHandler {
 export function registerVendorDashboardEndpoints(app: Hono) {
   const dashboardHandler = new VendorDashboardHandler();
   const statsHandler = new VendorStatsHandler();
-
+  
+  // ============================================================================
+  // CONVENIENCE ROUTES (auth-context based)
+  // ============================================================================
+  
+  /**
+   * GET /vendor/dashboard
+   * Get dashboard for authenticated vendor (no ID required)
+   */
+  app.get('/vendor/dashboard', async (c) => {
+    const vendorId = c.req.header('X-Vendor-Id') || c.get('vendorId') || c.get('userId');
+    
+    if (!vendorId) {
+      return c.json({ error: 'Vendor authentication required' }, 401);
+    }
+    
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId };
+    const context = createLambdaContext();
+    const result = await dashboardHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  
+  /**
+   * GET /vendor/services
+   * Get services for authenticated vendor
+   */
+  app.get('/vendor/services', async (c) => {
+    const vendorId = c.req.header('X-Vendor-Id') || c.get('vendorId') || c.get('userId');
+    
+    if (!vendorId) {
+      return c.json({ error: 'Vendor authentication required' }, 401);
+    }
+    
+    try {
+      const services = await select('services', { vendor_id: vendorId });
+      return c.json({
+        success: true,
+        count: services.length,
+        services: services,
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  
+  /**
+   * GET /vendor/staff
+   * Get staff for authenticated vendor
+   */
+  app.get('/vendor/staff', async (c) => {
+    const vendorId = c.req.header('X-Vendor-Id') || c.get('vendorId') || c.get('userId');
+    
+    if (!vendorId) {
+      return c.json({ error: 'Vendor authentication required' }, 401);
+    }
+    
+    try {
+      const staff = await select('staff', { vendor_id: vendorId, is_active: true });
+      return c.json({
+        success: true,
+        count: staff.length,
+        staff: staff,
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  
+  // ============================================================================
+  // ORIGINAL ROUTES (with explicit vendorId)
+  // ============================================================================
+  
   app.get('/vendor/dashboard/:vendorId', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { vendorId: c.req.param('vendorId') };

@@ -230,6 +230,10 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         localStorage.setItem('vendorUser', JSON.stringify(user));
       }
       
+      // Set sessionStorage flag to track that user is logged in
+      // This flag is cleared on hard refresh, allowing us to detect it
+      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      
       // Fetch vendor onboarding status to get vendor profile
       try {
         console.log('📊 [VendorAuth] Fetching vendor status...');

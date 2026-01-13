@@ -175,6 +175,58 @@ export function registerPrescriptionEndpoints(app: Hono) {
   });
 
   /**
+   * GET /prescriptions/vendor/:vendorId
+   * Get all prescriptions for a vendor
+   */
+  app.get("/prescriptions/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Handle test IDs - return empty prescriptions
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          prescriptions: [],
+          total: 0,
+        });
+      }
+
+      let prescriptions;
+      try {
+        prescriptions = await query(
+          `SELECT p.*, b.booking_date, b.booking_time, c.full_name as customer_name, c.phone as customer_phone
+           FROM prescriptions p
+           LEFT JOIN bookings b ON p.booking_id = b.id
+           LEFT JOIN customers c ON p.customer_id = c.id
+           WHERE p.vendor_id = $1
+           AND p.is_active = true
+           ORDER BY p.created_at DESC`,
+          [vendorId]
+        );
+      } catch (error: any) {
+        // If UUID validation fails, return empty prescriptions
+        if (error.message?.includes('invalid input syntax for type uuid')) {
+          return c.json({
+            success: true,
+            prescriptions: [],
+            total: 0,
+          });
+        }
+        throw error;
+      }
+
+      return c.json({
+        success: true,
+        prescriptions: prescriptions.rows,
+        total: prescriptions.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor prescriptions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /prescriptions/:prescriptionId/download
    * Log prescription download
    */

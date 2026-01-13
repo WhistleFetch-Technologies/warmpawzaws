@@ -273,12 +273,25 @@ class DeleteLoyaltyActionRuleHandler extends BaseHandler {
 // ============================================================================
 
 function createApiGatewayEvent(req: any): any {
+  const headers: Record<string, string> = {};
+  if (req.headers && req.headers.entries) {
+    try {
+      Object.assign(headers, Object.fromEntries(req.headers.entries()));
+    } catch (e) {
+      // Fallback if entries() fails
+      if (req.headers) {
+        Object.keys(req.headers).forEach(key => {
+          headers[key] = req.headers[key];
+        });
+      }
+    }
+  }
   return {
     httpMethod: req.method,
-    path: req.url.split('?')[0],
+    path: req.url ? req.url.split('?')[0] : '',
     pathParameters: {},
     queryStringParameters: {},
-    headers: Object.fromEntries(req.headers.entries()),
+    headers,
     body: JSON.stringify(req.body || {}),
     isBase64Encoded: false,
   };
@@ -306,7 +319,13 @@ export function registerLoyaltyActionRulesManagementEndpoints(app: Hono) {
   // Loyalty Action Rules CRUD
   app.get('/admin/loyalty-action-rules', async (c) => {
     const event = createApiGatewayEvent(c.req);
-    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+    try {
+      // Use Hono's query() method which is more reliable
+      const query = c.req.query();
+      event.queryStringParameters = query ? Object.fromEntries(Object.entries(query)) : {};
+    } catch (e) {
+      event.queryStringParameters = {};
+    }
     const context = createLambdaContext();
     const result = await getRulesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
