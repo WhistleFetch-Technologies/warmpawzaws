@@ -107,7 +107,7 @@ export default function MarketingPromotionsTab() {
 		}
 	}, [activeTab]);
 
-	// Reload config when role changes (but not on initial load if roles aren't loaded yet)
+	// Reload config when role changes or tab is opened
 	useEffect(() => {
 		if (activeTab === "ui-config" && selectedRole) {
 			loadUiConfig();

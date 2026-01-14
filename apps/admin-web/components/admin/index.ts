@@ -17,6 +17,7 @@ export { ClarificationRequestedTab } from './ClarificationRequestedTab';
 export { RejectVendorModal } from './RejectVendorModal';
 export { RequestInfoModal } from './RequestInfoModal';
 export { AddVendorModal } from './AddVendorModal';
+export { QualityAlertsPanel } from './QualityAlertsPanel';
 
 // Analytics Components
 export * from './analytics';

@@ -16,6 +16,7 @@ import { ComplianceIssuesTab } from './ComplianceIssuesTab';
 import { EnhancedPendingApplicationsTab } from './EnhancedPendingApplicationsTab';
 import { ActiveVendorsTab } from './ActiveVendorsTab';
 import { AddVendorModal } from './AddVendorModal';
+import { QualityAlertsPanel } from './QualityAlertsPanel';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
 
 interface VendorStats {
@@ -45,7 +46,8 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       setLoading(true);
       
       const statsData = await apiClient.get<any>('/admin/vendors/stats');
-      setStats(statsData.stats);
+      // The API response shape varies across handlers; be defensive:
+      setStats(statsData.stats ?? statsData.data ?? statsData);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -112,7 +114,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
         {/* Stats Cards */}
         {stats && (
           <div className="px-0 py-4">
-            <div className="grid grid-cols-4 gap-4 mb-0">
+            <div className="grid grid-cols-4 gap-4 mb-4">
               <Card className="p-4 border-green-200 bg-green-50/50">
                 <div className="flex items-start justify-between mb-0">
                   <div className="p-0 bg-green-100 rounded-lg">
@@ -164,6 +166,17 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
                   <p className="text-xs text-gray-500 mt-0">{stats.supportTickets.open} open</p>
                 </div>
               </Card>
+            </div>
+
+            {/* Quality Alerts Panel - Attention Queue */}
+            <div className="mb-4">
+              <QualityAlertsPanel 
+                onViewVendor={(vendorId) => {
+                  setActiveTab('active-vendors');
+                  // TODO: Scroll to or highlight vendor in active vendors tab
+                }}
+                maxAlerts={5}
+              />
             </div>
           </div>
         )}

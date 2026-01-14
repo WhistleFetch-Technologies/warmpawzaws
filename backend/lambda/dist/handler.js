@@ -2480,15 +2480,15 @@ var require_url = __commonJS({
       if (!match2) {
         return {};
       }
-      const query11 = match2[6] || "";
+      const query12 = match2[6] || "";
       const fragment = match2[8] || "";
       return {
         host: match2[4],
         path: match2[5],
         protocol: match2[2],
-        search: query11,
+        search: query12,
         hash: fragment,
-        relative: match2[5] + query11 + fragment
+        relative: match2[5] + query12 + fragment
         // everything minus origin
       };
     }
@@ -11048,11 +11048,11 @@ var require_mysql = __commonJS({
                 values(err, result, fields);
               });
             }
-            const query11 = orig.call(this, options, values);
-            query11.on("end", () => {
+            const query12 = orig.call(this, options, values);
+            query12.on("end", () => {
               finishSpan(span);
             });
-            return query11;
+            return query12;
           };
         });
       }
@@ -26180,10 +26180,10 @@ var require_http4 = __commonJS({
        * @return [String] the query string portion of the {path}
        */
       search: function search() {
-        var query11 = this.path.split("?", 2)[1];
-        if (query11) {
-          query11 = AWS.util.queryStringParse(query11);
-          return AWS.util.queryParamsToString(query11);
+        var query12 = this.path.split("?", 2)[1];
+        if (query12) {
+          query12 = AWS.util.queryStringParse(query12);
+          return AWS.util.queryParamsToString(query12);
         }
         return "";
       },
@@ -104864,23 +104864,23 @@ var require_serializer = __commonJS({
         /* code.startup */
       );
     };
-    var query11 = (text) => {
+    var query12 = (text) => {
       return writer.addCString(text).flush(
         81
         /* code.query */
       );
     };
     var emptyArray = [];
-    var parse5 = (query12) => {
-      const name = query12.name || "";
+    var parse5 = (query13) => {
+      const name = query13.name || "";
       if (name.length > 63) {
         console.error("Warning! Postgres only supports 63 characters for query names.");
         console.error("You supplied %s (%s)", name, name.length);
         console.error("This can cause conflicts and silent errors executing queries");
       }
-      const types5 = query12.types || emptyArray;
+      const types5 = query13.types || emptyArray;
       const len = types5.length;
-      const buffer = writer.addCString(name).addCString(query12.text).addInt16(len);
+      const buffer = writer.addCString(name).addCString(query13.text).addInt16(len);
       for (let i = 0; i < len; i++) {
         buffer.addInt32(types5[i]);
       }
@@ -105020,7 +105020,7 @@ var require_serializer = __commonJS({
       requestSsl,
       sendSASLInitialResponseMessage,
       sendSCRAMClientFinalMessage,
-      query: query11,
+      query: query12,
       parse: parse5,
       bind,
       execute,
@@ -105618,8 +105618,8 @@ var require_connection = __commonJS({
         this._send(serialize.query(text));
       }
       // send parse message
-      parse(query11) {
-        this._send(serialize.parse(query11));
+      parse(query12) {
+        this._send(serialize.parse(query12));
       }
       // send bind message
       bind(config) {
@@ -106025,9 +106025,9 @@ var require_client3 = __commonJS({
         this._connectionTimeoutMillis = c.connectionTimeoutMillis || 0;
       }
       _errorAllQueries(err) {
-        const enqueueError = (query11) => {
+        const enqueueError = (query12) => {
           process.nextTick(() => {
-            query11.handleError(err, this.connection);
+            query12.handleError(err, this.connection);
           });
         };
         if (this.activeQuery) {
@@ -106341,8 +106341,8 @@ var require_client3 = __commonJS({
         }
         return data;
       }
-      cancel(client2, query11) {
-        if (client2.activeQuery === query11) {
+      cancel(client2, query12) {
+        if (client2.activeQuery === query12) {
           const con = this.connection;
           if (this.host && this.host.indexOf("/") === 0) {
             con.connect(this.host + "/.s.PGSQL." + this.port);
@@ -106352,8 +106352,8 @@ var require_client3 = __commonJS({
           con.on("connect", function() {
             con.cancel(client2.processID, client2.secretKey);
           });
-        } else if (client2.queryQueue.indexOf(query11) !== -1) {
-          client2.queryQueue.splice(client2.queryQueue.indexOf(query11), 1);
+        } else if (client2.queryQueue.indexOf(query12) !== -1) {
+          client2.queryQueue.splice(client2.queryQueue.indexOf(query12), 1);
         }
       }
       setTypeParser(oid, format, parseFn) {
@@ -106392,7 +106392,7 @@ var require_client3 = __commonJS({
         }
       }
       query(config, values, callback) {
-        let query11;
+        let query12;
         let result;
         let readTimeout;
         let readTimeoutTimer;
@@ -106401,16 +106401,16 @@ var require_client3 = __commonJS({
           throw new TypeError("Client was passed a null or undefined query");
         } else if (typeof config.submit === "function") {
           readTimeout = config.query_timeout || this.connectionParameters.query_timeout;
-          result = query11 = config;
+          result = query12 = config;
           if (typeof values === "function") {
-            query11.callback = query11.callback || values;
+            query12.callback = query12.callback || values;
           }
         } else {
           readTimeout = config.query_timeout || this.connectionParameters.query_timeout;
-          query11 = new Query2(config, values, callback);
-          if (!query11.callback) {
+          query12 = new Query2(config, values, callback);
+          if (!query12.callback) {
             result = new this._Promise((resolve, reject) => {
-              query11.callback = (err, res) => err ? reject(err) : resolve(res);
+              query12.callback = (err, res) => err ? reject(err) : resolve(res);
             }).catch((err) => {
               Error.captureStackTrace(err);
               throw err;
@@ -106418,45 +106418,45 @@ var require_client3 = __commonJS({
           }
         }
         if (readTimeout) {
-          queryCallback = query11.callback;
+          queryCallback = query12.callback;
           readTimeoutTimer = setTimeout(() => {
             const error = new Error("Query read timeout");
             process.nextTick(() => {
-              query11.handleError(error, this.connection);
+              query12.handleError(error, this.connection);
             });
             queryCallback(error);
-            query11.callback = () => {
+            query12.callback = () => {
             };
-            const index = this.queryQueue.indexOf(query11);
+            const index = this.queryQueue.indexOf(query12);
             if (index > -1) {
               this.queryQueue.splice(index, 1);
             }
             this._pulseQueryQueue();
           }, readTimeout);
-          query11.callback = (err, res) => {
+          query12.callback = (err, res) => {
             clearTimeout(readTimeoutTimer);
             queryCallback(err, res);
           };
         }
-        if (this.binary && !query11.binary) {
-          query11.binary = true;
+        if (this.binary && !query12.binary) {
+          query12.binary = true;
         }
-        if (query11._result && !query11._result._types) {
-          query11._result._types = this._types;
+        if (query12._result && !query12._result._types) {
+          query12._result._types = this._types;
         }
         if (!this._queryable) {
           process.nextTick(() => {
-            query11.handleError(new Error("Client has encountered a connection error and is not queryable"), this.connection);
+            query12.handleError(new Error("Client has encountered a connection error and is not queryable"), this.connection);
           });
           return result;
         }
         if (this._ending) {
           process.nextTick(() => {
-            query11.handleError(new Error("Client was closed and is not queryable"), this.connection);
+            query12.handleError(new Error("Client was closed and is not queryable"), this.connection);
           });
           return result;
         }
-        this.queryQueue.push(query11);
+        this.queryQueue.push(query12);
         this._pulseQueryQueue();
         return result;
       }
@@ -107071,10 +107071,10 @@ var require_client4 = __commonJS({
     Client3.Query = NativeQuery;
     util3.inherits(Client3, EventEmitter);
     Client3.prototype._errorAllQueries = function(err) {
-      const enqueueError = (query11) => {
+      const enqueueError = (query12) => {
         process.nextTick(() => {
-          query11.native = this.native;
-          query11.handleError(err);
+          query12.native = this.native;
+          query12.handleError(err);
         });
       };
       if (this._hasActiveQuery()) {
@@ -107133,7 +107133,7 @@ var require_client4 = __commonJS({
       });
     };
     Client3.prototype.query = function(config, values, callback) {
-      let query11;
+      let query12;
       let result;
       let readTimeout;
       let readTimeoutTimer;
@@ -107142,14 +107142,14 @@ var require_client4 = __commonJS({
         throw new TypeError("Client was passed a null or undefined query");
       } else if (typeof config.submit === "function") {
         readTimeout = config.query_timeout || this.connectionParameters.query_timeout;
-        result = query11 = config;
+        result = query12 = config;
         if (typeof values === "function") {
           config.callback = values;
         }
       } else {
         readTimeout = config.query_timeout || this.connectionParameters.query_timeout;
-        query11 = new NativeQuery(config, values, callback);
-        if (!query11.callback) {
+        query12 = new NativeQuery(config, values, callback);
+        if (!query12.callback) {
           let resolveOut, rejectOut;
           result = new this._Promise((resolve, reject) => {
             resolveOut = resolve;
@@ -107158,45 +107158,45 @@ var require_client4 = __commonJS({
             Error.captureStackTrace(err);
             throw err;
           });
-          query11.callback = (err, res) => err ? rejectOut(err) : resolveOut(res);
+          query12.callback = (err, res) => err ? rejectOut(err) : resolveOut(res);
         }
       }
       if (readTimeout) {
-        queryCallback = query11.callback;
+        queryCallback = query12.callback;
         readTimeoutTimer = setTimeout(() => {
           const error = new Error("Query read timeout");
           process.nextTick(() => {
-            query11.handleError(error, this.connection);
+            query12.handleError(error, this.connection);
           });
           queryCallback(error);
-          query11.callback = () => {
+          query12.callback = () => {
           };
-          const index = this._queryQueue.indexOf(query11);
+          const index = this._queryQueue.indexOf(query12);
           if (index > -1) {
             this._queryQueue.splice(index, 1);
           }
           this._pulseQueryQueue();
         }, readTimeout);
-        query11.callback = (err, res) => {
+        query12.callback = (err, res) => {
           clearTimeout(readTimeoutTimer);
           queryCallback(err, res);
         };
       }
       if (!this._queryable) {
-        query11.native = this.native;
+        query12.native = this.native;
         process.nextTick(() => {
-          query11.handleError(new Error("Client has encountered a connection error and is not queryable"));
+          query12.handleError(new Error("Client has encountered a connection error and is not queryable"));
         });
         return result;
       }
       if (this._ending) {
-        query11.native = this.native;
+        query12.native = this.native;
         process.nextTick(() => {
-          query11.handleError(new Error("Client was closed and is not queryable"));
+          query12.handleError(new Error("Client was closed and is not queryable"));
         });
         return result;
       }
-      this._queryQueue.push(query11);
+      this._queryQueue.push(query12);
       this._pulseQueryQueue();
       return result;
     };
@@ -107231,26 +107231,26 @@ var require_client4 = __commonJS({
       if (this._hasActiveQuery()) {
         return;
       }
-      const query11 = this._queryQueue.shift();
-      if (!query11) {
+      const query12 = this._queryQueue.shift();
+      if (!query12) {
         if (!initialConnection) {
           this.emit("drain");
         }
         return;
       }
-      this._activeQuery = query11;
-      query11.submit(this);
+      this._activeQuery = query12;
+      query12.submit(this);
       const self2 = this;
-      query11.once("_done", function() {
+      query12.once("_done", function() {
         self2._pulseQueryQueue();
       });
     };
-    Client3.prototype.cancel = function(query11) {
-      if (this._activeQuery === query11) {
+    Client3.prototype.cancel = function(query12) {
+      if (this._activeQuery === query12) {
         this.native.cancel(function() {
         });
-      } else if (this._queryQueue.indexOf(query11) !== -1) {
-        this._queryQueue.splice(this._queryQueue.indexOf(query11), 1);
+      } else if (this._queryQueue.indexOf(query12) !== -1) {
+        this._queryQueue.splice(this._queryQueue.indexOf(query12), 1);
       }
     };
     Client3.prototype.ref = function() {
@@ -119051,7 +119051,7 @@ async function searchStaff(options) {
     throw error;
   }
 }
-async function autocomplete(query11, indexName = INDEXES.SERVICES, size = 10) {
+async function autocomplete(query12, indexName = INDEXES.SERVICES, size = 10) {
   const client2 = getOpenSearchClient();
   try {
     const response = await client2.search({
@@ -119063,14 +119063,14 @@ async function autocomplete(query11, indexName = INDEXES.SERVICES, size = 10) {
               {
                 match_phrase_prefix: {
                   name: {
-                    query: query11,
+                    query: query12,
                     max_expansions: 10
                   }
                 }
               },
               {
                 match: {
-                  tags: query11
+                  tags: query12
                 }
               }
             ]
@@ -143786,21 +143786,21 @@ var require_log = __commonJS({
     var levelHandlers;
     var f;
     if (sConsoleLogger !== null && typeof window !== "undefined" && window.location) {
-      query11 = new URL(window.location.href).searchParams;
-      if (query11.has("console.level")) {
+      query12 = new URL(window.location.href).searchParams;
+      if (query12.has("console.level")) {
         forge.log.setLevel(
           sConsoleLogger,
-          query11.get("console.level").slice(-1)[0]
+          query12.get("console.level").slice(-1)[0]
         );
       }
-      if (query11.has("console.lock")) {
-        lock = query11.get("console.lock").slice(-1)[0];
+      if (query12.has("console.lock")) {
+        lock = query12.get("console.lock").slice(-1)[0];
         if (lock == "true") {
           forge.log.lock(sConsoleLogger);
         }
       }
     }
-    var query11;
+    var query12;
     var lock;
     forge.log.consoleLogger = sConsoleLogger;
   }
@@ -164168,7 +164168,7 @@ var require_index_standalone = __commonJS({
     var isWindowsStoreApp = function() {
       return typeof Windows === "object" && typeof Windows.UI === "object";
     };
-    function errorForServerCode(code, query12) {
+    function errorForServerCode(code, query13) {
       var reason = "Unknown Error";
       if (code === "too_big") {
         reason = "The data requested exceeds the maximum size that can be accessed with a single request.";
@@ -164177,7 +164177,7 @@ var require_index_standalone = __commonJS({
       } else if (code === "unavailable") {
         reason = "The service is unavailable";
       }
-      var error2 = new Error(code + " at " + query12._path.toString() + ": " + reason);
+      var error2 = new Error(code + " at " + query13._path.toString() + ": " + reason);
       error2.code = code.toUpperCase();
       return error2;
     }
@@ -164276,8 +164276,8 @@ var require_index_standalone = __commonJS({
         };
         RepoInfo2.prototype.toURLString = function() {
           var protocol = this.secure ? "https://" : "http://";
-          var query12 = this.includeNamespaceInQueryParams ? "?ns=".concat(this.namespace) : "";
-          return "".concat(protocol).concat(this.host, "/").concat(query12);
+          var query13 = this.includeNamespaceInQueryParams ? "?ns=".concat(this.namespace) : "";
+          return "".concat(protocol).concat(this.host, "/").concat(query13);
         };
         return RepoInfo2;
       })()
@@ -165993,12 +165993,12 @@ var require_index_standalone = __commonJS({
             this.requestCBHash_[curReqNum] = onResponse;
           }
         };
-        PersistentConnection2.prototype.get = function(query12) {
+        PersistentConnection2.prototype.get = function(query13) {
           this.initConnection_();
           var deferred = new util3.Deferred();
           var request = {
-            p: query12._path.toString(),
-            q: query12._queryObject
+            p: query13._path.toString(),
+            q: query13._queryObject
           };
           var outstandingGet = {
             action: "g",
@@ -166020,20 +166020,20 @@ var require_index_standalone = __commonJS({
           }
           return deferred.promise;
         };
-        PersistentConnection2.prototype.listen = function(query12, currentHashFn, tag2, onComplete) {
+        PersistentConnection2.prototype.listen = function(query13, currentHashFn, tag2, onComplete) {
           this.initConnection_();
-          var queryId = query12._queryIdentifier;
-          var pathString = query12._path.toString();
+          var queryId = query13._queryIdentifier;
+          var pathString = query13._path.toString();
           this.log_("Listen called for " + pathString + " " + queryId);
           if (!this.listens.has(pathString)) {
             this.listens.set(pathString, /* @__PURE__ */ new Map());
           }
-          util3.assert(query12._queryParams.isDefault() || !query12._queryParams.loadsAllData(), "listen() called for non-default but complete query");
+          util3.assert(query13._queryParams.isDefault() || !query13._queryParams.loadsAllData(), "listen() called for non-default but complete query");
           util3.assert(!this.listens.get(pathString).has(queryId), "listen() called twice for same path/queryId.");
           var listenSpec = {
             onComplete,
             hashFn: currentHashFn,
-            query: query12,
+            query: query13,
             tag: tag2
           };
           this.listens.get(pathString).set(queryId, listenSpec);
@@ -166057,9 +166057,9 @@ var require_index_standalone = __commonJS({
         };
         PersistentConnection2.prototype.sendListen_ = function(listenSpec) {
           var _this = this;
-          var query12 = listenSpec.query;
-          var pathString = query12._path.toString();
-          var queryId = query12._queryIdentifier;
+          var query13 = listenSpec.query;
+          var pathString = query13._path.toString();
+          var queryId = query13._queryIdentifier;
           this.log_("Listen on " + pathString + " for " + queryId);
           var req = {
             /*path*/
@@ -166067,7 +166067,7 @@ var require_index_standalone = __commonJS({
           };
           var action = "q";
           if (listenSpec.tag) {
-            req["q"] = query12._queryObject;
+            req["q"] = query13._queryObject;
             req["t"] = listenSpec.tag;
           }
           req[
@@ -166083,7 +166083,7 @@ var require_index_standalone = __commonJS({
               /*status*/
               "s"
             ];
-            PersistentConnection2.warnOnListenWarnings_(payload, query12);
+            PersistentConnection2.warnOnListenWarnings_(payload, query13);
             var currentListenSpec = _this.listens.get(pathString) && _this.listens.get(pathString).get(queryId);
             if (currentListenSpec === listenSpec) {
               _this.log_("listen response", message3);
@@ -166096,12 +166096,12 @@ var require_index_standalone = __commonJS({
             }
           });
         };
-        PersistentConnection2.warnOnListenWarnings_ = function(payload, query12) {
+        PersistentConnection2.warnOnListenWarnings_ = function(payload, query13) {
           if (payload && typeof payload === "object" && util3.contains(payload, "w")) {
             var warnings = util3.safeGet(payload, "w");
             if (Array.isArray(warnings) && ~warnings.indexOf("no_index")) {
-              var indexSpec = '".indexOn": "' + query12._queryParams.getIndex().toString() + '"';
-              var indexPath = query12._path.toString();
+              var indexSpec = '".indexOn": "' + query13._queryParams.getIndex().toString() + '"';
+              var indexPath = query13._path.toString();
               warn$1("Using an unspecified index. Your data will be downloaded and " + "filtered on the client. Consider adding ".concat(indexSpec, " at ") + "".concat(indexPath, " to your security rules for better performance."));
             }
           }
@@ -166188,14 +166188,14 @@ var require_index_standalone = __commonJS({
             });
           }
         };
-        PersistentConnection2.prototype.unlisten = function(query12, tag2) {
-          var pathString = query12._path.toString();
-          var queryId = query12._queryIdentifier;
+        PersistentConnection2.prototype.unlisten = function(query13, tag2) {
+          var pathString = query13._path.toString();
+          var queryId = query13._queryIdentifier;
           this.log_("Unlisten called for " + pathString + " " + queryId);
-          util3.assert(query12._queryParams.isDefault() || !query12._queryParams.loadsAllData(), "unlisten() called for non-default but complete query");
+          util3.assert(query13._queryParams.isDefault() || !query13._queryParams.loadsAllData(), "unlisten() called for non-default but complete query");
           var listen = this.removeListen_(pathString, queryId);
           if (listen && this.connected_) {
-            this.sendUnlisten_(pathString, queryId, query12._queryObject, tag2);
+            this.sendUnlisten_(pathString, queryId, query13._queryObject, tag2);
           }
         };
         PersistentConnection2.prototype.sendUnlisten_ = function(pathString, queryId, queryObj, tag2) {
@@ -166648,12 +166648,12 @@ var require_index_standalone = __commonJS({
             this.outstandingPuts_ = [];
           }
         };
-        PersistentConnection2.prototype.onListenRevoked_ = function(pathString, query12) {
+        PersistentConnection2.prototype.onListenRevoked_ = function(pathString, query13) {
           var queryId;
-          if (!query12) {
+          if (!query13) {
             queryId = "default";
           } else {
-            queryId = query12.map(function(q) {
+            queryId = query13.map(function(q) {
               return ObjectToUniqueKey(q);
             }).join("$");
           }
@@ -168762,22 +168762,22 @@ var require_index_standalone = __commonJS({
         ReadonlyRestClient2.prototype.reportStats = function(stats) {
           throw new Error("Method not implemented.");
         };
-        ReadonlyRestClient2.getListenId_ = function(query12, tag2) {
+        ReadonlyRestClient2.getListenId_ = function(query13, tag2) {
           if (tag2 !== void 0) {
             return "tag$" + tag2;
           } else {
-            util3.assert(query12._queryParams.isDefault(), "should have a tag if it's not a default query.");
-            return query12._path.toString();
+            util3.assert(query13._queryParams.isDefault(), "should have a tag if it's not a default query.");
+            return query13._path.toString();
           }
         };
-        ReadonlyRestClient2.prototype.listen = function(query12, currentHashFn, tag2, onComplete) {
+        ReadonlyRestClient2.prototype.listen = function(query13, currentHashFn, tag2, onComplete) {
           var _this = this;
-          var pathString = query12._path.toString();
-          this.log_("Listen called for " + pathString + " " + query12._queryIdentifier);
-          var listenId = ReadonlyRestClient2.getListenId_(query12, tag2);
+          var pathString = query13._path.toString();
+          this.log_("Listen called for " + pathString + " " + query13._queryIdentifier);
+          var listenId = ReadonlyRestClient2.getListenId_(query13, tag2);
           var thisListen = {};
           this.listens_[listenId] = thisListen;
-          var queryStringParameters = queryParamsToRestQueryStringParameters(query12._queryParams);
+          var queryStringParameters = queryParamsToRestQueryStringParameters(query13._queryParams);
           this.restRequest_(pathString + ".json", queryStringParameters, function(error2, result) {
             var data = result;
             if (error2 === 404) {
@@ -168806,14 +168806,14 @@ var require_index_standalone = __commonJS({
             }
           });
         };
-        ReadonlyRestClient2.prototype.unlisten = function(query12, tag2) {
-          var listenId = ReadonlyRestClient2.getListenId_(query12, tag2);
+        ReadonlyRestClient2.prototype.unlisten = function(query13, tag2) {
+          var listenId = ReadonlyRestClient2.getListenId_(query13, tag2);
           delete this.listens_[listenId];
         };
-        ReadonlyRestClient2.prototype.get = function(query12) {
+        ReadonlyRestClient2.prototype.get = function(query13) {
           var _this = this;
-          var queryStringParameters = queryParamsToRestQueryStringParameters(query12._queryParams);
-          var pathString = query12._path.toString();
+          var queryStringParameters = queryParamsToRestQueryStringParameters(query13._queryParams);
+          var pathString = query13._path.toString();
           var deferred = new util3.Deferred();
           this.restRequest_(pathString + ".json", queryStringParameters, function(error2, result) {
             var data = result;
@@ -170415,8 +170415,8 @@ var require_index_standalone = __commonJS({
         return events;
       }
     }
-    function syncPointGetView(syncPoint, query12, writesCache, serverCache, serverCacheComplete) {
-      var queryId = query12._queryIdentifier;
+    function syncPointGetView(syncPoint, query13, writesCache, serverCache, serverCacheComplete) {
+      var queryId = query13._queryIdentifier;
       var view = syncPoint.views.get(queryId);
       if (!view) {
         var eventCache = writeTreeRefCalcCompleteEventCache(writesCache, serverCacheComplete ? serverCache : null);
@@ -170431,21 +170431,21 @@ var require_index_standalone = __commonJS({
           eventCacheComplete = false;
         }
         var viewCache = newViewCache(new CacheNode(eventCache, eventCacheComplete, false), new CacheNode(serverCache, serverCacheComplete, false));
-        return new View(query12, viewCache);
+        return new View(query13, viewCache);
       }
       return view;
     }
-    function syncPointAddEventRegistration(syncPoint, query12, eventRegistration, writesCache, serverCache, serverCacheComplete) {
-      var view = syncPointGetView(syncPoint, query12, writesCache, serverCache, serverCacheComplete);
-      if (!syncPoint.views.has(query12._queryIdentifier)) {
-        syncPoint.views.set(query12._queryIdentifier, view);
+    function syncPointAddEventRegistration(syncPoint, query13, eventRegistration, writesCache, serverCache, serverCacheComplete) {
+      var view = syncPointGetView(syncPoint, query13, writesCache, serverCache, serverCacheComplete);
+      if (!syncPoint.views.has(query13._queryIdentifier)) {
+        syncPoint.views.set(query13._queryIdentifier, view);
       }
       viewAddEventRegistration(view, eventRegistration);
       return viewGetInitialEvents(view, eventRegistration);
     }
-    function syncPointRemoveEventRegistration(syncPoint, query12, eventRegistration, cancelError) {
+    function syncPointRemoveEventRegistration(syncPoint, query13, eventRegistration, cancelError) {
       var e_2, _a;
-      var queryId = query12._queryIdentifier;
+      var queryId = query13._queryIdentifier;
       var removed = [];
       var cancelEvents = [];
       var hadCompleteView = syncPointHasCompleteView(syncPoint);
@@ -170483,7 +170483,7 @@ var require_index_standalone = __commonJS({
         }
       }
       if (hadCompleteView && !syncPointHasCompleteView(syncPoint)) {
-        removed.push(new (syncPointGetReferenceConstructor())(query12._repo, query12._path));
+        removed.push(new (syncPointGetReferenceConstructor())(query13._repo, query13._path));
       }
       return { removed, events: cancelEvents };
     }
@@ -170527,17 +170527,17 @@ var require_index_standalone = __commonJS({
       }
       return serverCache;
     }
-    function syncPointViewForQuery(syncPoint, query12) {
-      var params = query12._queryParams;
+    function syncPointViewForQuery(syncPoint, query13) {
+      var params = query13._queryParams;
       if (params.loadsAllData()) {
         return syncPointGetCompleteView(syncPoint);
       } else {
-        var queryId = query12._queryIdentifier;
+        var queryId = query13._queryIdentifier;
         return syncPoint.views.get(queryId);
       }
     }
-    function syncPointViewExistsForQuery(syncPoint, query12) {
-      return syncPointViewForQuery(syncPoint, query12) != null;
+    function syncPointViewExistsForQuery(syncPoint, query13) {
+      return syncPointViewForQuery(syncPoint, query13) != null;
     }
     function syncPointHasCompleteView(syncPoint) {
       return syncPointGetCompleteView(syncPoint) != null;
@@ -170640,23 +170640,23 @@ var require_index_standalone = __commonJS({
         return [];
       }
     }
-    function syncTreeRemoveEventRegistration(syncTree, query12, eventRegistration, cancelError, skipListenerDedup) {
+    function syncTreeRemoveEventRegistration(syncTree, query13, eventRegistration, cancelError, skipListenerDedup) {
       if (skipListenerDedup === void 0) {
         skipListenerDedup = false;
       }
-      var path = query12._path;
+      var path = query13._path;
       var maybeSyncPoint = syncTree.syncPointTree_.get(path);
       var cancelEvents = [];
-      if (maybeSyncPoint && (query12._queryIdentifier === "default" || syncPointViewExistsForQuery(maybeSyncPoint, query12))) {
-        var removedAndEvents = syncPointRemoveEventRegistration(maybeSyncPoint, query12, eventRegistration, cancelError);
+      if (maybeSyncPoint && (query13._queryIdentifier === "default" || syncPointViewExistsForQuery(maybeSyncPoint, query13))) {
+        var removedAndEvents = syncPointRemoveEventRegistration(maybeSyncPoint, query13, eventRegistration, cancelError);
         if (syncPointIsEmpty(maybeSyncPoint)) {
           syncTree.syncPointTree_ = syncTree.syncPointTree_.remove(path);
         }
         var removed = removedAndEvents.removed;
         cancelEvents = removedAndEvents.events;
         if (!skipListenerDedup) {
-          var removingDefault = -1 !== removed.findIndex(function(query13) {
-            return query13._queryParams.loadsAllData();
+          var removingDefault = -1 !== removed.findIndex(function(query14) {
+            return query14._queryParams.loadsAllData();
           });
           var covered = syncTree.syncPointTree_.findOnPath(path, function(relativePath, parentSyncPoint) {
             return syncPointHasCompleteView(parentSyncPoint);
@@ -170675,7 +170675,7 @@ var require_index_standalone = __commonJS({
           if (!covered && removed.length > 0 && !cancelError) {
             if (removingDefault) {
               var defaultTag = null;
-              syncTree.listenProvider_.stopListening(syncTreeQueryForListening_(query12), defaultTag);
+              syncTree.listenProvider_.stopListening(syncTreeQueryForListening_(query13), defaultTag);
             } else {
               removed.forEach(function(queryToRemove) {
                 var tagToRemove = syncTree.queryToTagMap.get(syncTreeMakeQueryKey_(queryToRemove));
@@ -170713,11 +170713,11 @@ var require_index_standalone = __commonJS({
         return [];
       }
     }
-    function syncTreeAddEventRegistration(syncTree, query12, eventRegistration, skipSetupListener) {
+    function syncTreeAddEventRegistration(syncTree, query13, eventRegistration, skipSetupListener) {
       if (skipSetupListener === void 0) {
         skipSetupListener = false;
       }
-      var path = query12._path;
+      var path = query13._path;
       var serverCache = null;
       var foundAncestorDefaultView = false;
       syncTree.syncPointTree_.foreachOnPath(path, function(pathToSyncPoint, sp) {
@@ -170747,19 +170747,19 @@ var require_index_standalone = __commonJS({
           }
         });
       }
-      var viewAlreadyExists = syncPointViewExistsForQuery(syncPoint, query12);
-      if (!viewAlreadyExists && !query12._queryParams.loadsAllData()) {
-        var queryKey = syncTreeMakeQueryKey_(query12);
+      var viewAlreadyExists = syncPointViewExistsForQuery(syncPoint, query13);
+      if (!viewAlreadyExists && !query13._queryParams.loadsAllData()) {
+        var queryKey = syncTreeMakeQueryKey_(query13);
         util3.assert(!syncTree.queryToTagMap.has(queryKey), "View does not exist, but we have a tag");
         var tag2 = syncTreeGetNextQueryTag_();
         syncTree.queryToTagMap.set(queryKey, tag2);
         syncTree.tagToQueryMap.set(tag2, queryKey);
       }
       var writesCache = writeTreeChildWrites(syncTree.pendingWriteTree_, path);
-      var events = syncPointAddEventRegistration(syncPoint, query12, eventRegistration, writesCache, serverCache, serverCacheComplete);
+      var events = syncPointAddEventRegistration(syncPoint, query13, eventRegistration, writesCache, serverCache, serverCacheComplete);
       if (!viewAlreadyExists && !foundAncestorDefaultView && !skipSetupListener) {
-        var view = syncPointViewForQuery(syncPoint, query12);
-        events = events.concat(syncTreeSetupListener_(syncTree, query12, view));
+        var view = syncPointViewForQuery(syncPoint, query13);
+        events = events.concat(syncTreeSetupListener_(syncTree, query13, view));
       }
       return events;
     }
@@ -170775,8 +170775,8 @@ var require_index_standalone = __commonJS({
       });
       return writeTreeCalcCompleteEventCache(writeTree, path, serverCache, writeIdsToExclude, includeHiddenSets);
     }
-    function syncTreeGetServerValue(syncTree, query12) {
-      var path = query12._path;
+    function syncTreeGetServerValue(syncTree, query13) {
+      var path = query13._path;
       var serverCache = null;
       syncTree.syncPointTree_.foreachOnPath(path, function(pathToSyncPoint, sp) {
         var relativePath = newRelativePath(pathToSyncPoint, path);
@@ -170791,8 +170791,8 @@ var require_index_standalone = __commonJS({
       }
       var serverCacheComplete = serverCache != null;
       var serverCacheNode = serverCacheComplete ? new CacheNode(serverCache, true, false) : null;
-      var writesCache = writeTreeChildWrites(syncTree.pendingWriteTree_, query12._path);
-      var view = syncPointGetView(syncPoint, query12, writesCache, serverCacheComplete ? serverCacheNode.getNode() : ChildrenNode.EMPTY_NODE, serverCacheComplete);
+      var writesCache = writeTreeChildWrites(syncTree.pendingWriteTree_, query13._path);
+      var view = syncPointGetView(syncPoint, query13, writesCache, serverCacheComplete ? serverCacheNode.getNode() : ChildrenNode.EMPTY_NODE, serverCacheComplete);
       return viewGetCompleteNode(view);
     }
     function syncTreeApplyOperationToSyncPoints_(syncTree, operation) {
@@ -170847,8 +170847,8 @@ var require_index_standalone = __commonJS({
       return events;
     }
     function syncTreeCreateListenerForView_(syncTree, view) {
-      var query12 = view.query;
-      var tag2 = syncTreeTagForQuery(syncTree, query12);
+      var query13 = view.query;
+      var tag2 = syncTreeTagForQuery(syncTree, query13);
       return {
         hashFn: function() {
           var cache = viewGetServerCache(view) || ChildrenNode.EMPTY_NODE;
@@ -170857,15 +170857,15 @@ var require_index_standalone = __commonJS({
         onComplete: function(status) {
           if (status === "ok") {
             if (tag2) {
-              return syncTreeApplyTaggedListenComplete(syncTree, query12._path, tag2);
+              return syncTreeApplyTaggedListenComplete(syncTree, query13._path, tag2);
             } else {
-              return syncTreeApplyListenComplete(syncTree, query12._path);
+              return syncTreeApplyListenComplete(syncTree, query13._path);
             }
           } else {
-            var error2 = errorForServerCode(status, query12);
+            var error2 = errorForServerCode(status, query13);
             return syncTreeRemoveEventRegistration(
               syncTree,
-              query12,
+              query13,
               /*eventRegistration*/
               null,
               error2
@@ -170874,12 +170874,12 @@ var require_index_standalone = __commonJS({
         }
       };
     }
-    function syncTreeTagForQuery(syncTree, query12) {
-      var queryKey = syncTreeMakeQueryKey_(query12);
+    function syncTreeTagForQuery(syncTree, query13) {
+      var queryKey = syncTreeMakeQueryKey_(query13);
       return syncTree.queryToTagMap.get(queryKey);
     }
-    function syncTreeMakeQueryKey_(query12) {
-      return query12._path.toString() + "$" + query12._queryIdentifier;
+    function syncTreeMakeQueryKey_(query13) {
+      return query13._path.toString() + "$" + query13._queryIdentifier;
     }
     function syncTreeQueryKeyForTag_(syncTree, tag2) {
       return syncTree.tagToQueryMap.get(tag2);
@@ -170915,11 +170915,11 @@ var require_index_standalone = __commonJS({
         }
       });
     }
-    function syncTreeQueryForListening_(query12) {
-      if (query12._queryParams.loadsAllData() && !query12._queryParams.isDefault()) {
-        return new (syncTreeGetReferenceConstructor())(query12._repo, query12._path);
+    function syncTreeQueryForListening_(query13) {
+      if (query13._queryParams.loadsAllData() && !query13._queryParams.isDefault()) {
+        return new (syncTreeGetReferenceConstructor())(query13._repo, query13._path);
       } else {
-        return query12;
+        return query13;
       }
     }
     function syncTreeRemoveTags_(syncTree, queries) {
@@ -170936,11 +170936,11 @@ var require_index_standalone = __commonJS({
     function syncTreeGetNextQueryTag_() {
       return syncTreeNextQueryTag_++;
     }
-    function syncTreeSetupListener_(syncTree, query12, view) {
-      var path = query12._path;
-      var tag2 = syncTreeTagForQuery(syncTree, query12);
+    function syncTreeSetupListener_(syncTree, query13, view) {
+      var path = query13._path;
+      var tag2 = syncTreeTagForQuery(syncTree, query13);
       var listener = syncTreeCreateListenerForView_(syncTree, view);
-      var events = syncTree.listenProvider_.startListening(syncTreeQueryForListening_(query12), tag2, listener.hashFn, listener.onComplete);
+      var events = syncTree.listenProvider_.startListening(syncTreeQueryForListening_(query13), tag2, listener.hashFn, listener.onComplete);
       var subtree = syncTree.syncPointTree_.subtree(path);
       if (tag2) {
         util3.assert(!syncPointHasCompleteView(subtree.value), "If we're adding a query, it shouldn't be shadowed");
@@ -171464,11 +171464,11 @@ var require_index_standalone = __commonJS({
       });
       repo.infoData_ = new SnapshotHolder();
       repo.infoSyncTree_ = new SyncTree({
-        startListening: function(query12, tag2, currentHashFn, onComplete) {
+        startListening: function(query13, tag2, currentHashFn, onComplete) {
           var infoEvents = [];
-          var node = repo.infoData_.getNode(query12._path);
+          var node = repo.infoData_.getNode(query13._path);
           if (!node.isEmpty()) {
-            infoEvents = syncTreeApplyServerOverwrite(repo.infoSyncTree_, query12._path, node);
+            infoEvents = syncTreeApplyServerOverwrite(repo.infoSyncTree_, query13._path, node);
             setTimeout(function() {
               onComplete("ok");
             }, 0);
@@ -171480,15 +171480,15 @@ var require_index_standalone = __commonJS({
       });
       repoUpdateInfo(repo, "connected", false);
       repo.serverSyncTree_ = new SyncTree({
-        startListening: function(query12, tag2, currentHashFn, onComplete) {
-          repo.server_.listen(query12, currentHashFn, tag2, function(status, data) {
+        startListening: function(query13, tag2, currentHashFn, onComplete) {
+          repo.server_.listen(query13, currentHashFn, tag2, function(status, data) {
             var events = onComplete(status, data);
-            eventQueueRaiseEventsForChangedPath(repo.eventQueue_, query12._path, events);
+            eventQueueRaiseEventsForChangedPath(repo.eventQueue_, query13._path, events);
           });
           return [];
         },
-        stopListening: function(query12, tag2) {
-          repo.server_.unlisten(query12, tag2);
+        stopListening: function(query13, tag2) {
+          repo.server_.unlisten(query13, tag2);
         }
       });
     }
@@ -171553,26 +171553,26 @@ var require_index_standalone = __commonJS({
     function repoGetNextWriteId(repo) {
       return repo.nextWriteId_++;
     }
-    function repoGetValue(repo, query12, eventRegistration) {
-      var cached = syncTreeGetServerValue(repo.serverSyncTree_, query12);
+    function repoGetValue(repo, query13, eventRegistration) {
+      var cached = syncTreeGetServerValue(repo.serverSyncTree_, query13);
       if (cached != null) {
         return Promise.resolve(cached);
       }
-      return repo.server_.get(query12).then(function(payload) {
-        var node = nodeFromJSON(payload).withIndex(query12._queryParams.getIndex());
-        syncTreeAddEventRegistration(repo.serverSyncTree_, query12, eventRegistration, true);
+      return repo.server_.get(query13).then(function(payload) {
+        var node = nodeFromJSON(payload).withIndex(query13._queryParams.getIndex());
+        syncTreeAddEventRegistration(repo.serverSyncTree_, query13, eventRegistration, true);
         var events;
-        if (query12._queryParams.loadsAllData()) {
-          events = syncTreeApplyServerOverwrite(repo.serverSyncTree_, query12._path, node);
+        if (query13._queryParams.loadsAllData()) {
+          events = syncTreeApplyServerOverwrite(repo.serverSyncTree_, query13._path, node);
         } else {
-          var tag2 = syncTreeTagForQuery(repo.serverSyncTree_, query12);
-          events = syncTreeApplyTaggedQueryOverwrite(repo.serverSyncTree_, query12._path, node, tag2);
+          var tag2 = syncTreeTagForQuery(repo.serverSyncTree_, query13);
+          events = syncTreeApplyTaggedQueryOverwrite(repo.serverSyncTree_, query13._path, node, tag2);
         }
-        eventQueueRaiseEventsForChangedPath(repo.eventQueue_, query12._path, events);
-        syncTreeRemoveEventRegistration(repo.serverSyncTree_, query12, eventRegistration, null, true);
+        eventQueueRaiseEventsForChangedPath(repo.eventQueue_, query13._path, events);
+        syncTreeRemoveEventRegistration(repo.serverSyncTree_, query13, eventRegistration, null, true);
         return node;
       }, function(err) {
-        repoLog(repo, "get for query " + util3.stringify(query12) + " failed: " + err);
+        repoLog(repo, "get for query " + util3.stringify(query13) + " failed: " + err);
         return Promise.reject(new Error(err));
       });
     }
@@ -171703,23 +171703,23 @@ var require_index_standalone = __commonJS({
         repoCallOnCompleteCallback(repo, onComplete, status, errorReason);
       });
     }
-    function repoAddEventCallbackForQuery(repo, query12, eventRegistration) {
+    function repoAddEventCallbackForQuery(repo, query13, eventRegistration) {
       var events;
-      if (pathGetFront(query12._path) === ".info") {
-        events = syncTreeAddEventRegistration(repo.infoSyncTree_, query12, eventRegistration);
+      if (pathGetFront(query13._path) === ".info") {
+        events = syncTreeAddEventRegistration(repo.infoSyncTree_, query13, eventRegistration);
       } else {
-        events = syncTreeAddEventRegistration(repo.serverSyncTree_, query12, eventRegistration);
+        events = syncTreeAddEventRegistration(repo.serverSyncTree_, query13, eventRegistration);
       }
-      eventQueueRaiseEventsAtPath(repo.eventQueue_, query12._path, events);
+      eventQueueRaiseEventsAtPath(repo.eventQueue_, query13._path, events);
     }
-    function repoRemoveEventCallbackForQuery(repo, query12, eventRegistration) {
+    function repoRemoveEventCallbackForQuery(repo, query13, eventRegistration) {
       var events;
-      if (pathGetFront(query12._path) === ".info") {
-        events = syncTreeRemoveEventRegistration(repo.infoSyncTree_, query12, eventRegistration);
+      if (pathGetFront(query13._path) === ".info") {
+        events = syncTreeRemoveEventRegistration(repo.infoSyncTree_, query13, eventRegistration);
       } else {
-        events = syncTreeRemoveEventRegistration(repo.serverSyncTree_, query12, eventRegistration);
+        events = syncTreeRemoveEventRegistration(repo.serverSyncTree_, query13, eventRegistration);
       }
-      eventQueueRaiseEventsAtPath(repo.eventQueue_, query12._path, events);
+      eventQueueRaiseEventsAtPath(repo.eventQueue_, query13._path, events);
     }
     function repoInterrupt(repo) {
       if (repo.persistentConnection_) {
@@ -172441,8 +172441,8 @@ var require_index_standalone = __commonJS({
         return QueryImpl2;
       })()
     );
-    function validateNoPreviousOrderByCall(query12, fnName) {
-      if (query12._orderByCalled === true) {
+    function validateNoPreviousOrderByCall(query13, fnName) {
+      if (query13._orderByCalled === true) {
         throw new Error(fnName + ": You can't combine multiple orderBy calls.");
       }
     }
@@ -172704,13 +172704,13 @@ var require_index_standalone = __commonJS({
       }));
       return deferred.promise;
     }
-    function get3(query12) {
-      query12 = util3.getModularInstance(query12);
+    function get3(query13) {
+      query13 = util3.getModularInstance(query13);
       var callbackContext = new CallbackContext(function() {
       });
       var container = new ValueEventRegistration(callbackContext);
-      return repoGetValue(query12._repo, query12, container).then(function(node) {
-        return new DataSnapshot$1(node, new ReferenceImpl(query12._repo, query12._path), query12._queryParams.getIndex());
+      return repoGetValue(query13._repo, query13, container).then(function(node) {
+        return new DataSnapshot$1(node, new ReferenceImpl(query13._repo, query13._path), query13._queryParams.getIndex());
       });
     }
     var ValueEventRegistration = (
@@ -172722,9 +172722,9 @@ var require_index_standalone = __commonJS({
         ValueEventRegistration2.prototype.respondsTo = function(eventType) {
           return eventType === "value";
         };
-        ValueEventRegistration2.prototype.createEvent = function(change, query12) {
-          var index = query12._queryParams.getIndex();
-          return new DataEvent("value", this, new DataSnapshot$1(change.snapshotNode, new ReferenceImpl(query12._repo, query12._path), index));
+        ValueEventRegistration2.prototype.createEvent = function(change, query13) {
+          var index = query13._queryParams.getIndex();
+          return new DataEvent("value", this, new DataSnapshot$1(change.snapshotNode, new ReferenceImpl(query13._repo, query13._path), index));
         };
         ValueEventRegistration2.prototype.getEventRunner = function(eventData) {
           var _this = this;
@@ -172779,10 +172779,10 @@ var require_index_standalone = __commonJS({
             return null;
           }
         };
-        ChildEventRegistration2.prototype.createEvent = function(change, query12) {
+        ChildEventRegistration2.prototype.createEvent = function(change, query13) {
           util3.assert(change.childName != null, "Child events should have a childName.");
-          var childRef = child(new ReferenceImpl(query12._repo, query12._path), change.childName);
-          var index = query12._queryParams.getIndex();
+          var childRef = child(new ReferenceImpl(query13._repo, query13._path), change.childName);
+          var index = query13._queryParams.getIndex();
           return new DataEvent(change.type, this, new DataSnapshot$1(change.snapshotNode, childRef, index), change.prevName);
         };
         ChildEventRegistration2.prototype.getEventRunner = function(eventData) {
@@ -172809,7 +172809,7 @@ var require_index_standalone = __commonJS({
         return ChildEventRegistration2;
       })()
     );
-    function addEventListener2(query12, eventType, callback, cancelCallbackOrListenOptions, options) {
+    function addEventListener2(query13, eventType, callback, cancelCallbackOrListenOptions, options) {
       var cancelCallback;
       if (typeof cancelCallbackOrListenOptions === "object") {
         cancelCallback = void 0;
@@ -172821,7 +172821,7 @@ var require_index_standalone = __commonJS({
       if (options && options.onlyOnce) {
         var userCallback_1 = callback;
         var onceCallback = function(dataSnapshot, previousChildName) {
-          repoRemoveEventCallbackForQuery(query12._repo, query12, container);
+          repoRemoveEventCallbackForQuery(query13._repo, query13, container);
           userCallback_1(dataSnapshot, previousChildName);
         };
         onceCallback.userCallback = callback.userCallback;
@@ -172830,27 +172830,27 @@ var require_index_standalone = __commonJS({
       }
       var callbackContext = new CallbackContext(callback, cancelCallback || void 0);
       var container = eventType === "value" ? new ValueEventRegistration(callbackContext) : new ChildEventRegistration(eventType, callbackContext);
-      repoAddEventCallbackForQuery(query12._repo, query12, container);
+      repoAddEventCallbackForQuery(query13._repo, query13, container);
       return function() {
-        return repoRemoveEventCallbackForQuery(query12._repo, query12, container);
+        return repoRemoveEventCallbackForQuery(query13._repo, query13, container);
       };
     }
-    function onValue(query12, callback, cancelCallbackOrListenOptions, options) {
-      return addEventListener2(query12, "value", callback, cancelCallbackOrListenOptions, options);
+    function onValue(query13, callback, cancelCallbackOrListenOptions, options) {
+      return addEventListener2(query13, "value", callback, cancelCallbackOrListenOptions, options);
     }
-    function onChildAdded(query12, callback, cancelCallbackOrListenOptions, options) {
-      return addEventListener2(query12, "child_added", callback, cancelCallbackOrListenOptions, options);
+    function onChildAdded(query13, callback, cancelCallbackOrListenOptions, options) {
+      return addEventListener2(query13, "child_added", callback, cancelCallbackOrListenOptions, options);
     }
-    function onChildChanged(query12, callback, cancelCallbackOrListenOptions, options) {
-      return addEventListener2(query12, "child_changed", callback, cancelCallbackOrListenOptions, options);
+    function onChildChanged(query13, callback, cancelCallbackOrListenOptions, options) {
+      return addEventListener2(query13, "child_changed", callback, cancelCallbackOrListenOptions, options);
     }
-    function onChildMoved(query12, callback, cancelCallbackOrListenOptions, options) {
-      return addEventListener2(query12, "child_moved", callback, cancelCallbackOrListenOptions, options);
+    function onChildMoved(query13, callback, cancelCallbackOrListenOptions, options) {
+      return addEventListener2(query13, "child_moved", callback, cancelCallbackOrListenOptions, options);
     }
-    function onChildRemoved(query12, callback, cancelCallbackOrListenOptions, options) {
-      return addEventListener2(query12, "child_removed", callback, cancelCallbackOrListenOptions, options);
+    function onChildRemoved(query13, callback, cancelCallbackOrListenOptions, options) {
+      return addEventListener2(query13, "child_removed", callback, cancelCallbackOrListenOptions, options);
     }
-    function off(query12, eventType, callback) {
+    function off(query13, eventType, callback) {
       var container = null;
       var expCallback = callback ? new CallbackContext(callback) : null;
       if (eventType === "value") {
@@ -172858,7 +172858,7 @@ var require_index_standalone = __commonJS({
       } else if (eventType) {
         container = new ChildEventRegistration(eventType, expCallback);
       }
-      repoRemoveEventCallbackForQuery(query12._repo, query12, container);
+      repoRemoveEventCallbackForQuery(query13._repo, query13, container);
     }
     var QueryConstraint = (
       /** @class */
@@ -172879,15 +172879,15 @@ var require_index_standalone = __commonJS({
           _this.type = "endAt";
           return _this;
         }
-        QueryEndAtConstraint2.prototype._apply = function(query12) {
-          validateFirebaseDataArg("endAt", this._value, query12._path, true);
-          var newParams = queryParamsEndAt(query12._queryParams, this._value, this._key);
+        QueryEndAtConstraint2.prototype._apply = function(query13) {
+          validateFirebaseDataArg("endAt", this._value, query13._path, true);
+          var newParams = queryParamsEndAt(query13._queryParams, this._value, this._key);
           validateLimit(newParams);
           validateQueryEndpoints(newParams);
-          if (query12._queryParams.hasEnd()) {
+          if (query13._queryParams.hasEnd()) {
             throw new Error("endAt: Starting point was already set (by another call to endAt, endBefore or equalTo).");
           }
-          return new QueryImpl(query12._repo, query12._path, newParams, query12._orderByCalled);
+          return new QueryImpl(query13._repo, query13._path, newParams, query13._orderByCalled);
         };
         return QueryEndAtConstraint2;
       })(QueryConstraint)
@@ -172907,15 +172907,15 @@ var require_index_standalone = __commonJS({
           _this.type = "endBefore";
           return _this;
         }
-        QueryEndBeforeConstraint2.prototype._apply = function(query12) {
-          validateFirebaseDataArg("endBefore", this._value, query12._path, false);
-          var newParams = queryParamsEndBefore(query12._queryParams, this._value, this._key);
+        QueryEndBeforeConstraint2.prototype._apply = function(query13) {
+          validateFirebaseDataArg("endBefore", this._value, query13._path, false);
+          var newParams = queryParamsEndBefore(query13._queryParams, this._value, this._key);
           validateLimit(newParams);
           validateQueryEndpoints(newParams);
-          if (query12._queryParams.hasEnd()) {
+          if (query13._queryParams.hasEnd()) {
             throw new Error("endBefore: Starting point was already set (by another call to endAt, endBefore or equalTo).");
           }
-          return new QueryImpl(query12._repo, query12._path, newParams, query12._orderByCalled);
+          return new QueryImpl(query13._repo, query13._path, newParams, query13._orderByCalled);
         };
         return QueryEndBeforeConstraint2;
       })(QueryConstraint)
@@ -172935,15 +172935,15 @@ var require_index_standalone = __commonJS({
           _this.type = "startAt";
           return _this;
         }
-        QueryStartAtConstraint2.prototype._apply = function(query12) {
-          validateFirebaseDataArg("startAt", this._value, query12._path, true);
-          var newParams = queryParamsStartAt(query12._queryParams, this._value, this._key);
+        QueryStartAtConstraint2.prototype._apply = function(query13) {
+          validateFirebaseDataArg("startAt", this._value, query13._path, true);
+          var newParams = queryParamsStartAt(query13._queryParams, this._value, this._key);
           validateLimit(newParams);
           validateQueryEndpoints(newParams);
-          if (query12._queryParams.hasStart()) {
+          if (query13._queryParams.hasStart()) {
             throw new Error("startAt: Starting point was already set (by another call to startAt, startBefore or equalTo).");
           }
-          return new QueryImpl(query12._repo, query12._path, newParams, query12._orderByCalled);
+          return new QueryImpl(query13._repo, query13._path, newParams, query13._orderByCalled);
         };
         return QueryStartAtConstraint2;
       })(QueryConstraint)
@@ -172966,15 +172966,15 @@ var require_index_standalone = __commonJS({
           _this.type = "startAfter";
           return _this;
         }
-        QueryStartAfterConstraint2.prototype._apply = function(query12) {
-          validateFirebaseDataArg("startAfter", this._value, query12._path, false);
-          var newParams = queryParamsStartAfter(query12._queryParams, this._value, this._key);
+        QueryStartAfterConstraint2.prototype._apply = function(query13) {
+          validateFirebaseDataArg("startAfter", this._value, query13._path, false);
+          var newParams = queryParamsStartAfter(query13._queryParams, this._value, this._key);
           validateLimit(newParams);
           validateQueryEndpoints(newParams);
-          if (query12._queryParams.hasStart()) {
+          if (query13._queryParams.hasStart()) {
             throw new Error("startAfter: Starting point was already set (by another call to startAt, startAfter, or equalTo).");
           }
-          return new QueryImpl(query12._repo, query12._path, newParams, query12._orderByCalled);
+          return new QueryImpl(query13._repo, query13._path, newParams, query13._orderByCalled);
         };
         return QueryStartAfterConstraint2;
       })(QueryConstraint)
@@ -172993,11 +172993,11 @@ var require_index_standalone = __commonJS({
           _this.type = "limitToFirst";
           return _this;
         }
-        QueryLimitToFirstConstraint2.prototype._apply = function(query12) {
-          if (query12._queryParams.hasLimit()) {
+        QueryLimitToFirstConstraint2.prototype._apply = function(query13) {
+          if (query13._queryParams.hasLimit()) {
             throw new Error("limitToFirst: Limit was already set (by another call to limitToFirst or limitToLast).");
           }
-          return new QueryImpl(query12._repo, query12._path, queryParamsLimitToFirst(query12._queryParams, this._limit), query12._orderByCalled);
+          return new QueryImpl(query13._repo, query13._path, queryParamsLimitToFirst(query13._queryParams, this._limit), query13._orderByCalled);
         };
         return QueryLimitToFirstConstraint2;
       })(QueryConstraint)
@@ -173018,11 +173018,11 @@ var require_index_standalone = __commonJS({
           _this.type = "limitToLast";
           return _this;
         }
-        QueryLimitToLastConstraint2.prototype._apply = function(query12) {
-          if (query12._queryParams.hasLimit()) {
+        QueryLimitToLastConstraint2.prototype._apply = function(query13) {
+          if (query13._queryParams.hasLimit()) {
             throw new Error("limitToLast: Limit was already set (by another call to limitToFirst or limitToLast).");
           }
-          return new QueryImpl(query12._repo, query12._path, queryParamsLimitToLast(query12._queryParams, this._limit), query12._orderByCalled);
+          return new QueryImpl(query13._repo, query13._path, queryParamsLimitToLast(query13._queryParams, this._limit), query13._orderByCalled);
         };
         return QueryLimitToLastConstraint2;
       })(QueryConstraint)
@@ -173043,18 +173043,18 @@ var require_index_standalone = __commonJS({
           _this.type = "orderByChild";
           return _this;
         }
-        QueryOrderByChildConstraint2.prototype._apply = function(query12) {
-          validateNoPreviousOrderByCall(query12, "orderByChild");
+        QueryOrderByChildConstraint2.prototype._apply = function(query13) {
+          validateNoPreviousOrderByCall(query13, "orderByChild");
           var parsedPath = new Path(this._path);
           if (pathIsEmpty(parsedPath)) {
             throw new Error("orderByChild: cannot pass in empty path. Use orderByValue() instead.");
           }
           var index = new PathIndex(parsedPath);
-          var newParams = queryParamsOrderBy(query12._queryParams, index);
+          var newParams = queryParamsOrderBy(query13._queryParams, index);
           validateQueryEndpoints(newParams);
           return new QueryImpl(
-            query12._repo,
-            query12._path,
+            query13._repo,
+            query13._path,
             newParams,
             /*orderByCalled=*/
             true
@@ -173083,13 +173083,13 @@ var require_index_standalone = __commonJS({
           _this.type = "orderByKey";
           return _this;
         }
-        QueryOrderByKeyConstraint2.prototype._apply = function(query12) {
-          validateNoPreviousOrderByCall(query12, "orderByKey");
-          var newParams = queryParamsOrderBy(query12._queryParams, KEY_INDEX);
+        QueryOrderByKeyConstraint2.prototype._apply = function(query13) {
+          validateNoPreviousOrderByCall(query13, "orderByKey");
+          var newParams = queryParamsOrderBy(query13._queryParams, KEY_INDEX);
           validateQueryEndpoints(newParams);
           return new QueryImpl(
-            query12._repo,
-            query12._path,
+            query13._repo,
+            query13._path,
             newParams,
             /*orderByCalled=*/
             true
@@ -173110,13 +173110,13 @@ var require_index_standalone = __commonJS({
           _this.type = "orderByPriority";
           return _this;
         }
-        QueryOrderByPriorityConstraint2.prototype._apply = function(query12) {
-          validateNoPreviousOrderByCall(query12, "orderByPriority");
-          var newParams = queryParamsOrderBy(query12._queryParams, PRIORITY_INDEX);
+        QueryOrderByPriorityConstraint2.prototype._apply = function(query13) {
+          validateNoPreviousOrderByCall(query13, "orderByPriority");
+          var newParams = queryParamsOrderBy(query13._queryParams, PRIORITY_INDEX);
           validateQueryEndpoints(newParams);
           return new QueryImpl(
-            query12._repo,
-            query12._path,
+            query13._repo,
+            query13._path,
             newParams,
             /*orderByCalled=*/
             true
@@ -173137,13 +173137,13 @@ var require_index_standalone = __commonJS({
           _this.type = "orderByValue";
           return _this;
         }
-        QueryOrderByValueConstraint2.prototype._apply = function(query12) {
-          validateNoPreviousOrderByCall(query12, "orderByValue");
-          var newParams = queryParamsOrderBy(query12._queryParams, VALUE_INDEX);
+        QueryOrderByValueConstraint2.prototype._apply = function(query13) {
+          validateNoPreviousOrderByCall(query13, "orderByValue");
+          var newParams = queryParamsOrderBy(query13._queryParams, VALUE_INDEX);
           validateQueryEndpoints(newParams);
           return new QueryImpl(
-            query12._repo,
-            query12._path,
+            query13._repo,
+            query13._path,
             newParams,
             /*orderByCalled=*/
             true
@@ -173166,15 +173166,15 @@ var require_index_standalone = __commonJS({
           _this.type = "equalTo";
           return _this;
         }
-        QueryEqualToValueConstraint2.prototype._apply = function(query12) {
-          validateFirebaseDataArg("equalTo", this._value, query12._path, false);
-          if (query12._queryParams.hasStart()) {
+        QueryEqualToValueConstraint2.prototype._apply = function(query13) {
+          validateFirebaseDataArg("equalTo", this._value, query13._path, false);
+          if (query13._queryParams.hasStart()) {
             throw new Error("equalTo: Starting point was already set (by another call to startAt/startAfter or equalTo).");
           }
-          if (query12._queryParams.hasEnd()) {
+          if (query13._queryParams.hasEnd()) {
             throw new Error("equalTo: Ending point was already set (by another call to endAt/endBefore or equalTo).");
           }
-          return new QueryEndAtConstraint(this._value, this._key)._apply(new QueryStartAtConstraint(this._value, this._key)._apply(query12));
+          return new QueryEndAtConstraint(this._value, this._key)._apply(new QueryStartAtConstraint(this._value, this._key)._apply(query13));
         };
         return QueryEqualToValueConstraint2;
       })(QueryConstraint)
@@ -173183,13 +173183,13 @@ var require_index_standalone = __commonJS({
       validateKey2("equalTo", "key", key2, true);
       return new QueryEqualToValueConstraint(value, key2);
     }
-    function query11(query12) {
+    function query12(query13) {
       var e_1, _a;
       var queryConstraints = [];
       for (var _i = 1; _i < arguments.length; _i++) {
         queryConstraints[_i - 1] = arguments[_i];
       }
-      var queryImpl = util3.getModularInstance(query12);
+      var queryImpl = util3.getModularInstance(query13);
       try {
         for (var queryConstraints_1 = tslib.__values(queryConstraints), queryConstraints_1_1 = queryConstraints_1.next(); !queryConstraints_1_1.done; queryConstraints_1_1 = queryConstraints_1.next()) {
           var constraint = queryConstraints_1_1.value;
@@ -173519,7 +173519,7 @@ var require_index_standalone = __commonJS({
     var orderByPriority_1 = index_standalone.orderByPriority = orderByPriority;
     var orderByValue_1 = index_standalone.orderByValue = orderByValue;
     var push_1 = index_standalone.push = push;
-    var query_1 = index_standalone.query = query11;
+    var query_1 = index_standalone.query = query12;
     var ref_1 = index_standalone.ref = ref;
     var refFromURL_1 = index_standalone.refFromURL = refFromURL;
     var remove_1 = index_standalone.remove = remove;
@@ -179297,7 +179297,7 @@ var require_src19 = __commonJS({
        */
       /* eslint-disable  @typescript-eslint/no-explicit-any */
       parseArguments_(args) {
-        let query11;
+        let query12;
         let autoPaginate = true;
         let maxApiCalls = -1;
         let maxResults = -1;
@@ -179307,28 +179307,28 @@ var require_src19 = __commonJS({
         if (typeof firstArgument === "function") {
           callback = firstArgument;
         } else {
-          query11 = firstArgument;
+          query12 = firstArgument;
         }
         if (typeof lastArgument === "function") {
           callback = lastArgument;
         }
-        if (typeof query11 === "object") {
-          query11 = extend(true, {}, query11);
-          if (query11.maxResults && typeof query11.maxResults === "number") {
-            maxResults = query11.maxResults;
-          } else if (typeof query11.pageSize === "number") {
-            maxResults = query11.pageSize;
+        if (typeof query12 === "object") {
+          query12 = extend(true, {}, query12);
+          if (query12.maxResults && typeof query12.maxResults === "number") {
+            maxResults = query12.maxResults;
+          } else if (typeof query12.pageSize === "number") {
+            maxResults = query12.pageSize;
           }
-          if (query11.maxApiCalls && typeof query11.maxApiCalls === "number") {
-            maxApiCalls = query11.maxApiCalls;
-            delete query11.maxApiCalls;
+          if (query12.maxApiCalls && typeof query12.maxApiCalls === "number") {
+            maxApiCalls = query12.maxApiCalls;
+            delete query12.maxApiCalls;
           }
-          if (maxResults !== -1 || query11.autoPaginate === false) {
+          if (maxResults !== -1 || query12.autoPaginate === false) {
             autoPaginate = false;
           }
         }
         const parsedArguments = {
-          query: query11 || {},
+          query: query12 || {},
           autoPaginate,
           maxApiCalls,
           maxResults,
@@ -179357,10 +179357,10 @@ var require_src19 = __commonJS({
        *     and returns `nextQuery` to receive more results.
        */
       run_(parsedArguments, originalMethod) {
-        const query11 = parsedArguments.query;
+        const query12 = parsedArguments.query;
         const callback = parsedArguments.callback;
         if (!parsedArguments.autoPaginate) {
-          return originalMethod(query11, callback);
+          return originalMethod(query12, callback);
         }
         const results = new Array();
         let otherArgs = [];
@@ -179372,9 +179372,9 @@ var require_src19 = __commonJS({
           });
         });
         if (!callback) {
-          return promise.then((results2) => [results2, query11, ...otherArgs]);
+          return promise.then((results2) => [results2, query12, ...otherArgs]);
         }
-        promise.then((results2) => callback(null, results2, query11, ...otherArgs), (err) => callback(err));
+        promise.then((results2) => callback(null, results2, query12, ...otherArgs), (err) => callback(err));
       }
       /**
        * This method simply calls the nextQuery recursively, emitting results to a
@@ -180023,17 +180023,17 @@ var require_acl = __commonJS({
        * Example of adding a default owner to a bucket:
        */
       add(options, callback) {
-        const query11 = {};
+        const query12 = {};
         if (options.generation) {
-          query11.generation = options.generation;
+          query12.generation = options.generation;
         }
         if (options.userProject) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
         }
         this.request({
           method: "POST",
           uri: "",
-          qs: query11,
+          qs: query12,
           maxRetries: 0,
           //explicitly set this value since this is a non-idempotent function
           json: {
@@ -180111,17 +180111,17 @@ var require_acl = __commonJS({
        * Example of removing an owner from a bucket:
        */
       delete(options, callback) {
-        const query11 = {};
+        const query12 = {};
         if (options.generation) {
-          query11.generation = options.generation;
+          query12.generation = options.generation;
         }
         if (options.userProject) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
         }
         this.request({
           method: "DELETE",
           uri: "/" + encodeURIComponent(options.entity),
-          qs: query11
+          qs: query12
         }, (err, resp) => {
           callback(err, resp);
         });
@@ -180215,19 +180215,19 @@ var require_acl = __commonJS({
         const options = typeof optionsOrCallback === "object" ? optionsOrCallback : null;
         const callback = typeof optionsOrCallback === "function" ? optionsOrCallback : cb;
         let path = "";
-        const query11 = {};
+        const query12 = {};
         if (options) {
           path = "/" + encodeURIComponent(options.entity);
           if (options.generation) {
-            query11.generation = options.generation;
+            query12.generation = options.generation;
           }
           if (options.userProject) {
-            query11.userProject = options.userProject;
+            query12.userProject = options.userProject;
           }
         }
         this.request({
           uri: path,
-          qs: query11
+          qs: query12
         }, (err, resp) => {
           if (err) {
             callback(err, null, resp);
@@ -180302,17 +180302,17 @@ var require_acl = __commonJS({
        * ```
        */
       update(options, callback) {
-        const query11 = {};
+        const query12 = {};
         if (options.generation) {
-          query11.generation = options.generation;
+          query12.generation = options.generation;
         }
         if (options.userProject) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
         }
         this.request({
           method: "PUT",
           uri: "/" + encodeURIComponent(options.entity),
-          qs: query11,
+          qs: query12,
           json: {
             role: options.role.toUpperCase()
           }
@@ -181220,12 +181220,12 @@ var require_signer = __commonJS({
         } else {
           throw new Error(`Invalid signed URL version: ${version4}. Supported versions are 'v2' and 'v4'.`);
         }
-        return promise.then((query11) => {
+        return promise.then((query12) => {
           var _a;
-          query11 = Object.assign(query11, cfg.queryParams);
+          query12 = Object.assign(query12, cfg.queryParams);
           const signedUrl = new url.URL(((_a = cfg.host) === null || _a === void 0 ? void 0 : _a.toString()) || config.cname || this.storage.apiEndpoint);
           signedUrl.pathname = this.getResourcePath(!!config.cname, this.bucket.name, config.file);
-          signedUrl.search = (0, util_js_1.qsStringify)(query11);
+          signedUrl.search = (0, util_js_1.qsStringify)(query12);
           return signedUrl.href;
         });
       }
@@ -181350,18 +181350,18 @@ var require_signer = __commonJS({
 `;
         }).join("");
       }
-      getCanonicalRequest(method, path, query11, headers, signedHeaders, contentSha256) {
+      getCanonicalRequest(method, path, query12, headers, signedHeaders, contentSha256) {
         return [
           method,
           path,
-          query11,
+          query12,
           headers,
           signedHeaders,
           contentSha256 || "UNSIGNED-PAYLOAD"
         ].join("\n");
       }
-      getCanonicalQueryParams(query11) {
-        return (0, util_js_1.objectEntries)(query11).map(([key, value]) => [(0, util_js_1.encodeURI)(key, true), (0, util_js_1.encodeURI)(value, true)]).sort((a, b) => a[0] < b[0] ? -1 : 1).map(([key, value]) => `${key}=${value}`).join("&");
+      getCanonicalQueryParams(query12) {
+        return (0, util_js_1.objectEntries)(query12).map(([key, value]) => [(0, util_js_1.encodeURI)(key, true), (0, util_js_1.encodeURI)(value, true)]).sort((a, b) => a[0] < b[0] ? -1 : 1).map(([key, value]) => `${key}=${value}`).join("&");
       }
       getResourcePath(cname, bucket, file) {
         if (cname) {
@@ -182754,19 +182754,19 @@ var require_file = __commonJS({
         } else {
           throw noDestinationError;
         }
-        const query11 = {};
+        const query12 = {};
         if (this.generation !== void 0) {
-          query11.sourceGeneration = this.generation;
+          query12.sourceGeneration = this.generation;
         }
         if (options.token !== void 0) {
-          query11.rewriteToken = options.token;
+          query12.rewriteToken = options.token;
         }
         if (options.userProject !== void 0) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
           delete options.userProject;
         }
         if (options.predefinedAcl !== void 0) {
-          query11.destinationPredefinedAcl = options.predefinedAcl;
+          query12.destinationPredefinedAcl = options.predefinedAcl;
           delete options.predefinedAcl;
         }
         newFile = newFile || destBucket.file(destName);
@@ -182779,13 +182779,13 @@ var require_file = __commonJS({
         if (newFile.encryptionKey !== void 0) {
           this.setEncryptionKey(newFile.encryptionKey);
         } else if (options.destinationKmsKeyName !== void 0) {
-          query11.destinationKmsKeyName = options.destinationKmsKeyName;
+          query12.destinationKmsKeyName = options.destinationKmsKeyName;
           delete options.destinationKmsKeyName;
         } else if (newFile.kmsKeyName !== void 0) {
-          query11.destinationKmsKeyName = newFile.kmsKeyName;
+          query12.destinationKmsKeyName = newFile.kmsKeyName;
         }
-        if (query11.destinationKmsKeyName) {
-          this.kmsKeyName = query11.destinationKmsKeyName;
+        if (query12.destinationKmsKeyName) {
+          this.kmsKeyName = query12.destinationKmsKeyName;
           const keyIndex = this.interceptors.indexOf(this.encryptionKeyInterceptor);
           if (keyIndex > -1) {
             this.interceptors.splice(keyIndex, 1);
@@ -182795,13 +182795,13 @@ var require_file = __commonJS({
           this.storage.retryOptions.autoRetry = false;
         }
         if (((_a = options.preconditionOpts) === null || _a === void 0 ? void 0 : _a.ifGenerationMatch) !== void 0) {
-          query11.ifGenerationMatch = (_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifGenerationMatch;
+          query12.ifGenerationMatch = (_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifGenerationMatch;
           delete options.preconditionOpts;
         }
         this.request({
           method: "POST",
           uri: `/rewriteTo/b/${destBucket.name}/o/${encodeURIComponent(newFile.name)}`,
-          qs: query11,
+          qs: query12,
           json: options,
           headers
         }, (err, resp) => {
@@ -182814,11 +182814,11 @@ var require_file = __commonJS({
             const options2 = {
               token: resp.rewriteToken
             };
-            if (query11.userProject) {
-              options2.userProject = query11.userProject;
+            if (query12.userProject) {
+              options2.userProject = query12.userProject;
             }
-            if (query11.destinationKmsKeyName) {
-              options2.destinationKmsKeyName = query11.destinationKmsKeyName;
+            if (query12.destinationKmsKeyName) {
+              options2.destinationKmsKeyName = query12.destinationKmsKeyName;
             }
             this.copy(newFile, options2, callback);
             return;
@@ -182995,12 +182995,12 @@ var require_file = __commonJS({
           (0, stream_1.pipeline)(rawResponseStream, ...transformStreams, throughStream, onComplete);
         };
         const makeRequest = () => {
-          const query11 = { alt: "media" };
+          const query12 = { alt: "media" };
           if (this.generation) {
-            query11.generation = this.generation;
+            query12.generation = this.generation;
           }
           if (options.userProject) {
-            query11.userProject = options.userProject;
+            query12.userProject = options.userProject;
           }
           const headers = {
             "Accept-Encoding": "gzip",
@@ -183014,7 +183014,7 @@ var require_file = __commonJS({
           const reqOpts = {
             uri: "",
             headers,
-            qs: query11
+            qs: query12
           };
           if (options[util_js_1.GCCL_GCS_CMD_KEY]) {
             reqOpts[util_js_1.GCCL_GCS_CMD_KEY] = options[util_js_1.GCCL_GCS_CMD_KEY];
@@ -184362,19 +184362,19 @@ var require_file = __commonJS({
         var _a, _b;
         const options = typeof optionsOrCallback === "object" ? optionsOrCallback : {};
         callback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
-        const query11 = {
+        const query12 = {
           predefinedAcl: options.strict ? "private" : "projectPrivate"
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         };
         if (((_a = options.preconditionOpts) === null || _a === void 0 ? void 0 : _a.ifMetagenerationMatch) !== void 0) {
-          query11.ifMetagenerationMatch = (_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifMetagenerationMatch;
+          query12.ifMetagenerationMatch = (_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifMetagenerationMatch;
           delete options.preconditionOpts;
         }
         if (options.userProject) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
         }
         const metadata = { ...options.metadata, acl: null };
-        this.setMetadata(metadata, query11, callback);
+        this.setMetadata(metadata, query12, callback);
       }
       /**
        * @typedef {array} MakeFilePublicResponse
@@ -184571,19 +184571,19 @@ var require_file = __commonJS({
         if (!this.shouldRetryBasedOnPreconditionAndIdempotencyStrat(options === null || options === void 0 ? void 0 : options.preconditionOpts)) {
           this.storage.retryOptions.autoRetry = false;
         }
-        const query11 = {};
+        const query12 = {};
         if (options.userProject !== void 0) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
           delete options.userProject;
         }
         if (((_a = options.preconditionOpts) === null || _a === void 0 ? void 0 : _a.ifGenerationMatch) !== void 0) {
-          query11.ifGenerationMatch = (_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifGenerationMatch;
+          query12.ifGenerationMatch = (_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifGenerationMatch;
           delete options.preconditionOpts;
         }
         this.request({
           method: "POST",
           uri: `/moveTo/o/${encodeURIComponent(newFile.name)}`,
-          qs: query11,
+          qs: query12,
           json: options
         }, (err, resp) => {
           this.storage.retryOptions.autoRetry = this.instanceRetryValue;
@@ -185902,7 +185902,7 @@ var require_bucket = __commonJS({
     })(BucketExceptionMessages || (exports2.BucketExceptionMessages = BucketExceptionMessages = {}));
     var Bucket = class _Bucket extends index_js_1.ServiceObject {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      getFilesStream(query11) {
+      getFilesStream(query12) {
         return new stream_1.Readable();
       }
       constructor(storage, name, options) {
@@ -186901,16 +186901,16 @@ var require_bucket = __commonJS({
         if (!body2.payloadFormat) {
           body2.payloadFormat = "JSON_API_V1";
         }
-        const query11 = {};
+        const query12 = {};
         if (body2.userProject) {
-          query11.userProject = body2.userProject;
+          query12.userProject = body2.userProject;
           delete body2.userProject;
         }
         this.request({
           method: "POST",
           uri: "/notificationConfigs",
           json: (0, util_js_1.convertObjKeysToSnakeCase)(body2),
-          qs: query11,
+          qs: query12,
           maxRetries: 0
           //explicitly set this value since this is a non-idempotent function
         }, (err, apiResponse) => {
@@ -187004,18 +187004,18 @@ var require_bucket = __commonJS({
        * ```
        */
       deleteFiles(queryOrCallback, callback) {
-        let query11 = {};
+        let query12 = {};
         if (typeof queryOrCallback === "function") {
           callback = queryOrCallback;
         } else if (queryOrCallback) {
-          query11 = queryOrCallback;
+          query12 = queryOrCallback;
         }
         const MAX_PARALLEL_LIMIT = 10;
         const MAX_QUEUE_SIZE = 1e3;
         const errors = [];
         const deleteFile = (file) => {
-          return file.delete(query11).catch((err) => {
-            if (!query11.force) {
+          return file.delete(query12).catch((err) => {
+            if (!query12.force) {
               throw err;
             }
             errors.push(err);
@@ -187025,7 +187025,7 @@ var require_bucket = __commonJS({
           try {
             let promises = [];
             const limit2 = (0, p_limit_1.default)(MAX_PARALLEL_LIMIT);
-            const filesStream = this.getFilesStream(query11);
+            const filesStream = this.getFilesStream(query12);
             for await (const curFile of filesStream) {
               if (promises.length >= MAX_QUEUE_SIZE) {
                 await Promise.all(promises);
@@ -187588,17 +187588,17 @@ var require_bucket = __commonJS({
        * Example of listing files, filtered by a prefix:
        */
       getFiles(queryOrCallback, callback) {
-        let query11 = typeof queryOrCallback === "object" ? queryOrCallback : {};
+        let query12 = typeof queryOrCallback === "object" ? queryOrCallback : {};
         if (!callback) {
           callback = queryOrCallback;
         }
-        query11 = Object.assign({}, query11);
-        if (query11.fields && query11.autoPaginate && !query11.fields.includes("nextPageToken")) {
-          query11.fields = `${query11.fields},nextPageToken`;
+        query12 = Object.assign({}, query12);
+        if (query12.fields && query12.autoPaginate && !query12.fields.includes("nextPageToken")) {
+          query12.fields = `${query12.fields},nextPageToken`;
         }
         this.request({
           uri: "/o",
-          qs: query11
+          qs: query12
         }, (err, resp) => {
           if (err) {
             callback(err, null, null, resp);
@@ -187607,11 +187607,11 @@ var require_bucket = __commonJS({
           const itemsArray = resp.items ? resp.items : [];
           const files = itemsArray.map((file) => {
             const options = {};
-            if (query11.fields) {
+            if (query12.fields) {
               const fileInstance2 = file;
               return fileInstance2;
             }
-            if (query11.versions) {
+            if (query12.versions) {
               options.generation = file.generation;
             }
             if (file.kmsKeyName) {
@@ -187623,7 +187623,7 @@ var require_bucket = __commonJS({
           });
           let nextQuery = null;
           if (resp.nextPageToken) {
-            nextQuery = Object.assign({}, query11, {
+            nextQuery = Object.assign({}, query12, {
               pageToken: resp.nextPageToken
             });
           }
@@ -188088,26 +188088,26 @@ var require_bucket = __commonJS({
         const options = typeof optionsOrCallback === "object" ? optionsOrCallback : {};
         callback = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
         options.private = true;
-        const query11 = {
+        const query12 = {
           predefinedAcl: "projectPrivate"
         };
         if (options.userProject) {
-          query11.userProject = options.userProject;
+          query12.userProject = options.userProject;
         }
         if ((_a = options.preconditionOpts) === null || _a === void 0 ? void 0 : _a.ifGenerationMatch) {
-          query11.ifGenerationMatch = options.preconditionOpts.ifGenerationMatch;
+          query12.ifGenerationMatch = options.preconditionOpts.ifGenerationMatch;
         }
         if ((_b = options.preconditionOpts) === null || _b === void 0 ? void 0 : _b.ifGenerationNotMatch) {
-          query11.ifGenerationNotMatch = options.preconditionOpts.ifGenerationNotMatch;
+          query12.ifGenerationNotMatch = options.preconditionOpts.ifGenerationNotMatch;
         }
         if ((_c = options.preconditionOpts) === null || _c === void 0 ? void 0 : _c.ifMetagenerationMatch) {
-          query11.ifMetagenerationMatch = options.preconditionOpts.ifMetagenerationMatch;
+          query12.ifMetagenerationMatch = options.preconditionOpts.ifMetagenerationMatch;
         }
         if ((_d = options.preconditionOpts) === null || _d === void 0 ? void 0 : _d.ifMetagenerationNotMatch) {
-          query11.ifMetagenerationNotMatch = options.preconditionOpts.ifMetagenerationNotMatch;
+          query12.ifMetagenerationNotMatch = options.preconditionOpts.ifMetagenerationNotMatch;
         }
         const metadata = { ...options.metadata, acl: null };
-        this.setMetadata(metadata, query11, (err) => {
+        this.setMetadata(metadata, query12, (err) => {
           if (err) {
             callback(err);
           }
@@ -189868,33 +189868,33 @@ var require_storage = __commonJS({
           };
           delete body2.requesterPays;
         }
-        const query11 = {
+        const query12 = {
           project: this.projectId
         };
         if (body2.userProject) {
-          query11.userProject = body2.userProject;
+          query12.userProject = body2.userProject;
           delete body2.userProject;
         }
         if (body2.enableObjectRetention) {
-          query11.enableObjectRetention = body2.enableObjectRetention;
+          query12.enableObjectRetention = body2.enableObjectRetention;
           delete body2.enableObjectRetention;
         }
         if (body2.predefinedAcl) {
-          query11.predefinedAcl = body2.predefinedAcl;
+          query12.predefinedAcl = body2.predefinedAcl;
           delete body2.predefinedAcl;
         }
         if (body2.predefinedDefaultObjectAcl) {
-          query11.predefinedDefaultObjectAcl = body2.predefinedDefaultObjectAcl;
+          query12.predefinedDefaultObjectAcl = body2.predefinedDefaultObjectAcl;
           delete body2.predefinedDefaultObjectAcl;
         }
         if (body2.projection) {
-          query11.projection = body2.projection;
+          query12.projection = body2.projection;
           delete body2.projection;
         }
         this.request({
           method: "POST",
           uri: "/b",
-          qs: query11,
+          qs: query12,
           json: body2
         }, (err, resp) => {
           if (err) {
@@ -189984,13 +189984,13 @@ var require_storage = __commonJS({
           throw new Error(StorageExceptionMessages.HMAC_SERVICE_ACCOUNT);
         }
         const { options, callback } = (0, util_js_1.normalize)(optionsOrCb, cb);
-        const query11 = Object.assign({}, options, { serviceAccountEmail });
-        const projectId = query11.projectId || this.projectId;
-        delete query11.projectId;
+        const query12 = Object.assign({}, options, { serviceAccountEmail });
+        const projectId = query12.projectId || this.projectId;
+        delete query12.projectId;
         this.request({
           method: "POST",
           uri: `/projects/${projectId}/hmacKeys`,
-          qs: query11,
+          qs: query12,
           maxRetries: 0
           //explicitly set this value since this is a non-idempotent function
         }, (err, resp) => {
@@ -190128,12 +190128,12 @@ var require_storage = __commonJS({
       }
       getHmacKeys(optionsOrCb, cb) {
         const { options, callback } = (0, util_js_1.normalize)(optionsOrCb, cb);
-        const query11 = Object.assign({}, options);
-        const projectId = query11.projectId || this.projectId;
-        delete query11.projectId;
+        const query12 = Object.assign({}, options);
+        const projectId = query12.projectId || this.projectId;
+        delete query12.projectId;
         this.request({
           uri: `/projects/${projectId}/hmacKeys`,
-          qs: query11
+          qs: query12
         }, (err, resp) => {
           if (err) {
             callback(err, null, null, resp);
@@ -196310,12 +196310,12 @@ var require_query_util = __commonJS({
         this._queryOptions = _queryOptions;
         this._serializer = _serializer;
       }
-      _getResponse(query11, transactionOrReadTime, retryWithCursor = true, explainOptions) {
+      _getResponse(query12, transactionOrReadTime, retryWithCursor = true, explainOptions) {
         const stack = Error().stack;
         return new Promise((resolve, reject) => {
           const docs = [];
           const output = {};
-          this._stream(query11, transactionOrReadTime, retryWithCursor, explainOptions).on("error", (err) => {
+          this._stream(query12, transactionOrReadTime, retryWithCursor, explainOptions).on("error", (err) => {
             reject((0, util_1.wrapError)(err, stack));
           }).on("data", (data) => {
             if (data.transaction) {
@@ -196334,7 +196334,7 @@ var require_query_util = __commonJS({
             if (this._queryOptions.limitType === types_1.LimitType.Last) {
               docs.reverse();
             }
-            const result = output.readTime ? query11._createSnapshot(output.readTime, docs.length, () => docs, () => {
+            const result = output.readTime ? query12._createSnapshot(output.readTime, docs.length, () => docs, () => {
               const changes = [];
               for (let i = 0; i < docs.length; ++i) {
                 changes.push(new document_change_1.DocumentChange("added", docs[i], -1, i));
@@ -196360,11 +196360,11 @@ var require_query_util = __commonJS({
         }
         return Date.now() - startTime >= totalTimeout;
       }
-      stream(query11) {
+      stream(query12) {
         if (this._queryOptions.limitType === types_1.LimitType.Last) {
           throw new Error("Query results for queries that include limitToLast() constraints cannot be streamed. Use Query.get() instead.");
         }
-        const responseStream = this._stream(query11);
+        const responseStream = this._stream(query12);
         const transform = new stream_1.Transform({
           objectMode: true,
           transform(chunk, encoding, callback) {
@@ -196375,7 +196375,7 @@ var require_query_util = __commonJS({
         responseStream.on("error", (e) => transform.destroy(e));
         return transform;
       }
-      _stream(query11, transactionOrReadTime, retryWithCursor = true, explainOptions) {
+      _stream(query12, transactionOrReadTime, retryWithCursor = true, explainOptions) {
         const tag2 = (0, util_1.requestTag)();
         const startTime = Date.now();
         const isExplain = explainOptions !== void 0;
@@ -196424,7 +196424,7 @@ var require_query_util = __commonJS({
           }
         });
         this._firestore.initializeIfNeeded(tag2).then(async () => {
-          let request = query11.toProto(transactionOrReadTime, explainOptions);
+          let request = query12.toProto(transactionOrReadTime, explainOptions);
           let isRetryRequestWithCursor = false;
           let streamActive;
           do {
@@ -196456,20 +196456,20 @@ var require_query_util = __commonJS({
                       false
                     );
                   } else if (lastReceivedDocument && retryWithCursor) {
-                    if (query11 instanceof vector_query_1.VectorQuery) {
+                    if (query12 instanceof vector_query_1.VectorQuery) {
                       throw new Error("Unimplemented: Vector query does not support cursors yet.");
                     }
                     (0, logger_1.logger)("Query._stream", tag2, "Query failed with retryable stream error and progress was made receiving documents, so the stream is being retried.");
                     isRetryRequestWithCursor = true;
                     let newQuery;
                     if (!this._queryOptions.limit) {
-                      newQuery = query11;
+                      newQuery = query12;
                     } else {
                       const newLimit = this._queryOptions.limit - numDocumentsReceived;
                       if (this._queryOptions.limitType === void 0 || this._queryOptions.limitType === types_1.LimitType.First) {
-                        newQuery = query11.limit(newLimit);
+                        newQuery = query12.limit(newLimit);
                       } else {
-                        newQuery = query11.limitToLast(newLimit);
+                        newQuery = query12.limitToLast(newLimit);
                       }
                     }
                     if (this._queryOptions.requireConsistency) {
@@ -198990,17 +198990,17 @@ var require_watch = __commonJS({
     };
     exports2.DocumentWatch = DocumentWatch;
     var QueryWatch = class extends Watch {
-      constructor(firestore, query11, converter) {
+      constructor(firestore, query12, converter) {
         super(firestore, converter);
-        this.query = query11;
-        this.comparator = query11.comparator();
+        this.query = query12;
+        this.comparator = query12.comparator();
       }
       getComparator() {
         return this.query.comparator();
       }
       getTarget(resumeToken) {
-        const query11 = this.query.toProto();
-        return { query: query11, targetId: WATCH_TARGET_ID, resumeToken };
+        const query12 = this.query.toProto();
+        return { query: query12, targetId: WATCH_TARGET_ID, resumeToken };
       }
     };
     exports2.QueryWatch = QueryWatch;
@@ -208905,8 +208905,8 @@ var require_transaction3 = __commonJS({
           return documentReader._get(this._requestTag);
         });
       }
-      async getQueryFn(query11, opts) {
-        return query11._get(opts);
+      async getQueryFn(query12, opts) {
+        return query12._get(opts);
       }
     };
     exports2.Transaction = Transaction;
@@ -209275,23 +209275,23 @@ var require_recursive_delete = __commonJS({
           parentPath = parentPath.popLast();
         }
         const collectionId = ref instanceof _1.CollectionReference ? ref.id : ref.parent.id;
-        let query11 = new _1.Query(this.firestore, query_options_1.QueryOptions.forKindlessAllDescendants(
+        let query12 = new _1.Query(this.firestore, query_options_1.QueryOptions.forKindlessAllDescendants(
           parentPath,
           collectionId,
           /* requireConsistency= */
           false
         ));
-        query11 = query11.select(_1.FieldPath.documentId()).limit(this.maxPendingOps);
+        query12 = query12.select(_1.FieldPath.documentId()).limit(this.maxPendingOps);
         if (ref instanceof _1.CollectionReference) {
           const nullChar = String.fromCharCode(0);
           const startAt = collectionId + "/" + exports2.REFERENCE_NAME_MIN_ID;
           const endAt = collectionId + nullChar + "/" + exports2.REFERENCE_NAME_MIN_ID;
-          query11 = query11.where(_1.FieldPath.documentId(), ">=", startAt).where(_1.FieldPath.documentId(), "<", endAt);
+          query12 = query12.where(_1.FieldPath.documentId(), ">=", startAt).where(_1.FieldPath.documentId(), "<", endAt);
         }
         if (this.lastDocumentSnap) {
-          query11 = query11.startAfter(this.lastDocumentSnap);
+          query12 = query12.startAfter(this.lastDocumentSnap);
         }
-        return query11.stream();
+        return query12.stream();
       }
       /**
        * Called when all descendants of the provided reference have been streamed
@@ -225628,15 +225628,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select12("staff", { id: staffId });
+    const { select: select13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select13("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors2 = await select12("vendors", { id: vendorId });
+    const vendors2 = await select13("vendors", { id: vendorId });
     if (vendors2.length > 0 && vendors2[0].latitude && vendors2[0].longitude) {
       return {
         latitude: parseFloat(vendors2[0].latitude),
@@ -225651,8 +225651,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select12("staff", { id: staffId });
+    const { select: select13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select13("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -225685,6 +225685,211 @@ async function calculateStaffETA(staffId, customerLocation, bookingDateTime, opt
   } catch (error) {
     console.error("Error calculating staff ETA:", error);
     throw error;
+  }
+}
+
+// src/utils/service-availability-validator.ts
+init_rds_connection();
+async function getDashboardConfig(roleId) {
+  try {
+    const settings = await select("platform_settings", {
+      setting_key: `platform:ui:dashboard:${roleId}`
+    });
+    if (settings.length === 0) {
+      return null;
+    }
+    const config = settings[0].setting_value;
+    if (Array.isArray(config)) {
+      return { buttons: config };
+    }
+    if (config && typeof config === "object") {
+      if (Array.isArray(config.buttons)) {
+        return config;
+      }
+      if (Array.isArray(config.widgets)) {
+        return { buttons: config.widgets, ...config };
+      }
+      return config;
+    }
+    return null;
+  } catch (error) {
+    console.error("[ServiceAvailability] Error fetching dashboard config:", error);
+    return null;
+  }
+}
+async function getRoleConfig(roleId) {
+  try {
+    const roles = await select("roles", { id: roleId });
+    if (roles.length === 0) {
+      const allRoles = await select("roles", {});
+      const normalizedRoleId = roleId.toLowerCase().replace(/\s+/g, "_");
+      const matchedRole = allRoles.find(
+        (r) => r.name?.toLowerCase() === normalizedRoleId || r.roleCode?.toLowerCase() === normalizedRoleId || r.display_name?.toLowerCase() === normalizedRoleId.replace(/_/g, " ") || r.id === roleId
+      );
+      if (matchedRole) {
+        return matchedRole;
+      }
+      return null;
+    }
+    return roles[0];
+  } catch (error) {
+    console.error("[ServiceAvailability] Error fetching role config:", error);
+    return null;
+  }
+}
+async function getService(serviceId) {
+  try {
+    const services = await select("services", { id: serviceId });
+    if (services.length > 0) {
+      return services[0];
+    }
+    const vendorServices = await select("vendor_services", { id: serviceId });
+    if (vendorServices.length > 0) {
+      return vendorServices[0];
+    }
+    return null;
+  } catch (error) {
+    console.error("[ServiceAvailability] Error fetching service:", error);
+    return null;
+  }
+}
+async function validateServiceAvailability(serviceId, roleId, customerId) {
+  try {
+    const service = await getService(serviceId);
+    if (!service) {
+      return {
+        available: false,
+        reason: "Service not found",
+        code: "NOT_FOUND"
+      };
+    }
+    if (service.is_enabled === false) {
+      return {
+        available: false,
+        reason: "Service is currently disabled",
+        code: "SERVICE_DISABLED"
+      };
+    }
+    const dashboardConfig = await getDashboardConfig(roleId);
+    if (dashboardConfig) {
+      const buttons = dashboardConfig.buttons || dashboardConfig.widgets || [];
+      const serviceButton = buttons.find(
+        (btn) => btn.serviceId === serviceId || btn.id === serviceId || btn.serviceType === service.service_type || btn.serviceType === service.category
+      );
+      if (serviceButton) {
+        if (!serviceButton.enabled) {
+          return {
+            available: false,
+            reason: "Service is not available for this role",
+            code: "UI_DISABLED"
+          };
+        }
+        const launchPhase = serviceButton.launchPhase || "full";
+        if (launchPhase === "coming_soon") {
+          return {
+            available: false,
+            reason: "Service is coming soon",
+            code: "PHASE_RESTRICTED"
+          };
+        }
+        if (launchPhase === "beta") {
+        }
+        if (serviceButton.rolloutPercentage !== void 0 && serviceButton.rolloutPercentage < 100) {
+          if (customerId) {
+            const hash = customerId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            const customerRollout = hash % 100 + 1;
+            if (customerRollout > serviceButton.rolloutPercentage) {
+              return {
+                available: false,
+                reason: "Service is in gradual rollout phase",
+                code: "PHASE_RESTRICTED"
+              };
+            }
+          }
+        }
+        if (serviceButton.requiredRoleTypes && serviceButton.requiredRoleTypes.length > 0) {
+          const roleConfig2 = await getRoleConfig(roleId);
+          if (roleConfig2) {
+            const roleVendorTypes = roleConfig2.config?.vendorTypes || roleConfig2.config?.vendor_types || [];
+            const normalizedRoleTypes = roleVendorTypes.map(
+              (vt) => vt.toLowerCase().replace(/_/g, "_")
+            );
+            const hasRequiredType = serviceButton.requiredRoleTypes.some((requiredType) => {
+              const normalized = requiredType.toLowerCase().replace(/_/g, "_");
+              return normalizedRoleTypes.includes(normalized);
+            });
+            if (!hasRequiredType) {
+              return {
+                available: false,
+                reason: "Service is not available for this role type",
+                code: "ROLE_RESTRICTED"
+              };
+            }
+          }
+        }
+        if (serviceButton.allowedServiceStyles && serviceButton.allowedServiceStyles.length > 0) {
+          const serviceStyle = service.service_style || service.serviceStyle || "at_clinic";
+          const normalizedServiceStyle = serviceStyle.toLowerCase().replace(/_/g, "_");
+          const isStyleAllowed = serviceButton.allowedServiceStyles.some((allowedStyle) => {
+            const normalized = allowedStyle.toLowerCase().replace(/_/g, "_");
+            return normalizedServiceStyle === normalized;
+          });
+          if (!isStyleAllowed) {
+            return {
+              available: false,
+              reason: "Service style not allowed for this role",
+              code: "ROLE_RESTRICTED"
+            };
+          }
+        }
+      } else {
+      }
+    }
+    const roleConfig = await getRoleConfig(roleId);
+    if (roleConfig) {
+      const config = roleConfig.config || {};
+      const allowedServiceTypes = config.serviceTypes || config.service_types || [];
+      const allowedServiceStyles = config.serviceStyles || config.service_styles || [];
+      if (allowedServiceTypes.length > 0) {
+        const serviceType = service.service_type || service.category || service.type;
+        const normalizedServiceType = serviceType?.toLowerCase().replace(/_/g, "_");
+        const isTypeAllowed = allowedServiceTypes.some((allowedType) => {
+          const normalized = allowedType.toLowerCase().replace(/_/g, "_");
+          return normalizedServiceType === normalized;
+        });
+        if (!isTypeAllowed) {
+          return {
+            available: false,
+            reason: "Service type not allowed for this role",
+            code: "ROLE_RESTRICTED"
+          };
+        }
+      }
+      if (allowedServiceStyles.length > 0) {
+        const serviceStyle = service.service_style || service.serviceStyle || "at_clinic";
+        const normalizedServiceStyle = serviceStyle.toLowerCase().replace(/_/g, "_");
+        const isStyleAllowed = allowedServiceStyles.some((allowedStyle) => {
+          const normalized = allowedStyle.toLowerCase().replace(/_/g, "_");
+          return normalizedServiceStyle === normalized;
+        });
+        if (!isStyleAllowed) {
+          return {
+            available: false,
+            reason: "Service style not allowed for this role",
+            code: "ROLE_RESTRICTED"
+          };
+        }
+      }
+    }
+    return {
+      available: true
+    };
+  } catch (error) {
+    console.error("[ServiceAvailability] Error validating service availability:", error);
+    return {
+      available: true,
+      reason: "Validation error, allowing booking for backward compatibility"
+    };
   }
 }
 
@@ -225769,10 +225974,66 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       return this.error(dateValidation.error, 400, "VALIDATION_ERROR", void 0, requestId);
     }
     const services = await select("services", { id: serviceId });
-    if (services.length === 0) {
+    let service = services.length > 0 ? services[0] : null;
+    if (!service) {
       const vendorServices = await select("vendor_services", { id: serviceId });
       if (vendorServices.length === 0) {
         return this.error("Service not found", 404, "NOT_FOUND", void 0, requestId);
+      }
+      service = vendorServices[0];
+    }
+    let roleId = null;
+    try {
+      const vendors2 = await select("vendors", { id: vendorId });
+      if (vendors2.length > 0) {
+        roleId = vendors2[0].role_id || vendors2[0].roleId || null;
+        if (!roleId) {
+          const vendorRoles = await query(
+            `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
+            [vendorId]
+          );
+          if (vendorRoles.rows.length > 0) {
+            roleId = vendorRoles.rows[0].role_id;
+          }
+        }
+        if (!roleId && vendors2[0].vendor_type) {
+          const vendorType = vendors2[0].vendor_type.toLowerCase();
+          const typeToRole = {
+            "veterinarian": "veterinarian",
+            "vet": "veterinarian",
+            "groomer": "groomer",
+            "grooming": "groomer",
+            "walker": "walker",
+            "trainer": "trainer",
+            "training": "trainer"
+          };
+          roleId = typeToRole[vendorType] || vendorType;
+        }
+      }
+    } catch (error) {
+      console.warn("[Booking] Could not fetch vendor role, skipping availability check:", error);
+    }
+    if (roleId) {
+      const availabilityResult = await validateServiceAvailability(
+        serviceId,
+        roleId,
+        customerId
+      );
+      if (!availabilityResult.available) {
+        const errorMessage = availabilityResult.reason || "Service is not available";
+        const errorCode = availabilityResult.code || "SERVICE_UNAVAILABLE";
+        return this.error(
+          errorMessage,
+          403,
+          errorCode,
+          {
+            serviceId,
+            roleId,
+            reason: availabilityResult.reason,
+            code: availabilityResult.code
+          },
+          requestId
+        );
       }
     }
     try {
@@ -226784,8 +227045,8 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
           const walletBalance = parseFloat(wallets[0].balance || "0");
           const actualWalletAmount = Math.min(walletAmountToUse, walletBalance, amount);
           if (actualWalletAmount > 0) {
-            const { query: query11 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-            const debitResult = await query11(
+            const { query: query12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+            const debitResult = await query12(
               `UPDATE customer_wallets
                SET balance = balance - $1, updated_at = NOW()
                WHERE customer_id = $2 AND balance >= $1
@@ -228206,6 +228467,42 @@ function registerRoleEndpoints(app2) {
     const result = await getRolesHandler.execute(event, context3);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  function getDefaultButtonsForRole2(roleId) {
+    const roleLower = roleId.toLowerCase();
+    const defaultButtons = {
+      veterinarian: [
+        { id: "vet_consultation", label: "Book Consultation", icon: "\u{1FA7A}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "vet_emergency", label: "Emergency Care", icon: "\u{1F6A8}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "vet_vaccination", label: "Vaccination", icon: "\u{1F489}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "vet_checkup", label: "Health Checkup", icon: "\u{1F4CB}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+      ],
+      groomer: [
+        { id: "grooming_booking", label: "Book Grooming", icon: "\u2702\uFE0F", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "grooming_spa", label: "Pet Spa", icon: "\u{1F6C1}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "grooming_nail", label: "Nail Trimming", icon: "\u{1F485}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+      ],
+      walker: [
+        { id: "walk_booking", label: "Book Walk", icon: "\u{1F6B6}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "walk_sitting", label: "Pet Sitting", icon: "\u{1F3E0}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+      ],
+      trainer: [
+        { id: "training_booking", label: "Book Training", icon: "\u{1F393}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+        { id: "training_behavior", label: "Behavior Training", icon: "\u{1F415}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+      ]
+    };
+    if (defaultButtons[roleLower]) {
+      return defaultButtons[roleLower];
+    }
+    for (const [key, buttons] of Object.entries(defaultButtons)) {
+      if (roleLower.includes(key) || key.includes(roleLower)) {
+        return buttons;
+      }
+    }
+    return [
+      { id: "book_service", label: "Book Service", icon: "\u{1F4C5}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "view_services", label: "View Services", icon: "\u{1F50D}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+    ];
+  }
   app2.get("/config/ui/dashboard", async (c) => {
     try {
       const roleId = c.req.query("roleId");
@@ -228215,11 +228512,24 @@ function registerRoleEndpoints(app2) {
       const settings = await select("platform_settings", {
         setting_key: `platform:ui:dashboard:${roleId}`
       });
-      const dashboardConfig = settings.length > 0 ? settings[0].setting_value : {
-        widgets: [],
-        layout: "default",
-        theme: "light"
-      };
+      let dashboardConfig;
+      if (settings.length > 0) {
+        dashboardConfig = settings[0].setting_value;
+        if (!dashboardConfig.buttons && !dashboardConfig.widgets) {
+          dashboardConfig.buttons = getDefaultButtonsForRole2(roleId);
+        } else if (dashboardConfig.widgets && dashboardConfig.widgets.length === 0) {
+          dashboardConfig.buttons = getDefaultButtonsForRole2(roleId);
+        } else if (dashboardConfig.widgets && !dashboardConfig.buttons) {
+          dashboardConfig.buttons = dashboardConfig.widgets;
+        }
+      } else {
+        dashboardConfig = {
+          buttons: getDefaultButtonsForRole2(roleId),
+          widgets: getDefaultButtonsForRole2(roleId),
+          layout: "default",
+          theme: "light"
+        };
+      }
       return c.json({
         success: true,
         config: dashboardConfig,
@@ -228227,24 +228537,48 @@ function registerRoleEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error fetching dashboard config:", error);
+      const roleId = c.req.query("roleId") || "veterinarian";
       return c.json({
         success: true,
-        config: { widgets: [], layout: "default", theme: "light" }
+        config: {
+          buttons: getDefaultButtonsForRole2(roleId),
+          widgets: getDefaultButtonsForRole2(roleId),
+          layout: "default",
+          theme: "light"
+        }
       });
     }
   });
   app2.put("/config/ui/dashboard", async (c) => {
     try {
       const body2 = await c.req.json();
-      const { roleId, ...config } = body2;
+      const { roleId, config } = body2;
       if (!roleId) {
         return c.json({ error: "roleId is required" }, 400);
+      }
+      let configToSave;
+      if (Array.isArray(config)) {
+        configToSave = {
+          buttons: config,
+          widgets: config,
+          // Keep widgets for backward compatibility
+          layout: "default",
+          theme: "light"
+        };
+      } else if (config && typeof config === "object") {
+        configToSave = {
+          ...config,
+          buttons: config.buttons || config.widgets || [],
+          widgets: config.widgets || config.buttons || []
+        };
+      } else {
+        return c.json({ error: "Invalid config format" }, 400);
       }
       await upsert(
         "platform_settings",
         {
           setting_key: `platform:ui:dashboard:${roleId}`,
-          setting_value: config,
+          setting_value: configToSave,
           setting_type: "json",
           description: `Dashboard UI configuration for role ${roleId}`
         },
@@ -228252,7 +228586,8 @@ function registerRoleEndpoints(app2) {
       );
       return c.json({
         success: true,
-        message: "Dashboard configuration updated"
+        message: "Dashboard configuration updated",
+        config: configToSave
       });
     } catch (error) {
       console.error("Error updating dashboard config:", error);
@@ -236708,8 +237043,8 @@ function registerPrescriptionEndpoints(app2) {
       const { prescriptionId } = c.req.param();
       const { actorId, actorRole, actorName } = await c.req.json();
       try {
-        const { insert: insert6, query: query11 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
-        await query11(`
+        const { insert: insert6, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        await query12(`
           CREATE TABLE IF NOT EXISTS prescription_downloads (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             prescription_id UUID NOT NULL REFERENCES prescriptions(id),
@@ -247702,8 +248037,8 @@ function registerOrderManagementEndpoints(app2) {
         const payments = await select("payments", { order_id: orderId, payment_status: "completed" });
         if (payments.length > 0) {
           const payment = payments[0];
-          const { insert: insert6, query: query11 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
-          await query11(
+          const { insert: insert6, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+          await query12(
             `INSERT INTO refunds (
               payment_id,
               order_id,
@@ -262460,8 +262795,8 @@ function registerLoyaltyActionRulesManagementEndpoints(app2) {
   app2.get("/admin/loyalty-action-rules", async (c) => {
     const event = createApiGatewayEvent34(c.req);
     try {
-      const query11 = c.req.query();
-      event.queryStringParameters = query11 ? Object.fromEntries(Object.entries(query11)) : {};
+      const query12 = c.req.query();
+      event.queryStringParameters = query12 ? Object.fromEntries(Object.entries(query12)) : {};
     } catch (e) {
       event.queryStringParameters = {};
     }
@@ -262792,8 +263127,8 @@ function registerLoyaltySegmentsManagementEndpoints(app2) {
   app2.get("/admin/loyalty-segments", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     try {
-      const query11 = c.req.query();
-      event.queryStringParameters = query11 ? Object.fromEntries(Object.entries(query11)) : {};
+      const query12 = c.req.query();
+      event.queryStringParameters = query12 ? Object.fromEntries(Object.entries(query12)) : {};
     } catch (e) {
       event.queryStringParameters = {};
     }
@@ -264314,9 +264649,9 @@ function registerSupportCrmEndpoints(app2) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select13 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select12("platform_settings", {
+        const settings = await select13("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -267861,6 +268196,594 @@ function registerVendorDashboardMissingEndpoints(app2) {
   });
 }
 
+// src/endpoints/ui-dashboard-config.ts
+init_rds_connection();
+var DEFAULT_DASHBOARD_BUTTONS = [
+  {
+    id: "veterinarian",
+    label: "Veterinarian",
+    icon: "\u{1FA7A}",
+    enabled: true,
+    serviceId: "vet",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "groomer",
+    label: "Groomer",
+    icon: "\u2702\uFE0F",
+    enabled: true,
+    serviceId: "grooming",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "walker",
+    label: "Walker",
+    icon: "\u{1F6B6}",
+    enabled: true,
+    serviceId: "walking",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "trainer",
+    label: "Trainer",
+    icon: "\u{1F393}",
+    enabled: true,
+    serviceId: "training",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "boarding",
+    label: "Boarding",
+    icon: "\u{1F3E0}",
+    enabled: true,
+    serviceId: "boarding",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "nutritionist",
+    label: "Nutritionist",
+    icon: "\u{1F957}",
+    enabled: true,
+    serviceId: "nutrition",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "insurance",
+    label: "Insurance",
+    icon: "\u{1F6E1}\uFE0F",
+    enabled: true,
+    serviceId: "insurance",
+    launchPhase: "full",
+    rolloutPercentage: 100
+  },
+  {
+    id: "complete_plan",
+    label: "Complete Plan",
+    icon: "\u{1F4CB}",
+    enabled: true,
+    serviceId: "care_plan",
+    launchPhase: "full",
+    rolloutPercentage: 100,
+    description: "AI-powered comprehensive pet care plan generation"
+  }
+];
+function getDefaultButtonsForRole(roleId) {
+  const roleLower = roleId.toLowerCase();
+  const defaultButtons = {
+    veterinarian: [
+      { id: "vet_consultation", label: "Book Consultation", icon: "\u{1FA7A}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "vet_emergency", label: "Emergency Care", icon: "\u{1F6A8}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "vet_vaccination", label: "Vaccination", icon: "\u{1F489}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "vet_checkup", label: "Health Checkup", icon: "\u{1F4CB}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+    ],
+    groomer: [
+      { id: "grooming_booking", label: "Book Grooming", icon: "\u2702\uFE0F", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "grooming_spa", label: "Pet Spa", icon: "\u{1F6C1}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "grooming_nail", label: "Nail Trimming", icon: "\u{1F485}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+    ],
+    walker: [
+      { id: "walk_booking", label: "Book Walk", icon: "\u{1F6B6}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "walk_sitting", label: "Pet Sitting", icon: "\u{1F3E0}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+    ],
+    trainer: [
+      { id: "training_booking", label: "Book Training", icon: "\u{1F393}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
+      { id: "training_behavior", label: "Behavior Training", icon: "\u{1F415}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
+    ]
+  };
+  if (defaultButtons[roleLower]) {
+    return defaultButtons[roleLower];
+  }
+  for (const [key, buttons] of Object.entries(defaultButtons)) {
+    if (roleLower.includes(key) || key.includes(roleLower)) {
+      return buttons;
+    }
+  }
+  return DEFAULT_DASHBOARD_BUTTONS;
+}
+function registerUIDashboardConfigEndpoints(app2) {
+  app2.get("/config/ui/dashboard", async (c) => {
+    try {
+      const roleId = c.req.query("roleId");
+      if (!roleId) {
+        return c.json({
+          success: false,
+          error: "roleId query parameter is required"
+        }, 400);
+      }
+      const settingKeys = [
+        `platform:ui:dashboard:${roleId}`,
+        `ui_dashboard_config:${roleId}`
+      ];
+      let existingConfig = null;
+      for (const settingKey of settingKeys) {
+        const configs = await query(
+          `SELECT * FROM platform_settings 
+           WHERE setting_key = $1`,
+          [settingKey]
+        ).catch(() => ({ rows: [] }));
+        if (configs.rows && configs.rows.length > 0) {
+          existingConfig = configs.rows[0];
+          break;
+        }
+      }
+      let buttons = [];
+      if (existingConfig) {
+        try {
+          const settingValue = typeof existingConfig.setting_value === "string" ? JSON.parse(existingConfig.setting_value) : existingConfig.setting_value;
+          if (Array.isArray(settingValue)) {
+            buttons = settingValue;
+          } else if (settingValue && Array.isArray(settingValue.buttons)) {
+            buttons = settingValue.buttons;
+          } else if (settingValue && Array.isArray(settingValue.widgets)) {
+            buttons = settingValue.widgets;
+          } else {
+            buttons = [];
+          }
+        } catch (e) {
+          console.warn("Failed to parse config, using defaults:", e);
+          buttons = [];
+        }
+      }
+      if (buttons.length === 0) {
+        buttons = getDefaultButtonsForRole(roleId);
+      }
+      return c.json({
+        success: true,
+        config: {
+          buttons,
+          widgets: buttons,
+          // For backward compatibility
+          layout: "default",
+          theme: "light"
+        },
+        roleId
+      });
+    } catch (error) {
+      console.error("Error fetching UI dashboard config:", error);
+      const roleId = c.req.query("roleId") || "veterinarian";
+      const defaultButtons = getDefaultButtonsForRole(roleId);
+      return c.json({
+        success: true,
+        config: {
+          buttons: defaultButtons,
+          widgets: defaultButtons,
+          layout: "default",
+          theme: "light"
+        },
+        roleId
+      });
+    }
+  });
+  app2.put("/config/ui/dashboard", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const { roleId, config } = body2;
+      if (!roleId) {
+        return c.json({
+          success: false,
+          error: "roleId is required"
+        }, 400);
+      }
+      let configToSave;
+      if (Array.isArray(config)) {
+        configToSave = {
+          buttons: config,
+          widgets: config,
+          // Keep widgets for backward compatibility
+          layout: "default",
+          theme: "light"
+        };
+      } else if (config && typeof config === "object") {
+        configToSave = {
+          ...config,
+          buttons: config.buttons || config.widgets || [],
+          widgets: config.widgets || config.buttons || []
+        };
+      } else {
+        return c.json({
+          success: false,
+          error: "config must be an array or object"
+        }, 400);
+      }
+      const settingKey = `platform:ui:dashboard:${roleId}`;
+      const existingKeys = [
+        `platform:ui:dashboard:${roleId}`,
+        `ui_dashboard_config:${roleId}`
+      ];
+      let existing = null;
+      for (const key of existingKeys) {
+        const result = await query(
+          `SELECT * FROM platform_settings WHERE setting_key = $1`,
+          [key]
+        ).catch(() => ({ rows: [] }));
+        if (result.rows && result.rows.length > 0) {
+          existing = { key, row: result.rows[0] };
+          break;
+        }
+      }
+      if (existing) {
+        if (existing.key !== settingKey) {
+          await query(
+            `DELETE FROM platform_settings WHERE setting_key = $1`,
+            [existing.key]
+          ).catch(() => {
+          });
+        }
+        await update(
+          "platform_settings",
+          { setting_key: settingKey },
+          {
+            setting_value: configToSave,
+            setting_type: "json",
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        );
+      } else {
+        await insert("platform_settings", {
+          setting_key: settingKey,
+          setting_value: configToSave,
+          setting_type: "json",
+          description: `Dashboard UI configuration for role ${roleId}`,
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      return c.json({
+        success: true,
+        message: "Dashboard configuration saved successfully",
+        config: configToSave
+      });
+    } catch (error) {
+      console.error("Error saving UI dashboard config:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to save dashboard configuration"
+      }, 500);
+    }
+  });
+}
+
+// src/endpoints/care-plans.ts
+init_rds_connection();
+function registerCarePlansEndpoints(app2) {
+  app2.post("/crm/plans/generate", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const { ticketId, customerId, petId, planType, generationMethod, templateId, context: context3 } = body2;
+      if (!customerId || !petId || !planType) {
+        return c.json({
+          success: false,
+          error: "customerId, petId, and planType are required"
+        }, 400);
+      }
+      const customers = await select("customers", { id: customerId });
+      if (customers.length === 0) {
+        return c.json({ success: false, error: "Customer not found" }, 404);
+      }
+      const pets = await select("pets", { id: petId });
+      if (pets.length === 0) {
+        return c.json({ success: false, error: "Pet not found" }, 404);
+      }
+      const customer = customers[0];
+      const pet = pets[0];
+      let planData = {};
+      let planItems = [];
+      let aiGenerated = false;
+      if (generationMethod === "ai") {
+        aiGenerated = true;
+        const generatedPlan = await generateAIPlan({
+          customer,
+          pet,
+          planType,
+          context: context3 || "",
+          ticketId
+        });
+        planData = generatedPlan.planData;
+        planItems = generatedPlan.items;
+      } else if (generationMethod === "template" && templateId) {
+        const templates = await select("care_plan_templates", { id: templateId });
+        if (templates.length === 0) {
+          return c.json({ success: false, error: "Template not found" }, 404);
+        }
+        const template = templates[0];
+        planData = template.template_data || {};
+        planItems = planData.items || [];
+      } else {
+        planData = {
+          planType,
+          durationDays: 30
+        };
+        planItems = [];
+      }
+      const planTitle = planData.title || `${planType.charAt(0).toUpperCase() + planType.slice(1)} Plan for ${pet.name || "Pet"}`;
+      const planDescription = planData.description || `Comprehensive ${planType} care plan`;
+      const plan = await insert("pet_care_plans", {
+        customer_id: customerId,
+        pet_id: petId,
+        ticket_id: ticketId || null,
+        plan_type: planType,
+        title: planTitle,
+        description: planDescription,
+        duration_days: planData.durationDays || 30,
+        status: "draft",
+        ai_generated: aiGenerated,
+        plan_data: planData,
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      const planId = plan[0].id;
+      const insertedItems = [];
+      for (let i = 0; i < planItems.length; i++) {
+        const item = planItems[i];
+        const scheduledDate = item.scheduledDate ? new Date(item.scheduledDate).toISOString().split("T")[0] : null;
+        const inserted = await insert("care_plan_items", {
+          plan_id: planId,
+          item_type: item.type,
+          title: item.title,
+          description: item.description,
+          scheduled_date: scheduledDate,
+          order_index: item.orderIndex || i + 1,
+          completed: false,
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        insertedItems.push(inserted[0]);
+      }
+      return c.json({
+        success: true,
+        plan: {
+          ...plan[0],
+          items: insertedItems
+        },
+        message: "Care plan generated successfully"
+      });
+    } catch (error) {
+      console.error("Error generating care plan:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to generate care plan"
+      }, 500);
+    }
+  });
+  app2.get("/crm/plans/:planId", async (c) => {
+    try {
+      const planId = c.req.param("planId");
+      const plans = await select("pet_care_plans", { id: planId });
+      if (plans.length === 0) {
+        return c.json({ success: false, error: "Plan not found" }, 404);
+      }
+      const plan = plans[0];
+      const items = await query(
+        `SELECT * FROM care_plan_items WHERE plan_id = $1 ORDER BY order_index ASC, created_at ASC`,
+        [planId]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        plan: {
+          ...plan,
+          items: items.rows || []
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching plan:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch plan"
+      }, 500);
+    }
+  });
+  app2.put("/crm/plans/:planId", async (c) => {
+    try {
+      const planId = c.req.param("planId");
+      const body2 = await c.req.json();
+      const plans = await select("pet_care_plans", { id: planId });
+      if (plans.length === 0) {
+        return c.json({ success: false, error: "Plan not found" }, 404);
+      }
+      const updateData = {
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (body2.title) updateData.title = body2.title;
+      if (body2.description) updateData.description = body2.description;
+      if (body2.status) updateData.status = body2.status;
+      if (body2.duration_days) updateData.duration_days = body2.duration_days;
+      if (body2.plan_data) updateData.plan_data = body2.plan_data;
+      await update("pet_care_plans", { id: planId }, updateData);
+      const updatedPlans = await select("pet_care_plans", { id: planId });
+      return c.json({
+        success: true,
+        plan: updatedPlans[0],
+        message: "Plan updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating plan:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to update plan"
+      }, 500);
+    }
+  });
+  app2.post("/crm/plans/:planId/items/:itemId/complete", async (c) => {
+    try {
+      const { planId, itemId } = c.req.param();
+      const body2 = await c.req.json();
+      const items = await select("care_plan_items", { id: itemId, plan_id: planId });
+      if (items.length === 0) {
+        return c.json({ success: false, error: "Plan item not found" }, 404);
+      }
+      await update(
+        "care_plan_items",
+        { id: itemId },
+        {
+          completed: true,
+          completed_at: (/* @__PURE__ */ new Date()).toISOString(),
+          notes: body2.notes || null
+        }
+      );
+      const updatedItems = await select("care_plan_items", { id: itemId });
+      return c.json({
+        success: true,
+        item: updatedItems[0],
+        message: "Plan item marked as complete"
+      });
+    } catch (error) {
+      console.error("Error completing plan item:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to complete plan item"
+      }, 500);
+    }
+  });
+  app2.get("/crm/plans/templates", async (c) => {
+    try {
+      const planType = c.req.query("planType");
+      const petType = c.req.query("petType");
+      let filters = { is_active: true };
+      if (planType) filters.plan_type = planType;
+      if (petType) filters.pet_type = petType;
+      const templates = await select("care_plan_templates", filters);
+      return c.json({
+        success: true,
+        templates: templates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          planType: t.plan_type,
+          petType: t.pet_type,
+          condition: t.condition,
+          description: t.description,
+          templateData: t.template_data
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch templates"
+      }, 500);
+    }
+  });
+}
+async function generateAIPlan(params) {
+  const { customer, pet, planType, context: context3, ticketId } = params;
+  const systemPrompt = `You are a veterinary care plan assistant. Generate a comprehensive ${planType} care plan for a pet.
+
+PET INFORMATION:
+- Name: ${pet.name || "Unknown"}
+- Species: ${pet.species || "Unknown"}
+- Breed: ${pet.breed || "Unknown"}
+- Age: ${pet.age_years || "Unknown"} years
+- Gender: ${pet.gender || "Unknown"}
+
+CUSTOMER INFORMATION:
+- Name: ${customer.full_name || customer.first_name || "Unknown"}
+- Phone: ${customer.phone || "Unknown"}
+
+ADDITIONAL CONTEXT:
+${context3 || "No additional context provided"}
+
+Generate a structured ${planType} care plan with:
+1. A clear title
+2. A brief description
+3. Duration in days (typically 7-90 days)
+4. A list of care items with:
+   - Type (medication, exercise, diet, checkup, training, grooming, or other)
+   - Title (brief, actionable)
+   - Description (detailed instructions)
+   - Suggested schedule (when applicable)
+
+Return ONLY valid JSON in this exact format:
+{
+  "title": "Plan title here",
+  "description": "Plan description here",
+  "durationDays": 30,
+  "items": [
+    {
+      "type": "medication",
+      "title": "Item title",
+      "description": "Detailed description",
+      "orderIndex": 1
+    }
+  ]
+}`;
+  try {
+    const completion = await withRetry(
+      () => invokeBedrock(
+        `Generate a ${planType} care plan for ${pet.name || "this pet"}. ${context3}`,
+        systemPrompt,
+        {
+          maxTokens: 2048,
+          temperature: 0.3,
+          // Lower temperature for more structured output
+          topP: 0.9
+        }
+      ),
+      {
+        maxAttempts: 3,
+        initialDelayMs: 1e3,
+        retryableErrors: ["Bedrock invocation failed", "ETIMEDOUT", "ECONNRESET"]
+      }
+    );
+    const jsonMatch = completion.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        planData: {
+          title: parsed.title,
+          description: parsed.description,
+          durationDays: parsed.durationDays || 30,
+          aiPrompt: systemPrompt,
+          aiResponse: completion
+        },
+        items: parsed.items || []
+      };
+    }
+    throw new Error("Failed to parse AI response as JSON");
+  } catch (error) {
+    console.error("AI plan generation failed:", error);
+    return {
+      planData: {
+        title: `${planType.charAt(0).toUpperCase() + planType.slice(1)} Plan`,
+        description: `Generated ${planType} care plan`,
+        durationDays: 30,
+        aiError: error.message
+      },
+      items: [
+        {
+          type: "checkup",
+          title: "Schedule consultation",
+          description: "Consult with veterinarian for personalized care plan",
+          orderIndex: 1
+        }
+      ]
+    };
+  }
+}
+
 // src/handler/index.ts
 var app = new Hono2();
 var allowedOrigins = [
@@ -268016,6 +268939,8 @@ registerSchedulingPolicyEndpoints(app);
 registerAdminComprehensiveEndpoints(app);
 registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
+registerUIDashboardConfigEndpoints(app);
+registerCarePlansEndpoints(app);
 app.notFound((c) => {
   return c.json({ error: "Not Found" }, 404);
 });

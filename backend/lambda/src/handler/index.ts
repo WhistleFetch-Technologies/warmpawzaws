@@ -128,6 +128,8 @@ import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-polic
 import { registerAdminComprehensiveEndpoints } from '../endpoints/admin-comprehensive';
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-dashboard-missing';
+import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
+import { registerCarePlansEndpoints } from '../endpoints/care-plans';
 
 // Create Hono app
 const app = new Hono();
@@ -302,6 +304,8 @@ registerSchedulingPolicyEndpoints(app);
 registerAdminComprehensiveEndpoints(app);
 registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
+registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI)
+registerCarePlansEndpoints(app); // Care Plans Generation (Support/CRM > Complete Plan)
 
 // 404 handler
 app.notFound((c) => {

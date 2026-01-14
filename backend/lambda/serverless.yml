@@ -94,6 +94,14 @@ provider:
             - logs:CreateLogStream
             - logs:PutLogEvents
           Resource: '*'
+        
+        # AWS Bedrock Access (for AI plan generation)
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+            - bedrock:InvokeModelWithResponseStream
+          Resource:
+            - arn:aws:bedrock:${self:provider.region}::foundation-model/*
   
   # VPC Configuration for RDS
   vpc:

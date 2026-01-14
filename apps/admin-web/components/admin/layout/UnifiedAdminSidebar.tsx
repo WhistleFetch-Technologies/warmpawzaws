@@ -24,7 +24,8 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
 const logoImage = '/logo.png';
@@ -36,6 +37,7 @@ interface UnifiedAdminSidebarProps {
 
 export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSidebarProps) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
   
   const handleSignOut = async () => {
     apiClient.clearAuth();
@@ -65,7 +67,9 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       icon: Users, 
       label: 'Vendor Administration', 
       id: 'vendors',
-      onClick: () => onNavigate('vendors')
+      onClick: () => {
+        window.location.href = '/vendors';
+      }
     },
     { 
       icon: ShoppingCart, 
@@ -214,7 +218,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
               {navigationItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeView === item.id || 
-                               (item.id === 'vendors' && (activeView === 'vendor-admin' || activeView === 'vendor-management')) ||
+                               (item.id === 'vendors' && (activeView === 'vendor-admin' || activeView === 'vendor-management' || pathname === '/vendors')) ||
                                (item.id === 'regions' && activeView === 'region-manager') ||
                                (item.id === 'catalog' && activeView === 'catalog-and-services');
                 
