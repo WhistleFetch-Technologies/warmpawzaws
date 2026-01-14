@@ -53,7 +53,38 @@ export function registerProblemGridEndpoints(app: Hono) {
         ORDER BY min_order ASC, problem_name ASC
       `;
 
-      const problemsResult = await query(problemsQuery, params);
+      let problemsResult;
+      try {
+        problemsResult = await query(problemsQuery, params);
+      } catch (dbError: any) {
+        console.error('Database query error for problem-grid:', dbError.message);
+        // Return empty array if table doesn't exist or query fails
+        return c.json({
+          success: true,
+          problems: [],
+          count: 0,
+          message: 'Problem grid not yet populated'
+        });
+      }
+
+      if (!problemsResult.rows || problemsResult.rows.length === 0) {
+        // Return default problems if none exist
+        return c.json({
+          success: true,
+          problems: [
+            { id: 'health-checkup', name: 'Health Checkup', displayName: 'Health Checkup', icon: '🏥', category: 'vet' },
+            { id: 'vaccination', name: 'Vaccination', displayName: 'Vaccination', icon: '💉', category: 'vet' },
+            { id: 'grooming', name: 'Grooming', displayName: 'Full Grooming', icon: '✂️', category: 'grooming' },
+            { id: 'bath', name: 'Bath', displayName: 'Bath & Clean', icon: '🛁', category: 'grooming' },
+            { id: 'training', name: 'Training', displayName: 'Basic Training', icon: '🎓', category: 'training' },
+            { id: 'walking', name: 'Walking', displayName: 'Dog Walking', icon: '🐕', category: 'walker' },
+          ],
+          count: 6,
+          message: 'Default problems (no custom mappings yet)'
+        });
+      }
+
+      // Legacy handling continues below
 
       // Enrich problems with vendor types and categories
       const problems = await Promise.all(

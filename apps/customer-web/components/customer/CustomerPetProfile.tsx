@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
 // ImageWithFallback component not found - using img tag instead
@@ -67,6 +67,36 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+
+  // Load existing pets from backend on mount
+  useEffect(() => {
+    const loadExistingPets = async () => {
+      if (!session?.phone) return;
+      try {
+        const response = await apiClient.get(`/customer/pets/${session.phone}`) as any;
+        if (response?.pets && Array.isArray(response.pets) && response.pets.length > 0) {
+          const mappedPets: Pet[] = response.pets.map((p: any) => ({
+            id: p.id,
+            name: p.name || '',
+            type: p.type || p.species || 'Dog',
+            breed: p.breed || '',
+            age: String(p.age || p.age_years || ''),
+            gender: p.gender || '',
+            weight: String(p.weight || p.weight_kg || ''),
+            photo: p.photo || p.profile_photo_url || '',
+            microchipId: p.microchipId || p.microchip_id || '',
+            healthRecords: p.healthRecords || {},
+            vaccinations: p.vaccinations || {},
+          }));
+          setPets(mappedPets);
+          console.log('✅ Loaded existing pets:', mappedPets.length);
+        }
+      } catch (error) {
+        console.error('Error loading existing pets:', error);
+      }
+    };
+    loadExistingPets();
+  }, [session?.phone]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

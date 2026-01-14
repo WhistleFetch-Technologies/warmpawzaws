@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 
 interface ServicePublishFormWithGPSProps {
   service: any;
-  vendorData: any;
+  vendorData?: any;
   roleConfiguration: any;
   onPublish: (publishData: any) => void;
   onCancel: () => void;

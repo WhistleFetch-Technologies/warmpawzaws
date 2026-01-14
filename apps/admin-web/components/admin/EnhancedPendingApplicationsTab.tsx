@@ -75,11 +75,38 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
     try {
       setLoading(true);
       const timestamp = new Date().getTime();
-      const data = await apiClient.get<any>(`/admin/vendors/all?t=${timestamp}`);
-      console.log('✅ Vendors loaded:', data.vendors?.length || 0);
-      setVendors(data.vendors || []);
+      
+      // ✅ FIX: Try to load from both new and old endpoints
+      let vendorsList: any[] = [];
+      
+      try {
+        // Try fixed pending applications endpoint first
+        const pendingData = await apiClient.get<any>(`/admin/vendors/pending-applications-fixed?t=${timestamp}`);
+        console.log('✅ [ADMIN] Loaded from FIXED endpoint:', pendingData.applications?.length || 0);
+        if (pendingData.applications && pendingData.applications.length > 0) {
+          vendorsList = pendingData.applications;
+        }
+      } catch (fixedError) {
+        console.warn('⚠️ [ADMIN] Fixed endpoint failed, trying original:', fixedError);
+      }
+      
+      // Also try original endpoint and merge results
+      try {
+        const allData = await apiClient.get<any>(`/admin/vendors/all?t=${timestamp}`);
+        console.log('✅ [ADMIN] Loaded from ORIGINAL endpoint:', allData.vendors?.length || 0);
+        
+        // Merge with fixed endpoint results (deduplicate by id)
+        const existingIds = new Set(vendorsList.map(v => v.id));
+        const newVendors = (allData.vendors || []).filter((v: any) => !existingIds.has(v.id));
+        vendorsList = [...vendorsList, ...newVendors];
+      } catch (originalError) {
+        console.warn('⚠️ [ADMIN] Original endpoint also failed:', originalError);
+      }
+      
+      console.log('✅ [ADMIN] Total vendors loaded:', vendorsList.length);
+      setVendors(vendorsList);
     } catch (error) {
-      console.error('Error loading vendors:', error);
+      console.error('❌ [ADMIN] Error loading vendors:', error);
     } finally {
       setLoading(false);
     }

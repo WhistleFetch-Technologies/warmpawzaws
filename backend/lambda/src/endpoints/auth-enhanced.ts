@@ -341,16 +341,65 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           }
         }
       } else if (role === 'vendor') {
+        // ✅ FIX: Also fetch vendor_identity to get correct onboarding_status
+        const vendorIdentity = await select('vendor_identity', { phone });
         const vendors = await select('vendors', { phone });
+        
         if (vendors.length > 0) {
           userId = vendors[0].id;
           userData = vendors[0];
+          // ✅ Merge onboarding_status from vendor_identity if available
+          if (vendorIdentity.length > 0) {
+            userData.onboarding_status = vendorIdentity[0].onboarding_status;
+            userData.vendor_identity_id = vendorIdentity[0].id;
+          }
           // Update last_login_at timestamp to persist login state
           await update('vendors', { id: userId }, { 
             last_login_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });
-          console.log(`[AUTH] Updated last_login_at for vendor ${userId}`);
+          console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
+        } else if (vendorIdentity.length > 0) {
+          // Vendor record doesn't exist yet, but vendor_identity does (mid-onboarding)
+          const identity = vendorIdentity[0];
+          
+          // ✅ FIX: Check if vendor_id is set (vendor was approved but vendors lookup failed)
+          if (identity.vendor_id) {
+            // Try to get vendor by vendor_id
+            const vendorsByVendorId = await select('vendors', { id: identity.vendor_id });
+            if (vendorsByVendorId.length > 0) {
+              // Use the actual vendor record
+              userId = vendorsByVendorId[0].id;
+              userData = vendorsByVendorId[0];
+              userData.onboarding_status = identity.onboarding_status;
+              userData.vendor_identity_id = identity.id;
+              console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
+            } else {
+              // vendor_id points to non-existent vendor - use identity ID
+              userId = identity.id;
+              userData = {
+                id: identity.id,
+                phone: phone,
+                is_active: false,
+                onboarding_status: identity.onboarding_status,
+                vendor_identity_id: identity.id,
+                created_at: identity.created_at,
+              };
+              console.log(`[AUTH] vendor_identity.vendor_id points to missing vendor, using identity ID: ${userId}`);
+            }
+          } else {
+            // Vendor not approved yet - use identity ID (this is correct for mid-onboarding)
+            userId = identity.id;
+            userData = {
+              id: identity.id,
+              phone: phone,
+              is_active: false,
+              onboarding_status: identity.onboarding_status,
+              vendor_identity_id: identity.id,
+              created_at: identity.created_at,
+            };
+            console.log(`[AUTH] Vendor identity found for ${phone} with status: ${userData.onboarding_status} (not approved yet)`);
+          }
         } else {
           // Vendor doesn't exist yet - this is OK for new vendor registration
           // OTP verification will succeed and they can proceed to onboarding
@@ -360,24 +409,65 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             id: userId,
             phone: phone,
             is_active: false,
+            onboarding_status: 'INIT',
             created_at: new Date().toISOString(),
           };
           console.log(`[AUTH] New vendor OTP verified for ${phone} - proceeding to onboarding`);
         }
       } else if (role === 'admin') {
         // Admin login via OTP (alternative to email/password)
-        const admins = await select('admins', { phone });
-        if (admins.length > 0) {
-          userId = admins[0].id;
-          userData = admins[0];
-          // Update last_login_at timestamp to persist login state
-          await update('admins', { id: userId }, { 
-            last_login_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-          console.log(`[AUTH] Updated last_login_at for admin ${userId}`);
-        } else {
-          return this.error('Admin not found', 404, 'NOT_FOUND', undefined, context.requestId);
+        try {
+          const admins = await select('admins', { phone });
+          if (admins.length > 0) {
+            userId = admins[0].id;
+            userData = admins[0];
+            // Update last_login_at timestamp to persist login state
+            try {
+              await update('admins', { id: userId }, { 
+                last_login_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              });
+              console.log(`[AUTH] Updated last_login_at for admin ${userId}`);
+            } catch (updateErr) {
+              console.warn(`[AUTH] Could not update admin last_login_at:`, updateErr);
+              // Continue anyway - update is not critical
+            }
+          } else {
+            // ✅ FIX: In UAT mode, allow admin login even if not in database
+            if (isUATMode) {
+              console.log(`[AUTH] UAT Mode: Admin ${phone} not in database, allowing login`);
+              userId = `uat_admin_${phone}`;
+              userData = {
+                id: userId,
+                phone: phone,
+                email: `${phone}@warmpawz.app`,
+                name: 'UAT Admin',
+                role: 'admin',
+                is_active: true,
+                created_at: new Date().toISOString(),
+              };
+            } else {
+              return this.error('Admin not found', 404, 'NOT_FOUND', undefined, context.requestId);
+            }
+          }
+        } catch (dbError: any) {
+          // ✅ FIX: If admins table doesn't exist, allow in UAT mode
+          if (isUATMode && (dbError.message?.includes('does not exist') || dbError.message?.includes('relation') || dbError.code === '42P01')) {
+            console.log(`[AUTH] UAT Mode: admins table not found, allowing admin login for ${phone}`);
+            userId = `uat_admin_${phone}`;
+            userData = {
+              id: userId,
+              phone: phone,
+              email: `${phone}@warmpawz.app`,
+              name: 'UAT Admin',
+              role: 'admin',
+              is_active: true,
+              created_at: new Date().toISOString(),
+            };
+          } else {
+            console.error('[AUTH] Error querying admins table:', dbError);
+            return this.error('Admin authentication failed', 500, 'INTERNAL_ERROR', { details: dbError.message }, context.requestId);
+          }
         }
       } else {
         return this.error('Invalid role', 400, 'VALIDATION_ERROR', undefined, context.requestId);
@@ -458,6 +548,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             phone,
             business_name: userData.business_name || null,
             status: userData.status || 'pending',
+            onboarding_status: userData.onboarding_status || 'INIT',
           } : undefined,
         },
         meta: {

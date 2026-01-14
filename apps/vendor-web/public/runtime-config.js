@@ -8,10 +8,12 @@
   // Note: process.env is not available in browser context, so we use a default
   const defaultApiBaseUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   const defaultUatMode = true; // Enable UAT mode for local development
+  const googleMapsApiKey = 'AIzaSyC6iwRfS_r1zRtjiGyLjgueZ_rDV_l7yo0'; // Google Maps API key
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: defaultApiBaseUrl,
-    uatMode: defaultUatMode
+    uatMode: defaultUatMode,
+    googleMapsApiKey: googleMapsApiKey
   };
 
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);

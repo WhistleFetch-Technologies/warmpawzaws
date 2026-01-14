@@ -177,8 +177,12 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
    */
   app.get("/config/google-maps-key", async (c) => {
     try {
+      console.log('[CONFIG] Fetching Google Maps API key from Secrets Manager...');
+      
       // Get API key from Secrets Manager
       const apiKey = await getSecret('google-maps/api-key');
+      
+      console.log('[CONFIG] API key fetched:', apiKey ? `${apiKey.substring(0, 10)}...` : 'null');
 
       // Validate that it's not a project number (all digits)
       if (apiKey && /^\d+$/.test(apiKey)) {
@@ -196,10 +200,17 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
         }, 404);
       }
 
+      console.log('[CONFIG] Returning API key to client');
       return c.json({ apiKey });
     } catch (error: any) {
-      console.error('Error fetching Google Maps API key from Secrets Manager:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[CONFIG] Error fetching Google Maps API key from Secrets Manager:', error);
+      console.error('[CONFIG] Error name:', error.name);
+      console.error('[CONFIG] Error message:', error.message);
+      console.error('[CONFIG] Error stack:', error.stack);
+      return c.json({ 
+        error: error.message || 'Failed to fetch Google Maps API key',
+        details: error.name || 'Unknown error'
+      }, 500);
     }
   });
 

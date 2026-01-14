@@ -34,10 +34,19 @@ interface Event {
 interface Registration {
   id: string;
   event_id: string;
-  event_title: string;
+  event_title?: string;
+  event_name?: string;
   registered_at: string;
-  status: 'confirmed' | 'cancelled';
+  status: 'confirmed' | 'cancelled' | 'waitlist';
   qr_code?: string;
+  booking_reference?: string;
+  attendee_name?: string;
+  attendee_phone?: string;
+  attendee_email?: string;
+  number_of_people?: number;
+  payment_status?: string;
+  payment_amount?: number;
+  check_in_status?: 'pending' | 'checked_in' | 'no_show';
 }
 
 // ============================================================================
@@ -432,14 +441,67 @@ export default function EventsPage() {
                         </div>
                       </div>
                       
-                      {reg.qr_code && (
-                        <div className="p-3 bg-gray-50 rounded-lg mb-4">
-                          <p className="text-sm text-gray-600 mb-2">Your QR Code:</p>
-                          <div className="w-32 h-32 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-center">
-                            <span className="text-4xl">📱</span>
-                          </div>
+                      {/* Booking Reference */}
+                      {reg.booking_reference && (
+                        <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg mb-4 border border-orange-200">
+                          <p className="text-sm font-medium text-gray-700 mb-1">Booking Reference</p>
+                          <p className="font-mono text-xl font-bold text-orange-600 mb-3">{reg.booking_reference}</p>
+                          <p className="text-xs text-gray-600">Show this reference or QR code at the event venue</p>
                         </div>
                       )}
+
+                      {/* QR Code */}
+                      {reg.qr_code && (
+                        <div className="p-4 bg-white rounded-lg border-2 border-gray-200 mb-4">
+                          <p className="text-sm font-medium text-gray-700 mb-3 text-center">Your QR Code</p>
+                          <div className="flex justify-center mb-2">
+                            <div className="w-48 h-48 bg-white border-2 border-gray-300 rounded-lg flex items-center justify-center relative">
+                              {/* QR Code Display - In production, use a QR code library to render the QR code */}
+                              <div className="text-center p-4">
+                                <div className="text-4xl mb-2">📱</div>
+                                <p className="text-xs text-gray-500 font-mono break-all">{reg.booking_reference || 'QR Code'}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500 text-center">
+                            Scan this QR code at the event venue for check-in
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Registration Details */}
+                      <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+                        {reg.attendee_name && (
+                          <div>
+                            <p className="text-gray-500">Attendee</p>
+                            <p className="font-medium">{reg.attendee_name}</p>
+                          </div>
+                        )}
+                        {reg.number_of_people && (
+                          <div>
+                            <p className="text-gray-500">People</p>
+                            <p className="font-medium">{reg.number_of_people}</p>
+                          </div>
+                        )}
+                        {reg.payment_amount !== undefined && reg.payment_amount > 0 && (
+                          <div>
+                            <p className="text-gray-500">Payment</p>
+                            <p className="font-medium">
+                              ₹{reg.payment_amount} ({reg.payment_status || 'pending'})
+                            </p>
+                          </div>
+                        )}
+                        {reg.check_in_status && (
+                          <div>
+                            <p className="text-gray-500">Check-In</p>
+                            <p className={`font-medium ${
+                              reg.check_in_status === 'checked_in' ? 'text-green-600' : 'text-yellow-600'
+                            }`}>
+                              {reg.check_in_status === 'checked_in' ? '✓ Checked In' : 'Pending'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                       
                       {reg.status === 'confirmed' && (
                         <button

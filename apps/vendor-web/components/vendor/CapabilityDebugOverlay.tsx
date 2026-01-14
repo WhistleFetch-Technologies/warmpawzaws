@@ -13,7 +13,7 @@ interface CapabilityDebugOverlayProps {
   roleId: string;
   roleName: string;
   capabilities: VendorCapabilities | CapabilitiesRecord;
-  vendorData: any;
+  vendorData?: any;
   showInProduction?: boolean; // Only show in dev by default
 }
 

@@ -71,7 +71,7 @@ interface CustomService {
 
 interface VendorCustomServiceCreationProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   serviceStyle: 'at_center' | 'both'; // ONLY for center-based services
   onClose: () => void;
   onServiceCreated: () => void;

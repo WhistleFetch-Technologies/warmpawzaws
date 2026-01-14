@@ -180,6 +180,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       // Extract token and user from the unwrapped response
       const tokens = responseData.token || responseData.tokens || {};
       const user = responseData.user || {};
+      const profile = responseData.profile || {}; // ✅ FIX: Get profile directly from verify-otp response
       
       // Get access token from various possible locations
       const accessToken = tokens.access_token || 
@@ -187,10 +188,15 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                          responseData.token?.access_token ||
                          responseData.access_token;
       
-      console.log('🔍 [VendorAuth] Extracted token:', { 
+      // ✅ FIX: Get onboarding_status directly from verify-otp response (it's already there!)
+      const onboardingStatus = profile.onboarding_status || responseData.onboarding_status || 'INIT';
+      
+      console.log('🔍 [VendorAuth] Extracted data:', { 
         hasToken: !!accessToken, 
         tokenPreview: accessToken ? accessToken.substring(0, 30) + '...' : 'none',
-        user: user 
+        user: user,
+        profile: profile,
+        onboardingStatus: onboardingStatus
       });
       
       if (!accessToken) {
@@ -198,7 +204,10 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         throw new Error('Authentication failed: No access token received');
       }
       
-      console.log('✅ [VendorAuth] OTP verified successfully!');
+      console.log('✅ [VendorAuth] OTP verified successfully! Onboarding status:', onboardingStatus);
+      
+      // ✅ FIX: Store onboarding status IMMEDIATELY from verify-otp response
+      localStorage.setItem('vendorApplicationStatus', onboardingStatus);
       
       // Store session with access token IMMEDIATELY before any async calls
       // This ensures localStorage is set before redirect
@@ -206,15 +215,26 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         phone: phoneNumber,
         accessToken: accessToken,
         user: user,
-        vendorId: user.id
+        profile: profile,
+        vendorId: user.id || profile.id
       });
+      
+      // Store profile data if available
+      if (profile && Object.keys(profile).length > 0) {
+        localStorage.setItem('vendorData', JSON.stringify(profile));
+        if (profile.id) {
+          localStorage.setItem('vendorId', profile.id);
+        }
+      }
       
       // Double-check storage immediately
       const storedPhoneCheck = localStorage.getItem('vendorPhone');
       const storedTokenCheck = localStorage.getItem('authToken');
+      const storedStatusCheck = localStorage.getItem('vendorApplicationStatus');
       console.log('🔐 [VendorAuth] Session stored:', {
         phone: !!storedPhoneCheck,
         token: !!storedTokenCheck,
+        status: storedStatusCheck,
         phoneValue: storedPhoneCheck,
         tokenPreview: storedTokenCheck ? storedTokenCheck.substring(0, 30) + '...' : 'none'
       });
@@ -224,8 +244,8 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         // Fallback: Store directly
         localStorage.setItem('vendorPhone', phoneNumber);
         localStorage.setItem('authToken', accessToken);
-        if (user.id) {
-          localStorage.setItem('vendorId', user.id);
+        if (user.id || profile.id) {
+          localStorage.setItem('vendorId', user.id || profile.id);
         }
         localStorage.setItem('vendorUser', JSON.stringify(user));
       }
@@ -234,86 +254,20 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       // This flag is cleared on hard refresh, allowing us to detect it
       sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
       
-      // Fetch vendor onboarding status to get vendor profile
-      try {
-        console.log('📊 [VendorAuth] Fetching vendor status...');
-        const statusData = await apiClient.get<any>('/vendor/onboarding/status?phone=' + encodeURIComponent(phoneNumber));
-        
-        if (statusData && statusData.identity) {
-          const vendorProfile = statusData.identity.vendor || statusData.vendor;
-          
-          // Update stored session with vendor profile
-          if (vendorProfile) {
-            localStorage.setItem('vendorData', JSON.stringify(vendorProfile));
-            if (vendorProfile.id) {
-              localStorage.setItem('vendorId', vendorProfile.id);
-            }
-          }
-          
-          // Store onboarding status
-          if (statusData.identity.onboarding_status) {
-            localStorage.setItem('vendorApplicationStatus', statusData.identity.onboarding_status);
-          }
-          
-          // Verify all session data is stored before calling onAuthSuccess
-          const finalPhoneCheck = localStorage.getItem('vendorPhone');
-          const finalTokenCheck = localStorage.getItem('authToken');
-          console.log('✅ [VendorAuth] Final session check before redirect:', {
-            phone: !!finalPhoneCheck,
-            token: !!finalTokenCheck
-          });
-          
-          onAuthSuccess({
-            phone: phoneNumber,
-            accessToken: accessToken,
-            user: user,
-            profile: vendorProfile,
-            vendorId: user.id || vendorProfile?.id,
-            onboardingStatus: statusData.identity.onboarding_status
-          });
-        } else {
-          // No vendor profile yet, but OTP is verified
-          localStorage.setItem('vendorApplicationStatus', 'INIT');
-          
-          // Verify session before redirect
-          const finalPhoneCheck = localStorage.getItem('vendorPhone');
-          const finalTokenCheck = localStorage.getItem('authToken');
-          console.log('✅ [VendorAuth] Final session check (no profile) before redirect:', {
-            phone: !!finalPhoneCheck,
-            token: !!finalTokenCheck
-          });
-          
-          onAuthSuccess({
-            phone: phoneNumber,
-            accessToken: accessToken,
-            user: user,
-            vendorId: user.id,
-            onboardingStatus: 'INIT'
-          });
-        }
-      } catch (statusError: any) {
-        console.warn('⚠️ [VendorAuth] Could not fetch vendor status:', statusError);
-        // OTP verified, proceed without status (user will go through onboarding)
-        localStorage.setItem('vendorApplicationStatus', 'INIT');
-        
-        // Verify session before redirect
-        const finalPhoneCheck = localStorage.getItem('vendorPhone');
-        const finalTokenCheck = localStorage.getItem('authToken');
-        console.log('✅ [VendorAuth] Final session check (error) before redirect:', {
-          phone: !!finalPhoneCheck,
-          token: !!finalTokenCheck
-        });
-        
-        // Always call onAuthSuccess even if status fetch fails
-        console.log('✅ [VendorAuth] Proceeding to onboarding despite status fetch failure');
-        onAuthSuccess({
-          phone: phoneNumber,
-          accessToken: accessToken,
-          user: user,
-          vendorId: user.id,
-          onboardingStatus: 'INIT'
-        });
-      }
+      // ✅ FIX: Use onboarding_status from verify-otp response directly (no separate API call needed)
+      // The verify-otp endpoint already returns the correct onboarding_status
+      console.log('✅ [VendorAuth] Using onboarding status from verify-otp response:', onboardingStatus);
+      
+      // Call onAuthSuccess immediately with the status from verify-otp response
+      onAuthSuccess({
+        phone: phoneNumber,
+        accessToken: accessToken,
+        user: user,
+        profile: profile,
+        vendorId: user.id || profile.id,
+        onboardingStatus: onboardingStatus, // ✅ FIX: Use status from verify-otp response
+        state: responseData.state || 'existing'
+      });
     } catch (error: any) {
       console.error('❌ [VendorAuth] Login error:', error);
       setError(error.message || 'Network error. Please try again.');

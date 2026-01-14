@@ -23,7 +23,7 @@ import { EnhancedPackageCreationModal } from './EnhancedPackageCreationModal';
 
 interface VendorServiceConfigurationScreenProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   serviceStyle: 'at_home' | 'at_center' | 'tele';
   roleConfig: any;
   onBack: () => void;

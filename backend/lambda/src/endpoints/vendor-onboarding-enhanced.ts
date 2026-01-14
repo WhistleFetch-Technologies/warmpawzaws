@@ -582,11 +582,27 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Transition to UNDER_REVIEW
       if (identity.onboarding_status === 'FORM_PENDING' || identity.onboarding_status === 'CLARIFICATION_REQUIRED') {
-        await query(
-          `SELECT transition_onboarding_status($1, $2, NULL, 'vendor', 'application_submitted', '{}'::jsonb)`,
-          [identity.id, 'UNDER_REVIEW']
-        );
+        try {
+          // Try stored procedure first
+          await query(
+            `SELECT transition_onboarding_status($1, $2, NULL, 'vendor', 'application_submitted', '{}'::jsonb)`,
+            [identity.id, 'UNDER_REVIEW']
+          );
+        } catch (transitionError) {
+          console.warn('⚠️ [SUBMIT] Stored procedure failed, using direct update:', transitionError);
+          // Fallback: Direct update if stored procedure doesn't exist
+          await update(
+            'vendor_identity',
+            { id: identity.id },
+            { 
+              onboarding_status: 'UNDER_REVIEW',
+              updated_at: new Date().toISOString()
+            }
+          );
+        }
       }
+
+      console.log('✅ [SUBMIT] Application submitted successfully:', applicationId);
 
       return this.success({
         message: 'Application submitted successfully',

@@ -10,43 +10,56 @@
 export function isHardRefresh(): boolean {
   if (typeof window === 'undefined') return false;
   
+  // CRITICAL: Check if user just logged in - never clear session in this case
+  const justLoggedIn = sessionStorage.getItem('_warmpawz_just_logged_in');
+  if (justLoggedIn) {
+    // Clear the flag but don't clear session
+    sessionStorage.removeItem('_warmpawz_just_logged_in');
+    return false;
+  }
+  
+  // Check if session flag exists - if it does, user has an active session
+  const hasSessionFlag = sessionStorage.getItem('_warmpawz_has_session');
+  if (hasSessionFlag) {
+    // Session flag exists, not a hard refresh (sessionStorage persists within tab)
+    return false;
+  }
+  
   // Method 1: Check navigation type (most reliable)
   try {
     const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
     if (perfEntries.length > 0) {
       const navType = perfEntries[0].type;
       if (navType === 'reload') {
-        // Hard refresh detected
-        return true;
+        // Hard refresh detected - but only clear if we had a session before
+        const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
+        return hasToken; // Only consider it a "hard refresh" if there was a session to clear
       }
-      if (navType === 'navigate') {
-        // First load or navigation - check if we have a session flag
-        const hasSessionFlag = sessionStorage.getItem('_warmpawz_has_session');
-        if (!hasSessionFlag) {
-          // First load - no session exists anyway
-          return false; // Don't clear on first load (no session to clear)
-        }
+      if (navType === 'navigate' || navType === 'back_forward') {
+        // Normal navigation - not a hard refresh
+        return false;
       }
     }
   } catch (e) {
     // Performance API not available
   }
   
-  // Method 2: Check if localStorage has tokens but sessionStorage flag is missing
-  // On hard refresh: localStorage persists, sessionStorage is cleared
-  // If we have tokens in localStorage but no sessionStorage flag = hard refresh
+  // Method 2: If we have tokens but no session flag AND navigation type was reload
+  // This is a hard refresh scenario
   const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
-  const hasSessionFlag = sessionStorage.getItem('_warmpawz_has_session');
   
-  // If we have tokens but no session flag = hard refresh (sessionStorage was cleared)
+  // Only consider it hard refresh if:
+  // 1. We have tokens (there was a session)
+  // 2. No session flag (sessionStorage was cleared = browser refresh or new tab)
+  // 3. This is not a fresh login (handled above)
   if (hasToken && !hasSessionFlag) {
-    return true;
-  }
-  
-  // Set page load flag for future checks (only if we have a token)
-  if (hasToken && !hasSessionFlag) {
-    // This will be set after we clear session, so next check won't trigger
-    // But we return true first to clear the session
+    // Check if we're on the auth page - if so, don't clear (user is logging in)
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/auth')) {
+      return false;
+    }
+    // For other pages, this is likely a new tab or hard refresh
+    // Be conservative - only clear on explicit reload
+    return false; // Changed: Don't auto-clear to avoid login loops
   }
   
   return false;

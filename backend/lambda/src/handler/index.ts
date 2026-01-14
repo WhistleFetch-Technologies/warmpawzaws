@@ -18,6 +18,7 @@ import { initializeErrorTracking, captureException, setUserContext, getErrorTrac
 // Enhanced handlers (Phase 2-5)
 import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
+import { registerVendorOnboardingFixes } from '../endpoints/vendor-onboarding-fixes';
 import { registerBookingEndpointsEnhanced } from '../endpoints/bookings-enhanced';
 import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced';
 import { registerCustomerEndpointsEnhanced } from '../endpoints/customer-enhanced';
@@ -126,6 +127,7 @@ import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-dist
 import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
 import { registerAdminComprehensiveEndpoints } from '../endpoints/admin-comprehensive';
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
+import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-dashboard-missing';
 
 // Create Hono app
 const app = new Hono();
@@ -191,6 +193,7 @@ app.get('/health', (c) => {
 // Register enhanced handlers (Phase 2-5)
 registerAuthEndpointsEnhanced(app);
 registerVendorOnboardingEndpointsEnhanced(app);
+registerVendorOnboardingFixes(app); // Critical fixes for vendor onboarding
 // registerBookingEndpointsEnhanced(app); // Moved after refund-policy to test route order
 registerPaymentEndpointsEnhanced(app);
 registerRoleEndpoints(app);
@@ -205,6 +208,7 @@ registerNotificationEndpoints(app); // /customer/notifications - before /custome
 registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
+registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
@@ -252,7 +256,7 @@ registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);
 registerSmsNotificationEndpoints(app);
 registerVendorProfileEndpoints(app);
-registerCustomerProfileEndpoints(app);
+// registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
 registerVendorSettingsEndpoints(app);
 registerVendorBookingsEndpoints(app);
@@ -297,6 +301,7 @@ registerVendorDistancePricingEndpoints(app);
 registerSchedulingPolicyEndpoints(app);
 registerAdminComprehensiveEndpoints(app);
 registerProblemGridEndpoints(app);
+registerVendorDashboardMissingEndpoints(app);
 
 // 404 handler
 app.notFound((c) => {

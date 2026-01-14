@@ -13,6 +13,7 @@ import VendorUtils from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
 import Analytics from '@/lib/analytics';
+import { copyTextToClipboard } from '@/lib/shareUtils';
 import { 
   Calendar, 
   Clock, 
@@ -45,18 +46,17 @@ import {
   Truck,
   MapPin
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
 import { AIChatBot } from '../customer/AIChatBot';
-import { copyTextToClipboard } from '@/lib/shareUtils';
 
 interface VendorDashboardProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onNavigateToConsultation?: () => void;
   onNavigateToServiceManagement?: () => void;
   onNavigateToBookingManagement?: () => void;
@@ -92,7 +92,8 @@ interface VendorDashboardProps {
   onNavigateToDistancePricing?: () => void;
   onNavigateToMultiDoctorManagement?: () => void;
   onNavigateToPolicyManagement?: () => void;
-  onNavigateToMedicalRecords?: () => void; // ✅ NEW: Navigate to Medical Records
+  onNavigateToMedicalRecords?: () => void; // ✅ Added for compatibility
+  onNavigateToDashboard?: () => void; // ✅ Added for dashboard navigation from LandingPage
 }
 
 interface DashboardStats {
@@ -185,7 +186,7 @@ export function VendorDashboard({
   onNavigateToDistancePricing,
   onNavigateToMultiDoctorManagement,
   onNavigateToPolicyManagement,
-  onNavigateToMedicalRecords // ✅ NEW: Navigate to Medical Records
+  onNavigateToDashboard
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -212,11 +213,10 @@ export function VendorDashboard({
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
 
-  // 🔌 CORE: Load dynamic capabilities
-  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
   const router = useRouter();
-
-  // ✅ AWS Serverless: Using apiClient instead of direct Supabase URLs
+  
+  // 🔌 CORE: Load dynamic capabilities
+  const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
   const isVet = VendorUtils.isVet(vendorData?.roleId);
@@ -230,7 +230,7 @@ export function VendorDashboard({
       isSoloProvider: true,
       ownerName: vendorData.ownerName,
       businessName: vendorData.businessName,
-      roleName: vendorData?.roleName || vendorData?.roleId || 'Service Provider',
+      roleName: vendorData.roleName || 'Service Provider',
       defaultMode: 'CENTER' as const
     };
     
@@ -243,34 +243,8 @@ export function VendorDashboard({
   }
 
   // Fetch dashboard data
-  const fetchDashboardData = useCallback(async (showRefresh = false) => {
+  const fetchDashboardData = async (showRefresh = false) => {
     try {
-      // ✅ PERFORMANCE: Check cache first (unless explicitly refreshing)
-      if (!showRefresh) {
-        const cacheKey = `dashboard_${vendorId}_${activeTab}`;
-        const cached = sessionStorage.getItem(cacheKey);
-        if (cached) {
-          try {
-            const { data, timestamp } = JSON.parse(cached);
-            const age = Date.now() - timestamp;
-            // Use cache if less than 2 minutes old
-            if (age < 120000) {
-              console.log('📦 Using cached dashboard data (age:', Math.round(age / 1000), 's)');
-              setStats(data.stats);
-              setTodaySchedule(data.schedule || []);
-              setNotifications(data.notifications || []);
-              setServices(data.services || []);
-              setWatchlist(data.watchlist || []);
-              setVendor(data.vendor);
-              setLoading(false);
-              return;
-            }
-          } catch (e) {
-            console.warn('Cache parse error, fetching fresh data');
-          }
-        }
-      }
-
       if (showRefresh) setRefreshing(true);
       else setLoading(true);
 
@@ -285,30 +259,30 @@ export function VendorDashboard({
       
       // ✅ OPTIMIZATION: Split critical and non-critical data
       // Critical data: dashboard stats + schedule (needed for initial render)
-      const criticalPromises: Promise<Response | null>[] = [
+      const criticalPromises: Promise<any>[] = [
         // 1. Always fetch dashboard stats
-        apiClient.get('/vendor/endpoint'),
+        apiClient.get(`/vendor/${vendorId}/dashboard?timeframe=${activeTab}`).catch(() => ({ success: false })),
         
         // 2. Fetch schedule if booking enabled - USE UTILITY
         CapabilityHelper.hasBooking(capabilities)
-          ? apiClient.get('/vendor/endpoint')
-          : Promise.resolve(null)
+          ? apiClient.get(`/vendor/${vendorId}/bookings/today`).catch(() => ({ success: false, bookings: [] }))
+          : Promise.resolve({ success: false, bookings: [] })
       ];
       
       // Non-critical data: notifications, watchlist, services (can load after)
-      const nonCriticalPromises: Promise<Response | null>[] = [
+      const nonCriticalPromises: Promise<any>[] = [
         // 3. Fetch watchlist if medical records enabled - USE UTILITY
         CapabilityHelper.hasMedicalRecords(capabilities)
-          ? apiClient.get('/vendor/endpoint')
-          : Promise.resolve(null),
+          ? apiClient.get(`/vendor/${vendorId}/watchlist`).catch(() => ({ success: false, watchlist: [] }))
+          : Promise.resolve({ success: false, watchlist: [] }),
         
         // 4. Always fetch notifications
-        apiClient.get('/vendor/endpoint'),
+        apiClient.get(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] })),
         
         // 5. Fetch services if catalog or booking enabled - USE UTILITY
         (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities))
-          ? apiClient.get('/vendor/endpoint')
-          : Promise.resolve(null)
+          ? apiClient.get(`/vendor/${vendorId}/services`).catch(() => ({ success: false, services: [] }))
+          : Promise.resolve({ success: false, services: [] })
       ];
       
       // ✅ OPTIMIZATION: Execute critical fetches first, hide loading screen ASAP
@@ -317,23 +291,19 @@ export function VendorDashboard({
       // ✅ OPTIMIZATION: Parse JSON responses in parallel
       const criticalParsing = [];
       
-      if (dashboardRes && dashboardRes.ok) {
+      if (dashboardRes && dashboardRes.success) {
         criticalParsing.push(
-          dashboardRes.json().then(data => {
-            if (data.success) {
-              setStats(data.stats);
-              setVendor(data.vendor);
-            }
+          Promise.resolve().then(() => {
+            setStats(dashboardRes.stats || dashboardRes);
+            setVendor(dashboardRes.vendor || vendorData);
           })
         );
       }
       
-      if (scheduleRes && scheduleRes.ok) {
+      if (scheduleRes && scheduleRes.success) {
         criticalParsing.push(
-          scheduleRes.json().then(data => {
-            if (data.success) {
-              setTodaySchedule(data.schedule || []);
-            }
+          Promise.resolve().then(() => {
+            setTodaySchedule(scheduleRes.bookings || scheduleRes.schedule || []);
           })
         );
       }
@@ -352,68 +322,23 @@ export function VendorDashboard({
       
       // ✅ OPTIMIZATION: Load non-critical data in background
       Promise.all(nonCriticalPromises).then(async ([watchlistRes, notificationsRes, servicesRes]) => {
-        const backgroundParsing = [];
-        
         // Process watchlist
-        if (watchlistRes && watchlistRes.ok) {
-          backgroundParsing.push(
-            watchlistRes.json().then(data => {
-              if (data.success) {
-                setWatchlist(data.watchlist || []);
-              }
-            })
-          );
+        if (watchlistRes && watchlistRes.success) {
+          setWatchlist(watchlistRes.watchlist || []);
         }
         
         // Process notifications
-        if (notificationsRes && notificationsRes.ok) {
-          backgroundParsing.push(
-            notificationsRes.json().then(data => {
-              if (data.success) {
-                setNotifications(data.notifications || []);
-              }
-            })
-          );
+        if (notificationsRes && notificationsRes.success) {
+          setNotifications(notificationsRes.notifications || []);
         }
         
         // Process services
-        if (servicesRes && servicesRes.ok) {
-          backgroundParsing.push(
-            servicesRes.json().then(data => {
-              if (data.success) {
-                const servicesData = Array.isArray(data.services) ? data.services : [];
-                setServices(servicesData);
-              }
-            }).catch(error => {
-              console.error('Error parsing services data:', error);
-              setServices([]);
-            })
-          );
+        if (servicesRes && servicesRes.success) {
+          const servicesData = Array.isArray(servicesRes.services) ? servicesRes.services : [];
+          setServices(servicesData);
         }
         
-        await Promise.all(backgroundParsing);
         console.log('✅ Non-critical dashboard data loaded (background)');
-        
-        // ✅ PERFORMANCE: Save to cache for next visit (capture all state in closure)
-        setTimeout(() => {
-          try {
-            const cacheKey = `dashboard_${vendorId}_${activeTab}`;
-            const cacheData = {
-              data: {
-                stats,
-                schedule: todaySchedule,
-                notifications,
-                services,
-                watchlist,
-                vendor
-              },
-              timestamp: Date.now()
-            };
-            sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
-          } catch (e) {
-            console.warn('Failed to cache dashboard data:', e);
-          }
-        }, 0);
       }).catch(error => {
         console.error('⚠️ Error loading non-critical data:', error);
       });
@@ -423,16 +348,14 @@ export function VendorDashboard({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [vendorId, activeTab, capabilities, stats, todaySchedule, notifications, services, watchlist, vendor]); // ✅ FIX: Memoize with proper deps
+  };
 
   // Fetch data on mount and when activeTab changes
-  // ✅ PERFORMANCE FIX: Only re-fetch when vendorId or activeTab changes, not on every capability change
   useEffect(() => {
     if (vendorId && !capsLoading) {
       fetchDashboardData();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId, activeTab, capsLoading]); // ✅ FIX: Intentionally excluding fetchDashboardData to prevent infinite loop
+  }, [vendorId, activeTab, capsLoading, capabilities.booking, capabilities.medical_records]);
 
   // Format time ago
   const formatTimeAgo = (dateString: string) => {
@@ -449,31 +372,9 @@ export function VendorDashboard({
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
   };
 
-  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR (memoized)
-  const iconTheme = useMemo(() => getVendorIconTheme(vendorData?.roleId), [vendorData?.roleId]);
-  const RoleIconComponent = useMemo(() => getRoleIcon(vendorData?.roleId), [vendorData?.roleId]);
-  const colorScheme = useMemo(() => getRoleColorScheme(vendorData?.roleId), [vendorData?.roleId]);
-
-  // ✅ PERFORMANCE: Memoize filtered schedule to avoid re-filtering on every render
-  const filteredSchedule = useMemo(() => {
-    return todaySchedule.filter(appointment => {
-      if (appointmentTypeFilter === 'all') return true;
-      const typeMap: Record<string, string> = {
-        'at_center': 'clinic',
-        'clinic': 'clinic',
-        'at_home': 'home',
-        'home': 'home',
-        'tele': 'tele',
-        'teleconsultation': 'tele'
-      };
-      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
-    });
-  }, [todaySchedule, appointmentTypeFilter]);
-
-  // ✅ PERFORMANCE: Memoize unread notification count
-  const unreadNotificationCount = useMemo(() => {
-    return notifications.filter(n => !n.isRead).length;
-  }, [notifications]);
+  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
+  const roleIcon = getRoleIcon(vendorData?.roleId); // Returns string emoji
+  const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   if (loading || capsLoading) {
     return (
@@ -494,7 +395,7 @@ export function VendorDashboard({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 ${colorScheme.primary} rounded-lg flex items-center justify-center`}>
-                <span className="text-2xl">{RoleIconComponent}</span>
+                <span className="text-2xl">{roleIcon}</span>
               </div>
               <div>
                 <h1 className="font-semibold text-gray-900">
@@ -508,16 +409,16 @@ export function VendorDashboard({
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
               
-              {capabilities?.chat && (
-                <span className="text-gray-400">💬</span>
+              {capabilities.chat && (
+                <MessageSquare className="w-5 h-5 text-gray-400" />
               )}
 
               <button 
                 className="relative"
                 onClick={() => setNotificationModalOpen(true)}
               >
-                <span className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors">🔔</span>
-                {unreadNotificationCount > 0 && (
+                <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
+                {notifications.filter(n => !n.isRead).length > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -636,262 +537,6 @@ export function VendorDashboard({
             <p className="text-xs text-gray-500 mt-2 text-center">
               Manage specialized vet services, equipment, and protocols
             </p>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Groomers */}
-        {VendorUtils.isGroomer(vendorData?.roleId) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Grooming Services</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToPortfolio && capabilities.portfolio && (
-                <button
-                  onClick={onNavigateToPortfolio}
-                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
-                >
-                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
-                </button>
-              )}
-              {onNavigateToGallery && capabilities.gallery && (
-                <button
-                  onClick={onNavigateToGallery}
-                  className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
-                >
-                  <Camera className="w-6 h-6 text-pink-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Gallery</span>
-                </button>
-              )}
-              {onNavigateToPackages && capabilities.package_management && (
-                <button
-                  onClick={onNavigateToPackages}
-                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
-                >
-                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Packages</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Walkers & Taxi */}
-        {(VendorUtils.isWalker(vendorData?.roleId) || VendorUtils.isTaxi(vendorData?.roleId)) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">
-              {VendorUtils.isWalker(vendorData?.roleId) ? 'Walking Services' : 'Transport Services'}
-            </h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToLiveTracking && capabilities.gps_tracking && (
-                <button
-                  onClick={onNavigateToLiveTracking}
-                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
-                >
-                  <MapPin className="w-6 h-6 text-green-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Live Tracking</span>
-                </button>
-              )}
-              {onNavigateToBookingManagement && (
-                <button
-                  onClick={onNavigateToBookingManagement}
-                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
-                >
-                  <Calendar className="w-6 h-6 text-blue-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Bookings</span>
-                </button>
-              )}
-              {onNavigateToDistancePricing && capabilities.distance_pricing && (
-                <button
-                  onClick={onNavigateToDistancePricing}
-                  className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
-                >
-                  <MapPin className="w-6 h-6 text-orange-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Pricing</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Trainers */}
-        {VendorUtils.isTrainer(vendorData?.roleId) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Training Services</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToProgressTracking && capabilities.progress_tracking && (
-                <button
-                  onClick={onNavigateToProgressTracking}
-                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
-                >
-                  <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Progress</span>
-                </button>
-              )}
-              {onNavigateToPackages && capabilities.package_management && (
-                <button
-                  onClick={onNavigateToPackages}
-                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
-                >
-                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Programs</span>
-                </button>
-              )}
-              {onNavigateToPortfolio && capabilities.portfolio && (
-                <button
-                  onClick={onNavigateToPortfolio}
-                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
-                >
-                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Boarders */}
-        {VendorUtils.isBoarding(vendorData?.roleId) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Boarding Services</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToCenterProfile && (
-                <button
-                  onClick={onNavigateToCenterProfile}
-                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
-                >
-                  <Building2 className="w-6 h-6 text-blue-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Rooms</span>
-                </button>
-              )}
-              {onNavigateToBookingManagement && (
-                <button
-                  onClick={onNavigateToBookingManagement}
-                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
-                >
-                  <Calendar className="w-6 h-6 text-green-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Check-in/out</span>
-                </button>
-              )}
-              {onNavigateToCCTV && capabilities.cctv_access && (
-                <button
-                  onClick={onNavigateToCCTV}
-                  className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
-                >
-                  <Monitor className="w-6 h-6 text-gray-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">CCTV</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Photographers */}
-        {VendorUtils.isPhotographer(vendorData?.roleId) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Photography Services</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToGallery && capabilities.gallery && (
-                <button
-                  onClick={onNavigateToGallery}
-                  className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
-                >
-                  <Camera className="w-6 h-6 text-pink-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Gallery</span>
-                </button>
-              )}
-              {onNavigateToPortfolio && capabilities.portfolio && (
-                <button
-                  onClick={onNavigateToPortfolio}
-                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
-                >
-                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
-                </button>
-              )}
-              {onNavigateToPackages && capabilities.package_management && (
-                <button
-                  onClick={onNavigateToPackages}
-                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
-                >
-                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Packages</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Shelters */}
-        {VendorUtils.isShelter(vendorData?.roleId) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Shelter Services</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToAdoptionSystem && capabilities.adoption && (
-                <button
-                  onClick={onNavigateToAdoptionSystem}
-                  className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-rose-100 transition-colors"
-                >
-                  <Heart className="w-6 h-6 text-rose-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Adoption</span>
-                </button>
-              )}
-              {onNavigateToDonationManagement && capabilities.donation && (
-                <button
-                  onClick={onNavigateToDonationManagement}
-                  className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-emerald-100 transition-colors"
-                >
-                  <Gift className="w-6 h-6 text-emerald-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Donations</span>
-                </button>
-              )}
-              {onNavigateToEventManagement && capabilities.events && (
-                <button
-                  onClick={onNavigateToEventManagement}
-                  className="bg-sky-50 border border-sky-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-sky-100 transition-colors"
-                >
-                  <Calendar className="w-6 h-6 text-sky-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Events</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ✅ ROLE-SPECIFIC QUICK ACTIONS - Pharmacies */}
-        {VendorUtils.isPharmacy(vendorData?.roleId) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Pharmacy Services</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {onNavigateToBusinessHub && capabilities.inventory && (
-                <button
-                  onClick={onNavigateToBusinessHub}
-                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
-                >
-                  <Package className="w-6 h-6 text-blue-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Inventory</span>
-                </button>
-              )}
-              {onNavigateToExpiryManagement && capabilities.expiry_management && (
-                <button
-                  onClick={onNavigateToExpiryManagement}
-                  className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
-                >
-                  <svg className="w-6 h-6 text-amber-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-xs font-medium text-gray-900">Expiry</span>
-                </button>
-              )}
-              {onNavigateToPrescriptionVerification && capabilities.prescription_verification && (
-                <button
-                  onClick={onNavigateToPrescriptionVerification}
-                  className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
-                >
-                  <FileText className="w-6 h-6 text-teal-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Rx Verify</span>
-                </button>
-              )}
-            </div>
           </div>
         )}
 
@@ -1170,7 +815,7 @@ export function VendorDashboard({
             {/* Appointments Stat */}
             {capabilities.booking && (
               <div key="stat-appointments" className={`text-center p-3 ${colorScheme.secondary} rounded-lg`}>
-                <span className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`}>📅</span>
+                <Calendar className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
                 <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
                 <div className="text-xs text-gray-500">Appointments</div>
               </div>
@@ -1188,7 +833,7 @@ export function VendorDashboard({
             {/* Consultations Stat */}
             {(capabilities.tele || capabilities.booking) && (
               <div key="stat-consultations" className={`text-center p-3 ${colorScheme.secondary} rounded-lg`}>
-                <span className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`}>👥</span>
+                <Users className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
                 <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
                 <div className="text-xs text-gray-500">Consultations</div>
               </div>
@@ -1196,7 +841,7 @@ export function VendorDashboard({
 
             {/* Earnings Stat - Always show */}
             <div key="stat-earnings" className="text-center p-3 bg-green-50 rounded-lg">
-              <span className="w-5 h-5 text-green-600 mx-auto mb-1">💰</span>
+              <TrendingUp className="w-5 h-5 text-green-600 mx-auto mb-1" />
               <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
               <div className="text-xs text-gray-500">Earnings</div>
             </div>
@@ -1267,7 +912,20 @@ export function VendorDashboard({
                   <button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</button>
                 </div>
                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                  {filteredSchedule.map(appointment => {
+                  {todaySchedule
+                    .filter(appointment => {
+                      if (appointmentTypeFilter === 'all') return true;
+                      const typeMap: Record<string, string> = {
+                        'at_center': 'clinic',
+                        'clinic': 'clinic',
+                        'at_home': 'home',
+                        'home': 'home',
+                        'tele': 'tele',
+                        'teleconsultation': 'tele'
+                      };
+                      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+                    })
+                    .map(appointment => {
                        const serviceType = appointment.serviceType?.toLowerCase();
                        let typeIcon = Stethoscope;
                        let typeColor = 'bg-blue-100';
@@ -1304,7 +962,7 @@ export function VendorDashboard({
                                       <Clock className="w-4 h-4 text-gray-400" />
                                       <span className="text-sm font-semibold text-gray-900">{appointment.time}</span>
                                    </div>
-                                   <Badge>{appointment.status}</Badge>
+                                   <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">{appointment.status}</span>
                                 </div>
                                 <div className="text-sm font-medium text-gray-900">{appointment.petName}</div>
                                 <div className="text-xs text-gray-500">{appointment.customerName} • {appointment.petBreed || 'Pet'}</div>
@@ -1376,28 +1034,20 @@ export function VendorDashboard({
             <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
               <button 
                 onClick={onNavigateToServiceManagement}
-                className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors cursor-pointer"
+                className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors"
               >
                 <Plus className="w-6 h-6 text-purple-600 mb-1" />
                 <span className="text-xs">Add</span>
               </button>
               {Array.isArray(services) && services.slice(0, 4).map((service) => (
-                <button
-                  key={service.serviceId || service.id}
-                  onClick={() => {
-                    // Navigate to service management page when service is clicked
-                    onNavigateToServiceManagement?.();
-                  }}
-                  className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center hover:bg-blue-200 transition-colors cursor-pointer active:scale-95"
-                  title={service.name || service.serviceName || 'Service'}
-                >
+                <div key={service.serviceId} className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center">
                   {capabilities.catalog && !capabilities.booking ? (
                      <Package className="w-6 h-6 text-blue-600 mb-1" />
                   ) : (
                      <Activity className="w-6 h-6 text-blue-600 mb-1" />
                   )}
-                  <span className="text-xs truncate w-full text-center px-1">{service.name || service.serviceName || 'Service'}</span>
-                </button>
+                  <span className="text-xs truncate w-full text-center px-1">{service.name}</span>
+                </div>
               ))}
             </div>
           </div>
@@ -1408,50 +1058,29 @@ export function VendorDashboard({
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-900">Watchlisted</h2>
-              <button 
-                onClick={() => {
-                  if (onNavigateToMedicalRecords) {
-                    onNavigateToMedicalRecords();
-                  } else {
-                    router.push('/medical/records');
-                  }
-                }}
-                className="flex items-center gap-1 text-sm text-[#FF8C42] hover:text-[#FF7A2E] transition-colors"
-              >
+              <button className="flex items-center gap-1 text-sm text-[#FF8C42]">
                 <Plus className="w-4 h-4" />
                 Add visit
               </button>
             </div>
             <div className="space-y-2">
               {watchlist.slice(0, 3).map(patient => (
-                <button
-                  key={patient.watchlistId}
-                  onClick={() => {
-                    // Navigate to medical records page or booking management to view patient details
-                    if (onNavigateToMedicalRecords) {
-                      onNavigateToMedicalRecords();
-                    } else {
-                      // Fallback: navigate to medical records page directly
-                      router.push('/medical/records');
-                    }
-                  }}
-                  className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors active:scale-[0.98] cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <div key={patient.watchlistId} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                     <span className="text-sm font-semibold text-blue-600">
                       {patient.customerName.split(' ').map((n, idx) => n[0]).join('')}
                     </span>
                   </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{patient.customerName}</div>
-                    <div className="text-xs text-gray-500 truncate">{patient.petName}</div>
-                    <div className="text-xs text-gray-400 truncate">{patient.issue}</div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">{patient.customerName}</div>
+                    <div className="text-xs text-gray-500">{patient.petName}</div>
+                    <div className="text-xs text-gray-400">{patient.issue}</div>
                   </div>
-                  <div className="text-right flex-shrink-0">
+                  <div className="text-right">
                     <div className="text-xs text-gray-400">{formatTimeAgo(patient.lastUpdated)}</div>
                     <ChevronRight className="w-4 h-4 text-gray-400 ml-auto mt-1" />
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -1588,7 +1217,7 @@ export function VendorDashboard({
       {/* Capability Debug Overlay (Dev Only) */}
       <CapabilityDebugOverlay
         roleId={vendorData?.roleId || 'unknown'}
-        roleName={vendorData?.roleName || vendorData?.roleId || 'Service Provider'}
+        roleName={roleName || 'Unknown Role'}
         capabilities={capabilities}
         vendorData={vendorData}
       />

@@ -18,11 +18,13 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
 
 export function registerMedicalRecordsEndpoints(app: Hono) {
   /**
    * POST /medical-records
    * Create medical record
+   * Requires 'medical_records' capability
    */
   app.post("/medical-records", async (c) => {
     try {
@@ -42,6 +44,12 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
       if (!petId || !customerId || !vendorId || !recordType) {
         return c.json({ error: 'petId, customerId, vendorId, and recordType are required' }, 400);
+      }
+
+      // Check if vendor has medical_records capability
+      const hasMedicalRecordsCapability = await checkVendorCapability(vendorId, 'medical_records');
+      if (!hasMedicalRecordsCapability) {
+        return c.json({ error: 'Vendor does not have medical records capability' }, 403);
       }
 
       const record = await insert('medical_records', {
@@ -194,6 +202,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   /**
    * GET /medical-records/vendor/:vendorId
    * Get all medical records for a vendor
+   * Requires 'medical_records' capability
    */
   app.get("/medical-records/vendor/:vendorId", async (c) => {
     try {
@@ -206,6 +215,12 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           records: [],
           total: 0,
         });
+      }
+
+      // Check if vendor has medical_records capability
+      const hasMedicalRecordsCapability = await checkVendorCapability(vendorId, 'medical_records');
+      if (!hasMedicalRecordsCapability) {
+        return c.json({ error: 'Vendor does not have medical records capability' }, 403);
       }
 
       let records;

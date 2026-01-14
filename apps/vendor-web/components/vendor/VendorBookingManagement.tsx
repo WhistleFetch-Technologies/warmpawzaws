@@ -27,7 +27,7 @@ import {
 
 interface VendorBookingManagementProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onBack: () => void;
 }
 

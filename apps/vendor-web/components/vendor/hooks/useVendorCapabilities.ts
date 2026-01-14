@@ -96,8 +96,25 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       return;
     }
     
-    if (!roleId) {
-      console.warn('[useVendorCapabilities] No roleId provided, using default capabilities');
+    // ✅ FIX: Try to get roleId from localStorage as last resort if not provided
+    let effectiveRoleId: string | null = roleId || null;
+    if (!effectiveRoleId && typeof window !== 'undefined') {
+      effectiveRoleId = localStorage.getItem('vendorRole') || null;
+      if (!effectiveRoleId) {
+        try {
+          const vendorData = JSON.parse(localStorage.getItem('vendorData') || '{}');
+          effectiveRoleId = vendorData.roleId || vendorData.role_id || null;
+        } catch { 
+          effectiveRoleId = null;
+        }
+      }
+      if (effectiveRoleId) {
+        console.log('[useVendorCapabilities] No roleId in props, using localStorage:', effectiveRoleId);
+      }
+    }
+    
+    if (!effectiveRoleId) {
+      console.warn('[useVendorCapabilities] No roleId provided and none in localStorage, using default capabilities');
       setCapabilities(DEFAULT_CAPABILITIES);
       setLoading(false);
       return;
@@ -107,28 +124,28 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       setLoading(true);
       setError(null);
       
-      console.log('[useVendorCapabilities] Loading capabilities for role:', roleId);
+      console.log('[useVendorCapabilities] Loading capabilities for role:', effectiveRoleId);
 
       // Try to get role details from the API
       // First try as a UUID (role ID), then as a role code (e.g., 'veterinarian')
       let response: RoleResponse | null = null;
       
-      // Check if roleId looks like a UUID
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleId);
+      // Check if effectiveRoleId looks like a UUID
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveRoleId);
       
       if (isUuid) {
         // Load by role UUID
-        response = await apiClient.get<RoleResponse>(`/config/roles/${roleId}`);
+        response = await apiClient.get<RoleResponse>(`/config/roles/${effectiveRoleId}`);
       } else {
         // Try to find role by code/name - load all roles and filter
         const rolesResponse = await apiClient.get<{ success: boolean; roles: any[] }>('/config/roles');
         if (rolesResponse.success && rolesResponse.roles) {
-          const normalizedRoleId = roleId.toLowerCase().replace(/\s+/g, '_');
+          const normalizedRoleId = effectiveRoleId.toLowerCase().replace(/\s+/g, '_');
           const matchedRole = rolesResponse.roles.find((r: any) => 
             r.name?.toLowerCase() === normalizedRoleId ||
             r.roleCode?.toLowerCase() === normalizedRoleId ||
             r.display_name?.toLowerCase() === normalizedRoleId.replace(/_/g, ' ') ||
-            r.id === roleId
+            r.id === effectiveRoleId
           );
           
           if (matchedRole) {
@@ -157,7 +174,7 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
         
         setCapabilities(mergedCapabilities);
         setRoleName(response.roleName || null);
-        setResolvedRoleId(response.roleId || roleId);
+        setResolvedRoleId(response.roleId || effectiveRoleId);
         
         console.log('[useVendorCapabilities] Loaded capabilities:', {
           roleId: response.roleId,
@@ -167,7 +184,7 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
         });
       } else {
         // Fallback to default capabilities
-        console.warn('[useVendorCapabilities] Could not load role, using defaults for:', roleId);
+        console.warn('[useVendorCapabilities] Could not load role, using defaults for:', effectiveRoleId);
         setCapabilities(DEFAULT_CAPABILITIES);
       }
     } catch (err: any) {

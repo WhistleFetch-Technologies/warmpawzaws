@@ -146,7 +146,7 @@ export default function AuthPage() {
         // This flag is cleared on hard refresh, allowing us to detect it
         sessionStorage.setItem('_warmpawz_has_session', 'true');
         
-        // Get customer profile to check onboarding status
+        // Get customer profile and pets to check onboarding status
         try {
           const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
           
@@ -154,14 +154,39 @@ export default function AuthPage() {
           if (profileResponse.profile) {
             const onboardingStatus = profileResponse.profile.onboarding_status || profileResponse.profile.onboardingStatus;
             const profileCompleted = profileResponse.profile.profile_completed || profileResponse.profile.onboardingComplete;
+            const hasName = !!profileResponse.profile.name && profileResponse.profile.name !== `Customer ${phone.slice(-4)}`;
             
             // Store in localStorage for CustomerApp to use
             localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
             localStorage.setItem('customerId', profileResponse.profile.id);
+            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
             
-            // Set onboarding flag based on database state
-            if (onboardingStatus === 'COMPLETED' || profileCompleted) {
+            // Also check if customer has pets
+            let hasPets = false;
+            try {
+              const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+              if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
+                hasPets = true;
+                localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
+              }
+            } catch {
+              // No pets yet
+            }
+            
+            // Customer is onboarded if:
+            // 1. Status is COMPLETED, OR
+            // 2. profile_completed is true, OR  
+            // 3. They have a real name AND have pets (legacy data fix)
+            const isOnboarded = onboardingStatus === 'COMPLETED' || profileCompleted || (hasName && hasPets);
+            
+            if (isOnboarded) {
               localStorage.setItem('customerOnboardingComplete', 'true');
+              localStorage.setItem('customerJourneyStage', 'have-pet');
+            } else if (hasName && !hasPets) {
+              // Has profile but no pets - skip to pet step
+              localStorage.setItem('customerOnboardingComplete', 'false');
+              localStorage.setItem('customerJourneyStage', 'have-pet');
+              localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
             } else {
               localStorage.setItem('customerOnboardingComplete', 'false');
             }
@@ -181,6 +206,42 @@ export default function AuthPage() {
         console.log('🔧 [UAT Fallback] API failed, using static OTP verification');
         localStorage.setItem('customerPhone', phone);
         localStorage.setItem('authToken', 'uat-token-customer-' + Date.now());
+        
+        // CRITICAL: Set session flag before navigation to prevent hard refresh detection
+        sessionStorage.setItem('_warmpawz_has_session', 'true');
+        
+        // Also mark as just logged in to prevent session clearing
+        sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
+        
+        // Try to fetch profile to set onboarding state
+        try {
+          const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+          if (profileResponse?.profile) {
+            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
+            localStorage.setItem('customerId', profileResponse.profile.id);
+            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+            
+            const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
+            const profileCompleted = profileResponse.profile.profile_completed;
+            
+            // Check for pets
+            try {
+              const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+              if (petsResponse?.pets?.length > 0) {
+                localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
+                localStorage.setItem('customerOnboardingComplete', 'true');
+              }
+            } catch {}
+            
+            if (onboardingStatus === 'COMPLETED' || profileCompleted) {
+              localStorage.setItem('customerOnboardingComplete', 'true');
+            }
+          }
+        } catch {
+          // New customer - will go through onboarding
+          localStorage.setItem('customerOnboardingComplete', 'false');
+        }
+        
         router.push('/');
         return;
       }

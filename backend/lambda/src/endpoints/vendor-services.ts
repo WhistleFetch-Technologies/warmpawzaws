@@ -18,6 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
 
 export function registerVendorServicesEndpoints(app: Hono) {
   /**
@@ -41,7 +42,21 @@ export function registerVendorServicesEndpoints(app: Hono) {
       // ✅ CRITICAL: Get vendor with role and capabilities from DB (no frontend dependency)
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length === 0) {
-        return c.json({ error: 'Vendor not found' }, 404);
+        // Return empty services gracefully for approved vendors without vendors table entry
+        console.log(`[Vendor Services] Vendor ${vendorId} not found in vendors table, returning empty services`);
+        return c.json({
+          success: true,
+          services: [],
+          servicesByStyle: {
+            at_home: { services: [], count: 0 },
+            at_center: { services: [], count: 0 },
+            tele: { services: [], count: 0 },
+          },
+          total: 0,
+          role: null,
+          capabilities: [],
+          allowedServiceStyles: ['at_home', 'at_center', 'tele'],
+        });
       }
       const vendor = vendors[0];
 
@@ -187,10 +202,19 @@ export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/services
    * Add a service to vendor catalog
+   * Requires 'services' capability
    */
   app.post("/vendor/:vendorId/services", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has services or custom_services capability
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
       const serviceData = await c.req.json();
       const {
         serviceId,
@@ -231,7 +255,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         service_name: baseService.name,
         category: baseService.category,
         service_style: serviceStyle,
-        price: customPrice || baseService.base_price || baseService.price,
+        price: customPrice || baseService.price || price,
         custom_price: customPrice || null,
         duration_minutes: customDuration || baseService.duration_minutes || 30,
         custom_duration: customDuration || null,
@@ -254,10 +278,19 @@ export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/services/:serviceId
    * Update vendor service
+   * Requires 'services' capability
    */
   app.put("/vendor/:vendorId/services/:serviceId", async (c) => {
     try {
       const { vendorId, serviceId } = c.req.param();
+      
+      // Check if vendor has services or custom_services capability
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
       const serviceData = await c.req.json();
 
       const updated = await update('vendor_services',
@@ -290,10 +323,18 @@ export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * DELETE /vendor/:vendorId/services/:serviceId
    * Remove service from vendor catalog
+   * Requires 'services' capability
    */
   app.delete("/vendor/:vendorId/services/:serviceId", async (c) => {
     try {
       const { vendorId, serviceId } = c.req.param();
+      
+      // Check if vendor has services or custom_services capability
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
 
       await query(
         'DELETE FROM vendor_services WHERE id = $1 AND vendor_id = $2',
@@ -313,10 +354,19 @@ export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/services/custom
    * Create custom service
+   * Requires 'services' capability
    */
   app.post("/vendor/:vendorId/services/custom", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has services or custom_services capability
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
       const serviceData = await c.req.json();
       const {
         serviceName,
@@ -333,15 +383,15 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       // Create base service first
+      // Note: services table requires price column (not null constraint)
       const baseService = await insert('services', {
         name: serviceName,
         description: description || null,
         category: category || null,
-        base_price: price,
+        price: price, // Required column
         duration_minutes: duration || 30,
-        service_style: serviceStyle,
-        is_global: false,
         is_active: true,
+        // Don't include: service_style, is_global (stored in vendor_services)
       });
 
       // Create vendor service link

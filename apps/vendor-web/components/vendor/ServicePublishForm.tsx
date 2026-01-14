@@ -19,7 +19,7 @@ import { projectId, publicAnonKey } from '@/lib/supabase/info';
 
 interface ServicePublishFormProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   roleConfiguration: any;
   onSuccess: () => void;
   onCancel: () => void;

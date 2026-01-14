@@ -74,6 +74,9 @@ export function CustomerHomeComplete({
   const [userProfilePhoto, setUserProfilePhoto] = useState<string>('');
   const [currentBanner, setCurrentBanner] = useState(0);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [showAddPetModal, setShowAddPetModal] = useState(false);
+  const [newPetData, setNewPetData] = useState({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
+  const [savingPet, setSavingPet] = useState(false);
   const { itemCount } = useCart();
 
   useEffect(() => {
@@ -91,17 +94,10 @@ export function CustomerHomeComplete({
     try {
       setLoading(true);
       
-      // AWS Serverless compatible - use apiClient instead of direct Supabase calls
-      // First get customer by phone, then get pets
-      const customerResponse: any = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).catch(() => null);
-      const customer = customerResponse?.customer || customerResponse;
-      const customerId = customer?.id;
-
+      // Load profile and pets in parallel using phone-based endpoints
       const [profileResponse, petsResponse] = await Promise.all([
         apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null),
-        customerId 
-          ? apiClient.get(`/customer/${customerId}/pets`).catch(() => null)
-          : Promise.resolve(null)
+        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`).catch(() => null)
       ]);
 
       const profileResp = profileResponse as any;
@@ -114,12 +110,24 @@ export function CustomerHomeComplete({
           journeyType: profile.journeyType || ''
         }));
         setUserProfilePhoto(profile.photo || profile.profile_photo_url || '');
+        
+        // Profile already includes pets if available
+        if (profile.pets && Array.isArray(profile.pets) && profile.pets.length > 0) {
+          setUserData(prev => ({
+            ...prev,
+            pets: profile.pets
+          }));
+          if (!selectedPet) {
+            setSelectedPet(profile.pets[0]);
+          }
+        }
       }
 
+      // Also try the dedicated pets endpoint
       const petsResp = petsResponse as any;
       if (petsResp && (petsResp.success || petsResp.pets)) {
         // ✅ Robust response parsing
-        let pets = [];
+        let pets: Pet[] = [];
         if (Array.isArray(petsResp)) {
           pets = petsResp;
         } else if (Array.isArray(petsResp.pets)) {
@@ -128,16 +136,16 @@ export function CustomerHomeComplete({
           pets = petsResp.pets.pets;
         } else if (petsResp.success && Array.isArray(petsResp.data)) {
           pets = petsResp.data;
-        } else if (Array.isArray(petsResp)) {
-          pets = petsResp as any[];
         }
         
-        setUserData(prev => ({
-          ...prev,
-          pets: pets
-        }));
-        if (pets.length > 0 && !selectedPet) {
-          setSelectedPet(pets[0]);
+        if (pets.length > 0) {
+          setUserData(prev => ({
+            ...prev,
+            pets: pets
+          }));
+          if (!selectedPet) {
+            setSelectedPet(pets[0]);
+          }
         }
       }
     } catch (error) {
@@ -148,12 +156,41 @@ export function CustomerHomeComplete({
   };
 
   const handleAddPet = () => {
-    // Navigate to add-pet screen directly
-    if (onNavigate) {
-      onNavigate('add-pet');
-    } else if (onAddPet) {
-      // Fallback to modal if onNavigate not available
-      onAddPet();
+    // Show add pet modal directly instead of navigating
+    setShowAddPetModal(true);
+    setNewPetData({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
+  };
+
+  const handleSavePet = async () => {
+    if (!newPetData.name.trim()) {
+      alert('Please enter a pet name');
+      return;
+    }
+    
+    setSavingPet(true);
+    try {
+      const response = await apiClient.post('/customer/pets', {
+        phone: phone,
+        pets: [{
+          name: newPetData.name,
+          type: newPetData.type,
+          breed: newPetData.breed,
+          age: newPetData.age,
+          gender: newPetData.gender,
+        }]
+      });
+      
+      if (response) {
+        // Reload user data to get the new pet
+        await loadUserData();
+        setShowAddPetModal(false);
+        setNewPetData({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
+      }
+    } catch (error) {
+      console.error('Error saving pet:', error);
+      alert('Failed to save pet. Please try again.');
+    } finally {
+      setSavingPet(false);
     }
   };
 
@@ -1181,6 +1218,103 @@ export function CustomerHomeComplete({
           customerPhone={phone}
           onClose={() => setShowAIChat(false)}
         />
+      )}
+
+      {/* Add Pet Modal */}
+      {showAddPetModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Add New Pet</h2>
+              <button 
+                onClick={() => setShowAddPetModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pet Name *</label>
+                <input
+                  type="text"
+                  value={newPetData.name}
+                  onChange={(e) => setNewPetData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter pet name"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pet Type</label>
+                <select
+                  value={newPetData.type}
+                  onChange={(e) => setNewPetData(prev => ({ ...prev, type: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
+                >
+                  <option value="Dog">🐕 Dog</option>
+                  <option value="Cat">🐱 Cat</option>
+                  <option value="Bird">🐦 Bird</option>
+                  <option value="Fish">🐟 Fish</option>
+                  <option value="Rabbit">🐰 Rabbit</option>
+                  <option value="Other">🐾 Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Breed</label>
+                <input
+                  type="text"
+                  value={newPetData.breed}
+                  onChange={(e) => setNewPetData(prev => ({ ...prev, breed: e.target.value }))}
+                  placeholder="e.g., Labrador, Persian"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Age (years)</label>
+                  <input
+                    type="number"
+                    value={newPetData.age}
+                    onChange={(e) => setNewPetData(prev => ({ ...prev, age: e.target.value }))}
+                    placeholder="e.g., 3"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                  <select
+                    value={newPetData.gender}
+                    onChange={(e) => setNewPetData(prev => ({ ...prev, gender: e.target.value }))}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAddPetModal(false)}
+                className="flex-1 px-4 py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePet}
+                disabled={savingPet || !newPetData.name.trim()}
+                className="flex-1 px-4 py-3 bg-[#FF8C42] text-white rounded-xl hover:bg-[#FF7A2E] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingPet ? 'Saving...' : 'Add Pet'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

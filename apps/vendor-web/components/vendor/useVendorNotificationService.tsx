@@ -2,15 +2,13 @@
 
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { apiClient } from '@/lib/api-client';
 
 interface VendorNotificationServiceProps {
   vendorId: string;
   enabled: boolean;
   onNewNotification?: (notification: any) => void;
 }
-
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
 export function useVendorNotificationService({ vendorId, enabled, onNewNotification }: VendorNotificationServiceProps) {
   const lastNotificationIdRef = useRef<string | null>(null);
@@ -35,16 +33,9 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
           return;
         }
         
-        const response = await fetch(
-          `${API_BASE}/vendor/notifications/${vendorId}?limit=10`,
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          const notifications = data.notifications || [];
+        // Use apiClient instead of direct fetch
+        const data = await apiClient.get(`/vendor/notifications/${vendorId}?limit=10`) as any;
+        const notifications = data?.notifications || [];
           
           console.log(`🔔 [VENDOR-NOTIFICATION-SERVICE] Polling - Found ${notifications.length} notifications`);
           
@@ -85,10 +76,6 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
               isInitialLoadRef.current = false;
             }
           }
-        } else {
-          const errorText = await response.text();
-          console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] API error ${200} (will retry)`);
-        }
       } catch (error) {
         // Silently log error without showing it prominently (this is normal for polling)
         console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));

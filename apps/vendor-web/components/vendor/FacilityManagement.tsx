@@ -25,7 +25,7 @@ import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
 
 interface FacilityManagementProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onBack?: () => void;
 }
 

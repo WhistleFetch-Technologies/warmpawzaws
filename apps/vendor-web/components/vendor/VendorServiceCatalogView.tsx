@@ -19,7 +19,7 @@ import { authenticatedFetch } from '@/lib/session-manager';
 
 interface VendorServiceCatalogViewProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onBack: () => void;
   onSelectService?: (service: any) => void;
   mode?: 'browse' | 'multi-select';

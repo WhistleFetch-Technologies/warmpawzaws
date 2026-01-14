@@ -126,21 +126,29 @@ export function DynamicVendorOnboardingForm({
     console.log('🚀 [INIT] roleId:', roleId);
     checkServerHealth();
     
-    // ✅ FIX: Safely access environment variable with fallback
-    console.log('🔍 [ENV] Checking for environment variable...');
-    console.log('🔍 [ENV] process.env exists:', !!process.env);
+    // ✅ FIX: Check runtime config first, then environment variable, then fetch from backend
+    console.log('🔍 [ENV] Checking for Google Maps API key...');
     
-    const envApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    
-    console.log('🔍 [ENV] envApiKey exists:', !!envApiKey);
-    console.log('🔍 [ENV] envApiKey value:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'null/undefined');
-    
-    if (envApiKey) {
-      console.log('✅ [ENV] Using Google Maps API key from environment variable');
-      setGoogleMapsApiKey(envApiKey);
+    // Check runtime config
+    const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
+    if (runtimeConfig?.googleMapsApiKey) {
+      console.log('✅ [RUNTIME CONFIG] Using Google Maps API key from runtime config');
+      setGoogleMapsApiKey(runtimeConfig.googleMapsApiKey);
     } else {
-      console.log('⚠️ [ENV] No environment variable found, fetching from backend...');
-      fetchGoogleMapsKey();
+      console.log('🔍 [ENV] process.env exists:', !!process.env);
+      
+      const envApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      
+      console.log('🔍 [ENV] envApiKey exists:', !!envApiKey);
+      console.log('🔍 [ENV] envApiKey value:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'null/undefined');
+      
+      if (envApiKey) {
+        console.log('✅ [ENV] Using Google Maps API key from environment variable');
+        setGoogleMapsApiKey(envApiKey);
+      } else {
+        console.log('⚠️ [ENV] No environment variable found, fetching from backend...');
+        fetchGoogleMapsKey();
+      }
     }
     
     fetchForm();
@@ -259,25 +267,66 @@ export function DynamicVendorOnboardingForm({
       // ✅ FIX: Get phone from localStorage and use correct endpoint
       const phone = typeof window !== 'undefined' ? localStorage.getItem('vendorPhone') : null;
       
-      // ✅ FIX: Use correct endpoint with query parameters
-      const params = new URLSearchParams();
-      if (phone) {
-        params.append('phone', phone);
-      }
-      if (roleId) {
-        params.append('roleId', roleId);
-      }
+      // ✅ FIX: Try fixed endpoint first, fall back to original
+      let response: any = null;
+      let endpoint = '';
       
-      const endpoint = `/vendor/onboarding/form-schema${params.toString() ? `?${params.toString()}` : ''}`;
-      console.log('[DYNAMIC FORM] 🔗 Calling endpoint:', endpoint);
-      
-      const data = await apiClient.get(endpoint) as any;
+      try {
+        // Try new fixed endpoint
+        const params = new URLSearchParams();
+        if (phone) {
+          params.append('phone', phone);
+        }
+        endpoint = `/vendor/onboarding/form-schema-fixed?${params.toString()}`;
+        console.log('[DYNAMIC FORM] 🔗 Trying FIXED endpoint:', endpoint);
+        response = await apiClient.get(endpoint);
+        console.log('[DYNAMIC FORM] ✅ FIXED endpoint succeeded');
+      } catch (fixedError) {
+        console.warn('[DYNAMIC FORM] ⚠️  FIXED endpoint failed, trying ORIGINAL endpoint:', fixedError);
+        // Fall back to original endpoint
+        const params = new URLSearchParams();
+        if (phone) {
+          params.append('phone', phone);
+        }
+        if (roleId) {
+          params.append('roleId', roleId);
+        }
+        endpoint = `/vendor/onboarding/form-schema?${params.toString()}`;
+        console.log('[DYNAMIC FORM] 🔗 Trying ORIGINAL endpoint:', endpoint);
+        response = await apiClient.get(endpoint);
+        console.log('[DYNAMIC FORM] ✅ ORIGINAL endpoint succeeded');
+      }
 
-      console.log('[DYNAMIC FORM] ✅ Form loaded:', data);
+      console.log('[DYNAMIC FORM] ✅ Raw response:', response);
+      
+      // ✅ FIX: Unwrap double-wrapped response from BaseHandlerEnhanced
+      // Backend returns: { success: true, data: { success: true, fields: [...], sections: [...] } }
+      const data = response.data || response;
+      
+      console.log('[DYNAMIC FORM] ✅ Unwrapped data:', data);
       console.log('[DYNAMIC FORM] 📋 Version:', data.version, 'Status:', data.status);
+      console.log('[DYNAMIC FORM] 📋 Sections count:', data.sections?.length);
       
       // ✅ FIX: Handle new response structure (fields, sections, schema)
       if (data && (data.schema || data.fields || data.sections)) {
+        // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
+        const transformField = (f: any) => ({
+          ...f,
+          name: f.name || f.fieldName || f.id, // Use name, fallback to fieldName, then id
+          isActive: f.isActive !== false && f.is_active !== false, // Handle both casing
+          validation: {
+            required: f.isMandatory || f.validation?.required,
+            ...f.validation
+          }
+        });
+        
+        // Transform sections to have properly named fields
+        const transformedSections = (data.sections || []).map((section: any) => ({
+          ...section,
+          isActive: section.isActive !== false,
+          fields: (section.fields || []).map(transformField)
+        }));
+        
         // Transform response to match expected form structure
         const formStructure: OnboardingForm = {
           id: data.roleId || roleId,
@@ -285,9 +334,15 @@ export function DynamicVendorOnboardingForm({
           roleName: data.roleName || roleId,
           version: data.version || 1,
           status: data.status || 'active',
-          sections: data.sections || [],
+          sections: transformedSections,
           documentSections: []
         };
+        
+        console.log('[DYNAMIC FORM] 📋 Transformed sections:', formStructure.sections.map(s => ({
+          id: s.id,
+          fieldCount: s.fields?.length,
+          fieldNames: s.fields?.map((f: any) => f.name)
+        })));
         
         setForm(formStructure);
         
@@ -295,7 +350,7 @@ export function DynamicVendorOnboardingForm({
           setFormData(data.existingApplication.application_payload);
         }
         
-        console.log('[DYNAMIC FORM] 🎉 Form schema loaded successfully');
+        console.log('[DYNAMIC FORM] 🎉 Form schema loaded successfully with', formStructure.sections.length, 'sections');
         toast.success('Onboarding form loaded successfully');
       } else {
         console.error('[DYNAMIC FORM] ❌ Invalid response structure:', data);
@@ -776,9 +831,11 @@ export function DynamicVendorOnboardingForm({
           try {
             // Get vendor identity ID from phone (used for onboarding documents)
             const identityResponse = await apiClient.get<any>(`/vendor/onboarding/status?phone=${encodeURIComponent(phone)}`);
-            if (identityResponse?.identity?.id) {
+            // ✅ FIX: API returns {success: true, data: {identity, application, role}}
+            const identityData = identityResponse?.data?.identity || identityResponse?.identity;
+            if (identityData?.id) {
               // Use identity ID as vendorId for onboarding documents
-              vendorId = identityResponse.identity.id;
+              vendorId = identityData.id;
             }
           } catch (err) {
             console.warn('Could not get vendor identity for file upload:', err);
@@ -1179,7 +1236,7 @@ export function DynamicVendorOnboardingForm({
 
         {/* Form Sections */}
         <div className="space-y-8 pb-32">
-          {form.sections.filter(s => s.isActive).map((section) => {
+          {form.sections.filter(s => s.isActive !== false).map((section) => {
             const isProfessionalSection = section.id === 'professional' || section.name === 'professional';
             
             return (
@@ -1218,7 +1275,7 @@ export function DynamicVendorOnboardingForm({
 
               <div className={`space-y-5 ${isProfessionalSection ? 'px-6' : ''}`}>
                 {section.fields
-                  .filter(f => f.isActive)
+                  .filter(f => f.isActive !== false)
                   .sort((a, b) => a.order - b.order)
                   .map((field) => (
                     <div key={field.id}>
@@ -1258,7 +1315,7 @@ export function DynamicVendorOnboardingForm({
 
               <div className="space-y-5">
                 {section.fields
-                  .filter(f => f.isActive)
+                  .filter(f => f.isActive !== false)
                   .sort((a, b) => a.order - b.order)
                   .map((field) => (
                     <div key={field.id}>
