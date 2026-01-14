@@ -72,13 +72,28 @@ class GetCustomerByPhoneHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      const customers = await select('customers', { phone });
+      // Normalize phone - remove non-digits
+      const cleanPhone = phone.replace(/\D/g, '');
+      
+      const customers = await select('customers', { phone: cleanPhone });
       
       if (customers.length === 0) {
         return this.error('Customer not found', 404, 'NOT_FOUND', undefined, requestId);
       }
 
-      return this.success({ customer: customers[0] }, requestId);
+      const customer = customers[0];
+      return this.success({ 
+        customer: {
+          id: customer.id,
+          phone: customer.phone,
+          name: customer.full_name,
+          email: customer.email,
+          status: customer.status,
+          onboarding_status: customer.onboarding_status,
+          profile_completed: customer.profile_completed,
+          created_at: customer.created_at,
+        }
+      }, requestId);
     } catch (error: any) {
       console.error('Error getting customer by phone:', error);
       return this.error(
@@ -364,20 +379,24 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   const addPetHandler = new AddPetHandlerEnhanced();
   const deactivateHandler = new DeactivateCustomerHandlerEnhanced();
 
-  app.get('/customer/:customerId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { customerId: c.req.param('customerId') };
-    const context = createLambdaContext();
-    const result: any = await getHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
-  });
-
+  // IMPORTANT: Register specific routes BEFORE parameterized routes
+  // Otherwise /customer/by-phone would be matched by /customer/:customerId with customerId="by-phone"
+  
   app.get('/customer/by-phone', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result: any = await getByPhoneHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
+  // Parameterized route - MUST come after specific routes
+  app.get('/customer/:customerId', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { customerId: c.req.param('customerId') };
+    const context = createLambdaContext();
+    const result: any = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
@@ -585,10 +604,17 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         }
       }
 
-      // Update customer onboarding status
+      // Update customer onboarding status to COMPLETED since pets are now saved
       try {
         const { updateCustomerOnboardingStatus } = await import('../utils/customer-state');
-        await updateCustomerOnboardingStatus(customer.id, 'PET_PENDING', 'preferences');
+        await updateCustomerOnboardingStatus(customer.id, 'COMPLETED', 'completed');
+        
+        // Also update profile_completed flag
+        await update('customers', { id: customer.id }, { 
+          profile_completed: true,
+          onboarding_status: 'COMPLETED',
+          status: 'active'
+        });
       } catch (stateError) {
         console.error('Error updating onboarding status:', stateError);
       }

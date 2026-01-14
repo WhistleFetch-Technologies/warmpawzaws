@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { VendorStaffPage } from './VendorStaffPage';
+import { DoctorManagement } from './clinic/DoctorManagement'; // ✅ FIX: Use actual Figma UI for doctor management
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from './clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from './resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
@@ -22,7 +23,7 @@ import { VendorApprovedSetup } from './VendorApprovedSetup';
 import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
 import { VendorSetupCompleted } from './VendorSetupCompleted';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorDashboardScreen } from './dashboard/VendorDashboardScreen';
+import { VendorDashboard } from './VendorDashboard'; // ✅ FIX: Use actual Figma UI component, not the placeholder VendorDashboardScreen
 import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
 import { VendorConsultationScreen } from './VendorConsultationScreen';
@@ -162,6 +163,8 @@ export function VendorLandingPage({
   const [showCounseling, setShowCounseling] = useState(false); // ✅ NEW: Counseling services
   const [showPolicyManagement, setShowPolicyManagement] = useState(false); // ✅ NEW: Policy management
   const [showDistancePricing, setShowDistancePricing] = useState(false); // ✅ NEW: Distance pricing
+  const [showLiveTracking, setShowLiveTracking] = useState(false); // ✅ FIX: Live tracking
+  const [showSpecializedServices, setShowSpecializedServices] = useState(false); // ✅ FIX: Specialized services
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -814,10 +817,9 @@ export function VendorLandingPage({
           <VendorServiceManagementComplete
             vendorId={vendorId}
             vendorData={vendorData}
-            fromStaffManagement={returnToStaffManagement} // ✅ Pass the flag
+            fromStaffManagement={returnToStaffManagement}
             onBack={() => {
               setShowServiceManagement(false);
-              // ✅ If we came from staff management, return there
               if (returnToStaffManagement) {
                 setReturnToStaffManagement(false);
                 setShowStaffManagement(true);
@@ -832,7 +834,7 @@ export function VendorLandingPage({
         return (
           <VendorConsultationScreen
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowConsultation(false)}
           />
         );
@@ -843,7 +845,7 @@ export function VendorLandingPage({
         return (
           <VendorBookingManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowBookingManagement(false)}
           />
         );
@@ -854,7 +856,7 @@ export function VendorLandingPage({
         return (
           <VendorTeleConsultationFlow
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowTeleConsultation(false)}
           />
         );
@@ -865,7 +867,7 @@ export function VendorLandingPage({
         return (
           <FacilityManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowFacilityManagement(false)}
           />
         );
@@ -876,14 +878,39 @@ export function VendorLandingPage({
         return (
           <CenterProfileManager
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowCenterProfile(false)}
           />
         );
       }
       
       // Show staff management screen if requested
+      // ✅ FIX: Use DoctorManagement for clinic/vet roles (full Figma UI)
       if (showStaffManagement) {
+        // Check roleId or role_id fields
+        const roleIdValue = vendorData?.roleId || (vendorData as any)?.role_id || '';
+        const isClinicRoleId = ['veterinary_clinic', 'pet_clinic', 'veterinarian'].includes(roleIdValue);
+        
+        // Fallback: Detect clinic from business_name if roleId is not set
+        const businessName = (vendorData?.businessName || (vendorData as any)?.business_name || '').toLowerCase();
+        const isClinicByName = businessName.includes('veterinary') || 
+                               businessName.includes('clinic') || 
+                               businessName.includes('hospital') ||
+                               businessName.includes('vet ');
+        
+        const isClinicRole = isClinicRoleId || isClinicByName;
+        
+        if (isClinicRole) {
+          return (
+            <DoctorManagement
+              clinicId={vendorId}
+              clinicData={vendorData}
+              onBack={() => setShowStaffManagement(false)}
+            />
+          );
+        }
+        
+        // Non-clinic vendors use VendorStaffPage
         return (
           <div className="min-h-screen bg-gray-50">
             <VendorStaffPage
@@ -906,7 +933,7 @@ export function VendorLandingPage({
         return (
           <VendorBusinessHub 
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowBusinessHub(false)}
           />
         );
@@ -917,7 +944,7 @@ export function VendorLandingPage({
         return (
           <VetSpecializedServicesManager
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowVetSpecialized(false)}
           />
         );
@@ -928,7 +955,7 @@ export function VendorLandingPage({
         return (
           <NutritionistMealManager
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowNutritionistMealManager(false)}
           />
         );
@@ -939,7 +966,7 @@ export function VendorLandingPage({
         return (
           <VendorGalleryManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowGallery(false)}
           />
         );
@@ -950,7 +977,7 @@ export function VendorLandingPage({
         return (
           <VendorPortfolioManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowPortfolio(false)}
           />
         );
@@ -961,7 +988,7 @@ export function VendorLandingPage({
         return (
           <VendorCCTVAccess
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowCCTV(false)}
           />
         );
@@ -972,7 +999,7 @@ export function VendorLandingPage({
         return (
           <VendorControlledSubstances
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowControlledSubstances(false)}
           />
         );
@@ -983,7 +1010,7 @@ export function VendorLandingPage({
         return (
           <VendorPrescriptionBuilder
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowPrescription(false)}
           />
         );
@@ -994,7 +1021,7 @@ export function VendorLandingPage({
         return (
           <ProgressTrackingDashboard
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowProgressTracking(false)}
           />
         );
@@ -1005,7 +1032,7 @@ export function VendorLandingPage({
         return (
           <PackageManagementContainer
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowPackages(false)}
           />
         );
@@ -1016,7 +1043,7 @@ export function VendorLandingPage({
         return (
           <VendorCustomServiceCreation
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             serviceStyle={vendorData?.serviceStyle === 'both' ? 'both' : 'at_center'}
             onClose={() => setShowCustomServices(false)}
             onServiceCreated={() => {
@@ -1032,7 +1059,7 @@ export function VendorLandingPage({
         return (
           <ShelterAdoptionSystem
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowAdoptionSystem(false)}
           />
         );
@@ -1043,7 +1070,7 @@ export function VendorLandingPage({
         return (
           <VendorMemorialServices
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowMemorialServices(false)}
           />
         );
@@ -1054,7 +1081,7 @@ export function VendorLandingPage({
         return (
           <VendorExpiryManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowExpiryManagement(false)}
           />
         );
@@ -1065,7 +1092,7 @@ export function VendorLandingPage({
         return (
           <VendorDonationManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowDonationManagement(false)}
           />
         );
@@ -1076,7 +1103,7 @@ export function VendorLandingPage({
         return (
           <VendorEventManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowEventManagement(false)}
           />
         );
@@ -1087,7 +1114,7 @@ export function VendorLandingPage({
         return (
           <VendorPatientMonitoring
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowPatientMonitoring(false)}
           />
         );
@@ -1098,7 +1125,7 @@ export function VendorLandingPage({
         return (
           <VendorCafeMenuManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowCafeMenuManagement(false)}
           />
         );
@@ -1109,7 +1136,7 @@ export function VendorLandingPage({
         return (
           <VendorPrescriptionVerification
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowPrescriptionVerification(false)}
           />
         );
@@ -1120,7 +1147,7 @@ export function VendorLandingPage({
         return (
           <VendorDeliveryManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowDeliveryManagement(false)}
           />
         );
@@ -1131,7 +1158,7 @@ export function VendorLandingPage({
         return (
           <VendorDietCharts
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowDietCharts(false)}
           />
         );
@@ -1142,7 +1169,7 @@ export function VendorLandingPage({
         return (
           <VendorCounseling
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowCounseling(false)}
           />
         );
@@ -1153,7 +1180,7 @@ export function VendorLandingPage({
         return (
           <VendorPolicyManagement
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => setShowPolicyManagement(false)}
           />
         );
@@ -1192,7 +1219,7 @@ export function VendorLandingPage({
         return (
           <ResortManagementDashboard
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => {
               // Handle logout or settings
             }}
@@ -1206,7 +1233,7 @@ export function VendorLandingPage({
         return (
           <NutritionistMealManager
             vendorId={vendorId}
-            vendorData={vendorData}
+            
             onBack={() => {
               // Handle logout
             }}
@@ -1234,48 +1261,46 @@ export function VendorLandingPage({
         );
       }
       
-      // Default: show VendorDashboardScreen (copied from React Native app)
-      const handleNavigate = (screen: string, data?: any) => {
-        switch (screen) {
-          case 'bookings':
-            setShowBookingManagement(true);
-            break;
-          case 'services':
-            setShowServiceManagement(true);
-            break;
-          case 'staff':
-            setShowStaffManagement(true);
-            break;
-          case 'schedule':
-            setShowScheduleManagement(true);
-            break;
-          case 'analytics':
-            if (typeof window !== 'undefined') {
-              window.location.href = '/analytics';
-            }
-            break;
-          case 'settings':
-            if (typeof window !== 'undefined') {
-              window.location.href = '/settings';
-            }
-            break;
-          case 'booking-detail':
-            // Handle booking detail - could navigate to booking detail page or show modal
-            if (data?.bookingId) {
-              setShowBookingManagement(true);
-              // TODO: If there's a booking detail modal/page, navigate to it
-            }
-            break;
-          default:
-            console.log('Unknown navigation screen:', screen);
-        }
-      };
-
+      // ✅ FIX: Use VendorDashboard (actual Figma UI) instead of VendorDashboardScreen (placeholder)
+      // VendorDashboard is the comprehensive 1200+ line component with all capabilities
+      console.log('🎯 Rendering VendorDashboard (Figma UI) for vendor:', vendorId);
+      
       return (
-        <VendorDashboardScreen
+        <VendorDashboard
           vendorId={vendorId}
-          vendorData={vendorData}
-          onNavigate={handleNavigate}
+          
+          onNavigateToConsultation={() => setShowConsultation(true)}
+          onNavigateToServiceManagement={() => setShowServiceManagement(true)}
+          onNavigateToBookingManagement={() => setShowBookingManagement(true)}
+          onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
+          onNavigateToScheduleManagement={() => setShowScheduleManagement(true)}
+          onNavigateToCenterProfile={() => setShowCenterProfile(true)}
+          onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
+          onNavigateToStaffManagement={() => setShowStaffManagement(true)}
+          onNavigateToBusinessHub={() => setShowBusinessHub(true)}
+          onNavigateToLiveTracking={() => setShowLiveTracking(true)}
+          onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
+          onNavigateToGallery={() => setShowGallery(true)}
+          onNavigateToPortfolio={() => setShowPortfolio(true)}
+          onNavigateToCCTV={() => setShowCCTV(true)}
+          onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
+          onNavigateToPrescription={() => setShowPrescription(true)}
+          onNavigateToProgressTracking={() => setShowProgressTracking(true)}
+          onNavigateToPackages={() => setShowPackages(true)}
+          onNavigateToCustomServices={() => setShowCustomServices(true)}
+          onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
+          onNavigateToMemorialServices={() => setShowMemorialServices(true)}
+          onNavigateToExpiryManagement={() => setShowExpiryManagement(true)}
+          onNavigateToDonationManagement={() => setShowDonationManagement(true)}
+          onNavigateToEventManagement={() => setShowEventManagement(true)}
+          onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)}
+          onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)}
+          onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
+          onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
+          onNavigateToDietCharts={() => setShowDietCharts(true)}
+          onNavigateToCounseling={() => setShowCounseling(true)}
+          onNavigateToDistancePricing={() => setShowDistancePricing(true)}
+          onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}
         />
       );
 

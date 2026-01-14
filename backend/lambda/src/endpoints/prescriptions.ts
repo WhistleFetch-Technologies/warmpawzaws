@@ -18,11 +18,13 @@
 
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
 
 export function registerPrescriptionEndpoints(app: Hono) {
   /**
    * POST /prescriptions
    * Create prescription (immutable)
+   * Requires 'prescriptions' capability
    */
   app.post("/prescriptions", async (c) => {
     try {
@@ -43,6 +45,12 @@ export function registerPrescriptionEndpoints(app: Hono) {
 
       if (!bookingId || !customerId || !vendorId || !medications) {
         return c.json({ error: 'bookingId, customerId, vendorId, and medications are required' }, 400);
+      }
+
+      // Check if vendor has prescriptions capability
+      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescriptions');
+      if (!hasPrescriptionCapability) {
+        return c.json({ error: 'Vendor does not have prescription capability' }, 403);
       }
 
       const prescription = await insert('prescriptions', {
@@ -177,6 +185,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
   /**
    * GET /prescriptions/vendor/:vendorId
    * Get all prescriptions for a vendor
+   * Requires 'prescriptions' capability
    */
   app.get("/prescriptions/vendor/:vendorId", async (c) => {
     try {
@@ -189,6 +198,12 @@ export function registerPrescriptionEndpoints(app: Hono) {
           prescriptions: [],
           total: 0,
         });
+      }
+
+      // Check if vendor has prescriptions capability
+      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescriptions');
+      if (!hasPrescriptionCapability) {
+        return c.json({ error: 'Vendor does not have prescription capability' }, 403);
       }
 
       let prescriptions;

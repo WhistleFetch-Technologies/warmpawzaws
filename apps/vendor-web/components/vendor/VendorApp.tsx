@@ -73,8 +73,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       
       const response = await apiClient.get<any>(`/vendor/onboarding/status?phone=${encodeURIComponent(session.phone)}`);
       
-      if (response && response.identity) {
-        const { identity, application, role } = response;
+      // ✅ FIX: API returns {success: true, data: {identity, application, role}}
+      // Extract data from response.data, not response directly
+      const responseData = response?.data || response; // Support both structures for backward compatibility
+      if (responseData && responseData.identity) {
+        const { identity, application, role } = responseData;
         
         // Map onboarding status to frontend status
         const onboardingStatus = identity.onboarding_status;
@@ -87,31 +90,66 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         
         // ✅ FIX: For APPROVED/ACTIVATED vendors, fetch vendor profile to get correct vendor.id
         let vendorId = identity.vendor_id || identity.id;
+        let vendorRecordExists = false;
         if ((onboardingStatus === 'APPROVED' || onboardingStatus === 'ACTIVATED')) {
           try {
             console.log('📊 [VendorApp] Fetching vendor profile to get correct vendor ID...');
             const profileResponse = await apiClient.get<any>('/vendor/profile');
-            if (profileResponse?.vendor?.id) {
-              vendorId = profileResponse.vendor.id;
-              console.log('✅ [VendorApp] Got vendor ID from profile:', vendorId);
+            // ✅ FIX: Check response structure (could be response.data or response directly)
+            const profileData = profileResponse?.data || profileResponse;
+            if (profileData?.vendor?.id) {
+              // Check if vendor ID is different from identity ID (means vendor record exists in vendors table)
+              if (profileData.vendor.id !== identity.id) {
+                vendorId = profileData.vendor.id;
+                vendorRecordExists = true;
+                console.log('✅ [VendorApp] Got vendor ID from vendors table:', vendorId);
+              } else {
+                // Vendor ID same as identity ID means vendor record doesn't exist yet
+                vendorId = identity.id;
+                vendorRecordExists = false;
+                console.log('⚠️ [VendorApp] Vendor record does not exist in vendors table yet. Using identity ID:', vendorId);
+              }
               // Merge profile data with identity data
               Object.assign(identity, { vendor_id: vendorId });
             }
           } catch (profileError: any) {
             console.warn('⚠️ [VendorApp] Could not fetch vendor profile, using identity ID:', profileError.message);
             // Continue with identity.id as fallback
+            vendorRecordExists = false;
           }
         }
         
         // Update localStorage with identity and application data
+        // ✅ FIX: Resolve roleId from multiple sources with fallbacks
+        const resolvedRoleId = 
+          identity.selected_role_id || // 1. From identity table
+          application?.role_id ||       // 2. From application record
+          role?.id ||                   // 3. From role object
+          localStorage.getItem('vendorRole') || // 4. From localStorage
+          null;
+        
+        console.log('🔍 [VendorApp] Role ID resolution:', {
+          'identity.selected_role_id': identity.selected_role_id,
+          'application.role_id': application?.role_id,
+          'role.id': role?.id,
+          'localStorage.vendorRole': localStorage.getItem('vendorRole'),
+          'resolvedRoleId': resolvedRoleId
+        });
+        
         const vendorData: any = {
-          id: vendorId, // ✅ Use correct vendor ID (from vendors table if available)
+          id: vendorId, // ✅ Use correct vendor ID (from vendors table if available, otherwise identity ID)
           phone: identity.phone,
           email: identity.email,
           onboarding_status: onboardingStatus,
-          role_id: identity.selected_role_id,
+          role_id: resolvedRoleId,
+          roleId: resolvedRoleId, // ✅ FIX: Add camelCase for VendorDashboard compatibility
           vendor_type: identity.vendor_type,
+          vendorType: identity.vendor_type, // ✅ FIX: Add camelCase for VendorDashboard compatibility
           application_id: application?.id,
+          vendorRecordExists: vendorRecordExists, // Flag to indicate if vendor record exists in vendors table
+          businessName: identity.business_name || identity.full_name || application?.application_payload?.businessName || 'Vendor',
+          fullName: identity.full_name || identity.business_name || 'Vendor',
+          address: identity.address || application?.application_payload?.address || 'India',
         };
         
         // Add application data if exists
@@ -142,6 +180,9 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         if (role) {
           vendorData.role = role;
           localStorage.setItem('vendorRole', role.id || role.name);
+        } else if (resolvedRoleId) {
+          // Store roleId even if we don't have the full role object
+          localStorage.setItem('vendorRole', resolvedRoleId);
         }
         
         // Map onboarding status to frontend status
@@ -201,24 +242,55 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     } catch (err: any) {
       console.error('❌ [VendorApp] Error checking vendor status:', err);
       
-      // Fallback to stored data on error
+      // ✅ FIX: Fallback to stored data on error, but prioritize APPROVED/ACTIVATED status
+      const storedStatus = localStorage.getItem('vendorApplicationStatus');
       const storedVendor = localStorage.getItem('vendorData');
-      if (storedVendor) {
-        const vendor = JSON.parse(storedVendor);
-        setVendorData(vendor);
-        
-        const storedStatus = localStorage.getItem('vendorApplicationStatus');
-        if (storedStatus) {
-          setStatus(storedStatus as VendorStatus);
-        } else if (vendor.isActive) {
-          setStatus('active');
-        } else if (vendor.status === 'approved') {
-          setStatus('approved');
-        } else if (vendor.status === 'pending' || vendor.status === 'under_review') {
-          setStatus('pending');
-        } else {
+      
+      if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
+        console.log('✅ [VendorApp] Using stored APPROVED/ACTIVATED status from localStorage');
+        setStatus('active');
+        if (storedVendor) {
+          try {
+            const vendor = JSON.parse(storedVendor);
+            setVendorData(vendor);
+          } catch (parseErr) {
+            console.error('Error parsing stored vendor data:', parseErr);
+          }
+        }
+      } else if (storedVendor) {
+        try {
+          const vendor = JSON.parse(storedVendor);
+          setVendorData(vendor);
+          
+          if (storedStatus) {
+            // Map stored status to frontend status
+            if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
+              setStatus('active');
+            } else if (storedStatus === 'UNDER_REVIEW') {
+              setStatus('pending');
+            } else if (storedStatus === 'REJECTED') {
+              setStatus('rejected');
+            } else if (storedStatus === 'CLARIFICATION_REQUIRED') {
+              setStatus('clarification');
+            } else {
+              setStatus(storedStatus as VendorStatus);
+            }
+          } else if (vendor.isActive) {
+            setStatus('active');
+          } else if (vendor.status === 'approved') {
+            setStatus('active'); // Approved vendors are active
+          } else if (vendor.status === 'pending' || vendor.status === 'under_review') {
+            setStatus('pending');
+          } else {
+            setStatus('new');
+          }
+        } catch (parseErr) {
+          console.error('Error parsing stored vendor data:', parseErr);
           setStatus('new');
         }
+      } else {
+        // No stored data - show role selection
+        setStatus('new');
       }
     } finally {
       setIsLoading(false);

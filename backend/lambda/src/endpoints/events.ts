@@ -17,6 +17,27 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
+
+// Utility function to generate booking reference
+function generateBookingReference(): string {
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+  const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+  return `EVT-${dateStr}-${random}`;
+}
+
+// Utility function to generate QR code data
+function generateQRCodeData(registrationId: string, bookingReference: string, eventId: string, customerName: string): string {
+  return JSON.stringify({
+    type: 'event_registration',
+    registrationId,
+    bookingReference,
+    eventId,
+    customerName,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 export function registerEventEndpoints(app: Hono) {
   /**
@@ -81,7 +102,7 @@ export function registerEventEndpoints(app: Hono) {
 
   /**
    * POST /events
-   * Create a new event
+   * Create a new event (vendor endpoint - requires vendor authentication)
    */
   app.post("/events", async (c) => {
     try {
@@ -122,15 +143,286 @@ export function registerEventEndpoints(app: Hono) {
         tags: tags || [],
         status: 'draft',
         current_attendees: 0,
+        created_by: 'vendor',
+        approval_status: 'pending', // Vendor events need approval
       });
 
       return c.json({
         success: true,
         event: event[0],
-        message: 'Event created successfully',
+        message: 'Event created successfully. Waiting for admin approval.',
       });
     } catch (error: any) {
       console.error('Error creating event:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/events
+   * Create event as vendor (explicit vendor endpoint)
+   * Requires 'events' capability
+   */
+  app.post("/vendor/events", async (c) => {
+    try {
+      // Get vendor ID from auth token or request
+      const vendorId = c.req.header('x-vendor-id') || (await c.req.json()).vendorId;
+      
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Check if vendor has events capability
+      const hasEventsCapability = await checkVendorCapability(vendorId, 'events');
+      if (!hasEventsCapability) {
+        return c.json({ error: 'Vendor does not have events management capability' }, 403);
+      }
+
+      const eventData = await c.req.json();
+      const {
+        name,
+        description,
+        category,
+        eventDate,
+        startTime,
+        endTime,
+        venue,
+        registrationRequired,
+        maxAttendees,
+        maxBookings,
+        fees,
+        pricePerBooking,
+        imageUrl,
+        tags,
+        inclusions,
+        exclusions,
+        termsAndConditions,
+        cancellationPolicy,
+        refundPolicy,
+        registrationRules,
+      } = eventData;
+
+      if (!name || !eventDate || !startTime) {
+        return c.json({ error: 'name, eventDate, and startTime are required' }, 400);
+      }
+
+      // Build venue object with proper structure
+      const venueObj = typeof venue === 'string' 
+        ? { address: venue }
+        : venue || {};
+
+      const event = await insert('events', {
+        vendor_id: vendorId,
+        name,
+        description: description || null,
+        category: category || 'other',
+        event_date: eventDate,
+        start_time: startTime,
+        end_time: endTime || null,
+        venue: venueObj,
+        registration_required: registrationRequired !== false,
+        max_attendees: maxAttendees || null,
+        max_bookings: maxBookings || maxAttendees || null,
+        fees: fees || pricePerBooking || null,
+        price_per_booking: pricePerBooking || fees || null,
+        image_url: imageUrl || null,
+        tags: tags || [],
+        inclusions: inclusions || [],
+        exclusions: exclusions || [],
+        terms_and_conditions: termsAndConditions || null,
+        cancellation_policy: cancellationPolicy || null,
+        refund_policy: refundPolicy || null,
+        registration_rules: registrationRules || {},
+        status: 'draft',
+        current_attendees: 0,
+        created_by: 'vendor',
+        approval_status: 'pending',
+      });
+
+      return c.json({
+        success: true,
+        event: event[0],
+        message: 'Event created successfully. Waiting for admin approval.',
+      });
+    } catch (error: any) {
+      console.error('Error creating vendor event:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/events
+   * Get vendor's events
+   * Requires 'events' capability
+   */
+  app.get("/vendor/events", async (c) => {
+    try {
+      const vendorId = c.req.query('vendorId') || c.req.header('x-vendor-id');
+      const status = c.req.query('status');
+      const approvalStatus = c.req.query('approvalStatus');
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Check if vendor has events capability
+      const hasEventsCapability = await checkVendorCapability(vendorId, 'events');
+      if (!hasEventsCapability) {
+        return c.json({ error: 'Vendor does not have events management capability' }, 403);
+      }
+
+      let eventsQuery = `
+        SELECT * FROM events
+        WHERE vendor_id = $1
+      `;
+
+      const params: any[] = [vendorId];
+      let paramIndex = 2;
+
+      if (status) {
+        eventsQuery += ` AND status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+
+      if (approvalStatus) {
+        eventsQuery += ` AND approval_status = $${paramIndex}`;
+        params.push(approvalStatus);
+        paramIndex++;
+      }
+
+      eventsQuery += ` ORDER BY event_date DESC, created_at DESC`;
+
+      const events = await query(eventsQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        events: events.rows,
+        total: events.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor events:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/events/:eventId
+   * Update vendor's event (only if pending or draft)
+   * Requires 'events' capability
+   */
+  app.put("/vendor/events/:eventId", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const vendorId = c.req.header('x-vendor-id') || (await c.req.json()).vendorId;
+      const eventData = await c.req.json();
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Check if vendor has events capability
+      const hasEventsCapability = await checkVendorCapability(vendorId, 'events');
+      if (!hasEventsCapability) {
+        return c.json({ error: 'Vendor does not have events management capability' }, 403);
+      }
+
+      // Check if event exists and belongs to vendor
+      const existingEvents = await select('events', { id: eventId, vendor_id: vendorId });
+      if (existingEvents.length === 0) {
+        return c.json({ error: 'Event not found or access denied' }, 404);
+      }
+
+      const existingEvent = existingEvents[0];
+
+      // Only allow updates if pending approval or draft
+      if (existingEvent.approval_status === 'approved' && existingEvent.status !== 'draft') {
+        return c.json({ error: 'Cannot update approved/published events. Contact admin for changes.' }, 403);
+      }
+
+      const updateData: any = {};
+      if (eventData.name !== undefined) updateData.name = eventData.name;
+      if (eventData.description !== undefined) updateData.description = eventData.description;
+      if (eventData.category !== undefined) updateData.category = eventData.category;
+      if (eventData.event_date !== undefined) updateData.event_date = eventData.event_date;
+      if (eventData.start_time !== undefined) updateData.start_time = eventData.start_time;
+      if (eventData.end_time !== undefined) updateData.end_time = eventData.end_time;
+      if (eventData.venue !== undefined) {
+        updateData.venue = typeof eventData.venue === 'string' ? { address: eventData.venue } : eventData.venue;
+      }
+      if (eventData.max_attendees !== undefined) {
+        updateData.max_attendees = eventData.max_attendees;
+        updateData.registration_required = eventData.max_attendees ? true : false;
+      }
+      if (eventData.max_bookings !== undefined) updateData.max_bookings = eventData.max_bookings;
+      if (eventData.price_per_booking !== undefined) updateData.price_per_booking = eventData.price_per_booking;
+      if (eventData.fees !== undefined) {
+        updateData.fees = eventData.fees;
+        if (!updateData.price_per_booking) updateData.price_per_booking = eventData.fees;
+      }
+      if (eventData.inclusions !== undefined) updateData.inclusions = eventData.inclusions;
+      if (eventData.exclusions !== undefined) updateData.exclusions = eventData.exclusions;
+      if (eventData.terms_and_conditions !== undefined) updateData.terms_and_conditions = eventData.terms_and_conditions;
+      if (eventData.cancellation_policy !== undefined) updateData.cancellation_policy = eventData.cancellation_policy;
+      if (eventData.refund_policy !== undefined) updateData.refund_policy = eventData.refund_policy;
+      if (eventData.registration_rules !== undefined) updateData.registration_rules = eventData.registration_rules;
+      if (eventData.image_url !== undefined) updateData.image_url = eventData.image_url;
+      if (eventData.tags !== undefined) updateData.tags = eventData.tags;
+
+      // If updating, reset approval status to pending
+      if (existingEvent.approval_status === 'approved') {
+        updateData.approval_status = 'pending';
+      }
+
+      await update('events', { id: eventId, vendor_id: vendorId }, updateData);
+
+      const updatedEvents = await select('events', { id: eventId });
+      return c.json({
+        success: true,
+        event: updatedEvents[0],
+        message: 'Event updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating vendor event:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/events/:eventId/submit
+   * Submit event for approval
+   */
+  app.post("/vendor/events/:eventId/submit", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const vendorId = c.req.header('x-vendor-id') || (await c.req.json()).vendorId;
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      const existingEvents = await select('events', { id: eventId, vendor_id: vendorId });
+      if (existingEvents.length === 0) {
+        return c.json({ error: 'Event not found or access denied' }, 404);
+      }
+
+      const event = existingEvents[0];
+
+      if (event.approval_status === 'approved') {
+        return c.json({ error: 'Event is already approved' }, 400);
+      }
+
+      await update('events', { id: eventId }, {
+        approval_status: 'pending',
+        status: 'draft', // Keep as draft until approved
+      });
+
+      return c.json({
+        success: true,
+        message: 'Event submitted for approval',
+      });
+    } catch (error: any) {
+      console.error('Error submitting event:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -150,6 +442,7 @@ export function registerEventEndpoints(app: Hono) {
         FROM events e
         INNER JOIN vendors v ON e.vendor_id = v.id
         WHERE e.status = 'published'
+        AND e.approval_status = 'approved'
         AND v.status = 'approved'
         AND v.is_active = true
       `;
@@ -222,20 +515,50 @@ export function registerEventEndpoints(app: Hono) {
         return c.json({ error: 'Event is full' }, 400);
       }
 
+      // Check max bookings
+      const maxBookings = event.max_bookings || event.max_attendees;
+      if (maxBookings) {
+        const currentBookings = await query(
+          `SELECT COUNT(*) as count FROM event_registrations WHERE event_id = $1 AND status = 'confirmed'`,
+          [eventId]
+        ).catch(() => ({ rows: [{ count: 0 }] }));
+        
+        const currentCount = parseInt(currentBookings.rows[0]?.count || '0', 10);
+        if (currentCount >= maxBookings) {
+          return c.json({ error: 'Event is fully booked' }, 400);
+        }
+      }
+
+      // Generate booking reference and QR code
+      const bookingReference = generateBookingReference();
+      
+      // Determine payment amount
+      const paymentAmount = event.price_per_booking || event.fees || 0;
+      
       // Create registration
       const registration = await insert('event_registrations', {
         event_id: eventId,
         customer_id: customerId,
+        vendor_id: event.vendor_id,
         attendee_name: attendeeName,
         attendee_email: attendeeEmail || null,
         attendee_phone: attendeePhone,
         number_of_people: numberOfPeople || 1,
         pets: pets || [],
         special_requirements: specialRequirements || null,
-        payment_status: event.fees ? 'pending' : 'waived',
-        payment_amount: event.fees || null,
+        payment_status: paymentAmount > 0 ? 'pending' : 'waived',
+        payment_amount: paymentAmount > 0 ? paymentAmount : null,
         status: 'confirmed',
+        booking_reference: bookingReference,
+        qr_code: generateQRCodeData('', bookingReference, eventId, attendeeName), // Will update with actual registration ID
       });
+
+      // Update QR code with actual registration ID
+      const registrationId = registration[0].id;
+      const qrCodeData = generateQRCodeData(registrationId, bookingReference, eventId, attendeeName);
+      await update('event_registrations', { id: registrationId }, { qr_code: qrCodeData });
+      
+      const finalRegistration = await select('event_registrations', { id: registrationId });
 
       // Update event attendee count
       await update('events',
@@ -245,7 +568,11 @@ export function registerEventEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        registration: registration[0],
+        registration: {
+          ...finalRegistration[0],
+          booking_reference: bookingReference,
+          qr_code: qrCodeData,
+        },
         message: 'Registered successfully',
       });
     } catch (error: any) {
@@ -309,9 +636,18 @@ export function registerEventEndpoints(app: Hono) {
           id: String(r.id),
           event_id: String(r.event_id),
           event_title: String(r.event_title || ''),
+          event_name: String(r.event_title || ''),
           registered_at: String(r.created_at || new Date().toISOString()),
           status: r.status || 'confirmed',
           qr_code: r.qr_code || undefined,
+          booking_reference: r.booking_reference || undefined,
+          attendee_name: r.attendee_name || undefined,
+          attendee_phone: r.attendee_phone || undefined,
+          attendee_email: r.attendee_email || undefined,
+          number_of_people: r.number_of_people || 1,
+          payment_status: r.payment_status || undefined,
+          payment_amount: r.payment_amount ? parseFloat(r.payment_amount) : undefined,
+          check_in_status: r.check_in_status || undefined,
           event_date: String(r.event_date || ''),
           start_time: String(r.start_time || ''),
           end_time: String(r.end_time || ''),
@@ -712,6 +1048,309 @@ export function registerEventEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching service events:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/events/pending
+   * Get events pending approval
+   */
+  app.get("/admin/events/pending", async (c) => {
+    try {
+      const events = await query(
+        `SELECT e.*, v.business_name as vendor_name, v.city as vendor_city
+         FROM events e
+         LEFT JOIN vendors v ON e.vendor_id = v.id
+         WHERE e.approval_status = 'pending'
+         ORDER BY e.created_at ASC`,
+        []
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        events: events.rows,
+        total: events.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching pending events:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/events/:eventId/approve
+   * Approve an event
+   */
+  app.post("/admin/events/:eventId/approve", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const adminId = c.req.header('x-admin-id') || (await c.req.json()).adminId;
+
+      const existingEvents = await select('events', { id: eventId });
+      if (existingEvents.length === 0) {
+        return c.json({ error: 'Event not found' }, 404);
+      }
+
+      const event = existingEvents[0];
+
+      if (event.approval_status === 'approved') {
+        return c.json({ error: 'Event is already approved' }, 400);
+      }
+
+      await update('events', { id: eventId }, {
+        approval_status: 'approved',
+        status: 'published', // Auto-publish when approved
+        reviewed_by: adminId || null,
+        reviewed_at: new Date().toISOString(),
+        rejection_reason: null,
+      });
+
+      return c.json({
+        success: true,
+        message: 'Event approved and published successfully',
+      });
+    } catch (error: any) {
+      console.error('Error approving event:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/events/:eventId/reject
+   * Reject an event
+   */
+  app.post("/admin/events/:eventId/reject", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const { reason } = await c.req.json();
+      const adminId = c.req.header('x-admin-id') || (await c.req.json()).adminId;
+
+      if (!reason) {
+        return c.json({ error: 'Rejection reason is required' }, 400);
+      }
+
+      const existingEvents = await select('events', { id: eventId });
+      if (existingEvents.length === 0) {
+        return c.json({ error: 'Event not found' }, 404);
+      }
+
+      await update('events', { id: eventId }, {
+        approval_status: 'rejected',
+        status: 'draft',
+        reviewed_by: adminId || null,
+        reviewed_at: new Date().toISOString(),
+        rejection_reason: reason,
+      });
+
+      return c.json({
+        success: true,
+        message: 'Event rejected successfully',
+      });
+    } catch (error: any) {
+      console.error('Error rejecting event:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /events/verify/:bookingReference
+   * Verify booking by reference number (for vendor/admin check-in)
+   */
+  app.get("/events/verify/:bookingReference", async (c) => {
+    try {
+      const { bookingReference } = c.req.param();
+
+      const registrations = await query(
+        `SELECT r.*, e.name as event_name, e.event_date, e.start_time, e.end_time, 
+                e.venue, v.business_name as vendor_name, c.name as customer_name
+         FROM event_registrations r
+         INNER JOIN events e ON r.event_id = e.id
+         LEFT JOIN vendors v ON e.vendor_id = v.id
+         LEFT JOIN customers c ON r.customer_id = c.id
+         WHERE r.booking_reference = $1`,
+        [bookingReference]
+      ).catch(() => ({ rows: [] }));
+
+      if (registrations.rows.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const registration = registrations.rows[0];
+
+      return c.json({
+        success: true,
+        registration: {
+          id: registration.id,
+          booking_reference: registration.booking_reference,
+          attendee_name: registration.attendee_name,
+          attendee_phone: registration.attendee_phone,
+          attendee_email: registration.attendee_email,
+          number_of_people: registration.number_of_people,
+          check_in_status: registration.check_in_status,
+          check_in_time: registration.check_in_time,
+          payment_status: registration.payment_status,
+          event: {
+            id: registration.event_id,
+            name: registration.event_name,
+            event_date: registration.event_date,
+            start_time: registration.start_time,
+            end_time: registration.end_time,
+            venue: registration.venue,
+            vendor_name: registration.vendor_name,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('Error verifying booking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /events/registrations/:registrationId/check-in
+   * Check in a customer (vendor/admin)
+   * Vendor requires 'events' capability
+   */
+  app.post("/events/registrations/:registrationId/check-in", async (c) => {
+    try {
+      const { registrationId } = c.req.param();
+      const checkedInBy = c.req.header('x-vendor-id') || c.req.header('x-admin-id') || (await c.req.json()).checkedInBy;
+      const isAdmin = c.req.header('x-admin-id');
+
+      // If vendor, check capability
+      if (!isAdmin && checkedInBy) {
+        const hasEventsCapability = await checkVendorCapability(checkedInBy, 'events');
+        if (!hasEventsCapability) {
+          return c.json({ error: 'Vendor does not have events management capability' }, 403);
+        }
+      }
+
+      const existingRegistrations = await select('event_registrations', { id: registrationId });
+      if (existingRegistrations.length === 0) {
+        return c.json({ error: 'Registration not found' }, 404);
+      }
+
+      const registration = existingRegistrations[0];
+
+      if (registration.check_in_status === 'checked_in') {
+        return c.json({ error: 'Customer already checked in' }, 400);
+      }
+
+      await update('event_registrations', { id: registrationId }, {
+        check_in_status: 'checked_in',
+        check_in_time: new Date().toISOString(),
+        checked_in_by: checkedInBy || null,
+      });
+
+      return c.json({
+        success: true,
+        message: 'Customer checked in successfully',
+        check_in_time: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('Error checking in customer:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/events/:eventId/registrations
+   * Get registrations for vendor's event
+   * Requires 'events' capability
+   */
+  app.get("/vendor/events/:eventId/registrations", async (c) => {
+    try {
+      const { eventId } = c.req.param();
+      const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Check if vendor has events capability
+      const hasEventsCapability = await checkVendorCapability(vendorId, 'events');
+      if (!hasEventsCapability) {
+        return c.json({ error: 'Vendor does not have events management capability' }, 403);
+      }
+
+      // Verify event belongs to vendor
+      const events = await select('events', { id: eventId, vendor_id: vendorId });
+      if (events.length === 0) {
+        return c.json({ error: 'Event not found or access denied' }, 404);
+      }
+
+      const registrations = await query(
+        `SELECT r.*, c.name as customer_name, c.phone as customer_phone
+         FROM event_registrations r
+         LEFT JOIN customers c ON r.customer_id = c.id
+         WHERE r.event_id = $1
+         ORDER BY r.created_at DESC`,
+        [eventId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        registrations: registrations.rows,
+        total: registrations.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching event registrations:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /events/registrations/:registrationId
+   * Get registration details with QR code (customer)
+   */
+  app.get("/events/registrations/:registrationId", async (c) => {
+    try {
+      const { registrationId } = c.req.param();
+      const customerId = c.req.query('customerId') || c.req.header('x-customer-id');
+
+      const registrations = await query(
+        `SELECT r.*, e.name as event_name, e.event_date, e.start_time, e.end_time, 
+                e.venue, e.category, v.business_name as vendor_name
+         FROM event_registrations r
+         INNER JOIN events e ON r.event_id = e.id
+         LEFT JOIN vendors v ON e.vendor_id = v.id
+         WHERE r.id = $1 ${customerId ? 'AND r.customer_id = $2' : ''}`,
+        customerId ? [registrationId, customerId] : [registrationId]
+      ).catch(() => ({ rows: [] }));
+
+      if (registrations.rows.length === 0) {
+        return c.json({ error: 'Registration not found' }, 404);
+      }
+
+      const registration = registrations.rows[0];
+
+      return c.json({
+        success: true,
+        registration: {
+          id: registration.id,
+          booking_reference: registration.booking_reference,
+          qr_code: registration.qr_code,
+          attendee_name: registration.attendee_name,
+          attendee_phone: registration.attendee_phone,
+          number_of_people: registration.number_of_people,
+          check_in_status: registration.check_in_status,
+          check_in_time: registration.check_in_time,
+          payment_status: registration.payment_status,
+          event: {
+            id: registration.event_id,
+            name: registration.event_name,
+            event_date: registration.event_date,
+            start_time: registration.start_time,
+            end_time: registration.end_time,
+            venue: registration.venue,
+            category: registration.category,
+            vendor_name: registration.vendor_name,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching registration:', error);
       return c.json({ error: error.message }, 500);
     }
   });

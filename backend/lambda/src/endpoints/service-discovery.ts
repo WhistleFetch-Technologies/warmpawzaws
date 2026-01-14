@@ -131,7 +131,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
              WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
              AND s.is_active = true
-             ${serviceStyle ? `AND (vs.service_style = $2 OR s.service_style = $2)` : ''}
+             ${serviceStyle ? `AND vs.service_style = $2` : ''}
              ORDER BY s.name`,
             serviceStyle ? [vendor.id, serviceStyle] : [vendor.id]
           );
@@ -388,11 +388,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const role = roles[0];
 
       // Get all services
+      // Check if is_global column exists
+      const serviceColumns = await query(
+        `SELECT column_name FROM information_schema.columns 
+         WHERE table_name = 'services' AND column_name = 'is_global'`
+      );
+      const hasIsGlobal = serviceColumns.rows.length > 0;
+      
       const services = await query(
-        `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled
+        `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
          FROM services s
          LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-         WHERE (vs.vendor_id = $1 OR s.is_global = true)
+         WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
          AND s.is_active = true
          AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
          ORDER BY s.name`,
@@ -401,7 +408,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Get reviews
       const reviews = await query(
-        `SELECT r.*, c.name as customer_name
+        `SELECT r.*, c.full_name as customer_name
          FROM reviews r
          LEFT JOIN customers c ON r.customer_id = c.id
          WHERE r.vendor_id = $1 
@@ -815,11 +822,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const vendor = vendors[0];
 
       // Get services
+      // Check if is_global column exists
+      const serviceColumns = await query(
+        `SELECT column_name FROM information_schema.columns 
+         WHERE table_name = 'services' AND column_name = 'is_global'`
+      );
+      const hasIsGlobal = serviceColumns.rows.length > 0;
+      
       const services = await query(
-        `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled
+        `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
          FROM services s
          LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-         WHERE (vs.vendor_id = $1 OR s.is_global = true)
+         WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
          AND s.is_active = true
          AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
          ORDER BY s.name`,

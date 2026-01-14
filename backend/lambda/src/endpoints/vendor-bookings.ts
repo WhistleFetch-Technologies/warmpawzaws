@@ -472,5 +472,59 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /vendor/:vendorId/bookings/today
+   * Get today's bookings for a vendor
+   */
+  app.get("/vendor/:vendorId/bookings/today", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const today = new Date().toISOString().split('T')[0];
+
+      console.log(`📋 [VENDOR-BOOKINGS] Fetching today's bookings for vendor: ${vendorId}`);
+
+      // Get today's bookings
+      const result = await query(
+        `SELECT * FROM bookings 
+         WHERE vendor_id = $1 AND booking_date = $2 
+         ORDER BY booking_time ASC`,
+        [vendorId, today]
+      ).catch(() => ({ rows: [] }));
+
+      // Enrich bookings with customer and service data
+      const enrichedBookings = await Promise.all(
+        result.rows.map(async (booking: any) => {
+          const [customer, service] = await Promise.all([
+            booking.customer_id
+              ? select('customers', { id: booking.customer_id }).catch(() => [])
+              : Promise.resolve([]),
+            booking.service_id
+              ? select('services', { id: booking.service_id }).catch(() => [])
+              : Promise.resolve([]),
+          ]);
+
+          return {
+            id: booking.id,
+            customer_name: customer.length > 0 ? customer[0].full_name : 'Unknown',
+            service_name: service.length > 0 ? service[0].name : 'Unknown Service',
+            booking_date: booking.booking_date,
+            booking_time: booking.booking_time,
+            status: booking.status,
+            total_amount: parseFloat(booking.total_amount || '0'),
+            service_style: booking.service_style || 'at_clinic',
+          };
+        })
+      );
+
+      return c.json({
+        success: true,
+        bookings: enrichedBookings,
+      });
+    } catch (error: any) {
+      console.error('Error fetching today\'s bookings:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

@@ -1,158 +1,201 @@
-# Quick Test Guide - Schedule Management
+# Quick Testing Guide - Event Management
 
-## 🚀 Quick Start
+## 🚀 Quick Start Testing Steps
 
-### Option 1: Use the Test Script
-
-```bash
-# Make script executable (if not already)
-chmod +x test-schedule-management.sh
-
-# Run tests (replace VENDOR_ID with your test vendor ID)
-./test-schedule-management.sh YOUR_VENDOR_ID
-
-# Or set API_URL if different
-API_URL="https://your-api-url" ./test-schedule-management.sh YOUR_VENDOR_ID
-```
-
-### Option 2: Manual Testing with curl
-
-#### 1. Get Scheduling Policies
+### Step 1: Apply Database Migration
 
 ```bash
-curl -X GET "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/admin/scheduling-policies" \
-  -H "Content-Type: application/json" \
-  -H "X-UAT-Mode: true" \
-  -H "X-UAT-Token: uat-token-admin"
+# Option A: Using the script (recommended)
+export DB_HOST=your-rds-endpoint.amazonaws.com
+export DB_USER=your_db_user
+export DB_NAME=your_db_name
+./scripts/apply-events-migration.sh
+
+# Option B: Manual psql
+psql -h <DB_HOST> -U <DB_USER> -d <DB_NAME> -f db/migrations/064_enhance_events_schema.sql
 ```
 
-#### 2. Create Valid Schedule
+### Step 2: Deploy Backend
 
 ```bash
-curl -X POST "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/vendor/YOUR_VENDOR_ID/schedule" \
-  -H "Content-Type: application/json" \
-  -H "X-UAT-Mode: true" \
-  -H "X-UAT-Token: uat-token-admin" \
-  -d '{
-    "slots": [
-      {
-        "dayOfWeek": 1,
-        "serviceStyle": "at_center",
-        "timeWindowStart": "09:00",
-        "timeWindowEnd": "17:00",
-        "slotDurationMinutes": 30,
-        "maxCapacity": 2,
-        "isEnabled": true
-      }
-    ]
-  }'
+./scripts/deploy-lambda-direct.sh
 ```
 
-**Expected**: ✅ `{"success": true, ...}`
-
-#### 3. Create Past Schedule (Should Fail)
+### Step 3: Deploy Frontends
 
 ```bash
-# Get current day of week (0=Sunday, 6=Saturday)
-CURRENT_DAY=$(date +%w)
+# Deploy all frontends
+./scripts/deploy-admin-web.sh
+./scripts/deploy-vendor-web.sh
+./scripts/deploy-customer-web.sh
 
-curl -X POST "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/vendor/YOUR_VENDOR_ID/schedule" \
-  -H "Content-Type: application/json" \
-  -H "X-UAT-Mode: true" \
-  -H "X-UAT-Token: uat-token-admin" \
-  -d "{
-    \"slots\": [
-      {
-        \"dayOfWeek\": ${CURRENT_DAY},
-        \"serviceStyle\": \"at_center\",
-        \"timeWindowStart\": \"08:00\",
-        \"timeWindowEnd\": \"09:00\",
-        \"maxCapacity\": 1
-      }
-    ]
-  }"
+# Or deploy individually
+cd apps/admin-web && npm run build
+cd apps/vendor-web && npm run build
+cd apps/customer-web && npm run build
 ```
 
-**Expected**: ❌ `{"success": false, "error": "Schedule validation failed", "validationErrors": [...]}`
+### Step 4: Verify Setup
 
-#### 4. Get Available Slots
+1. **Check Vendor Role**: Ensure test vendor has `events` capability
+   - Login as admin
+   - Go to Roles/Vendors
+   - Assign `events` capability to test vendor OR assign `event_organizer` role
 
-```bash
-# Get tomorrow's date
-DATE=$(date -d "+1 day" +%Y-%m-%d)
-
-curl -X GET "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/vendor/YOUR_VENDOR_ID/slots/${DATE}?serviceStyle=at_center" \
-  -H "Content-Type: application/json" \
-  -H "X-UAT-Mode: true" \
-  -H "X-UAT-Token: uat-token-admin"
-```
-
-**Expected**: ✅ `{"success": true, "slots": [...], ...}`
-
-#### 5. Get Schedule Configuration
-
-```bash
-curl -X GET "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/vendor/YOUR_VENDOR_ID/schedule" \
-  -H "Content-Type: application/json" \
-  -H "X-UAT-Mode: true" \
-  -H "X-UAT-Token: uat-token-admin"
-```
-
-**Expected**: ✅ `{"success": true, "schedule": {...}, ...}`
+2. **Test Vendor Access**:
+   - Login as vendor
+   - Check if "Events" appears in dashboard
+   - If not, vendor role needs `events` capability
 
 ---
 
-## 📋 Test Checklist
+## 🧪 Quick Test Flow (5 minutes)
 
-### ✅ Positive Tests (Should Pass)
-- [ ] Create valid schedule
-- [ ] Get available slots
-- [ ] Get schedule configuration
-- [ ] Get all policies
-- [ ] Get policy by type
-- [ ] Create/update policy
+### Test 1: Create Event (Vendor)
+1. Login → Vendor Dashboard
+2. Click "Events" (should be visible)
+3. Click "Create Event"
+4. Fill minimum required fields:
+   - Name: "Test Event"
+   - Date: Tomorrow
+   - Start Time: 10:00
+   - Max Bookings: 10
+   - Price: ₹100
+5. Click "Create Event"
+6. ✅ **Expected**: Event created, status "Pending Approval"
 
-### ❌ Negative Tests (Should Fail)
-- [ ] Create past schedule → Error 400
-- [ ] Create overlapping slots → Error 400
-- [ ] Exceed capacity policy → Error 400
-- [ ] Violate buffer time → Error 400
+### Test 2: Approve Event (Admin)
+1. Login → Admin Dashboard
+2. Go to "Events"
+3. Filter by "Pending Approval"
+4. Find "Test Event"
+5. Click "Approve"
+6. ✅ **Expected**: Status changes to "Approved"
+
+### Test 3: Register (Customer)
+1. Login → Customer Dashboard
+2. Go to "Events"
+3. Find "Test Event"
+4. Click "Register Now"
+5. ✅ **Expected**: 
+   - Registration successful
+   - Booking reference shown (EVT-YYYYMMDD-XXXXXX)
+   - QR code displayed
+
+### Test 4: Check-In (Vendor)
+1. Login → Vendor Dashboard
+2. Go to "Events"
+3. Find "Test Event"
+4. Click "Check-In"
+5. Enter booking reference OR scan QR
+6. Click "Check In Customer"
+7. ✅ **Expected**: Customer marked as checked in
+
+---
+
+## 🔍 Verification Checklist
+
+### Database
+- [ ] Migration 064 applied
+- [ ] Events table has new columns
+- [ ] Can query events with new fields
+
+### Backend
+- [ ] `/vendor/events` endpoint requires capability
+- [ ] `/admin/events/:id/approve` works
+- [ ] `/events/:id/register` generates booking reference
+- [ ] `/events/verify/:ref` returns registration
+
+### Frontend
+- [ ] Vendor: Events page loads
+- [ ] Vendor: Can create event
+- [ ] Admin: Can approve/reject
+- [ ] Customer: Booking reference shown
+- [ ] Vendor: Check-in page works
 
 ---
 
 ## 🐛 Common Issues
 
-### Issue: "Vendor not found"
-**Solution**: Ensure you're using a valid vendor ID
+### "Events not showing in vendor dashboard"
+**Fix**: Vendor role needs `events` capability
+```sql
+-- Check vendor's role
+SELECT v.id, v.business_name, r.name as role_name
+FROM vendors v
+JOIN roles r ON v.role_id = r.id
+WHERE v.id = '<vendor_id>';
 
-### Issue: "Policy not found"
-**Solution**: Policies should be seeded. Check `scheduling_policies` table
+-- Add events capability to role
+INSERT INTO role_permissions (role_id, permission_name, resource, action)
+SELECT r.id, 'events', '*', '*'
+FROM roles r
+WHERE r.name = '<role_name>'
+ON CONFLICT DO NOTHING;
+```
 
-### Issue: "Cannot set schedule in the past"
-**Solution**: This is expected behavior! Use future times for testing
+### "Cannot create event - 403 error"
+**Fix**: Check capability enforcement
+- Verify vendor has `events` in role_permissions
+- Check backend logs for capability check
 
-### Issue: "Time window overlaps"
-**Solution**: Ensure time windows don't overlap for the same day/service style
+### "Booking reference not generated"
+**Fix**: Check registration endpoint
+- Verify `generateBookingReference()` is called
+- Check database for `booking_reference` column
+
+### "QR code not displaying"
+**Fix**: Check QR code generation
+- Verify `qr_code` field populated in database
+- Check frontend QR code rendering
 
 ---
 
-## 📝 Test Results
+## 📝 Test Data Setup
 
-After running tests, document results:
+### Create Test Vendor with Events Capability
+```sql
+-- Option 1: Assign event_organizer role
+UPDATE vendors SET role_id = (
+    SELECT id FROM roles WHERE name = 'event_organizer'
+) WHERE id = '<vendor_id>';
 
-```
-✅ Test 1: Create Valid Schedule - PASSED
-❌ Test 2: Create Past Schedule - PASSED (correctly rejected)
-✅ Test 3: Get Available Slots - PASSED
-✅ Test 4: Get Policies - PASSED
+-- Option 2: Add events capability to existing role
+INSERT INTO role_permissions (role_id, permission_name, resource, action)
+SELECT role_id, 'events', '*', '*'
+FROM vendors
+WHERE id = '<vendor_id>'
+ON CONFLICT DO NOTHING;
 ```
 
 ---
 
-## 🎯 Next Steps
+## 🎯 Success Criteria
 
-1. Run the test script
-2. Verify all tests pass
-3. Check Lambda logs for any errors
-4. Verify policies are enforced correctly
-5. Test edge cases (timezone, DST, etc.)
+✅ **All tests pass if:**
+1. Vendor can create event with all fields
+2. Admin can approve/reject events
+3. Customer gets booking reference & QR code
+4. Vendor can check-in via QR scan or manual lookup
+5. Max bookings limit enforced
+6. Approval workflow works end-to-end
+
+---
+
+## 📞 Next Steps After Testing
+
+1. **If all tests pass**: Deploy to production
+2. **If issues found**: Check logs, verify database schema, test endpoints individually
+3. **Performance**: Test with 50+ events, 100+ registrations
+4. **Security**: Verify capability checks, authorization
+
+---
+
+## 🔗 Related Files
+
+- Migration: `db/migrations/064_enhance_events_schema.sql`
+- Backend: `backend/lambda/src/endpoints/events.ts`
+- Vendor UI: `apps/vendor-web/app/events/page.tsx`
+- Customer UI: `apps/customer-web/app/events/page.tsx`
+- Admin UI: `apps/admin-web/app/events/page.tsx`
+- Test Plan: `EVENT_MANAGEMENT_TEST_PLAN.md`

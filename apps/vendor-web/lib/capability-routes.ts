@@ -315,6 +315,7 @@ export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
     description: 'Emergency dispatch',
     category: 'specialized',
     route: '/ambulance',
+    relatedCapabilities: ['vehicles', 'gps_tracking'],
   },
   vehicles: {
     name: 'vehicles',
@@ -324,6 +325,28 @@ export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
     category: 'specialized',
     route: '/ambulance/vehicles',
     parentRoute: '/ambulance',
+  },
+  
+  // Training
+  training: {
+    name: 'training',
+    display_name: 'Training',
+    icon: '🎓',
+    description: 'Pet training management',
+    category: 'specialized',
+    route: '/training',
+    relatedCapabilities: ['training_programs', 'progress_tracking'],
+  },
+  
+  // Holidays
+  holidays: {
+    name: 'holidays',
+    display_name: 'Pet Holidays',
+    icon: '✈️',
+    description: 'Pet tour management',
+    category: 'specialized',
+    route: '/holidays',
+    relatedCapabilities: ['holiday_packages', 'tour_schedule'],
   },
 
   // Cafe
@@ -394,6 +417,17 @@ export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
     description: 'Pet adoption listings',
     category: 'specialized',
     route: '/adoption',
+  },
+  
+  // Events Management
+  events: {
+    name: 'events',
+    display_name: 'Events',
+    icon: '📅',
+    description: 'Manage events and registrations',
+    category: 'specialized',
+    route: '/events',
+    relatedCapabilities: ['booking', 'schedule_management'],
   },
   pet_profiles: {
     name: 'pet_profiles',

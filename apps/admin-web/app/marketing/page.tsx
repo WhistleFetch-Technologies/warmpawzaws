@@ -88,7 +88,7 @@ export default function MarketingPromotionsTab() {
 	});
 
 	// UI Config State
-	const [uiConfig, setUiConfig] = useState<any>(null);
+	const [uiConfig, setUiConfig] = useState<any[]>([]);
 	const [selectedRole, setSelectedRole] = useState("veterinarian");
 	const [availableRoles, setAvailableRoles] = useState<any[]>([]);
 	const [configLoading, setConfigLoading] = useState(false);
@@ -114,6 +114,14 @@ export default function MarketingPromotionsTab() {
 		}
 	}, [selectedRole, activeTab]);
 
+	// Safety net: Ensure uiConfig is always an array
+	useEffect(() => {
+		if (!Array.isArray(uiConfig)) {
+			console.error('[Safety Check] uiConfig is not an array! Fixing...', uiConfig, typeof uiConfig);
+			setUiConfig([]);
+		}
+	}, [uiConfig]);
+
 	const loadRoles = async () => {
 		try {
 			// Try /admin/roles first (preferred), fallback to /config/roles
@@ -121,7 +129,9 @@ export default function MarketingPromotionsTab() {
 			try {
 				data = await apiClient.get<any>("/admin/roles");
 				if (data.success && data.roles) {
-					setAvailableRoles(data.roles || []);
+					// Ensure roles is an array
+					const roles = Array.isArray(data.roles) ? data.roles : [];
+					setAvailableRoles(roles);
 					return;
 				}
 			} catch (err) {
@@ -130,18 +140,21 @@ export default function MarketingPromotionsTab() {
 			
 			// Fallback to /config/roles
 			data = await apiClient.get("/config/roles");
-			setAvailableRoles((data as any).roles || []);
+			// Ensure roles is an array
+			const roles = Array.isArray((data as any).roles) ? (data as any).roles : [];
+			setAvailableRoles(roles);
 
 			// If current selected role is not in the list and we have roles, select the first one
-			if ((data as any).roles && (data as any).roles.length > 0) {
+			if (Array.isArray(roles) && roles.length > 0) {
 				// Check if currently selected role exists in the fetched roles
-				const roleExists = (data as any).roles.some((r: any) => r.id === selectedRole);
+				const roleExists = roles.some((r: any) => r.id === selectedRole);
 				if (!roleExists) {
-					setSelectedRole((data as any).roles[0].id);
+					setSelectedRole(roles[0].id);
 				}
 			}
 		} catch (error) {
 			console.error("Error loading roles:", error);
+			setAvailableRoles([]); // Set to empty array on error
 		}
 	};
 
@@ -153,9 +166,14 @@ export default function MarketingPromotionsTab() {
 		setLoading(true);
 		try {
 			const data = await apiClient.get("/marketing/spotlights");
-			setSpotlights((data as any).spotlights || []);
+			// Ensure spotlights is an array
+			const spotlights = Array.isArray((data as any).spotlights) 
+				? (data as any).spotlights 
+				: [];
+			setSpotlights(spotlights);
 		} catch (error) {
 			console.error("Error loading spotlights:", error);
+			setSpotlights([]); // Set to empty array on error
 		} finally {
 			setLoading(false);
 		}
@@ -165,12 +183,16 @@ export default function MarketingPromotionsTab() {
 		try {
 			// Fetch only active vendors
 			const data = await apiClient.get("/admin/vendors");
-			const activeVendors = ((data as any).vendors || []).filter(
+			const vendors = Array.isArray((data as any).vendors) 
+				? (data as any).vendors 
+				: [];
+			const activeVendors = vendors.filter(
 				(v: any) => v.status === "approved"
 			);
 			setAvailableVendors(activeVendors);
 		} catch (error) {
 			console.error("Error loading vendors:", error);
+			setAvailableVendors([]); // Set to empty array on error
 		}
 	};
 
@@ -227,11 +249,16 @@ export default function MarketingPromotionsTab() {
 		try {
 			const data = await apiClient.get("/marketing/promotions");
 			if ((data as any).success) {
-				setPromotions((data as any).promotions);
+				// Ensure promotions is an array
+				const promotions = Array.isArray((data as any).promotions) 
+					? (data as any).promotions 
+					: [];
+				setPromotions(promotions);
 			}
 		} catch (error) {
 			console.error("Error loading promotions:", error);
 			toast.error("Failed to load promotions");
+			setPromotions([]); // Set to empty array on error
 		} finally {
 			setLoading(false);
 		}
@@ -309,28 +336,100 @@ export default function MarketingPromotionsTab() {
 
 	const loadUiConfig = async () => {
 		setConfigLoading(true);
+		// Always initialize to empty array to prevent null/undefined issues
+		setUiConfig([]);
 		try {
 			const data = await apiClient.get(`/config/ui/dashboard?roleId=${selectedRole}`);
-			if ((data as any).success) {
-				setUiConfig((data as any).config);
+			
+			// Debug logging
+			console.log('[loadUiConfig] Raw API response:', data);
+			console.log('[loadUiConfig] Response type:', typeof data);
+			console.log('[loadUiConfig] Is array:', Array.isArray(data));
+			
+			// Handle various response structures
+			let config: any = null;
+			
+			// Case 1: Response has success and config properties
+			if (data && typeof data === 'object' && 'success' in data && (data as any).success) {
+				config = (data as any).config;
+				console.log('[loadUiConfig] Extracted config from success response:', config);
 			}
+			// Case 2: Response is the config directly (array or object)
+			else if (data && typeof data === 'object') {
+				// Check if data itself is an array
+				if (Array.isArray(data)) {
+					console.log('[loadUiConfig] Data is array, using directly');
+					setUiConfig(data);
+					return;
+				}
+				// Check if data has config property (even without success)
+				if ('config' in data) {
+					config = (data as any).config;
+					console.log('[loadUiConfig] Extracted config from data.config:', config);
+				}
+				// Otherwise, treat data as the config
+				else {
+					config = data;
+					console.log('[loadUiConfig] Using data as config:', config);
+				}
+			}
+			
+			// Now process the config
+			if (config === null || config === undefined) {
+				console.log('[loadUiConfig] Config is null/undefined, setting empty array');
+				setUiConfig([]);
+				return;
+			}
+			
+			// If config is an array, use it directly
+			if (Array.isArray(config)) {
+				console.log('[loadUiConfig] Config is array, using directly, length:', config.length);
+				setUiConfig(config);
+				return;
+			}
+			
+			// If config is an object, try to extract buttons or widgets array
+			if (config && typeof config === 'object') {
+				if (Array.isArray(config.buttons)) {
+					console.log('[loadUiConfig] Found config.buttons array, length:', config.buttons.length);
+					setUiConfig(config.buttons);
+					return;
+				}
+				if (Array.isArray(config.widgets)) {
+					console.log('[loadUiConfig] Found config.widgets array, length:', config.widgets.length);
+					setUiConfig(config.widgets);
+					return;
+				}
+				console.log('[loadUiConfig] Config object but no buttons/widgets array found. Config keys:', Object.keys(config));
+			}
+			
+			// Default to empty array if structure is unexpected
+			console.warn('[loadUiConfig] Unexpected config structure, defaulting to empty array. Config:', config);
+			setUiConfig([]);
 		} catch (error) {
 			console.error("Error loading config:", error);
 			toast.error("Failed to load UI config");
+			setUiConfig([]); // Set to empty array on error
 		} finally {
 			setConfigLoading(false);
 		}
 	};
 
 	const handleToggleService = (index: number) => {
-		if (!uiConfig) return;
+		if (!Array.isArray(uiConfig) || index < 0 || index >= uiConfig.length) return;
 		const newConfig = [...uiConfig];
-		newConfig[index].enabled = !newConfig[index].enabled;
-		setUiConfig(newConfig);
+		if (newConfig[index]) {
+			newConfig[index].enabled = !newConfig[index].enabled;
+			setUiConfig(newConfig);
+		}
 	};
 
 	const handleSaveConfig = async () => {
 		try {
+			if (!Array.isArray(uiConfig)) {
+				toast.error("Invalid configuration format");
+				return;
+			}
 			await apiClient.put("/config/ui/dashboard", {
 				roleId: selectedRole,
 				config: uiConfig,
@@ -466,7 +565,7 @@ export default function MarketingPromotionsTab() {
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{promotions.map((promo) => (
+								{Array.isArray(promotions) && promotions.map((promo) => (
 									<TableRow key={promo.id}>
 										<TableCell className="font-medium">
 											<div>{promo.title}</div>
@@ -521,7 +620,7 @@ export default function MarketingPromotionsTab() {
 										</TableCell>
 									</TableRow>
 								))}
-								{promotions.length === 0 && (
+								{(!Array.isArray(promotions) || promotions.length === 0) && (
 									<TableRow>
 										<TableCell
 											colSpan={6}
@@ -550,7 +649,7 @@ export default function MarketingPromotionsTab() {
 													<SelectValue placeholder="Select a role" />
 												</SelectTrigger>
 												<SelectContent>
-													{availableRoles.length > 0 ? (
+													{Array.isArray(availableRoles) && availableRoles.length > 0 ? (
 														availableRoles.map((role) => (
 															<SelectItem key={role.id} value={role.id}>
 																{role.name}
@@ -593,8 +692,16 @@ export default function MarketingPromotionsTab() {
 										<div className="text-center py-12">Loading configuration...</div>
 									) : (
 										<div className="space-y-4">
-											{uiConfig &&
-												uiConfig.map((btn: any, index: number) => (
+											{(() => {
+												// Double-check uiConfig is an array before mapping
+												if (!Array.isArray(uiConfig)) {
+													console.error('[UI Config Render] uiConfig is not an array!', uiConfig, typeof uiConfig);
+													return null;
+												}
+												if (uiConfig.length === 0) {
+													return null;
+												}
+												return uiConfig.map((btn: any, index: number) => (
 													<div
 														key={btn.id}
 														className="flex items-center justify-between p-4 border rounded-lg bg-gray-50"
@@ -624,8 +731,20 @@ export default function MarketingPromotionsTab() {
 															/>
 														</div>
 													</div>
-												))}
-											{(!uiConfig || uiConfig.length === 0) && (
+												));
+											})()}
+											{(() => {
+												// Double-check before showing empty state
+												if (!Array.isArray(uiConfig)) {
+													console.error('[UI Config Empty State] uiConfig is not an array!', uiConfig, typeof uiConfig);
+													return (
+														<div className="text-center py-8 text-gray-500">
+															Configuration error. Please refresh the page.
+														</div>
+													);
+												}
+												if (uiConfig.length === 0) {
+													return (
 												<div className="text-center py-8 text-gray-500">
 													No configuration found for this role.
 													<Button
@@ -635,8 +754,11 @@ export default function MarketingPromotionsTab() {
 													>
 														<RotateCcw className="w-4 h-4 mr-2" /> Retry
 													</Button>
-												</div>
-											)}
+													</div>
+													);
+												}
+												return null;
+											})()}
 										</div>
 									)}
 								</Card>
@@ -663,7 +785,7 @@ export default function MarketingPromotionsTab() {
 								</div>
 
 											<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-									{spotlights.map((spot) => (
+									{Array.isArray(spotlights) && spotlights.map((spot) => (
 										<Card
 											key={spot.id}
 											className="overflow-hidden border-orange-100 shadow-sm hover:shadow-md transition-all"
@@ -716,7 +838,7 @@ export default function MarketingPromotionsTab() {
 										</Card>
 									))}
 
-									{spotlights.length === 0 && (
+									{(!Array.isArray(spotlights) || spotlights.length === 0) && (
 										<div className="col-span-3 text-center py-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
 											<Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
 											<h3 className="text-gray-900 font-medium">
@@ -939,7 +1061,7 @@ export default function MarketingPromotionsTab() {
 									<SelectValue placeholder="Search vendors..." />
 								</SelectTrigger>
 								<SelectContent className="max-h-60">
-									{availableVendors.map((v) => (
+									{Array.isArray(availableVendors) && availableVendors.map((v) => (
 										<SelectItem
 											key={v.id || v.vendorId}
 											value={v.id || v.vendorId}

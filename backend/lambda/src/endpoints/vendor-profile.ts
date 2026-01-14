@@ -35,7 +35,201 @@ const CRITICAL_FIELDS = [
   'longitude',
 ];
 
+// Helper to decode JWT and extract phone number
+async function decodeJwtFromHeader(authHeader: string | undefined): Promise<{ phone?: string; userId?: string }> {
+  if (!authHeader) return {};
+  
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) return {};
+  
+  try {
+    // Decode JWT payload (base64)
+    const parts = token.split('.');
+    if (parts.length !== 3) return {};
+    
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+    return {
+      phone: payload.phone_number || payload['cognito:username'],
+      userId: payload.sub,
+    };
+  } catch (e) {
+    console.warn('Failed to decode JWT:', e);
+    return {};
+  }
+}
+
 export function registerVendorProfileEndpoints(app: Hono) {
+  /**
+   * GET /vendor/profile
+   * Get current vendor profile based on authenticated user (via JWT)
+   */
+  app.get("/vendor/profile", async (c) => {
+    try {
+      // Decode JWT from Authorization header to get phone number
+      const authHeader = c.req.header('Authorization');
+      const { phone, userId: vendorIdFromAuth } = await decodeJwtFromHeader(authHeader);
+
+      console.log(`📊 [PROFILE-GET] Getting profile for phone: ${phone}, vendorId: ${vendorIdFromAuth}`);
+
+      let vendor = null;
+      let identityData = null;
+
+      // Try to find vendor by vendorId first (userId from JWT might be vendor ID)
+      if (vendorIdFromAuth && !vendorIdFromAuth.startsWith('temp_')) {
+        try {
+          const vendors = await select('vendors', { id: vendorIdFromAuth });
+          if (vendors.length > 0) {
+            vendor = vendors[0];
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
+        }
+      }
+
+      // If not found by vendorId, try by phone directly on vendors table
+      if (!vendor && phone) {
+        try {
+          const vendorsByPhone = await select('vendors', { phone });
+          if (vendorsByPhone.length > 0) {
+            vendor = vendorsByPhone[0];
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
+        }
+      }
+      
+      // Also fetch vendor_identity for onboarding status (handle missing vendor_id column gracefully)
+      if (phone) {
+        try {
+          const identities = await select('vendor_identity', { phone });
+          if (identities.length > 0) {
+            identityData = identities[0];
+            // Try to link vendor via vendor_id if column exists and vendor not found yet
+            if (!vendor && identityData && typeof identityData.vendor_id === 'string') {
+              try {
+                const vendors = await select('vendors', { id: identityData.vendor_id });
+                if (vendors.length > 0) {
+                  vendor = vendors[0];
+                }
+              } catch (e) {
+                console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error fetching vendor_identity:`, e);
+        }
+      }
+
+      if (!vendor) {
+        // No vendor record found - check if there's identity data for onboarding
+        if (identityData) {
+          // Vendor is in onboarding but not yet approved (no vendors table entry)
+          const identityStatus = identityData.onboarding_status || 'INIT';
+          console.log(`📝 [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}`);
+          return c.json({
+            success: true,
+            vendor: {
+              id: identityData.id,
+              phone: phone,
+              status: identityStatus.toLowerCase(),
+              isActive: false,
+              onboardingStatus: identityStatus,
+            },
+            status: identityStatus === 'APPROVED' ? 'approved' : (identityStatus === 'INIT' ? 'new' : identityStatus.toLowerCase()),
+            message: 'Vendor in onboarding'
+          });
+        }
+        
+        console.log(`⚠️ [PROFILE-GET] No vendor found for phone: ${phone}`);
+        return c.json({
+          success: true,
+          vendor: null,
+          status: 'new',
+          message: 'No vendor profile found'
+        });
+      }
+
+      // Get application data if exists (handle missing columns gracefully)
+      let applicationData = null;
+      try {
+        // Try to find by vendor_id first
+        const applications = await select('vendor_onboarding_applications', { vendor_id: vendor.id });
+        if (applications.length > 0) {
+          applicationData = applications[0];
+        }
+      } catch (e) {
+        // vendor_id column might not exist, try by phone
+        try {
+          const appsByPhone = await query(
+            'SELECT * FROM vendor_onboarding_applications WHERE application_payload->>\'phone\' = $1 ORDER BY created_at DESC LIMIT 1',
+            [phone]
+          );
+          if (appsByPhone.rows?.length > 0) {
+            applicationData = appsByPhone.rows[0];
+          }
+        } catch (e2) {
+          console.warn('[PROFILE-GET] Error fetching applications:', e2);
+        }
+      }
+
+      // Get role info
+      let roleInfo = null;
+      try {
+        if (vendor.role_id) {
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            roleInfo = roles[0];
+          }
+        }
+      } catch (e) {
+        console.warn('[PROFILE-GET] Error fetching role info:', e);
+      }
+
+      // Determine vendor status for UI
+      let uiStatus = 'new';
+      if (vendor.is_active) {
+        uiStatus = 'active';
+      } else if (vendor.status === 'approved') {
+        uiStatus = vendor.setup_completed ? 'active' : 'approved';
+      } else if (vendor.status === 'pending' || vendor.status === 'under_review') {
+        uiStatus = 'pending';
+      } else if (vendor.status === 'rejected') {
+        uiStatus = 'rejected';
+      } else if (applicationData?.status) {
+        uiStatus = applicationData.status;
+      }
+
+      console.log(`✅ [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
+
+      return c.json({
+        success: true,
+        vendor: {
+          id: vendor.id,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name,
+          phone: vendor.phone,
+          email: vendor.email,
+          status: uiStatus,
+          isActive: vendor.is_active,
+          setupCompleted: vendor.setup_completed,
+          servicesSetupCompleted: vendor.services_setup_completed,
+          availabilitySetupCompleted: vendor.availability_setup_completed,
+          roleId: vendor.role_id,
+          roleName: roleInfo?.name,
+          vendorType: vendor.vendor_type,
+          serviceStyle: vendor.service_style,
+          applicationId: applicationData?.id,
+          applicationStatus: applicationData?.status,
+          createdAt: vendor.created_at
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ [PROFILE-GET] Error:', error);
+      return c.json({ error: 'Failed to get vendor profile', details: error.message }, 500);
+    }
+  });
+
   /**
    * PUT /vendor/:vendorId/profile
    * Update vendor profile - requires re-approval only if critical fields changed

@@ -18,7 +18,7 @@ import { projectId, publicAnonKey } from '@/lib/supabase/info';
 interface BookingCardProps {
   booking: any;
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onComplete: (booking: any) => void;
   onEndSession: (booking: any) => void;
   completingBooking: boolean;

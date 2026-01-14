@@ -181,11 +181,11 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center p-0 bg-white rounded-2xl shadow-lg max-w-md">
+        <div className="text-center p-8 bg-white rounded-2xl shadow-lg max-w-md">
           <div className="text-red-500 text-5xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-gray-900 mb-0">Error Loading Dashboard</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button onClick={loadDashboardData} className="px-0 py-0 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Error Loading Dashboard</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button onClick={loadDashboardData} className="px-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition">
             Try Again
           </button>
         </div>
@@ -203,23 +203,23 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
               <img 
                 src="/logo.png" 
                 alt="Warmpawz" 
-                className="w-12 h-12 rounded-2xl object-contain bg-white/20 p-0"
+                className="w-12 h-12 rounded-2xl object-contain bg-white/20 p-2"
               />
               <div>
                 <h1 className="text-xl font-bold">{vendor?.business_name || 'Vendor Dashboard'}</h1>
                 <p className="text-sm text-orange-100">{vendor?.owner_name}</p>
               </div>
             </div>
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               {vendor?.tier && (
-                <span className="px-0 py-0 bg-white/20 rounded-full text-sm font-medium">
+                <span className="px-3 py-1 bg-white/20 rounded-full text-sm font-medium">
                   {vendor.tier} Tier
                 </span>
               )}
-              <button className="p-0 hover:bg-white/10 rounded-full transition">
+              <button className="p-2 hover:bg-white/10 rounded-full transition">
                 <span className="text-2xl">🔔</span>
               </button>
-              <button className="p-0 hover:bg-white/10 rounded-full transition">
+              <button className="p-2 hover:bg-white/10 rounded-full transition">
                 <span className="text-2xl">⚙️</span>
               </button>
             </div>
@@ -227,7 +227,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-0 flex gap-0">
+      <div className="max-w-7xl mx-auto px-4 py-6 flex gap-6">
         {/* Sidebar Navigation */}
         <aside className="w-64 flex-shrink-0">
           <VendorDynamicNavigation 
@@ -251,13 +251,13 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
 
               {/* Pending Settlement Banner */}
               {(stats.pendingSettlement || 0) > 0 && (
-                <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-0 text-white flex items-center justify-between">
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-white flex items-center justify-between">
                   <div>
                     <p className="text-green-100 text-sm">Pending Settlement</p>
-                    <p className="text-3xl font-bold mt-0">₹{stats.pendingSettlement.toLocaleString()}</p>
-                    <p className="text-green-100 text-sm mt-0">Expected within 7 days</p>
+                    <p className="text-3xl font-bold mt-2">₹{stats.pendingSettlement.toLocaleString()}</p>
+                    <p className="text-green-100 text-sm mt-1">Expected within 7 days</p>
                   </div>
-                  <button className="px-0 py-0 bg-white text-green-600 rounded-xl font-semibold hover:bg-green-50 transition">
+                  <button className="px-4 py-2 bg-white text-green-600 rounded-xl font-semibold hover:bg-green-50 transition">
                     View Details
                   </button>
                 </div>
@@ -265,7 +265,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
 
               {/* Today's Bookings */}
               <div className="bg-white rounded-2xl shadow-sm">
-                <div className="p-0 border-b">
+                <div className="p-6 border-b">
                   <div className="flex items-center justify-between">
                     <h2 className="text-lg font-semibold text-gray-900">Today's Bookings</h2>
                     <button 
@@ -278,10 +278,10 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
                 </div>
                 
                 {todayBookings.length === 0 ? (
-                  <div className="p-02 text-center">
+                  <div className="p-12 text-center">
                     <div className="text-5xl mb-4">📅</div>
                     <h3 className="text-lg font-semibold text-gray-900">No bookings today</h3>
-                    <p className="text-gray-500 mt-0">Enjoy your day off!</p>
+                    <p className="text-gray-500 mt-2">Enjoy your day off!</p>
                   </div>
                 ) : (
                   <div className="divide-y">
@@ -293,7 +293,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
               </div>
 
               {/* Quick Actions based on capabilities */}
-              <div className="bg-white rounded-2xl shadow-sm p-0">
+              <div className="bg-white rounded-2xl shadow-sm p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {enabledCapabilities
@@ -305,7 +305,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
                         onClick={() => router.push(cap.route)}
                         className="flex flex-col items-center p-4 bg-gray-50 rounded-xl hover:bg-orange-50 transition group"
                       >
-                        <span className="text-3xl mb-0">{cap.icon}</span>
+                        <span className="text-3xl mb-2">{cap.icon}</span>
                         <span className="text-sm text-gray-700 group-hover:text-orange-600 font-medium">{cap.display_name}</span>
                       </button>
                     ))}
@@ -325,7 +325,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
 
       {/* Bottom Navigation for Mobile */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg lg:hidden">
-        <div className="flex justify-around py-0">
+        <div className="flex justify-around py-2">
           {['dashboard', 'bookings', 'services', 'earnings', 'profile'].map((section) => {
             const cap = ALL_CAPABILITIES.find(c => c.name === section);
             if (!cap) return null;
@@ -333,12 +333,12 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
               <button
                 key={section}
                 onClick={() => setActiveSection(section)}
-                className={`flex flex-col items-center py-0 px-4 ${
+                className={`flex flex-col items-center py-2 px-4 ${
                   activeSection === section ? 'text-orange-500' : 'text-gray-500'
                 }`}
               >
                 <span className="text-2xl">{cap.icon}</span>
-                <span className="text-xs mt-0">{cap.display_name}</span>
+                <span className="text-xs mt-1">{cap.display_name}</span>
               </button>
             );
           })}
@@ -361,10 +361,10 @@ function StatCard({ icon, value, label, color }: { icon: string; value: string |
   };
 
   return (
-    <div className={`${colorClasses[color]} rounded-2xl p-0`}>
-      <div className="text-3xl mb-0">{icon}</div>
+    <div className={`${colorClasses[color]} rounded-2xl p-6`}>
+      <div className="text-3xl mb-2">{icon}</div>
       <p className="text-2xl font-bold">{value}</p>
-      <p className="text-sm opacity-80">{label}</p>
+      <p className="text-sm opacity-80 mt-1">{label}</p>
     </div>
   );
 }
@@ -388,13 +388,13 @@ function BookingCard({ booking }: { booking: Booking }) {
           <div>
             <h3 className="font-medium text-gray-900">{booking.customer_name}</h3>
             <p className="text-sm text-gray-500">{booking.service_name}</p>
-            <p className="text-xs text-gray-400 mt-0">{booking.service_style}</p>
+            <p className="text-xs text-gray-400 mt-1">{booking.service_style}</p>
           </div>
         </div>
         <div className="text-right">
           <p className="text-sm font-medium text-gray-900">{booking.booking_time}</p>
           <p className="text-sm text-gray-500">₹{booking.total_amount}</p>
-          <span className={`text-xs px-0 py-0 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
+          <span className={`text-xs px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
             {booking.status.replace('_', ' ')}
           </span>
         </div>
@@ -406,10 +406,10 @@ function BookingCard({ booking }: { booking: Booking }) {
 function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capability; vendorId: string; vendor: Vendor | null }) {
   if (!capability) {
     return (
-      <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
+      <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
         <div className="text-5xl mb-4">🔒</div>
         <h2 className="text-xl font-semibold text-gray-900">Section Not Available</h2>
-        <p className="text-gray-500 mt-0">This capability is not enabled for your role.</p>
+        <p className="text-gray-500 mt-2">This capability is not enabled for your role.</p>
       </div>
     );
   }
@@ -417,8 +417,8 @@ function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capa
   // Render specific section based on capability
   return (
     <div className="bg-white rounded-2xl shadow-sm">
-      <div className="p-0 border-b">
-        <div className="flex items-center gap-0">
+      <div className="p-6 border-b">
+        <div className="flex items-center gap-4">
           <span className="text-3xl">{capability.icon}</span>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">{capability.display_name}</h2>
@@ -427,7 +427,7 @@ function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capa
         </div>
       </div>
       
-      <div className="p-1">
+      <div className="p-6">
         {/* Render specific content based on capability type */}
         {capability.name === 'services' && <ServicesSection vendorId={vendorId} />}
         {capability.name === 'staff' && <StaffSection vendorId={vendorId} />}
@@ -525,13 +525,13 @@ function ServicesSection({ vendorId }: { vendorId: string }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-gray-500">{services.length} services configured</p>
-        <button className="px-4 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
+        <button className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
           + Add Service
         </button>
       </div>
       
       {services.length === 0 ? (
-        <div className="text-center py-02 bg-gray-50 rounded-xl">
+        <div className="text-center py-8 bg-gray-50 rounded-xl">
           <div className="text-5xl mb-4">📋</div>
           <h3 className="font-semibold text-gray-900">No services yet</h3>
           <p className="text-gray-500">Add your first service to start accepting bookings</p>
@@ -544,11 +544,11 @@ function ServicesSection({ vendorId }: { vendorId: string }) {
                 <h4 className="font-medium text-gray-900">{service.name}</h4>
                 <p className="text-sm text-gray-500">{service.duration} mins • ₹{service.price}</p>
               </div>
-              <div className="flex items-center gap-0">
-                <span className={`px-0 py-0 rounded-full text-xs ${service.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-1 rounded-full text-xs ${service.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                   {service.is_active ? 'Active' : 'Inactive'}
                 </span>
-                <button className="p-0 hover:bg-gray-200 rounded-lg transition">✏️</button>
+                <button className="p-2 hover:bg-gray-200 rounded-lg transition">✏️</button>
               </div>
             </div>
           ))}
@@ -583,7 +583,7 @@ function StaffSection({ vendorId }: { vendorId: string }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-gray-500">{staff.length} team members</p>
-        <button className="px-4 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
+        <button className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
           + Add Staff
         </button>
       </div>
@@ -605,7 +605,7 @@ function StaffSection({ vendorId }: { vendorId: string }) {
                 <h4 className="font-medium text-gray-900">{member.name}</h4>
                 <p className="text-sm text-gray-500">{member.role}</p>
               </div>
-              <span className={`px-0 py-1 rounded-full text-xs ${member.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <span className={`px-2 py-1 rounded-full text-xs ${member.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                 {member.is_active ? 'Active' : 'Inactive'}
               </span>
             </div>
@@ -640,12 +640,12 @@ function BookingsSection({ vendorId }: { vendorId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-0 overflow-x-auto">
+      <div className="flex gap-2 overflow-x-auto">
         {['all', 'pending', 'confirmed', 'in_progress', 'completed'].map((status) => (
           <button
             key={status}
             onClick={() => setFilter(status)}
-            className={`px-4 py-0 rounded-full whitespace-nowrap transition ${
+            className={`px-4 py-2 rounded-full whitespace-nowrap transition ${
               filter === status
                 ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -719,7 +719,7 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
         {earnings?.transactions?.length > 0 ? (
           <div className="space-y-3">
             {earnings.transactions.map((txn: any) => (
-              <div key={txn.id} className="flex items-center justify-between py-0 border-b last:border-0">
+              <div key={txn.id} className="flex items-center justify-between py-3 border-b last:border-0">
                 <div>
                   <p className="font-medium text-gray-900">{txn.description}</p>
                   <p className="text-sm text-gray-500">{txn.date}</p>
@@ -797,14 +797,14 @@ function ProfileSection({ vendor }: { vendor: Vendor | null }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-0">
+      <div className="flex items-center gap-3">
         <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl flex items-center justify-center text-4xl">
           🏪
         </div>
         <div>
           <h3 className="text-xl font-bold text-gray-900">{vendor.business_name}</h3>
           <p className="text-gray-500">{vendor.owner_name}</p>
-          <div className="flex items-center gap-0 mt-0">
+          <div className="flex items-center gap-2 mt-2">
             <span className="text-yellow-500">⭐</span>
             <span className="font-medium">{vendor.rating || 0}</span>
             <span className="text-gray-400">({vendor.total_reviews || 0} reviews)</span>

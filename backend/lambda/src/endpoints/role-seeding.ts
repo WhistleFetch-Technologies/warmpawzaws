@@ -38,6 +38,7 @@ const KNOWN_ROLE_NAMES: Record<string, string> = {
   'nutritionist': 'Pet Nutritionist',
   'pet_photographer': 'Pet Photographer',
   'pet_shelter': 'Pet Shelter / NGO',
+  'event_organizer': 'Event Organizer',
   'pet_ambulance': 'Pet Ambulance',
   'pet_relocation': 'Pet Relocation',
   'pet_cafe': 'Pet Cafe',
@@ -333,6 +334,23 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'chat'
     ],
     icon: '🏠',
+    category: 'specialist',
+  },
+  'event_organizer': {
+    vendorTypes: ['service_provider', 'ngo', 'organization'],
+    serviceStyles: ['at_center', 'outdoor'],
+    pricingControl: { canControlPrice: true, canControlDuration: false },
+    capabilities: [
+      'events',
+      'booking',
+      'staff_management',
+      'facility_management',
+      'schedule_management',
+      'chat',
+      'custom_services',
+      'package_management'
+    ],
+    icon: '📅',
     category: 'specialist',
   },
   'pet_sunset_services': {

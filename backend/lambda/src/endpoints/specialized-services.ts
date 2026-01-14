@@ -21,8 +21,297 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
 
 export function registerSpecializedServicesEndpoints(app: Hono) {
+  // ============================================
+  // CUSTOMER-FACING DISCOVERY ENDPOINTS (PUBLIC)
+  // ============================================
+
+  /**
+   * GET /discover/meal-plans
+   * Customer-facing: Discover available meal plans
+   * Public endpoint - no capability check
+   */
+  app.get("/discover/meal-plans", async (c) => {
+    try {
+      const city = c.req.query('city');
+      const petType = c.req.query('petType');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let mealPlanQuery = `
+        SELECT mp.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
+        FROM meal_plans mp
+        INNER JOIN vendors v ON mp.vendor_id = v.id
+        WHERE mp.is_active = true
+        AND v.status = 'approved'
+        AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (city) {
+        mealPlanQuery += ` AND v.city ILIKE $${paramIndex}`;
+        params.push(`%${city}%`);
+        paramIndex++;
+      }
+
+      mealPlanQuery += ` ORDER BY v.rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const mealPlans = await query(mealPlanQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        mealPlans: mealPlans.rows,
+        total: mealPlans.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error discovering meal plans:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /discover/training-programs
+   * Customer-facing: Discover available training programs
+   * Public endpoint - no capability check
+   */
+  app.get("/discover/training-programs", async (c) => {
+    try {
+      const city = c.req.query('city');
+      const skillLevel = c.req.query('skillLevel');
+      const category = c.req.query('category');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let programQuery = `
+        SELECT tp.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
+        FROM training_programs tp
+        INNER JOIN vendors v ON tp.vendor_id = v.id
+        WHERE tp.is_active = true
+        AND v.status = 'approved'
+        AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (city) {
+        programQuery += ` AND v.city ILIKE $${paramIndex}`;
+        params.push(`%${city}%`);
+        paramIndex++;
+      }
+
+      if (skillLevel) {
+        programQuery += ` AND tp.skill_level = $${paramIndex}`;
+        params.push(skillLevel);
+        paramIndex++;
+      }
+
+      if (category) {
+        programQuery += ` AND tp.category = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+
+      programQuery += ` ORDER BY v.rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const programs = await query(programQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        programs: programs.rows,
+        total: programs.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error discovering training programs:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /discover/holiday-packages
+   * Customer-facing: Discover available holiday packages
+   * Public endpoint - no capability check
+   */
+  app.get("/discover/holiday-packages", async (c) => {
+    try {
+      const destination = c.req.query('destination');
+      const maxDays = c.req.query('maxDays');
+      const maxPrice = c.req.query('maxPrice');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let packageQuery = `
+        SELECT hp.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
+        FROM holiday_packages hp
+        INNER JOIN vendors v ON hp.vendor_id = v.id
+        WHERE hp.is_active = true
+        AND v.status = 'approved'
+        AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (destination) {
+        packageQuery += ` AND hp.destination ILIKE $${paramIndex}`;
+        params.push(`%${destination}%`);
+        paramIndex++;
+      }
+
+      if (maxDays) {
+        packageQuery += ` AND hp.duration_days <= $${paramIndex}`;
+        params.push(parseInt(maxDays, 10));
+        paramIndex++;
+      }
+
+      if (maxPrice) {
+        packageQuery += ` AND hp.price <= $${paramIndex}`;
+        params.push(parseFloat(maxPrice));
+        paramIndex++;
+      }
+
+      packageQuery += ` ORDER BY hp.next_departure ASC NULLS LAST, v.rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const packages = await query(packageQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        packages: packages.rows,
+        total: packages.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error discovering holiday packages:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /discover/adoption-pets
+   * Customer-facing: Discover pets available for adoption
+   * Public endpoint - no capability check
+   */
+  app.get("/discover/adoption-pets", async (c) => {
+    try {
+      const city = c.req.query('city');
+      const petType = c.req.query('petType');
+      const breed = c.req.query('breed');
+      const gender = c.req.query('gender');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let petQuery = `
+        SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
+        FROM pets p
+        INNER JOIN vendors v ON p.vendor_id = v.id
+        WHERE p.listing_type IN ('adoption', 'breeding')
+        AND v.status = 'approved'
+        AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (city) {
+        petQuery += ` AND (v.city ILIKE $${paramIndex} OR p.location_city ILIKE $${paramIndex})`;
+        params.push(`%${city}%`);
+        paramIndex++;
+      }
+
+      if (petType) {
+        petQuery += ` AND p.pet_type = $${paramIndex}`;
+        params.push(petType);
+        paramIndex++;
+      }
+
+      if (breed) {
+        petQuery += ` AND p.breed ILIKE $${paramIndex}`;
+        params.push(`%${breed}%`);
+        paramIndex++;
+      }
+
+      if (gender) {
+        petQuery += ` AND p.gender = $${paramIndex}`;
+        params.push(gender);
+        paramIndex++;
+      }
+
+      petQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const pets = await query(petQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        pets: pets.rows,
+        total: pets.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error discovering adoption pets:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /discover/boarding-rooms
+   * Customer-facing: Discover available boarding rooms
+   * Public endpoint - no capability check
+   */
+  app.get("/discover/boarding-rooms", async (c) => {
+    try {
+      const city = c.req.query('city');
+      const roomType = c.req.query('roomType');
+      const checkInDate = c.req.query('checkInDate');
+      const checkOutDate = c.req.query('checkOutDate');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let roomQuery = `
+        SELECT br.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
+        FROM boarding_rooms br
+        INNER JOIN vendors v ON br.vendor_id = v.id
+        WHERE br.is_available = true
+        AND v.status = 'approved'
+        AND v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (city) {
+        roomQuery += ` AND v.city ILIKE $${paramIndex}`;
+        params.push(`%${city}%`);
+        paramIndex++;
+      }
+
+      if (roomType) {
+        roomQuery += ` AND br.room_type = $${paramIndex}`;
+        params.push(roomType);
+        paramIndex++;
+      }
+
+      roomQuery += ` ORDER BY v.rating DESC NULLS LAST, br.price_per_night ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const rooms = await query(roomQuery, params).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        rooms: rooms.rows,
+        total: rooms.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error discovering boarding rooms:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   // ============================================
   // AMBULANCE: VEHICLE FLEET MANAGEMENT
   // ============================================
@@ -30,10 +319,17 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/ambulance/vehicles
    * Get all vehicles for an ambulance service
+   * Requires 'ambulance' capability
    */
   app.get("/vendor/:vendorId/ambulance/vehicles", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has ambulance capability
+      const hasAmbulanceCapability = await checkVendorCapability(vendorId, 'ambulance');
+      if (!hasAmbulanceCapability) {
+        return c.json({ error: 'Vendor does not have ambulance capability' }, 403);
+      }
       
       const vehicles = await select('ambulance_vehicles', 
         { vendor_id: vendorId },
@@ -50,10 +346,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/ambulance/vehicles
    * Add a new vehicle
+   * Requires 'ambulance' capability
    */
   app.post("/vendor/:vendorId/ambulance/vehicles", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has ambulance capability
+      const hasAmbulanceCapability = await checkVendorCapability(vendorId, 'ambulance');
+      if (!hasAmbulanceCapability) {
+        return c.json({ error: 'Vendor does not have ambulance capability' }, 403);
+      }
+      
       const vehicleData = await c.req.json();
       
       const vehicle = await insert('ambulance_vehicles', {
@@ -78,10 +382,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/ambulance/vehicles/:vehicleId
    * Update vehicle details
+   * Requires 'ambulance' capability
    */
   app.put("/vendor/:vendorId/ambulance/vehicles/:vehicleId", async (c) => {
     try {
-      const { vehicleId } = c.req.param();
+      const { vendorId, vehicleId } = c.req.param();
+      
+      // Check if vendor has ambulance capability
+      const hasAmbulanceCapability = await checkVendorCapability(vendorId, 'ambulance');
+      if (!hasAmbulanceCapability) {
+        return c.json({ error: 'Vendor does not have ambulance capability' }, 403);
+      }
+      
       const vehicleData = await c.req.json();
       
       const updated = await update('ambulance_vehicles', 
@@ -115,10 +427,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/diagnostics/tests
    * Get all diagnostic tests offered by this center
+   * Requires 'diagnostics' or 'test_catalog' capability
    */
   app.get("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has diagnostics capability
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostics');
+      const hasTestCatalogCapability = await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+        return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
+      }
       
       const tests = await select('diagnostic_tests', 
         { vendor_id: vendorId },
@@ -135,10 +455,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/diagnostics/tests
    * Add a new diagnostic test
+   * Requires 'diagnostics' or 'test_catalog' capability
    */
   app.post("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has diagnostics capability
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostics');
+      const hasTestCatalogCapability = await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+        return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
+      }
+      
       const testData = await c.req.json();
       
       const test = await insert('diagnostic_tests', {
@@ -164,10 +493,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/diagnostics/tests/:testId
    * Update diagnostic test
+   * Requires 'diagnostics' or 'test_catalog' capability
    */
   app.put("/vendor/:vendorId/diagnostics/tests/:testId", async (c) => {
     try {
-      const { testId } = c.req.param();
+      const { vendorId, testId } = c.req.param();
+      
+      // Check if vendor has diagnostics capability
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostics');
+      const hasTestCatalogCapability = await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+        return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
+      }
+      
       const testData = await c.req.json();
       
       const updated = await update('diagnostic_tests',
@@ -203,6 +541,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/pharmacy/medicines
    * Get pharmacy inventory
+   * Requires 'pharmacy' or 'inventory' capability
    */
   app.get("/vendor/:vendorId/pharmacy/medicines", async (c) => {
     try {
@@ -211,6 +550,13 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Handle test IDs - return empty medicines
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({ success: true, medicines: [], total: 0 });
+      }
+      
+      // Check if vendor has pharmacy capability
+      const hasPharmacyCapability = await checkVendorCapability(vendorId, 'pharmacy');
+      const hasInventoryCapability = await checkVendorCapability(vendorId, 'inventory');
+      if (!hasPharmacyCapability && !hasInventoryCapability) {
+        return c.json({ error: 'Vendor does not have pharmacy capability' }, 403);
       }
       
       // Get products filtered by category (medicine/pharmacy)
@@ -240,10 +586,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/pharmacy/medicines
    * Add medicine to inventory
+   * Requires 'pharmacy' or 'inventory' capability
    */
   app.post("/vendor/:vendorId/pharmacy/medicines", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has pharmacy capability
+      const hasPharmacyCapability = await checkVendorCapability(vendorId, 'pharmacy');
+      const hasInventoryCapability = await checkVendorCapability(vendorId, 'inventory');
+      if (!hasPharmacyCapability && !hasInventoryCapability) {
+        return c.json({ error: 'Vendor does not have pharmacy capability' }, 403);
+      }
+      
       const medicineData = await c.req.json();
       
       const medicine = await insert('products', {
@@ -273,10 +628,17 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/nutritionist/meal-plans
    * Get all meal plans
+   * Requires 'meal_plans' capability
    */
   app.get("/vendor/:vendorId/nutritionist/meal-plans", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has meal_plans capability
+      const hasMealPlansCapability = await checkVendorCapability(vendorId, 'meal_plans');
+      if (!hasMealPlansCapability) {
+        return c.json({ error: 'Vendor does not have meal plans capability' }, 403);
+      }
       
       const mealPlans = await select('meal_plans',
         { vendor_id: vendorId },
@@ -293,10 +655,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/nutritionist/meal-plans
    * Create a new meal plan
+   * Requires 'meal_plans' capability
    */
   app.post("/vendor/:vendorId/nutritionist/meal-plans", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has meal_plans capability
+      const hasMealPlansCapability = await checkVendorCapability(vendorId, 'meal_plans');
+      if (!hasMealPlansCapability) {
+        return c.json({ error: 'Vendor does not have meal plans capability' }, 403);
+      }
+      
       const mealPlanData = await c.req.json();
       
       const mealPlan = await insert('meal_plans', {
@@ -520,6 +890,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/cafe/tables
    * Get cafe table configuration
+   * Requires 'cafe_tables' or 'reservations' capability
    */
   app.get("/vendor/:vendorId/cafe/tables", async (c) => {
     try {
@@ -528,6 +899,13 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Handle test IDs - return empty tables
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({ success: true, tables: [], totalSeats: 0 });
+      }
+      
+      // Check if vendor has cafe_tables capability
+      const hasCafeTablesCapability = await checkVendorCapability(vendorId, 'cafe_tables');
+      const hasReservationsCapability = await checkVendorCapability(vendorId, 'reservations');
+      if (!hasCafeTablesCapability && !hasReservationsCapability) {
+        return c.json({ error: 'Vendor does not have cafe tables capability' }, 403);
       }
       
       // Check if cafe_tables table exists, if not use a generic approach
@@ -650,10 +1028,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/cafe/tables
    * Update cafe table configuration
+   * Requires 'cafe_tables' or 'reservations' capability
    */
   app.post("/vendor/:vendorId/cafe/tables", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has cafe_tables capability
+      const hasCafeTablesCapability = await checkVendorCapability(vendorId, 'cafe_tables');
+      const hasReservationsCapability = await checkVendorCapability(vendorId, 'reservations');
+      if (!hasCafeTablesCapability && !hasReservationsCapability) {
+        return c.json({ error: 'Vendor does not have cafe tables capability' }, 403);
+      }
+      
       const tableData = await c.req.json();
       
       // This endpoint expects an array of tables
@@ -706,10 +1093,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/breeder/puppies
    * Get all available puppies/pets for adoption/breeding
+   * Requires 'adoption' or 'pet_profiles' capability
    */
   app.get("/vendor/:vendorId/breeder/puppies", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has adoption capability
+      const hasAdoptionCapability = await checkVendorCapability(vendorId, 'adoption');
+      const hasPetProfilesCapability = await checkVendorCapability(vendorId, 'pet_profiles');
+      if (!hasAdoptionCapability && !hasPetProfilesCapability) {
+        return c.json({ error: 'Vendor does not have adoption capability' }, 403);
+      }
       
       // Get pets/adoption listings - assuming a pets table with adoption listings
       const puppies = await query(`
@@ -732,10 +1127,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/breeder/puppies
    * Add a new puppy/pet profile
+   * Requires 'adoption' or 'pet_profiles' capability
    */
   app.post("/vendor/:vendorId/breeder/puppies", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has adoption capability
+      const hasAdoptionCapability = await checkVendorCapability(vendorId, 'adoption');
+      const hasPetProfilesCapability = await checkVendorCapability(vendorId, 'pet_profiles');
+      if (!hasAdoptionCapability && !hasPetProfilesCapability) {
+        return c.json({ error: 'Vendor does not have adoption capability' }, 403);
+      }
+      
       const puppyData = await c.req.json();
       
       // Create pet listing - assuming pets table structure
@@ -777,10 +1181,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/resort/rooms
    * Get room configuration and pricing
+   * Requires 'rooms' or 'boarding' capability
    */
   app.get("/vendor/:vendorId/resort/rooms", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has rooms capability
+      const hasRoomsCapability = await checkVendorCapability(vendorId, 'rooms');
+      const hasBoardingCapability = await checkVendorCapability(vendorId, 'boarding');
+      if (!hasRoomsCapability && !hasBoardingCapability) {
+        return c.json({ error: 'Vendor does not have resort rooms capability' }, 403);
+      }
       
       // Check if boarding_rooms table exists
       const rooms = await query(`
@@ -802,10 +1214,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/resort/rooms
    * Add/update room configuration
+   * Requires 'rooms' or 'boarding' capability
    */
   app.post("/vendor/:vendorId/resort/rooms", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check if vendor has rooms capability
+      const hasRoomsCapability = await checkVendorCapability(vendorId, 'rooms');
+      const hasBoardingCapability = await checkVendorCapability(vendorId, 'boarding');
+      if (!hasRoomsCapability && !hasBoardingCapability) {
+        return c.json({ error: 'Vendor does not have resort rooms capability' }, 403);
+      }
+      
       const roomData = await c.req.json();
       
       // Check if boarding_rooms table exists, if not create it via migration first
@@ -842,6 +1263,211 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       return c.json({ success: true, room, message: 'Room configuration updated' });
     } catch (error: any) {
       console.error('Error updating resort rooms:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // TRAINING PROGRAMS
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/training/programs
+   * Get all training programs
+   * Requires 'training_programs' capability
+   */
+  app.get("/vendor/:vendorId/training/programs", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has training capability
+      const hasTrainingCapability = await checkVendorCapability(vendorId, 'training_programs');
+      if (!hasTrainingCapability) {
+        return c.json({ error: 'Vendor does not have training programs capability' }, 403);
+      }
+      
+      const programs = await query(`
+        SELECT * FROM training_programs
+        WHERE vendor_id = $1
+        ORDER BY created_at DESC
+      `, [vendorId]).catch(() => ({ rows: [] }));
+      
+      return c.json({ success: true, programs: programs.rows, total: programs.rows.length });
+    } catch (error: any) {
+      console.error('Error fetching training programs:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/training/programs
+   * Create a new training program
+   * Requires 'training_programs' capability
+   */
+  app.post("/vendor/:vendorId/training/programs", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has training capability
+      const hasTrainingCapability = await checkVendorCapability(vendorId, 'training_programs');
+      if (!hasTrainingCapability) {
+        return c.json({ error: 'Vendor does not have training programs capability' }, 403);
+      }
+      
+      const programData = await c.req.json();
+      
+      const program = await insert('training_programs', {
+        vendor_id: vendorId,
+        name: programData.name,
+        description: programData.description,
+        category: programData.category || 'obedience',
+        duration_weeks: programData.durationWeeks || programData.duration_weeks || 4,
+        sessions_per_week: programData.sessionsPerWeek || programData.sessions_per_week || 2,
+        price: programData.price || 0,
+        max_pets: programData.maxPets || programData.max_pets || 5,
+        skill_level: programData.skillLevel || programData.skill_level || 'beginner',
+        is_active: programData.isActive !== false,
+      });
+      
+      return c.json({ success: true, program: program[0], message: 'Training program created successfully' });
+    } catch (error: any) {
+      console.error('Error creating training program:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/training/progress
+   * Get training progress for enrolled pets
+   * Requires 'progress_tracking' capability
+   */
+  app.get("/vendor/:vendorId/training/progress", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has progress tracking capability
+      const hasProgressCapability = await checkVendorCapability(vendorId, 'progress_tracking');
+      if (!hasProgressCapability) {
+        return c.json({ error: 'Vendor does not have progress tracking capability' }, 403);
+      }
+      
+      const progress = await query(`
+        SELECT tp.*, p.name as pet_name, c.full_name as customer_name, trp.name as program_name
+        FROM training_progress tp
+        LEFT JOIN pets p ON tp.pet_id = p.id
+        LEFT JOIN customers c ON tp.customer_id = c.id
+        LEFT JOIN training_programs trp ON tp.program_id = trp.id
+        WHERE tp.vendor_id = $1
+        ORDER BY tp.updated_at DESC
+      `, [vendorId]).catch(() => ({ rows: [] }));
+      
+      return c.json({ success: true, progress: progress.rows, total: progress.rows.length });
+    } catch (error: any) {
+      console.error('Error fetching training progress:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // HOLIDAY PACKAGES
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/holidays/packages
+   * Get all holiday packages
+   * Requires 'holiday_packages' capability
+   */
+  app.get("/vendor/:vendorId/holidays/packages", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has holiday capability
+      const hasHolidayCapability = await checkVendorCapability(vendorId, 'holiday_packages');
+      if (!hasHolidayCapability) {
+        return c.json({ error: 'Vendor does not have holiday packages capability' }, 403);
+      }
+      
+      const packages = await query(`
+        SELECT * FROM holiday_packages
+        WHERE vendor_id = $1
+        ORDER BY created_at DESC
+      `, [vendorId]).catch(() => ({ rows: [] }));
+      
+      return c.json({ success: true, packages: packages.rows, total: packages.rows.length });
+    } catch (error: any) {
+      console.error('Error fetching holiday packages:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/holidays/packages
+   * Create a new holiday package
+   * Requires 'holiday_packages' capability
+   */
+  app.post("/vendor/:vendorId/holidays/packages", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has holiday capability
+      const hasHolidayCapability = await checkVendorCapability(vendorId, 'holiday_packages');
+      if (!hasHolidayCapability) {
+        return c.json({ error: 'Vendor does not have holiday packages capability' }, 403);
+      }
+      
+      const packageData = await c.req.json();
+      
+      const pkg = await insert('holiday_packages', {
+        vendor_id: vendorId,
+        name: packageData.name,
+        description: packageData.description,
+        destination: packageData.destination,
+        duration_days: packageData.durationDays || packageData.duration_days || 3,
+        price: packageData.price || 0,
+        max_pets: packageData.maxPets || packageData.max_pets || 10,
+        pet_types_allowed: packageData.petTypesAllowed || ['dog', 'cat'],
+        includes: packageData.includes || [],
+        excludes: packageData.excludes || [],
+        itinerary: packageData.itinerary || [],
+        next_departure: packageData.nextDeparture || null,
+        is_active: packageData.isActive !== false,
+      });
+      
+      return c.json({ success: true, package: pkg[0], message: 'Holiday package created successfully' });
+    } catch (error: any) {
+      console.error('Error creating holiday package:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/holidays/schedule
+   * Get upcoming tour schedule
+   * Requires 'tour_schedule' capability
+   */
+  app.get("/vendor/:vendorId/holidays/schedule", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has tour schedule capability
+      const hasTourCapability = await checkVendorCapability(vendorId, 'tour_schedule');
+      if (!hasTourCapability) {
+        return c.json({ error: 'Vendor does not have tour schedule capability' }, 403);
+      }
+      
+      const schedule = await query(`
+        SELECT hp.*, hb.departure_date, COUNT(hb.id) as booking_count
+        FROM holiday_packages hp
+        LEFT JOIN holiday_bookings hb ON hp.id = hb.package_id AND hb.booking_status != 'cancelled'
+        WHERE hp.vendor_id = $1
+        AND hp.is_active = true
+        GROUP BY hp.id, hb.departure_date
+        ORDER BY hp.next_departure ASC NULLS LAST
+      `, [vendorId]).catch(() => ({ rows: [] }));
+      
+      return c.json({ success: true, schedule: schedule.rows, total: schedule.rows.length });
+    } catch (error: any) {
+      console.error('Error fetching tour schedule:', error);
       return c.json({ error: error.message }, 500);
     }
   });

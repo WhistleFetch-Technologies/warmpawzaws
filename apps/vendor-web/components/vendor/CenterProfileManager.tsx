@@ -14,7 +14,7 @@ import { SpecializationSelector } from './SpecializationSelector';
 
 interface CenterProfileManagerProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onBack: () => void;
 }
 

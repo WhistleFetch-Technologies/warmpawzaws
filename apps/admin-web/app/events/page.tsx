@@ -27,15 +27,23 @@ import { toast } from 'sonner';
 interface Event {
   id: string;
   title: string;
+  name?: string;
   description: string;
   start_date: string;
   end_date: string;
   location: string;
   max_participants?: number;
   current_participants?: number;
-  status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
+  status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled' | 'draft' | 'published';
   category?: string;
   created_at: string;
+  approval_status?: 'pending' | 'approved' | 'rejected';
+  created_by?: 'admin' | 'vendor';
+  reviewed_by?: string;
+  reviewed_at?: string;
+  rejection_reason?: string;
+  vendor_id?: string;
+  vendor_name?: string;
 }
 
 export default function EventManagementPage() {
@@ -43,6 +51,10 @@ export default function EventManagementPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterApproval, setFilterApproval] = useState<string>('all');
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvingEvent, setApprovingEvent] = useState<Event | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -86,17 +98,53 @@ export default function EventManagementPage() {
   });
 
   const completedEvents = events.filter(e => e.status === 'completed');
-  const pendingApproval = events.filter(e => e.status === 'upcoming').length;
+  const pendingApproval = events.filter(e => e.approval_status === 'pending').length;
+
+  const handleApprove = async (eventId: string) => {
+    try {
+      await apiClient.post(`/admin/events/${eventId}/approve`);
+      toast.success('Event approved successfully');
+      loadEvents();
+      setApprovalModalOpen(false);
+      setApprovingEvent(null);
+    } catch (error: any) {
+      console.error('Error approving event:', error);
+      toast.error(error.message || 'Failed to approve event');
+    }
+  };
+
+  const handleReject = async () => {
+    if (!approvingEvent) return;
+    if (!rejectionReason.trim()) {
+      toast.error('Please provide a rejection reason');
+      return;
+    }
+    
+    try {
+      await apiClient.post(`/admin/events/${approvingEvent.id}/reject`, {
+        reason: rejectionReason,
+      });
+      toast.success('Event rejected');
+      loadEvents();
+      setApprovalModalOpen(false);
+      setApprovingEvent(null);
+      setRejectionReason('');
+    } catch (error: any) {
+      console.error('Error rejecting event:', error);
+      toast.error(error.message || 'Failed to reject event');
+    }
+  };
 
   const filteredEvents = events.filter(event => {
     const matchesSearch = 
-      event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (event.title || event.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       event.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       event.location?.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesFilter = filterStatus === 'all' || event.status === filterStatus;
+    const matchesApproval = filterApproval === 'all' || event.approval_status === filterApproval;
     
-    return matchesSearch && matchesFilter;
+    return matchesSearch && matchesFilter && matchesApproval;
   });
 
   const handleEdit = (event: Event) => {
@@ -204,10 +252,21 @@ export default function EventManagementPage() {
                 >
                   <option value="all">All Status</option>
                   <option value="draft">Draft</option>
+                  <option value="published">Published</option>
                   <option value="upcoming">Upcoming</option>
                   <option value="ongoing">Ongoing</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
+                </select>
+                <select
+                  value={filterApproval}
+                  onChange={(e) => setFilterApproval(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20 outline-none text-sm"
+                >
+                  <option value="all">All Approval</option>
+                  <option value="pending">Pending Approval</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
                 </select>
               </div>
             </div>
@@ -354,16 +413,38 @@ export default function EventManagementPage() {
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <h4 className="font-semibold text-gray-900">{event.title}</h4>
+                        <h4 className="font-semibold text-gray-900">{event.title || event.name}</h4>
                         <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(event.status)}`}>
                           {event.status}
                         </span>
+                        {event.approval_status && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded ${
+                            event.approval_status === 'approved' ? 'bg-green-100 text-green-800' :
+                            event.approval_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {event.approval_status === 'approved' ? '✓ Approved' :
+                             event.approval_status === 'pending' ? '⏳ Pending' :
+                             '✗ Rejected'}
+                          </span>
+                        )}
+                        {event.created_by === 'vendor' && (
+                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+                            Vendor Created
+                          </span>
+                        )}
                         {event.category && (
                           <span className="px-2 py-1 text-xs font-medium bg-gray-200 text-gray-700 rounded">
                             {event.category}
                           </span>
                         )}
                       </div>
+                      {event.vendor_name && (
+                        <p className="text-xs text-gray-500 mb-1">Created by: {event.vendor_name}</p>
+                      )}
+                      {event.rejection_reason && (
+                        <p className="text-xs text-red-600 mb-1">Rejection reason: {event.rejection_reason}</p>
+                      )}
                       <div className="flex items-center gap-4 text-sm text-gray-600">
                         <span className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
@@ -384,6 +465,28 @@ export default function EventManagementPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {event.approval_status === 'pending' && (
+                        <>
+                          <EnhancedButton
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleApprove(event.id)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            Approve
+                          </EnhancedButton>
+                          <EnhancedButton
+                            variant="danger"
+                            size="sm"
+                            onClick={() => {
+                              setApprovingEvent(event);
+                              setApprovalModalOpen(true);
+                            }}
+                          >
+                            Reject
+                          </EnhancedButton>
+                        </>
+                      )}
                       <EnhancedButton
                         variant="outline"
                         size="sm"
@@ -492,6 +595,58 @@ export default function EventManagementPage() {
           <Plus className="w-6 h-6 text-white" />
         </button>
       </div>
+      {/* Rejection Modal */}
+      {approvalModalOpen && approvingEvent && (
+        <EnhancedModal
+          isOpen={approvalModalOpen}
+          onClose={() => {
+            setApprovalModalOpen(false);
+            setApprovingEvent(null);
+            setRejectionReason('');
+          }}
+          title="Reject Event"
+          subtitle={`Reject "${approvingEvent.title || approvingEvent.name}"`}
+          icon={<AlertCircle className="w-5 h-5" />}
+          footer={
+            <div className="flex justify-end gap-3">
+              <EnhancedButton
+                variant="outline"
+                onClick={() => {
+                  setApprovalModalOpen(false);
+                  setApprovingEvent(null);
+                  setRejectionReason('');
+                }}
+              >
+                Cancel
+              </EnhancedButton>
+              <EnhancedButton
+                variant="danger"
+                onClick={handleReject}
+              >
+                Reject Event
+              </EnhancedButton>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Rejection Reason <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent resize-none"
+                rows={4}
+                placeholder="Please provide a reason for rejecting this event..."
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This reason will be visible to the vendor
+              </p>
+            </div>
+          </div>
+        </EnhancedModal>
+      )}
     </AdminLayout>
   );
 }

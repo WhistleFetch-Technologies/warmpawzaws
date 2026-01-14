@@ -140,7 +140,11 @@ export default function AuthPage() {
     
     // Route based on state and onboarding status
     // For active vendors, go directly to home page (which shows dashboard)
-    if (onboardingStatus === 'ACTIVATED' || (responseState === 'existing' && session.vendorId && !onboardingStatus)) {
+    // ✅ FIX: Include 'APPROVED' as an active status (vendors are active once approved)
+    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '') || 
+                           (responseState === 'existing' && session.vendorId && !onboardingStatus);
+    
+    if (isActiveVendor) {
       // Existing active vendor - go directly to home (dashboard)
       console.log('✅ [AuthPage] Active vendor - routing to home (dashboard)');
       router.replace('/');

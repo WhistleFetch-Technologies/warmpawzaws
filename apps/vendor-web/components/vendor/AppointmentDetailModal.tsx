@@ -14,7 +14,7 @@ import { CommunicationHub } from '../communication/CommunicationHub';
 
 interface AppointmentDetailModalProps {
   bookingId: string;
-  vendorData: any;
+  vendorData?: any;
   onClose: () => void;
   onRefresh?: () => void;
 }

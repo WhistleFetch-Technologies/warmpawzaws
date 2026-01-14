@@ -143,6 +143,62 @@ export function registerCustomerProfileEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/profile (query string phone)
+   * IMPORTANT: Must be registered BEFORE /customer/profile/:identifier
+   * Alias for getting profile with phone as query param
+   */
+  app.get("/customer/profile", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      if (!phone) {
+        return c.json({ error: 'Phone number is required as query param' }, 400);
+      }
+
+      const cleanPhone = normalizePhone(phone);
+      const customers = await select('customers', { phone: cleanPhone });
+      
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customer = customers[0];
+      
+      // Get pets for this customer
+      const pets = await select('pets', { customer_id: customer.id }).catch(() => []);
+      
+      return c.json({
+        success: true,
+        profile: {
+          id: customer.id,
+          phone: customer.phone,
+          name: customer.full_name,
+          email: customer.email,
+          address: customer.address,
+          pincode: customer.pincode,
+          city: customer.city,
+          state: customer.state,
+          photo: customer.profile_photo_url,
+          status: customer.status,
+          onboarding_status: customer.onboarding_status,
+          profile_completed: customer.profile_completed,
+          createdAt: customer.created_at,
+          pets: pets.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            type: p.species,
+            breed: p.breed,
+            age: p.age_years,
+            gender: p.gender,
+          })),
+        }
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer profile by query:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /customer/profile/:identifier
    * Get customer profile (basic)
    */
@@ -517,6 +573,171 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating customer preferences:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/by-phone
+   * Get customer by phone number (query string format)
+   */
+  app.get("/customer/by-phone", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      if (!phone) {
+        return c.json({ error: 'Phone number is required' }, 400);
+      }
+
+      const cleanPhone = normalizePhone(phone);
+      const customers = await select('customers', { phone: cleanPhone });
+      
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found', customer: null }, 404);
+      }
+
+      const customer = customers[0];
+      return c.json({
+        success: true,
+        customer: {
+          id: customer.id,
+          phone: customer.phone,
+          name: customer.full_name,
+          email: customer.email,
+          status: customer.status,
+          onboarding_status: customer.onboarding_status,
+          profile_completed: customer.profile_completed,
+          createdAt: customer.created_at,
+        }
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer by phone:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/:customerId/search-history
+   * Get customer's search history
+   */
+  app.get("/customer/:customerId/search-history", async (c) => {
+    try {
+      const customerId = c.req.param('customerId');
+      
+      // Check if customer exists
+      const customer = await resolveCustomerId(customerId);
+      if (!customer) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      // Try to get search history from preferences or a dedicated table
+      const customers = await select('customers', { id: customer });
+      const preferences = customers[0]?.preferences as any || {};
+      const searchHistory = preferences.searchHistory || [];
+
+      return c.json({
+        success: true,
+        history: searchHistory,
+        count: searchHistory.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching search history:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/:customerId/search-history
+   * Add to customer's search history
+   */
+  app.post("/customer/:customerId/search-history", async (c) => {
+    try {
+      const customerId = c.req.param('customerId');
+      const body = await c.req.json();
+      const { query: searchQuery } = body;
+
+      if (!searchQuery) {
+        return c.json({ error: 'Search query is required' }, 400);
+      }
+
+      const customer = await resolveCustomerId(customerId);
+      if (!customer) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customers = await select('customers', { id: customer });
+      const preferences = customers[0]?.preferences as any || {};
+      let searchHistory = preferences.searchHistory || [];
+
+      // Add to history (keep last 20)
+      searchHistory = [
+        { query: searchQuery, timestamp: new Date().toISOString() },
+        ...searchHistory.filter((h: any) => h.query !== searchQuery)
+      ].slice(0, 20);
+
+      await update('customers', { id: customer }, {
+        preferences: { ...preferences, searchHistory }
+      });
+
+      return c.json({ success: true, history: searchHistory });
+    } catch (error: any) {
+      console.error('Error saving search history:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/search-suggestions
+   * Get search suggestions for customer
+   */
+  app.get("/customer/search-suggestions", async (c) => {
+    try {
+      const customerId = c.req.query('customerId');
+      
+      // Get popular services/products as suggestions
+      const suggestions = [
+        { type: 'service', text: 'Vet Consultation', icon: '🏥' },
+        { type: 'service', text: 'Home Grooming', icon: '✂️' },
+        { type: 'service', text: 'Dog Walker', icon: '🐕' },
+        { type: 'service', text: 'Pet Training', icon: '🎓' },
+        { type: 'product', text: 'Dog Food', icon: '🍖' },
+        { type: 'product', text: 'Pet Toys', icon: '🧸' },
+        { type: 'product', text: 'Grooming Kit', icon: '🛁' },
+      ];
+
+      return c.json({
+        success: true,
+        suggestions,
+        count: suggestions.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching suggestions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /customer/:customerId/search-history
+   * Clear customer's search history
+   */
+  app.delete("/customer/:customerId/search-history", async (c) => {
+    try {
+      const customerId = c.req.param('customerId');
+      
+      const customer = await resolveCustomerId(customerId);
+      if (!customer) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customers = await select('customers', { id: customer });
+      const preferences = customers[0]?.preferences as any || {};
+
+      await update('customers', { id: customer }, {
+        preferences: { ...preferences, searchHistory: [] }
+      });
+
+      return c.json({ success: true, message: 'Search history cleared' });
+    } catch (error: any) {
+      console.error('Error clearing search history:', error);
       return c.json({ error: error.message }, 500);
     }
   });

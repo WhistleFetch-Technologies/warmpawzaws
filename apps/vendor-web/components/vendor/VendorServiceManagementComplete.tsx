@@ -13,7 +13,7 @@ import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
-  vendorData: any;
+  vendorData?: any;
   onBack: () => void;
   fromStaffManagement?: boolean; // ✅ NEW: Track if we came from staff management
 }

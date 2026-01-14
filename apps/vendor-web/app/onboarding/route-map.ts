@@ -95,12 +95,12 @@ export const ONBOARDING_ROUTES: Record<string, RouteConfig> = {
     redirectIfNotAllowed: '/onboarding/status',
   },
 
-  // Phase 8: Dashboard (Post-Activation)
+  // Phase 8: Dashboard (Post-Activation or Approved)
   '/dashboard': {
     path: '/dashboard',
     component: 'VendorDashboard',
     requiresAuth: true,
-    allowedStatuses: ['ACTIVATED'],
+    allowedStatuses: ['ACTIVATED', 'APPROVED'], // ✅ FIX: Allow APPROVED vendors
     redirectIfNotAllowed: '/onboarding/status',
   },
 };
@@ -115,7 +115,7 @@ export function getRouteForStatus(status: OnboardingStatus): string {
     FORM_PENDING: '/onboarding/form',
     UNDER_REVIEW: '/onboarding/pending-review',
     CLARIFICATION_REQUIRED: '/onboarding/clarification',
-    APPROVED: '/onboarding/approved',
+    APPROVED: '/dashboard', // ✅ FIX: Route approved vendors directly to dashboard
     REJECTED: '/onboarding/rejected',
     ACTIVATED: '/dashboard',
   };
