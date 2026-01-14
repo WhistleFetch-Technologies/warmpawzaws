@@ -704,31 +704,90 @@ export default function MarketingPromotionsTab() {
 												return uiConfig.map((btn: any, index: number) => (
 													<div
 														key={btn.id}
-														className="flex items-center justify-between p-4 border rounded-lg bg-gray-50"
+														className="p-4 border rounded-lg bg-gray-50 space-y-3"
 													>
-														<div className="flex items-center gap-3">
-															<div className="w-10 h-10 bg-white rounded-lg border flex items-center justify-center">
-																<span className="text-xs font-bold text-gray-500">
-																	{btn.icon}
-																</span>
-															</div>
-															<div>
-																<div className="font-medium">{btn.label}</div>
-																<div className="text-xs text-gray-500 font-mono">
-																	{btn.id}
+														<div className="flex items-center justify-between">
+															<div className="flex items-center gap-3">
+																<div className="w-10 h-10 bg-white rounded-lg border flex items-center justify-center">
+																	<span className="text-xs font-bold text-gray-500">
+																		{btn.icon || "🔘"}
+																	</span>
+																</div>
+																<div className="flex-1">
+																	<div className="font-medium">{btn.label || btn.id}</div>
+																	<div className="text-xs text-gray-500 font-mono">
+																		ID: {btn.id}
+																	</div>
+																	{btn.serviceId && (
+																		<div className="text-xs text-gray-400 font-mono">
+																			Service: {btn.serviceId}
+																		</div>
+																	)}
 																</div>
 															</div>
+															<div className="flex items-center gap-2">
+																<span
+																	className={`text-xs font-medium ${btn.enabled ? "text-green-600" : "text-gray-400"}`}
+																>
+																	{btn.enabled ? "Visible" : "Hidden"}
+																</span>
+																<Switch
+																	checked={btn.enabled}
+																	onCheckedChange={() => handleToggleService(index)}
+																/>
+															</div>
 														</div>
-														<div className="flex items-center gap-2">
-															<span
-																className={`text-xs font-medium ${btn.enabled ? "text-green-600" : "text-gray-400"}`}
-															>
-																{btn.enabled ? "Visible" : "Hidden"}
-															</span>
-															<Switch
-																checked={btn.enabled}
-																onCheckedChange={() => handleToggleService(index)}
-															/>
+														
+														{/* Advanced Configuration */}
+														<div className="pt-2 border-t space-y-2">
+															<div className="grid grid-cols-2 gap-2 text-xs">
+																<div>
+																	<span className="text-gray-500 block mb-1">Launch Phase:</span>
+																	<Select
+																		value={btn.launchPhase || "full"}
+																		onValueChange={(value) => {
+																			const newConfig = [...uiConfig];
+																			newConfig[index].launchPhase = value;
+																			setUiConfig(newConfig);
+																		}}
+																	>
+																		<SelectTrigger className="h-8 text-xs">
+																			<SelectValue />
+																		</SelectTrigger>
+																		<SelectContent>
+																			<SelectItem value="coming_soon">Coming Soon</SelectItem>
+																			<SelectItem value="beta">Beta</SelectItem>
+																			<SelectItem value="full">Full Launch</SelectItem>
+																		</SelectContent>
+																	</Select>
+																</div>
+																<div>
+																	<span className="text-gray-500 block mb-1">Rollout %:</span>
+																	<Input
+																		type="number"
+																		min="0"
+																		max="100"
+																		value={btn.rolloutPercentage || 100}
+																		onChange={(e) => {
+																			const newConfig = [...uiConfig];
+																			newConfig[index].rolloutPercentage = parseInt(e.target.value) || 100;
+																			setUiConfig(newConfig);
+																		}}
+																		className="h-8 text-xs"
+																		placeholder="100"
+																	/>
+																</div>
+															</div>
+															{btn.launchPhase === "coming_soon" && (
+																<div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+																	⚠️ Service will be blocked from booking
+																</div>
+															)}
+															{btn.launchPhase === "beta" && (
+																<div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+																	ℹ️ Service available for beta users only
+																</div>
+															)}
 														</div>
 													</div>
 												));

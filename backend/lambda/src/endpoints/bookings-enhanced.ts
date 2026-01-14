@@ -27,6 +27,7 @@ import { query, select, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
 import { calculateStaffETA } from '../utils/commute-time-calculator';
+import { validateServiceAvailability } from '../utils/service-availability-validator';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -140,10 +141,78 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     // Validate service exists
     const services = await select('services', { id: serviceId });
-    if (services.length === 0) {
+    let service = services.length > 0 ? services[0] : null;
+    
+    if (!service) {
       const vendorServices = await select('vendor_services', { id: serviceId });
       if (vendorServices.length === 0) {
         return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+      }
+      service = vendorServices[0];
+    }
+
+    // Get vendor's role to validate service availability
+    let roleId: string | null = null;
+    try {
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length > 0) {
+        roleId = vendors[0].role_id || vendors[0].roleId || null;
+        
+        // If no role_id, try to get from vendor_roles table
+        if (!roleId) {
+          const vendorRoles = await query(
+            `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
+            [vendorId]
+          );
+          if (vendorRoles.rows.length > 0) {
+            roleId = vendorRoles.rows[0].role_id;
+          }
+        }
+        
+        // Fallback: try to infer from vendor type
+        if (!roleId && vendors[0].vendor_type) {
+          const vendorType = vendors[0].vendor_type.toLowerCase();
+          // Map common vendor types to role codes
+          const typeToRole: Record<string, string> = {
+            'veterinarian': 'veterinarian',
+            'vet': 'veterinarian',
+            'groomer': 'groomer',
+            'grooming': 'groomer',
+            'walker': 'walker',
+            'trainer': 'trainer',
+            'training': 'trainer',
+          };
+          roleId = typeToRole[vendorType] || vendorType;
+        }
+      }
+    } catch (error) {
+      console.warn('[Booking] Could not fetch vendor role, skipping availability check:', error);
+    }
+
+    // Validate service availability (Dashboard UI config + role restrictions)
+    if (roleId) {
+      const availabilityResult = await validateServiceAvailability(
+        serviceId,
+        roleId,
+        customerId
+      );
+
+      if (!availabilityResult.available) {
+        const errorMessage = availabilityResult.reason || 'Service is not available';
+        const errorCode = availabilityResult.code || 'SERVICE_UNAVAILABLE';
+        
+        return this.error(
+          errorMessage,
+          403,
+          errorCode,
+          { 
+            serviceId,
+            roleId,
+            reason: availabilityResult.reason,
+            code: availabilityResult.code
+          },
+          requestId
+        );
       }
     }
 
