@@ -65,13 +65,35 @@ export function VendorDashboardScreen({
 
       // ✅ AWS Lambda: Using vendor dashboard endpoint with Cognito auth
       console.log(`[VendorDashboardScreen] Loading dashboard data for vendor: ${vendorId}`);
-      const dashboardResponse = await apiClient.get<{
-        success?: boolean;
-        data?: {
-          stats?: DashboardStats;
-          bookings?: ScheduleItem[];
-        };
-      }>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`);
+      
+      // ✅ FIX: Try both endpoint formats in case of routing differences
+      let dashboardResponse: any;
+      try {
+        dashboardResponse = await apiClient.get<{
+          success?: boolean;
+          data?: {
+            stats?: DashboardStats;
+            bookings?: any[]; // Changed to any[] since we transform it
+            vendor?: any;
+          };
+        }>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`);
+      } catch (err: any) {
+        // If endpoint with vendorId fails, try the profile-based endpoint
+        console.warn(`[VendorDashboardScreen] Endpoint with vendorId failed, trying profile endpoint:`, err.message);
+        try {
+          const profileResponse = await apiClient.get<any>('/vendor/profile');
+          if (profileResponse?.vendor?.id) {
+            const correctVendorId = profileResponse.vendor.id;
+            console.log(`[VendorDashboardScreen] Using vendor ID from profile: ${correctVendorId}`);
+            dashboardResponse = await apiClient.get<any>(`/vendor/dashboard/${correctVendorId}?timeframe=${activeTab}`);
+          } else {
+            throw new Error('Could not get vendor ID from profile');
+          }
+        } catch (profileErr: any) {
+          console.error(`[VendorDashboardScreen] Both endpoints failed:`, profileErr.message);
+          throw err; // Throw original error
+        }
+      }
 
       if (dashboardResponse.success && dashboardResponse.data) {
         const data = dashboardResponse.data;
@@ -87,8 +109,32 @@ export function VendorDashboardScreen({
         });
 
         // Set today's schedule if available
-        if (data.bookings) {
-          setTodaySchedule(data.bookings.slice(0, 5)); // Show first 5 bookings
+        // ✅ FIX: Transform bookings to match ScheduleItem interface
+        if (data.bookings && Array.isArray(data.bookings)) {
+          const transformedBookings: ScheduleItem[] = data.bookings.slice(0, 5).map((booking: any) => {
+            // Extract time from booking_date and booking_time, or use scheduled_time
+            let time = 'N/A';
+            if (booking.booking_time) {
+              time = booking.booking_time;
+            } else if (booking.scheduled_time) {
+              // Parse ISO datetime if needed
+              const date = new Date(booking.scheduled_time);
+              time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            } else if (booking.booking_date) {
+              time = booking.booking_date.split('T')[1]?.substring(0, 5) || 'N/A';
+            }
+            
+            return {
+              id: booking.id || booking.booking_id || String(Math.random()),
+              bookingId: booking.booking_id || booking.id || String(Math.random()),
+              time: time,
+              customerName: booking.customer_name || booking.customer?.name || 'Customer',
+              serviceName: booking.service_name || booking.service?.name || booking.service_type || 'Service',
+              status: booking.status || 'pending',
+              price: parseFloat(booking.total_amount || booking.amount || 0),
+            };
+          });
+          setTodaySchedule(transformedBookings);
         }
       } else {
         // Fallback to basic stats
@@ -187,8 +233,8 @@ export function VendorDashboardScreen({
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
               onClick={() => setActiveTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -232,10 +278,10 @@ export function VendorDashboardScreen({
                 className="text-orange-500 text-sm font-medium"
               >
                 See All
-              </button>
-            </div>
+            </button>
+          </div>
 
-            {todaySchedule.length > 0 ? (
+          {todaySchedule.length > 0 ? (
               <div className="divide-y divide-gray-200">
                 {todaySchedule.map((item) => (
                   <button
@@ -264,8 +310,8 @@ export function VendorDashboardScreen({
               <div className="p-8 text-center">
                 <div className="text-4xl mb-2">📅</div>
                 <p className="text-gray-500">No appointments scheduled for today</p>
-              </div>
-            )}
+            </div>
+          )}
           </div>
         </div>
 

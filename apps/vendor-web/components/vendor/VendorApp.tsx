@@ -85,9 +85,27 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           localStorage.setItem('vendorApplicationStatus', onboardingStatus);
         }
         
+        // ✅ FIX: For APPROVED/ACTIVATED vendors, fetch vendor profile to get correct vendor.id
+        let vendorId = identity.vendor_id || identity.id;
+        if ((onboardingStatus === 'APPROVED' || onboardingStatus === 'ACTIVATED')) {
+          try {
+            console.log('📊 [VendorApp] Fetching vendor profile to get correct vendor ID...');
+            const profileResponse = await apiClient.get<any>('/vendor/profile');
+            if (profileResponse?.vendor?.id) {
+              vendorId = profileResponse.vendor.id;
+              console.log('✅ [VendorApp] Got vendor ID from profile:', vendorId);
+              // Merge profile data with identity data
+              Object.assign(identity, { vendor_id: vendorId });
+            }
+          } catch (profileError: any) {
+            console.warn('⚠️ [VendorApp] Could not fetch vendor profile, using identity ID:', profileError.message);
+            // Continue with identity.id as fallback
+          }
+        }
+        
         // Update localStorage with identity and application data
         const vendorData: any = {
-          id: identity.vendor_id || identity.id,
+          id: vendorId, // ✅ Use correct vendor ID (from vendors table if available)
           phone: identity.phone,
           email: identity.email,
           onboarding_status: onboardingStatus,
