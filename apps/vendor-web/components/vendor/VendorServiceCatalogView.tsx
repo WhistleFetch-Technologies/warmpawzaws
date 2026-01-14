@@ -85,6 +85,7 @@ export function VendorServiceCatalogView({
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [roleAllowedStyles, setRoleAllowedStyles] = useState<string[]>([]); // ✅ NEW: Store allowed styles from API
+  const [vendorRoleName, setVendorRoleName] = useState<string>(''); // ✅ NEW: Store role name for filtering
 
   useEffect(() => {
     loadCatalogData();
@@ -92,7 +93,7 @@ export function VendorServiceCatalogView({
 
   useEffect(() => {
     groupServicesByCategory();
-  }, [services, searchQuery, activeStyle, vendorData, roleAllowedStyles]);
+  }, [services, searchQuery, activeStyle, vendorData, roleAllowedStyles, vendorRoleName]);
 
   const loadCatalogData = async () => {
     try {
@@ -149,15 +150,21 @@ export function VendorServiceCatalogView({
         setVendorServices(vendorServicesList);
       }
 
-      // ✅ Load role configuration to get allowed service styles
+      // ✅ Load role configuration to get allowed service styles AND role name
       const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
       if (vendorRoleId) {
         try {
           const roleConfigData = await apiClient.get(`/config/roles/${vendorRoleId}`) as any;
-          if (roleConfigData && roleConfigData.config) {
+          if (roleConfigData) {
+            // ✅ Extract role name for service filtering (services use role names, not IDs)
+            const roleName = roleConfigData.name || roleConfigData.roleName || roleConfigData.roleCode || '';
+            console.log('📋 [CATALOG] Role name from config:', roleName);
+            setVendorRoleName(roleName.toLowerCase());
+            
             const rawStyles = roleConfigData.config?.serviceStyles || 
                                   roleConfigData.config?.allowedServiceStyles || 
                                   roleConfigData.allowedServiceStyles ||
+                                  roleConfigData.serviceStyles ||
                                   ['at_home', 'at_center', 'tele'];
             
             // ✅ FIX: Map role config naming to service catalog naming
@@ -214,20 +221,27 @@ export function VendorServiceCatalogView({
     console.log('🔍 [GROUPING] Vendor roleId:', vendorRoleId);
     console.log('🔍 [GROUPING] Allowed service styles:', effectiveAllowedStyles);
 
-    // 1. ✅ STRICT Role Filter - Only show services for vendor's role
-    if (vendorRoleId) {
+    // 1. ✅ Role Filter - Use role NAME (not ID) to match service applicable_roles
+    if (vendorRoleName) {
       const beforeFilter = filteredServices.length;
-      filteredServices = filteredServices.filter(service => isServiceApplicable(service, vendorRoleId));
-      console.log('🔍 [GROUPING] After role filter:', filteredServices.length, 'services (filtered out:', beforeFilter - filteredServices.length, ')');
+      const roleFilteredServices = filteredServices.filter(service => isServiceApplicable(service, vendorRoleName));
+      console.log('🔍 [GROUPING] After role filter:', roleFilteredServices.length, 'services (filtered out:', beforeFilter - roleFilteredServices.length, ')');
+      console.log('🔍 [GROUPING] Using role name for filter:', vendorRoleName);
       
-      if (filteredServices.length === 0 && services.length > 0) {
-        console.error('❌ [GROUPING] ALL SERVICES FILTERED OUT BY ROLE!');
-        console.error('Sample service applicableRoles:', services[0]?.applicableRoles);
-        console.error('Vendor roleId:', vendorRoleId);
+      if (roleFilteredServices.length === 0 && services.length > 0) {
+        // ✅ FALLBACK: If no services specifically for this role, show ALL services
+        // This handles cases where the catalog doesn't have role-specific services yet
+        console.warn('⚠️ [GROUPING] No services match vendor role:', vendorRoleName, '- showing all services as fallback');
+        console.log('Sample service applicable_roles:', (services[0] as any)?.applicable_roles || services[0]?.applicableRoles);
+        // Keep filteredServices as-is (don't apply role filter)
+      } else {
+        filteredServices = roleFilteredServices;
       }
+    } else if (vendorRoleId) {
+      // Fallback: if role name not loaded yet but we have roleId, show all services temporarily
+      console.warn('⚠️ [GROUPING] Role name not loaded yet, showing all services');
     } else {
-      console.warn('⚠️ [GROUPING] No vendor roleId found - showing NO services (must have role)');
-      filteredServices = []; // ✅ STRICT: Don't show any services without roleId
+      console.warn('⚠️ [GROUPING] No vendor role found - showing all services');
     }
 
     // 2. ✅ Filter by allowed service styles from role config (only if styles are loaded)
@@ -302,10 +316,10 @@ export function VendorServiceCatalogView({
     setGroupedServices(result);
   };
 
-  const isServiceApplicable = (service: ServiceCatalogItem, vendorRoleId: string): boolean => {
-    // ✅ STRICT: Vendor MUST have a roleId
-    if (!vendorRoleId) {
-      return false;
+  const isServiceApplicable = (service: ServiceCatalogItem, roleName: string): boolean => {
+    // If no role name provided, show all services
+    if (!roleName) {
+      return true;
     }
 
     // ✅ FIX: Handle both camelCase and snake_case field names from API
@@ -313,9 +327,8 @@ export function VendorServiceCatalogView({
                                (service as any).applicable_roles || 
                                [];
 
-    // If service has no applicable roles defined, check if it's a universal service
+    // If service has no applicable roles defined, it's a universal service
     if (!rawApplicableRoles || rawApplicableRoles.length === 0) {
-      // Universal service - allowed for all roles if service style is permitted
       return true;
     }
 
@@ -333,10 +346,37 @@ export function VendorServiceCatalogView({
       }
     }
 
-    // ✅ STRICT: Check if vendor's role is in the service's applicable roles
-    const isApplicable = applicableRoles.includes(vendorRoleId);
+    // ✅ FIX: Normalize role names for comparison (lowercase, handle variations)
+    const normalizedRoleName = roleName.toLowerCase();
+    const normalizedApplicableRoles = applicableRoles.map(r => r.toLowerCase());
     
-    return isApplicable;
+    // Check direct match
+    if (normalizedApplicableRoles.includes(normalizedRoleName)) {
+      return true;
+    }
+    
+    // ✅ Check role name variations (e.g., "veterinarian" matches "vet", "veterinary_clinic", etc.)
+    const roleVariations: { [key: string]: string[] } = {
+      'veterinarian': ['vet', 'veterinary', 'veterinary_clinic', 'vet_clinic', 'animal_hospital'],
+      'pet_groomer': ['groomer', 'grooming', 'pet_grooming'],
+      'pet_boarder': ['boarder', 'boarding', 'pet_boarding', 'kennel'],
+      'pet_trainer': ['trainer', 'training', 'pet_training', 'dog_trainer'],
+      'pet_walker': ['walker', 'walking', 'dog_walker', 'pet_walking'],
+      'pet_sitter': ['sitter', 'sitting', 'pet_sitting'],
+    };
+    
+    // Check if any variation matches
+    for (const [mainRole, variations] of Object.entries(roleVariations)) {
+      if (normalizedRoleName === mainRole || variations.includes(normalizedRoleName)) {
+        // Check if the service applies to any variation of this role
+        if (normalizedApplicableRoles.includes(mainRole) || 
+            variations.some(v => normalizedApplicableRoles.includes(v))) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   };
 
   const isServiceAdded = (service: ServiceCatalogItem): boolean => {
@@ -373,8 +413,16 @@ export function VendorServiceCatalogView({
     });
   };
 
+  const getServiceKey = (service: ServiceCatalogItem | any): string => {
+    // Handle both camelCase and snake_case property names from API
+    const catalogId = service.catalogId || (service as any).id || (service as any).catalog_id;
+    const categoryName = service.categoryName || (service as any).category_name || 'unknown';
+    const serviceName = service.serviceName || (service as any).service_name || (service as any).display_name || 'unknown';
+    return catalogId || `${categoryName}_${serviceName}`;
+  };
+
   const toggleServiceSelection = (service: ServiceCatalogItem) => {
-    const serviceKey = service.catalogId || `${service.categoryName}_${service.serviceName}`;
+    const serviceKey = getServiceKey(service);
     
     setSelectedServices(prev => {
       const newSet = new Set(prev);
@@ -388,7 +436,7 @@ export function VendorServiceCatalogView({
   };
 
   const isServiceSelected = (service: ServiceCatalogItem): boolean => {
-    const serviceKey = service.catalogId || `${service.categoryName}_${service.serviceName}`;
+    const serviceKey = getServiceKey(service);
     return selectedServices.has(serviceKey);
   };
 
