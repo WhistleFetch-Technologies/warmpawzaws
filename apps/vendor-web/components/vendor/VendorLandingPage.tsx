@@ -22,7 +22,7 @@ import { VendorApprovedSetup } from './VendorApprovedSetup';
 import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
 import { VendorSetupCompleted } from './VendorSetupCompleted';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorDashboard } from './VendorDashboard';
+import { VendorDashboardScreen } from './dashboard/VendorDashboardScreen';
 import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
 import { VendorConsultationScreen } from './VendorConsultationScreen';
@@ -182,6 +182,31 @@ export function VendorLandingPage({
   });
   
   useEffect(() => {
+    // 🔒 Fast-path: if localStorage already knows we're approved/activated, show dashboard immediately
+    if (typeof window !== 'undefined') {
+      const storedStatus = localStorage.getItem('vendorApplicationStatus');
+      const storedVendor = localStorage.getItem('vendorData');
+      if (storedStatus && ['APPROVED', 'ACTIVATED'].includes(storedStatus)) {
+        console.log('✅ [VendorLandingPage] Fast-path: APPROVED/ACTIVATED vendor detected, showing dashboard');
+        setStatus('active');
+        if (storedVendor) {
+          try {
+            const vendor = JSON.parse(storedVendor);
+            setVendorData(vendor);
+            // Ensure vendor data has active status
+            if (!vendor.status || vendor.status !== 'active') {
+              vendor.status = 'active';
+              vendor.isActive = true;
+            }
+          } catch {
+            // ignore parse errors
+          }
+        }
+        setLoading(false);
+        return; // ✅ Return early to skip onboarding flow
+      }
+    }
+
     // If we have initial vendor data, use it instead of fetching
     if (initialVendorData) {
       console.log('📦 Using initial vendor data:', initialVendorData);
@@ -207,6 +232,14 @@ export function VendorLandingPage({
       isActive: vendor.isActive,
       applicationId: vendor.applicationId
     });
+    
+    // ✅ FIX: Check for active status FIRST (before other status checks)
+    // VendorApp sets status='active' for APPROVED vendors, so we need to catch this
+    if (vendor.status === 'active' || vendor.isActive === true) {
+      console.log('✅ Vendor is ACTIVE - showing dashboard');
+      setStatus('active');
+      return; // Don't continue processing
+    }
     
     // Map vendor status to UI status
     // NEW WORKFLOW: Status values are 'pending', 'approved', 'rejected', 'more_info_required', 'resubmitted'
@@ -272,6 +305,19 @@ export function VendorLandingPage({
 
       if (profileData && profileData.vendor) {
         setVendorData(profileData.vendor);
+        
+        console.log('📊 [VendorLandingPage] Profile loaded:', {
+          isActive: profileData.vendor.isActive,
+          status: profileData.vendor.status,
+          applicationId: profileData.vendor.applicationId,
+        });
+
+        // ✅ FIX: Check if vendor is already active (approved + setup complete)
+        if (profileData.vendor.isActive === true || profileData.vendor.status === 'active') {
+          console.log('✅ [VendorLandingPage] Vendor is active - showing dashboard');
+          setStatus('active');
+          return; // Don't continue checking, vendor is fully active
+        }
 
         // Check if they have an application
         if (profileData.vendor?.applicationId) {
@@ -303,6 +349,9 @@ export function VendorLandingPage({
         } else if (profileData.vendor?.profileCreated) {
           // Profile exists but no application submitted
           setStatus('profile_incomplete');
+        } else if (profileData.vendor?.status === 'approved') {
+          // Vendor approved but no application - show approved status
+          setStatus('approved_services');
         } else {
           setStatus('new');
         }
@@ -742,12 +791,10 @@ export function VendorLandingPage({
       );
 
     case 'active':
-      // ✅ UNIVERSAL DASHBOARD: Use VendorDashboard for ALL vendor types
-      // This provides a consistent, full-featured dashboard experience
-      // with appointment management, stats, service management, staff management, etc.
-      // This dashboard has all integrations with admin panel service catalog, booking flows, etc.
+      // ✅ DASHBOARD: Use VendorDashboardScreen (copied from React Native app)
+      // This provides a clean dashboard experience with stats, schedule, and quick actions
       
-      console.log('🎯 Vendor is ACTIVE - showing universal VendorDashboard');
+      console.log('🎯 Vendor is ACTIVE - showing VendorDashboardScreen');
       console.log('   Vendor Role:', vendorData?.roleId);
       console.log('   Vendor Type:', vendorData?.vendorType);
       
@@ -1187,49 +1234,48 @@ export function VendorLandingPage({
         );
       }
       
-      // Default: show universal VendorDashboard (matches vendor 9876543216 experience)
+      // Default: show VendorDashboardScreen (copied from React Native app)
+      const handleNavigate = (screen: string, data?: any) => {
+        switch (screen) {
+          case 'bookings':
+            setShowBookingManagement(true);
+            break;
+          case 'services':
+            setShowServiceManagement(true);
+            break;
+          case 'staff':
+            setShowStaffManagement(true);
+            break;
+          case 'schedule':
+            setShowScheduleManagement(true);
+            break;
+          case 'analytics':
+            if (typeof window !== 'undefined') {
+              window.location.href = '/analytics';
+            }
+            break;
+          case 'settings':
+            if (typeof window !== 'undefined') {
+              window.location.href = '/settings';
+            }
+            break;
+          case 'booking-detail':
+            // Handle booking detail - could navigate to booking detail page or show modal
+            if (data?.bookingId) {
+              setShowBookingManagement(true);
+              // TODO: If there's a booking detail modal/page, navigate to it
+            }
+            break;
+          default:
+            console.log('Unknown navigation screen:', screen);
+        }
+      };
+
       return (
-        <VendorDashboard
+        <VendorDashboardScreen
           vendorId={vendorId}
           vendorData={vendorData}
-          onNavigateToConsultation={() => setShowConsultation(true)}
-          onNavigateToServiceManagement={() => setShowServiceManagement(true)}
-          onNavigateToBookingManagement={() => setShowBookingManagement(true)}
-          onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
-          onNavigateToScheduleManagement={() => setShowScheduleManagement(true)}
-          onNavigateToCenterProfile={() => setShowCenterProfile(true)} // ✅ NEW: Navigate to Center Profile
-          onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
-          onNavigateToStaffManagement={() => setShowStaffManagement(true)}
-          onNavigateToBusinessHub={() => setShowBusinessHub(true)} // ✅ NEW
-          onNavigateToLiveTracking={() => setShowBookingManagement(true)} // ✅ Live tracking routes to bookings where active sessions are managed
-          onNavigateToSpecializedServices={() => setShowVetSpecialized(true)} // ✅ NEW: Navigate to Vet Specialized Services
-          onNavigateToGallery={() => setShowGallery(true)} // ✅ FIX: Gallery navigation
-          onNavigateToPortfolio={() => setShowPortfolio(true)} // ✅ FIX: Portfolio navigation
-          onNavigateToCCTV={() => setShowCCTV(true)} // ✅ FIX: CCTV navigation
-          onNavigateToControlledSubstances={() => setShowControlledSubstances(true)} // ✅ FIX: Controlled substances navigation
-          onNavigateToPrescription={() => setShowPrescription(true)} // ✅ FIX: Prescription builder navigation
-          onNavigateToProgressTracking={() => setShowProgressTracking(true)} // ✅ FIX: Progress tracking navigation
-          onNavigateToPackages={() => setShowPackages(true)} // ✅ FIX: Packages navigation
-          onNavigateToCustomServices={() => setShowCustomServices(true)} // ✅ FIX: Custom services navigation
-          onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)} // ✅ FIX: Adoption system navigation
-          onNavigateToMemorialServices={() => setShowMemorialServices(true)} // ✅ FIX: Memorial services navigation
-          onNavigateToExpiryManagement={() => setShowExpiryManagement(true)} // ✅ NEW: Expiry management navigation
-          onNavigateToDonationManagement={() => setShowDonationManagement(true)} // ✅ NEW: Donation management navigation
-          onNavigateToEventManagement={() => setShowEventManagement(true)} // ✅ NEW: Event management navigation
-          onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)} // ✅ NEW: Patient monitoring navigation
-          onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)} // ✅ NEW: Cafe menu management navigation
-          onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)} // ✅ NEW: Prescription verification navigation
-          onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)} // ✅ NEW: Delivery management navigation
-          onNavigateToDietCharts={() => setShowDietCharts(true)} // ✅ NEW: Diet charts navigation
-          onNavigateToCounseling={() => setShowCounseling(true)} // ✅ NEW: Counseling services navigation
-          onNavigateToPolicyManagement={() => setShowPolicyManagement(true)} // ✅ NEW: Policy management navigation
-          onNavigateToDistancePricing={() => setShowDistancePricing(true)} // ✅ NEW: Distance pricing navigation
-          onNavigateToMedicalRecords={() => {
-            // Navigate to medical records page
-            if (typeof window !== 'undefined') {
-              window.location.href = '/medical/records';
-            }
-          }} // ✅ NEW: Medical records navigation
+          onNavigate={handleNavigate}
         />
       );
 

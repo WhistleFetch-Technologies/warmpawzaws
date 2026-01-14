@@ -8,7 +8,7 @@ import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
-import { VendorCapabilityDashboard } from './VendorCapabilityDashboard';
+import { VendorLandingPage } from './VendorLandingPage';
 import { VendorApprovedSetup } from './VendorApprovedSetup';
 import { apiClient } from '@/lib/api-client';
 
@@ -56,6 +56,18 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     setIsLoading(true);
     
     try {
+      // ✅ FIX: Check localStorage first for onboarding status (set by verify-otp)
+      const storedStatus = localStorage.getItem('vendorApplicationStatus');
+      console.log('📊 [VendorApp] Stored onboarding status from localStorage:', storedStatus);
+      
+      // If status is APPROVED or ACTIVATED, show dashboard directly (skip approved setup screen)
+      if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
+        console.log('✅ [VendorApp] Vendor is approved/activated, showing dashboard directly');
+        setStatus('active'); // Set to 'active' to show dashboard, not 'approved' which shows setup screen
+        setIsLoading(false);
+        // Don't return - continue to set vendorData so dashboard can render
+      }
+      
       // Fetch onboarding status from API (correct endpoint)
       console.log('📊 [VendorApp] Fetching onboarding status for phone:', session.phone);
       
@@ -66,7 +78,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         
         // Map onboarding status to frontend status
         const onboardingStatus = identity.onboarding_status;
-        console.log('📊 [VendorApp] Onboarding status:', onboardingStatus);
+        console.log('📊 [VendorApp] Onboarding status from API:', onboardingStatus);
+        
+        // ✅ FIX: Update localStorage with status from API
+        if (onboardingStatus) {
+          localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+        }
         
         // Update localStorage with identity and application data
         const vendorData: any = {
@@ -115,14 +132,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           vendorData.isActive = true;
           vendorData.status = 'active';
         } else if (onboardingStatus === 'APPROVED') {
-          // Check if services are configured
-          if (vendorData.servicesConfigured || vendorData.setupStage === 'availability_pending') {
-            setStatus('approved_services');
-          } else {
-            setStatus('approved_services'); // Show approved setup screen
-          }
-          vendorData.isActive = false; // Not yet activated
-          vendorData.status = 'approved';
+          // ✅ FIX: Show dashboard directly for APPROVED vendors (not approved setup screen)
+          console.log('✅ [VendorApp] Vendor is APPROVED, showing dashboard directly');
+          setStatus('active'); // Set to 'active' to show dashboard, not 'approved' which shows setup screen
+          vendorData.isActive = true; // Approved vendors are active
+          vendorData.status = 'active';
+          // Continue to set vendorData - don't return early
         } else if (onboardingStatus === 'UNDER_REVIEW') {
           setStatus('pending');
           vendorData.status = 'pending';
@@ -321,25 +336,30 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
-  // Approved - Show Setup Screen
+  // ✅ FIX: Skip approved setup screen - approved vendors go directly to VendorLandingPage (full portal)
+  // VendorLandingPage includes VendorDashboard with all navigation handlers and sub-screens
   if (status === 'approved' || status === 'approved_services') {
+    console.log('✅ [VendorApp] Approved vendor - showing VendorLandingPage (full portal)');
     return (
-      <VendorApprovedSetup 
+      <VendorLandingPage 
         vendorId={vendorData?.id || session.vendorId || ''}
-        roleId={vendorData?.role_id || vendorData?.roleId}
-        onComplete={() => {
-          // After setup, check status again or go to dashboard
-          checkVendorStatus();
-        }}
+        phone={session.phone}
+        initialVendorData={vendorData}
+        vendorType={vendorData?.vendorType}
+        serviceStyle={vendorData?.serviceStyle}
       />
     );
   }
 
-  // Active Vendor - Show Dashboard
+  // Active Vendor - Show VendorLandingPage (full portal)
   if (status === 'active') {
     return (
-      <VendorCapabilityDashboard 
+      <VendorLandingPage 
         vendorId={vendorData?.id || session.vendorId || ''}
+        phone={session.phone}
+        initialVendorData={vendorData}
+        vendorType={vendorData?.vendorType}
+        serviceStyle={vendorData?.serviceStyle}
       />
     );
   }
