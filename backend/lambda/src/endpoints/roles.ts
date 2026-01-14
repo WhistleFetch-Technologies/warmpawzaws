@@ -670,6 +670,51 @@ export function registerRoleEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  // Default dashboard buttons by role
+  function getDefaultButtonsForRole(roleId: string): any[] {
+    const roleLower = roleId.toLowerCase();
+    
+    const defaultButtons: Record<string, any[]> = {
+      veterinarian: [
+        { id: 'vet_consultation', label: 'Book Consultation', icon: '🩺', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'vet_emergency', label: 'Emergency Care', icon: '🚨', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'vet_vaccination', label: 'Vaccination', icon: '💉', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'vet_checkup', label: 'Health Checkup', icon: '📋', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+      ],
+      groomer: [
+        { id: 'grooming_booking', label: 'Book Grooming', icon: '✂️', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'grooming_spa', label: 'Pet Spa', icon: '🛁', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'grooming_nail', label: 'Nail Trimming', icon: '💅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+      ],
+      walker: [
+        { id: 'walk_booking', label: 'Book Walk', icon: '🚶', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'walk_sitting', label: 'Pet Sitting', icon: '🏠', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+      ],
+      trainer: [
+        { id: 'training_booking', label: 'Book Training', icon: '🎓', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+        { id: 'training_behavior', label: 'Behavior Training', icon: '🐕', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+      ],
+    };
+
+    // Try exact match first
+    if (defaultButtons[roleLower]) {
+      return defaultButtons[roleLower];
+    }
+
+    // Try partial match
+    for (const [key, buttons] of Object.entries(defaultButtons)) {
+      if (roleLower.includes(key) || key.includes(roleLower)) {
+        return buttons;
+      }
+    }
+
+    // Default generic buttons
+    return [
+      { id: 'book_service', label: 'Book Service', icon: '📅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+      { id: 'view_services', label: 'View Services', icon: '🔍', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
+    ];
+  }
+
   app.get('/config/ui/dashboard', async (c) => {
     try {
       const roleId = c.req.query('roleId');
@@ -682,13 +727,30 @@ export function registerRoleEndpoints(app: Hono) {
         setting_key: `platform:ui:dashboard:${roleId}` 
       });
 
-      const dashboardConfig = settings.length > 0 
-        ? (settings[0].setting_value as any) 
-        : {
-            widgets: [],
-            layout: 'default',
-            theme: 'light',
-          };
+      let dashboardConfig: any;
+
+      if (settings.length > 0) {
+        dashboardConfig = settings[0].setting_value as any;
+        
+        // Ensure buttons/widgets array exists
+        if (!dashboardConfig.buttons && !dashboardConfig.widgets) {
+          dashboardConfig.buttons = getDefaultButtonsForRole(roleId);
+        } else if (dashboardConfig.widgets && dashboardConfig.widgets.length === 0) {
+          // If widgets is empty, use defaults
+          dashboardConfig.buttons = getDefaultButtonsForRole(roleId);
+        } else if (dashboardConfig.widgets && !dashboardConfig.buttons) {
+          // Convert widgets to buttons
+          dashboardConfig.buttons = dashboardConfig.widgets;
+        }
+      } else {
+        // No config exists, return defaults
+        dashboardConfig = {
+          buttons: getDefaultButtonsForRole(roleId),
+          widgets: getDefaultButtonsForRole(roleId),
+          layout: 'default',
+          theme: 'light',
+        };
+      }
 
       return c.json({
         success: true,
@@ -697,9 +759,16 @@ export function registerRoleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching dashboard config:', error);
+      // Return defaults on error
+      const roleId = c.req.query('roleId') || 'veterinarian';
       return c.json({ 
         success: true, 
-        config: { widgets: [], layout: 'default', theme: 'light' } 
+        config: { 
+          buttons: getDefaultButtonsForRole(roleId as string),
+          widgets: getDefaultButtonsForRole(roleId as string),
+          layout: 'default', 
+          theme: 'light' 
+        } 
       });
     }
   });
@@ -707,16 +776,38 @@ export function registerRoleEndpoints(app: Hono) {
   app.put('/config/ui/dashboard', async (c) => {
     try {
       const body = await c.req.json();
-      const { roleId, ...config } = body;
+      const { roleId, config } = body;
 
       if (!roleId) {
         return c.json({ error: 'roleId is required' }, 400);
       }
 
+      // Handle both array (buttons) and object (full config) formats
+      let configToSave: any;
+      
+      if (Array.isArray(config)) {
+        // If config is an array, wrap it in buttons property
+        configToSave = {
+          buttons: config,
+          widgets: config, // Keep widgets for backward compatibility
+          layout: 'default',
+          theme: 'light',
+        };
+      } else if (config && typeof config === 'object') {
+        // If config is an object, use it as-is but ensure buttons/widgets exist
+        configToSave = {
+          ...config,
+          buttons: config.buttons || config.widgets || [],
+          widgets: config.widgets || config.buttons || [],
+        };
+      } else {
+        return c.json({ error: 'Invalid config format' }, 400);
+      }
+
       await upsert('platform_settings',
         {
           setting_key: `platform:ui:dashboard:${roleId}`,
-          setting_value: config,
+          setting_value: configToSave,
           setting_type: 'json',
           description: `Dashboard UI configuration for role ${roleId}`,
         },
@@ -726,6 +817,7 @@ export function registerRoleEndpoints(app: Hono) {
       return c.json({
         success: true,
         message: 'Dashboard configuration updated',
+        config: configToSave,
       });
     } catch (error: any) {
       console.error('Error updating dashboard config:', error);

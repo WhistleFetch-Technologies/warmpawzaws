@@ -157,6 +157,7 @@ export function VendorServiceManagementComplete({
         vendorData={vendorData}
         onBack={() => setShowCatalogView(false)}
         mode="multi-select" // ✅ Enable multi-select mode for bulk service addition
+        allowedServiceStyles={allowedServiceStyles} // ✅ Pass role-based allowed styles
         onSelectService={(service) => {
           console.log('🎯 [SERVICE-MGMT] Service selected from catalog:', service);
           // Navigate to configuration screen for this service's style

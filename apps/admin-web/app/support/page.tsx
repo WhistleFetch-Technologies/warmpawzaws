@@ -18,6 +18,7 @@ import {
 	BarChart3,
 	UserPlus,
 	Zap,
+	FileCheck,
 } from "lucide-react";
 
 import {
@@ -40,6 +41,7 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
+import { CompletePlanModal } from "@/components/admin/support/CompletePlanModal";
 import { useRouter } from "next/navigation";
 
 // Types
@@ -101,6 +103,7 @@ export default function SupportCRM() {
 	const [showAgentMetrics, setShowAgentMetrics] = useState(false);
 	const [showAssignModal, setShowAssignModal] = useState(false);
 	const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+	const [showCompletePlanModal, setShowCompletePlanModal] = useState(false);
 
 	useEffect(() => {
 		loadTickets();
@@ -661,6 +664,14 @@ export default function SupportCRM() {
 											<DollarSign className="w-4 h-4 mr-2" />
 											Partial Refund
 										</Button>
+										<Button
+											variant="outline"
+											className="text-purple-600 border-purple-200 hover:bg-purple-50"
+											onClick={() => setShowCompletePlanModal(true)}
+										>
+											<FileCheck className="w-4 h-4 mr-2" />
+											Complete Plan
+										</Button>
 									</div>
 								</div>
 							</div>
@@ -1019,6 +1030,18 @@ export default function SupportCRM() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			{/* Complete Plan Modal */}
+			<CompletePlanModal
+				open={showCompletePlanModal}
+				onOpenChange={setShowCompletePlanModal}
+				ticketId={selectedTicket?.id}
+				customerId={selectedTicket?.customerId}
+				onPlanCreated={(planId) => {
+					toast.success(`Care plan created! Plan ID: ${planId}`);
+					// Optionally reload ticket or navigate to plan view
+				}}
+			/>
 		</AdminLayout>
 	);
 }

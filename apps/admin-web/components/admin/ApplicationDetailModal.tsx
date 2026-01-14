@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Check, AlertCircle, FileText, Image as ImageIcon, Download, Eye, CheckCircle, XCircle } from 'lucide-react';
 import { Button, Badge } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
+import { getAdminId } from '@/lib/cognito-auth';
 
 interface ApplicationDetailModalProps {
   isOpen: boolean;
@@ -37,13 +38,29 @@ export function ApplicationDetailModal({
   const handleApprove = async () => {
     try {
       setApproving(true);
-      await apiClient.post(`/admin/vendor/application/${appId}/approve`, {
-        reviewerName: 'Admin',
-        notes: 'Approved after review'
-      });
-      alert('Application approved successfully');
-      onApprove();
-      onClose();
+      // Try onboarding review endpoint first (proper state machine)
+      try {
+        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
+        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
+          action: 'APPROVE',
+          admin_id: adminId,
+          comments: 'Approved after review'
+        });
+        alert('Application approved successfully');
+        onApprove();
+        onClose();
+        return;
+      } catch (onboardingError: any) {
+        // Fallback to compatibility endpoint
+        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
+        await apiClient.post(`/admin/vendor/application/${appId}/approve`, {
+          reviewerName: 'Admin',
+          notes: 'Approved after review'
+        });
+        alert('Application approved successfully');
+        onApprove();
+        onClose();
+      }
     } catch (error: any) {
       console.error('Error approving:', error);
       alert(error.message || 'Failed to approve application');
@@ -60,14 +77,31 @@ export function ApplicationDetailModal({
 
     try {
       setRejecting(true);
-      await apiClient.post(`/admin/vendor/application/${appId}/reject`, {
-        reviewerName: 'Admin',
-        reason: rejectionReason,
-        allowResubmit: true
-      });
-      alert('Application rejected');
-      onReject();
-      onClose();
+      // Try onboarding review endpoint first (proper state machine)
+      try {
+        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
+        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
+          action: 'REJECT',
+          admin_id: adminId,
+          rejection_reason: rejectionReason,
+          comments: rejectionReason
+        });
+        alert('Application rejected');
+        onReject();
+        onClose();
+        return;
+      } catch (onboardingError: any) {
+        // Fallback to compatibility endpoint
+        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
+        await apiClient.post(`/admin/vendor/application/${appId}/reject`, {
+          reviewerName: 'Admin',
+          reason: rejectionReason,
+          allowResubmit: true
+        });
+        alert('Application rejected');
+        onReject();
+        onClose();
+      }
     } catch (error: any) {
       console.error('Error rejecting:', error);
       alert(error.message || 'Failed to reject application');
@@ -79,13 +113,29 @@ export function ApplicationDetailModal({
   const handleRequestClarification = async () => {
     try {
       setClarifying(true);
-      await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
-        reviewerName: 'Admin',
-        notes: clarificationNotes || 'Please provide additional information'
-      });
-      alert('Clarification request sent');
-      onRequestClarification();
-      onClose();
+      // Try onboarding review endpoint first (proper state machine)
+      try {
+        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
+        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
+          action: 'REQUEST_CLARIFICATION',
+          admin_id: adminId,
+          comments: clarificationNotes || 'Please provide additional information'
+        });
+        alert('Clarification request sent');
+        onRequestClarification();
+        onClose();
+        return;
+      } catch (onboardingError: any) {
+        // Fallback to compatibility endpoint
+        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
+        await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
+          reviewerName: 'Admin',
+          notes: clarificationNotes || 'Please provide additional information'
+        });
+        alert('Clarification request sent');
+        onRequestClarification();
+        onClose();
+      }
     } catch (error: any) {
       console.error('Error requesting clarification:', error);
       alert(error.message || 'Failed to send clarification request');

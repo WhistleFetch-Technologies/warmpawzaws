@@ -108,3 +108,41 @@ export function getUserInfo(): any | null {
   }
 }
 
+/**
+ * Get admin ID from token or user info
+ * Decodes JWT token to extract 'sub' claim, or falls back to user info
+ */
+export function getAdminId(): string | null {
+  if (typeof window === 'undefined') return null;
+  
+  // Try to get from user info first
+  const userInfo = getUserInfo();
+  if (userInfo?.id || userInfo?.sub || userInfo?.username) {
+    return userInfo.id || userInfo.sub || userInfo.username;
+  }
+  
+  // Try to decode JWT token
+  const idToken = getCognitoIdToken();
+  if (idToken) {
+    try {
+      // JWT tokens have 3 parts: header.payload.signature
+      const parts = idToken.split('.');
+      if (parts.length === 3) {
+        // Decode the payload (base64)
+        const payload = JSON.parse(atob(parts[1]));
+        // Return 'sub' (subject) claim which is the user ID
+        return payload.sub || payload.username || payload.email || null;
+      }
+    } catch (error) {
+      console.warn('Failed to decode JWT token:', error);
+    }
+  }
+  
+  // Fallback to localStorage
+  const adminId = localStorage.getItem('adminId');
+  if (adminId) {
+    return adminId;
+  }
+  
+  return null;
+}
