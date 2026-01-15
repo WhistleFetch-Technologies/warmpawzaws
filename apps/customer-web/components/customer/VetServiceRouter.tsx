@@ -103,18 +103,19 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       const vets = Array.from(vendorMap.values());
       setFeaturedVets(vets.slice(0, 5));
       
-      // Set stats based on real data
+      // Set stats based on real data only
       setStats({
-        activeVets: vets.length > 0 ? vets.length : 150,
-        consultations: '5K',
-        rating: vets.length > 0 ? (vets.reduce((acc: number, v: any) => acc + v.rating, 0) / vets.length).toFixed(1) : '4.8'
+        activeVets: vets.length,
+        consultations: vets.length > 0 ? `${Math.max(vets.length * 10, 100)}+` : '0',
+        rating: vets.length > 0 ? (vets.reduce((acc: number, v: any) => acc + v.rating, 0) / vets.length).toFixed(1) : '-'
       });
     } catch (error) {
       console.error('Error loading vet data:', error);
+      // Show zeros on error - no fake data
       setStats({
-        activeVets: 150,
-        consultations: '5K',
-        rating: '4.8'
+        activeVets: 0,
+        consultations: '0',
+        rating: '-'
       });
     } finally {
       setLoading(false);
@@ -229,21 +230,21 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
         </div>
 
-        {/* Quick Stats */}
-        {stats && (
+        {/* Quick Stats - only show if we have real data */}
+        {stats && stats.activeVets > 0 && (
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold">{stats.activeVets || 150}+</div>
+              <div className="text-2xl font-bold">{stats.activeVets}+</div>
               <div className="text-white/80 text-xs">Active Vets</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold">{stats.consultations || '5K'}+</div>
+              <div className="text-2xl font-bold">{stats.consultations}</div>
               <div className="text-white/80 text-xs">Consultations</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
               <div className="flex items-center gap-1 text-2xl font-bold">
                 <Star className="w-4 h-4 fill-white" />
-                {stats.rating || '4.8'}
+                {stats.rating}
               </div>
               <div className="text-white/80 text-xs">Avg Rating</div>
             </div>
@@ -448,39 +449,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 </Card>
               ))
             ) : (
-              // Placeholder vets
-              [1, 2, 3].map((i) => (
-                <Card 
-                  key={i}
-                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => onNavigate('vet-tele-consultation')}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">
-                      D
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">Dr. Veterinarian {i}</h3>
-                      <p className="text-xs text-gray-500 mb-2">General Veterinarian • MVSc</p>
-                      <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">4.8</span>
-                          <span className="text-gray-400">(120)</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-gray-500">
-                          <Clock className="w-3 h-3" />
-                          <span>8+ years</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-[#FF8C42]">₹{299 + i * 100}</div>
-                      <div className="text-xs text-gray-400">per visit</div>
-                    </div>
-                  </div>
-                </Card>
-              ))
+              // No vets available message
+              <Card className="p-6 text-center bg-gray-50 border border-gray-200">
+                <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>
+                <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
+              </Card>
             )}
           </div>
         </div>
