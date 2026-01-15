@@ -130,6 +130,7 @@ import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-dashboard-missing';
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
+import { registerVendorSupportEndpoints } from '../endpoints/vendor-support';
 
 // Create Hono app
 const app = new Hono();
@@ -306,6 +307,7 @@ registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
 registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI)
 registerCarePlansEndpoints(app); // Care Plans Generation (Support/CRM > Complete Plan)
+registerVendorSupportEndpoints(app); // Vendor Support Tickets
 
 // 404 handler
 app.notFound((c) => {

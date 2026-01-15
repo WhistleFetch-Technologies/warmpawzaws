@@ -18,6 +18,8 @@
 import { Hono } from 'hono';
 import { select, query, insert, update } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 /**
  * Map role IDs to service catalog roles

@@ -18,6 +18,8 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry } from '../utils/audit-log';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // Maximum amount for auto-approval (in INR)
 const AUTO_APPROVAL_THRESHOLD = 5000.00;

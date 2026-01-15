@@ -19,6 +19,8 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)

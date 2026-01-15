@@ -107369,7 +107369,7 @@ __export(rds_connection_exports, {
   query: () => query,
   select: () => select,
   update: () => update,
-  upsert: () => upsert2,
+  upsert: () => upsert,
   withTransaction: () => withTransaction
 });
 async function fetchDbCredentials() {
@@ -107574,7 +107574,7 @@ async function deleteRows(table, filters) {
   const result = await query(queryText, params);
   return result.rowCount || 0;
 }
-async function upsert2(table, data, conflictColumn = "id") {
+async function upsert(table, data, conflictColumn = "id") {
   const dataArray = Array.isArray(data) ? data : [data];
   if (dataArray.length === 0) return [];
   const keys = Object.keys(dataArray[0]);
@@ -117764,8 +117764,8 @@ var require_bookings = __commonJS({
       staffId: zod_1.z.string().uuid("Invalid staff ID format").optional(),
       bookingDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format (YYYY-MM-DD)"),
       bookingTime: zod_1.z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/, "Invalid time format (HH:MM)"),
-      serviceType: zod_1.z.enum(["at_vendor", "at_home", "online"], {
-        errorMap: () => ({ message: "Service type must be at_vendor, at_home, or online" })
+      serviceType: zod_1.z.enum(["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"], {
+        errorMap: () => ({ message: "Service type must be at_vendor/at_center, at_home, or online/tele" })
       }),
       address: zod_1.z.string().optional(),
       city: zod_1.z.string().optional(),
@@ -117805,7 +117805,7 @@ var require_bookings = __commonJS({
       bookingDate: zod_1.z.string(),
       bookingTime: zod_1.z.string(),
       status: zod_1.z.enum(["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]),
-      serviceType: zod_1.z.enum(["at_vendor", "at_home", "online"]),
+      serviceType: zod_1.z.enum(["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]),
       address: zod_1.z.string().nullable(),
       city: zod_1.z.string().nullable(),
       state: zod_1.z.string().nullable(),
@@ -176014,15 +176014,15 @@ var require_commonjs = __commonJS({
 // node_modules/teeny-request/node_modules/uuid/dist/esm-node/rng.js
 function rng3() {
   if (poolPtr3 > rnds8Pool3.length - 16) {
-    import_crypto10.default.randomFillSync(rnds8Pool3);
+    import_crypto11.default.randomFillSync(rnds8Pool3);
     poolPtr3 = 0;
   }
   return rnds8Pool3.slice(poolPtr3, poolPtr3 += 16);
 }
-var import_crypto10, rnds8Pool3, poolPtr3;
+var import_crypto11, rnds8Pool3, poolPtr3;
 var init_rng3 = __esm({
   "node_modules/teeny-request/node_modules/uuid/dist/esm-node/rng.js"() {
-    import_crypto10 = __toESM(require("crypto"));
+    import_crypto11 = __toESM(require("crypto"));
     rnds8Pool3 = new Uint8Array(256);
     poolPtr3 = rnds8Pool3.length;
   }
@@ -176225,12 +176225,12 @@ function md53(bytes) {
   } else if (typeof bytes === "string") {
     bytes = Buffer.from(bytes, "utf8");
   }
-  return import_crypto11.default.createHash("md5").update(bytes).digest();
+  return import_crypto12.default.createHash("md5").update(bytes).digest();
 }
-var import_crypto11, md5_default3;
+var import_crypto12, md5_default3;
 var init_md53 = __esm({
   "node_modules/teeny-request/node_modules/uuid/dist/esm-node/md5.js"() {
-    import_crypto11 = __toESM(require("crypto"));
+    import_crypto12 = __toESM(require("crypto"));
     md5_default3 = md53;
   }
 });
@@ -176247,12 +176247,12 @@ var init_v33 = __esm({
 });
 
 // node_modules/teeny-request/node_modules/uuid/dist/esm-node/native.js
-var import_crypto12, native_default3;
+var import_crypto13, native_default3;
 var init_native3 = __esm({
   "node_modules/teeny-request/node_modules/uuid/dist/esm-node/native.js"() {
-    import_crypto12 = __toESM(require("crypto"));
+    import_crypto13 = __toESM(require("crypto"));
     native_default3 = {
-      randomUUID: import_crypto12.default.randomUUID
+      randomUUID: import_crypto13.default.randomUUID
     };
   }
 });
@@ -176292,12 +176292,12 @@ function sha13(bytes) {
   } else if (typeof bytes === "string") {
     bytes = Buffer.from(bytes, "utf8");
   }
-  return import_crypto13.default.createHash("sha1").update(bytes).digest();
+  return import_crypto14.default.createHash("sha1").update(bytes).digest();
 }
-var import_crypto13, sha1_default3;
+var import_crypto14, sha1_default3;
 var init_sha13 = __esm({
   "node_modules/teeny-request/node_modules/uuid/dist/esm-node/sha1.js"() {
-    import_crypto13 = __toESM(require("crypto"));
+    import_crypto14 = __toESM(require("crypto"));
     sha1_default3 = sha13;
   }
 });
@@ -225046,6 +225046,82 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
     const body2 = JSON.parse(result.body);
     return c.json(body2, result.statusCode);
   });
+  app2.post("/vendor/onboarding/activate", async (c) => {
+    try {
+      const body2 = await c.req.json().catch(() => ({}));
+      const { phone } = body2;
+      if (!phone) {
+        return c.json({ success: false, error: "Phone number is required" }, 400);
+      }
+      const identities = await select("vendor_identity", { phone });
+      if (identities.length === 0) {
+        return c.json({ success: false, error: "Vendor identity not found" }, 404);
+      }
+      const identity = identities[0];
+      if (identity.onboarding_status !== "APPROVED") {
+        return c.json({ success: false, error: "Vendor must be approved before activation" }, 400);
+      }
+      const existingVendors = await select("vendors", { phone });
+      if (existingVendors.length > 0) {
+        const vendor2 = existingVendors[0];
+        await update("vendor_identity", { id: identity.id }, {
+          onboarding_status: "ACTIVATED",
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        await update("vendors", { id: vendor2.id }, {
+          status: "approved",
+          is_active: true,
+          onboarding_status: "ACTIVATED",
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        return c.json({
+          success: true,
+          message: "Vendor activated successfully",
+          vendor_id: vendor2.id,
+          nextStep: "/dashboard"
+        });
+      }
+      if (!identity.application_id) {
+        return c.json({ success: false, error: "Application not found" }, 404);
+      }
+      const apps = await select("vendor_onboarding_applications", { id: identity.application_id });
+      if (apps.length === 0) {
+        return c.json({ success: false, error: "Application not found" }, 404);
+      }
+      const application = apps[0];
+      const payload = application.application_payload || {};
+      const vendors2 = await insert("vendors", {
+        phone: identity.phone,
+        email: payload.email || identity.email || "",
+        business_name: payload.businessName || "",
+        owner_name: payload.fullName || payload.ownerName || "",
+        role_id: application.role_id,
+        vendor_type: application.vendor_type,
+        vendor_identity_id: identity.id,
+        onboarding_status: "ACTIVATED",
+        status: "approved",
+        is_active: true,
+        address: payload.address || "",
+        city: payload.city || "",
+        state: payload.state || "",
+        pincode: payload.pin || payload.pincode || ""
+      });
+      const vendor = vendors2[0];
+      await update("vendor_identity", { id: identity.id }, {
+        onboarding_status: "ACTIVATED",
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return c.json({
+        success: true,
+        message: "Vendor activated successfully",
+        vendor_id: vendor.id,
+        nextStep: "/dashboard"
+      });
+    } catch (error) {
+      console.error("Error activating vendor:", error);
+      return c.json({ success: false, error: error.message || "Failed to activate vendor" }, 500);
+    }
+  });
 }
 function createApiGatewayEvent2(req) {
   return {
@@ -225628,15 +225704,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select13("staff", { id: staffId });
+    const { select: select12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select12("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors2 = await select13("vendors", { id: vendorId });
+    const vendors2 = await select12("vendors", { id: vendorId });
     if (vendors2.length > 0 && vendors2[0].latitude && vendors2[0].longitude) {
       return {
         latitude: parseFloat(vendors2[0].latitude),
@@ -225651,8 +225727,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select13 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select13("staff", { id: staffId });
+    const { select: select12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select12("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -225690,6 +225766,34 @@ async function calculateStaffETA(staffId, customerLocation, bookingDateTime, opt
 
 // src/utils/service-availability-validator.ts
 init_rds_connection();
+function normalizeServiceStyle(style) {
+  if (!style) return "";
+  const normalized = style.toLowerCase().replace(/[-_\s]/g, "_");
+  const styleMap = {
+    // At center/clinic/vendor variations
+    "at_clinic": "at_center",
+    "at_center": "at_center",
+    "at_vendor": "at_center",
+    "clinic": "at_center",
+    "center": "at_center",
+    "in_clinic": "at_center",
+    "in_center": "at_center",
+    // Tele/video/online variations
+    "tele": "tele",
+    "video": "tele",
+    "online": "tele",
+    "video_consultation": "tele",
+    "teleconsultation": "tele",
+    "video_call": "tele",
+    // Home visit variations
+    "at_home": "at_home",
+    "home": "at_home",
+    "home_visit": "at_home",
+    "doorstep": "at_home",
+    "home_service": "at_home"
+  };
+  return styleMap[normalized] || normalized;
+}
 async function getDashboardConfig(roleId) {
   try {
     const settings = await select("platform_settings", {
@@ -225829,10 +225933,10 @@ async function validateServiceAvailability(serviceId, roleId, customerId) {
         }
         if (serviceButton.allowedServiceStyles && serviceButton.allowedServiceStyles.length > 0) {
           const serviceStyle = service.service_style || service.serviceStyle || "at_clinic";
-          const normalizedServiceStyle = serviceStyle.toLowerCase().replace(/_/g, "_");
+          const normalizedServiceStyle = normalizeServiceStyle(serviceStyle);
           const isStyleAllowed = serviceButton.allowedServiceStyles.some((allowedStyle) => {
-            const normalized = allowedStyle.toLowerCase().replace(/_/g, "_");
-            return normalizedServiceStyle === normalized;
+            const normalizedAllowed = normalizeServiceStyle(allowedStyle);
+            return normalizedServiceStyle === normalizedAllowed;
           });
           if (!isStyleAllowed) {
             return {
@@ -225867,10 +225971,10 @@ async function validateServiceAvailability(serviceId, roleId, customerId) {
       }
       if (allowedServiceStyles.length > 0) {
         const serviceStyle = service.service_style || service.serviceStyle || "at_clinic";
-        const normalizedServiceStyle = serviceStyle.toLowerCase().replace(/_/g, "_");
+        const normalizedServiceStyle = normalizeServiceStyle(serviceStyle);
         const isStyleAllowed = allowedServiceStyles.some((allowedStyle) => {
-          const normalized = allowedStyle.toLowerCase().replace(/_/g, "_");
-          return normalizedServiceStyle === normalized;
+          const normalizedAllowed = normalizeServiceStyle(allowedStyle);
+          return normalizedServiceStyle === normalizedAllowed;
         });
         if (!isStyleAllowed) {
           return {
@@ -228467,41 +228571,28 @@ function registerRoleEndpoints(app2) {
     const result = await getRolesHandler.execute(event, context3);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  const ALL_CUSTOMER_SERVICES2 = [
+    { id: "vet", label: "Vet Care", icon: "\u{1FA7A}", enabled: true, serviceId: "vet", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "grooming", label: "Grooming", icon: "\u2702\uFE0F", enabled: true, serviceId: "grooming", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "shop", label: "Shop", icon: "\u{1F6CD}\uFE0F", enabled: true, serviceId: "shop", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "training", label: "Training", icon: "\u{1F393}", enabled: true, serviceId: "training", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "walker", label: "Walker", icon: "\u{1F6B6}", enabled: true, serviceId: "walker", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "boarding", label: "Boarding", icon: "\u{1F3E0}", enabled: true, serviceId: "boarding", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "adoption", label: "Adoption", icon: "\u2764\uFE0F", enabled: true, serviceId: "adoption", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "mating", label: "Mating & Dating", icon: "\u{1F495}", enabled: true, serviceId: "mating-dating-hub", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "cafes", label: "Pet Cafes", icon: "\u2615", enabled: true, serviceId: "cafes", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "photography", label: "Photography", icon: "\u{1F4F7}", enabled: true, serviceId: "photography", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "insurance", label: "Insurance", icon: "\u{1F6E1}\uFE0F", enabled: true, serviceId: "insurance", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "breeder", label: "Breeder", icon: "\u{1F415}", enabled: true, serviceId: "breeder", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "ambulance", label: "Ambulance", icon: "\u{1F691}", enabled: true, serviceId: "ambulance", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "nutritionist", label: "Nutritionist", icon: "\u{1F957}", enabled: true, serviceId: "nutritionist", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "relocation", label: "Relocation", icon: "\u2708\uFE0F", enabled: true, serviceId: "relocation", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "resort", label: "Pet Resort", icon: "\u{1F3D6}\uFE0F", enabled: true, serviceId: "resort", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "holiday", label: "Pet Holiday", icon: "\u{1F334}", enabled: true, serviceId: "holiday", launchPhase: "full", rolloutPercentage: 100 },
+    { id: "sunset", label: "Sunset Care", icon: "\u{1F305}", enabled: true, serviceId: "sunset", launchPhase: "full", rolloutPercentage: 100 }
+  ];
   function getDefaultButtonsForRole2(roleId) {
-    const roleLower = roleId.toLowerCase();
-    const defaultButtons = {
-      veterinarian: [
-        { id: "vet_consultation", label: "Book Consultation", icon: "\u{1FA7A}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "vet_emergency", label: "Emergency Care", icon: "\u{1F6A8}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "vet_vaccination", label: "Vaccination", icon: "\u{1F489}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "vet_checkup", label: "Health Checkup", icon: "\u{1F4CB}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-      ],
-      groomer: [
-        { id: "grooming_booking", label: "Book Grooming", icon: "\u2702\uFE0F", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "grooming_spa", label: "Pet Spa", icon: "\u{1F6C1}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "grooming_nail", label: "Nail Trimming", icon: "\u{1F485}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-      ],
-      walker: [
-        { id: "walk_booking", label: "Book Walk", icon: "\u{1F6B6}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "walk_sitting", label: "Pet Sitting", icon: "\u{1F3E0}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-      ],
-      trainer: [
-        { id: "training_booking", label: "Book Training", icon: "\u{1F393}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-        { id: "training_behavior", label: "Behavior Training", icon: "\u{1F415}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-      ]
-    };
-    if (defaultButtons[roleLower]) {
-      return defaultButtons[roleLower];
-    }
-    for (const [key, buttons] of Object.entries(defaultButtons)) {
-      if (roleLower.includes(key) || key.includes(roleLower)) {
-        return buttons;
-      }
-    }
-    return [
-      { id: "book_service", label: "Book Service", icon: "\u{1F4C5}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "view_services", label: "View Services", icon: "\u{1F50D}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-    ];
+    return [...ALL_CUSTOMER_SERVICES2];
   }
   app2.get("/config/ui/dashboard", async (c) => {
     try {
@@ -228574,16 +228665,32 @@ function registerRoleEndpoints(app2) {
       } else {
         return c.json({ error: "Invalid config format" }, 400);
       }
-      await upsert(
-        "platform_settings",
-        {
+      const existing = await select("platform_settings", {
+        setting_key: `platform:ui:dashboard:${roleId}`
+      });
+      if (existing.length > 0) {
+        await update(
+          "platform_settings",
+          { setting_key: `platform:ui:dashboard:${roleId}` },
+          {
+            setting_value: configToSave,
+            setting_type: "object",
+            // Must be one of: string, number, boolean, object, array
+            description: `Dashboard UI configuration for role ${roleId}`,
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        );
+      } else {
+        await insert("platform_settings", {
           setting_key: `platform:ui:dashboard:${roleId}`,
           setting_value: configToSave,
-          setting_type: "json",
-          description: `Dashboard UI configuration for role ${roleId}`
-        },
-        "setting_key"
-      );
+          setting_type: "object",
+          // Must be one of: string, number, boolean, object, array
+          description: `Dashboard UI configuration for role ${roleId}`,
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
       return c.json({
         success: true,
         message: "Dashboard configuration updated",
@@ -232579,23 +232686,57 @@ init_rds_connection();
 init_rds_connection();
 async function checkVendorCapability(vendorId, capability) {
   try {
+    let vendor = null;
+    let roleId = null;
     const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
-      return false;
+    if (vendors2.length > 0) {
+      vendor = vendors2[0];
+      roleId = vendor.role_id;
+    } else {
+      const identities = await select("vendor_identity", { id: vendorId });
+      if (identities.length > 0) {
+        const identity = identities[0];
+        if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+          roleId = identity.selected_role_id;
+          console.log(`[Capability] Vendor ${vendorId} is ${identity.onboarding_status}, using roleId: ${roleId}`);
+        }
+      }
     }
-    const vendor = vendors2[0];
-    if (!vendor.role_id) {
+    if (!roleId) {
+      console.log(`[Capability] No roleId found for vendor ${vendorId}`);
       return false;
     }
     if (typeof capability === "string") {
       const permissions2 = await select("role_permissions", {
-        role_id: vendor.role_id,
+        role_id: roleId,
         permission_name: capability
       });
+      if (permissions2.length === 0) {
+        const basicCapabilities = [
+          "services",
+          "custom_services",
+          "bookings",
+          "schedule",
+          "prescriptions",
+          "medical_records",
+          "staff",
+          "packages",
+          "tele_consultation",
+          "home_services",
+          "at_center_services",
+          "rx",
+          "monitor",
+          "patient_monitoring"
+        ];
+        if (basicCapabilities.includes(capability)) {
+          console.log(`[Capability] Allowing basic capability '${capability}' for approved vendor ${vendorId}`);
+          return true;
+        }
+      }
       return permissions2.length > 0;
     }
     const permissions = await select("role_permissions", {
-      role_id: vendor.role_id,
+      role_id: roleId,
       resource: capability.resource,
       action: capability.action
     });
@@ -236372,27 +236513,45 @@ function registerVendorScheduleEndpoints(app2) {
       }
       const requestedDate = new Date(date);
       const dayOfWeek = requestedDate.getDay();
-      let scheduleQuery = `
-        SELECT * FROM vendor_availability_v2
-        WHERE vendor_id = $1
-        AND day_of_week = $2
-        AND service_style = $3
-        AND is_enabled = true
-        ORDER BY time_window_start
-      `;
-      const scheduleParams = [vendorId, dayOfWeek, serviceStyle];
+      let scheduleSlots;
       if (staffId) {
-        scheduleQuery = `
-          SELECT * FROM staff_schedules
-          WHERE staff_id = $1
-          AND day_of_week = $2
-          AND is_available = true
-          ORDER BY start_time
-        `;
-        scheduleParams[0] = staffId;
-        scheduleParams[2] = dayOfWeek;
+        scheduleSlots = await query(
+          `SELECT * FROM staff_schedules
+           WHERE staff_id = $1
+           AND day_of_week = $2
+           AND is_available = true
+           ORDER BY start_time`,
+          [staffId, dayOfWeek]
+        );
+      } else {
+        try {
+          scheduleSlots = await query(
+            `SELECT *, time_window_start as start_time, time_window_end as end_time 
+             FROM vendor_availability_v2
+             WHERE vendor_id = $1
+             AND day_of_week = $2
+             AND service_style = $3
+             AND is_enabled = true
+             ORDER BY time_window_start`,
+            [vendorId, dayOfWeek, serviceStyle]
+          );
+        } catch (queryErr) {
+          if (queryErr.message?.includes("service_style")) {
+            scheduleSlots = await query(
+              `SELECT *, start_time as time_window_start, end_time as time_window_end 
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+               AND day_of_week = $2
+               AND service_type = $3
+               AND is_available = true
+               ORDER BY start_time`,
+              [vendorId, dayOfWeek, serviceStyle]
+            );
+          } else {
+            throw queryErr;
+          }
+        }
       }
-      const scheduleSlots = await query(scheduleQuery, scheduleParams);
       if (scheduleSlots.rows.length === 0) {
         return c.json({
           success: true,
@@ -236477,9 +236636,14 @@ function registerVendorScheduleEndpoints(app2) {
       let schedule;
       try {
         schedule = await query(
-          `SELECT * FROM vendor_availability_v2
+          `SELECT *, 
+                  COALESCE(service_style, service_type) as service_style,
+                  COALESCE(time_window_start, start_time) as time_window_start,
+                  COALESCE(time_window_end, end_time) as time_window_end,
+                  COALESCE(is_enabled, is_available) as is_enabled
+           FROM vendor_availability_v2
            WHERE vendor_id = $1
-           ORDER BY day_of_week, time_window_start`,
+           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
           [vendorId]
         );
       } catch (error) {
@@ -236559,36 +236723,71 @@ function registerVendorScheduleEndpoints(app2) {
         const dayOfWeek = slot.dayOfWeek || slot.day_of_week;
         const serviceStyle = slot.serviceStyle || slot.service_style || "at_center";
         const timeWindowStart = slot.timeWindowStart || slot.time_window_start;
-        await query(
-          `DELETE FROM vendor_availability_v2
-           WHERE vendor_id = $1
-           AND day_of_week = $2
-           AND service_style = $3
-           AND time_window_start = $4`,
-          [
-            vendorId,
-            dayOfWeek,
-            serviceStyle,
-            timeWindowStart
-          ]
-        );
-        const result = await query(
-          `INSERT INTO vendor_availability_v2
-           (vendor_id, day_of_week, service_style, time_window_start, time_window_end, slot_duration_minutes, max_capacity, is_enabled)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING *`,
-          [
-            vendorId,
-            dayOfWeek,
-            serviceStyle,
-            timeWindowStart,
-            slot.timeWindowEnd || slot.time_window_end,
-            slot.slotDurationMinutes || slot.slot_duration_minutes || 30,
-            slot.maxCapacity || slot.max_capacity || 1,
-            slot.isEnabled !== false
-          ]
-        );
-        if (result.rows.length > 0) {
+        try {
+          await query(
+            `DELETE FROM vendor_availability_v2
+             WHERE vendor_id = $1
+             AND day_of_week = $2
+             AND COALESCE(service_style, service_type) = $3
+             AND COALESCE(time_window_start, start_time) = $4`,
+            [
+              vendorId,
+              dayOfWeek,
+              serviceStyle,
+              timeWindowStart
+            ]
+          );
+        } catch (deleteErr) {
+          if (deleteErr.message?.includes("service_style")) {
+            await query(
+              `DELETE FROM vendor_availability_v2
+               WHERE vendor_id = $1
+               AND day_of_week = $2
+               AND service_type = $3
+               AND start_time = $4`,
+              [vendorId, dayOfWeek, serviceStyle, timeWindowStart]
+            );
+          }
+        }
+        let result;
+        try {
+          result = await query(
+            `INSERT INTO vendor_availability_v2
+             (vendor_id, day_of_week, service_style, time_window_start, time_window_end, slot_duration_minutes, max_capacity, is_enabled)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING *`,
+            [
+              vendorId,
+              dayOfWeek,
+              serviceStyle,
+              timeWindowStart,
+              slot.timeWindowEnd || slot.time_window_end,
+              slot.slotDurationMinutes || slot.slot_duration_minutes || 30,
+              slot.maxCapacity || slot.max_capacity || 1,
+              slot.isEnabled !== false
+            ]
+          );
+        } catch (insertErr) {
+          if (insertErr.message?.includes("service_style")) {
+            result = await query(
+              `INSERT INTO vendor_availability_v2
+               (vendor_id, day_of_week, service_type, start_time, end_time, is_available)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               RETURNING *`,
+              [
+                vendorId,
+                dayOfWeek,
+                serviceStyle,
+                timeWindowStart,
+                slot.timeWindowEnd || slot.time_window_end,
+                slot.isEnabled !== false
+              ]
+            );
+          } else {
+            throw insertErr;
+          }
+        }
+        if (result && result.rows.length > 0) {
           results.push(result.rows[0]);
         }
       }
@@ -236639,10 +236838,24 @@ init_rds_connection();
 function registerCustomerBookingHistoryEndpoints(app2) {
   app2.get("/customer/:customerId/bookings", async (c) => {
     try {
-      const { customerId } = c.req.param();
+      let { customerId } = c.req.param();
       const status = c.req.query("status");
       const limit2 = parseInt(c.req.query("limit") || "50", 10);
       const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
+      if (!isUUID) {
+        const customers = await select("customers", { phone: customerId });
+        if (customers.length > 0) {
+          customerId = customers[0].id;
+        } else {
+          return c.json({
+            success: true,
+            bookings: [],
+            stats: { total: 0, confirmed: 0, inProgress: 0, completed: 0, cancelled: 0 },
+            total: 0
+          });
+        }
+      }
       let bookingQuery = `
         SELECT b.*,
                v.business_name as vendor_name,
@@ -236896,24 +237109,39 @@ function registerPrescriptionEndpoints(app2) {
       if (!hasPrescriptionCapability) {
         return c.json({ error: "Vendor does not have prescription capability" }, 403);
       }
-      const prescription = await insert("prescriptions", {
-        booking_id: bookingId,
-        customer_id: customerId,
-        pet_id: petId || null,
-        vendor_id: vendorId,
-        staff_id: staffId || null,
-        medications,
-        // JSONB array
-        instructions: instructions || null,
-        diagnosis: diagnosis || null,
-        follow_up_date: followUpDate || null,
-        created_by: createdBy || null,
-        created_by_role: createdByRole || "vendor",
-        is_active: true
-      });
+      const prescriptionRecords = [];
+      const meds = Array.isArray(medications) ? medications : [medications];
+      for (const med of meds) {
+        const combinedInstructions = [
+          diagnosis ? `Diagnosis: ${diagnosis}` : "",
+          med.instructions || instructions || ""
+        ].filter(Boolean).join("\n");
+        const prescriptionRecord = {
+          booking_id: bookingId,
+          customer_id: customerId,
+          pet_id: petId || null,
+          vendor_id: vendorId,
+          prescription_date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+          is_active: true,
+          // Schema 057 individual medication columns
+          medication_name: med.name || "Prescription",
+          dosage: med.dosage || null,
+          frequency: med.frequency || null,
+          duration: med.duration || null,
+          instructions: combinedInstructions || null
+        };
+        prescriptionRecords.push(prescriptionRecord);
+      }
+      const insertedPrescriptions = [];
+      for (const record of prescriptionRecords) {
+        const prescription = await insert("prescriptions", record);
+        insertedPrescriptions.push(prescription[0]);
+      }
       return c.json({
         success: true,
-        prescription: prescription[0],
+        prescription: insertedPrescriptions[0],
+        prescriptions: insertedPrescriptions,
+        totalMedications: insertedPrescriptions.length,
         message: "Prescription created successfully"
       });
     } catch (error) {
@@ -237352,11 +237580,13 @@ function registerEcommerceEndpoints(app2) {
       try {
         products = await query(productQuery, params);
       } catch (error) {
-        if (error.message?.includes("invalid input syntax for type uuid")) {
+        if (error.message?.includes("invalid input syntax for type uuid") || error.message?.includes('relation "products" does not exist') || error.message?.includes("column") || error.code === "42P01" || // undefined_table
+        error.code === "42703") {
           return c.json({
             success: true,
             products: [],
-            total: 0
+            total: 0,
+            message: "No products available yet"
           });
         }
         throw error;
@@ -237368,6 +237598,63 @@ function registerEcommerceEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error fetching products:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/ecommerce/products", async (c) => {
+    try {
+      const vendorId = c.req.query("vendorId");
+      const category = c.req.query("category");
+      const search = c.req.query("search");
+      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      let productQuery = `
+        SELECT p.*, v.business_name as vendor_name
+        FROM products p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        WHERE p.is_active = true AND p.status = 'active'
+      `;
+      const params = [];
+      let paramIndex = 1;
+      if (vendorId) {
+        productQuery += ` AND p.vendor_id = $${paramIndex}`;
+        params.push(vendorId);
+        paramIndex++;
+      }
+      if (category) {
+        productQuery += ` AND p.category_id = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+      if (search) {
+        productQuery += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
+      productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit2, offset2);
+      let products;
+      try {
+        products = await query(productQuery, params);
+      } catch (error) {
+        if (error.message?.includes("invalid input syntax for type uuid") || error.message?.includes('relation "products" does not exist') || error.message?.includes("column") || error.code === "42P01" || // undefined_table
+        error.code === "42703") {
+          return c.json({
+            success: true,
+            products: [],
+            total: 0,
+            message: "No products available yet"
+          });
+        }
+        throw error;
+      }
+      return c.json({
+        success: true,
+        products: products?.rows || [],
+        total: products?.rows?.length || 0
+      });
+    } catch (error) {
+      console.error("Error fetching ecommerce products:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -239243,6 +239530,7 @@ function registerPetEndpoints(app2) {
 }
 
 // src/endpoints/vendor-services.ts
+var import_crypto10 = require("crypto");
 init_rds_connection();
 function registerVendorServicesEndpoints(app2) {
   app2.get("/vendor/:vendorId/services", async (c) => {
@@ -239283,7 +239571,16 @@ function registerVendorServicesEndpoints(app2) {
           if (roles.length > 0) {
             role = roles[0];
             roleConfig = role.config || {};
-            allowedServiceStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ["at_home", "at_center", "tele"];
+            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ["at_home", "at_center", "tele"];
+            const styleMapping = {
+              "at_clinic": "at_center",
+              "at_center": "at_center",
+              "video_consultation": "tele",
+              "tele": "tele",
+              "home_visit": "at_home",
+              "at_home": "at_home"
+            };
+            allowedServiceStyles = rawStyles.map((s) => styleMapping[s] || s);
             try {
               const allPermissions = await query(
                 `SELECT role_id, permission_name 
@@ -239400,49 +239697,165 @@ function registerVendorServicesEndpoints(app2) {
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
       }
+      let actualVendorId = vendorId;
+      const existingVendor = await select("vendors", { id: vendorId });
+      if (existingVendor.length === 0) {
+        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+            const vendorByPhone = await select("vendors", { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
+            } else {
+              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert("vendors", {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+                role_id: identity.selected_role_id,
+                category: "general",
+                address: payload.address || "Not specified",
+                city: payload.city || "Not specified",
+                state: payload.state || "Not specified",
+                pincode: payload.pin || payload.pincode || "000000",
+                status: "active",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: "Vendor not approved or activated" }, 403);
+          }
+        } else {
+          return c.json({ error: "Vendor identity not found" }, 404);
+        }
+      }
       const serviceData = await c.req.json();
       const {
         serviceId,
+        catalogId,
+        // Also accept catalogId from service_catalog
         serviceStyle,
+        serviceName,
+        // Accept service name for catalog items
+        categoryName,
+        // Accept category name for catalog items
         customPrice,
         customDuration,
+        basePrice,
+        duration,
         isEnabled,
         publishStatus,
-        isCustomService
+        isCustomService,
+        description
       } = serviceData;
-      if (!serviceId || !serviceStyle) {
+      const inputServiceId = serviceId || catalogId;
+      if (!inputServiceId || !serviceStyle) {
         return c.json({ error: "serviceId and serviceStyle are required" }, 400);
       }
-      const existing = await query(
-        `SELECT id FROM vendor_services
-         WHERE vendor_id = $1 AND service_id = $2 AND service_style = $3`,
-        [vendorId, serviceId, serviceStyle]
-      );
-      if (existing.rows.length > 0) {
-        return c.json({ error: "Service already exists for this style" }, 409);
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inputServiceId);
+      console.log(`[VendorServices] Input service ID: ${inputServiceId}, isUUID: ${isUUID}`);
+      let effectiveServiceId = inputServiceId;
+      let baseService = null;
+      if (isUUID) {
+        const baseServices = await select("services", { id: inputServiceId });
+        if (baseServices.length > 0) {
+          baseService = baseServices[0];
+          effectiveServiceId = baseServices[0].id;
+        } else {
+          const catalogResult = await query(
+            `SELECT * FROM service_catalog WHERE id::text = $1`,
+            [inputServiceId]
+          );
+          if (catalogResult.rows.length > 0) {
+            const catalogItem = catalogResult.rows[0];
+            baseService = {
+              name: catalogItem.service_name || catalogItem.display_name || serviceName,
+              category: catalogItem.category_name || categoryName,
+              price: catalogItem.base_price || basePrice || 0,
+              duration_minutes: catalogItem.duration_minutes || duration || 30,
+              catalogId: catalogItem.service_id
+              // TEXT catalog ID
+            };
+            effectiveServiceId = catalogItem.id;
+          }
+        }
+      } else {
+        const catalogResult = await query(
+          `SELECT * FROM service_catalog WHERE service_id = $1`,
+          [inputServiceId]
+        );
+        if (catalogResult.rows.length > 0) {
+          const catalogItem = catalogResult.rows[0];
+          baseService = {
+            name: catalogItem.service_name || catalogItem.display_name || serviceName,
+            category: catalogItem.category_name || categoryName,
+            price: catalogItem.base_price || basePrice || 0,
+            duration_minutes: catalogItem.duration_minutes || duration || 30,
+            catalogId: catalogItem.service_id
+          };
+          effectiveServiceId = catalogItem.id;
+          console.log(`[VendorServices] Resolved TEXT catalog ID ${inputServiceId} to UUID ${effectiveServiceId}`);
+        }
       }
-      const baseServices = await select("services", { id: serviceId });
-      if (baseServices.length === 0) {
+      if (!baseService && serviceName) {
+        baseService = {
+          name: serviceName,
+          category: categoryName || "General",
+          price: basePrice || 0,
+          duration_minutes: duration || 30
+        };
+        effectiveServiceId = (0, import_crypto10.randomUUID)();
+        console.log(`[VendorServices] Creating custom service with new UUID: ${effectiveServiceId}`);
+      }
+      if (!baseService) {
         return c.json({ error: "Base service not found" }, 404);
       }
-      const baseService = baseServices[0];
+      const existing = await query(
+        `SELECT id, publish_status, is_enabled FROM vendor_services
+         WHERE vendor_id = $1 AND service_id = $2 AND service_style = $3`,
+        [actualVendorId, effectiveServiceId, serviceStyle]
+      );
+      if (existing.rows.length > 0) {
+        return c.json({
+          success: true,
+          message: "Service already exists",
+          alreadyExists: true,
+          vendorServiceId: existing.rows[0].id,
+          publishStatus: existing.rows[0].publish_status,
+          isEnabled: existing.rows[0].is_enabled
+        }, 200);
+      }
       const vendorService = await insert("vendor_services", {
-        vendor_id: vendorId,
-        service_id: serviceId,
+        vendor_id: actualVendorId,
+        service_id: effectiveServiceId,
+        // Now always UUID
         service_name: baseService.name,
         category: baseService.category,
         service_style: serviceStyle,
-        price: customPrice || baseService.price || price,
+        price: customPrice || baseService.price || 0,
         custom_price: customPrice || null,
         duration_minutes: customDuration || baseService.duration_minutes || 30,
         custom_duration: customDuration || null,
         is_enabled: isEnabled !== false,
         publish_status: publishStatus || "published",
-        is_custom_service: isCustomService || false
+        is_custom_service: isCustomService || false,
+        custom_description: description || null
       });
       return c.json({
         success: true,
         service: vendorService[0],
+        vendorServiceId: vendorService[0]?.id,
         message: "Service added successfully"
       });
     } catch (error) {
@@ -239517,17 +239930,17 @@ function registerVendorServicesEndpoints(app2) {
         category,
         subCategory,
         serviceStyle,
-        price: price2,
+        price,
         duration
       } = serviceData;
-      if (!serviceName || !serviceStyle || !price2) {
+      if (!serviceName || !serviceStyle || !price) {
         return c.json({ error: "serviceName, serviceStyle, and price are required" }, 400);
       }
       const baseService = await insert("services", {
         name: serviceName,
         description: description || null,
         category: category || null,
-        price: price2,
+        price,
         // Required column
         duration_minutes: duration || 30,
         is_active: true
@@ -239540,8 +239953,8 @@ function registerVendorServicesEndpoints(app2) {
         category: category || null,
         sub_category: subCategory || null,
         service_style: serviceStyle,
-        price: price2,
-        custom_price: price2,
+        price,
+        custom_price: price,
         duration_minutes: duration || 30,
         custom_duration: duration || 30,
         is_enabled: true,
@@ -239653,11 +240066,13 @@ var GetVendorProductsHandler = class extends BaseHandler {
         const countResult = await query(countQuery, countParams);
         total = parseInt(countResult.rows[0]?.total || "0", 10);
       } catch (error) {
-        if (error.message?.includes("invalid input syntax for type uuid")) {
+        if (error.message?.includes("invalid input syntax for type uuid") || error.message?.includes('relation "products" does not exist') || error.message?.includes("column") || error.code === "42P01" || // undefined_table
+        error.code === "42703") {
           return this.success({
             products: [],
             total: 0,
-            count: 0
+            count: 0,
+            message: "No products available yet"
           });
         }
         throw error;
@@ -242958,8 +243373,8 @@ init_rds_connection();
 function registerSubscriptionEndpoints(app2) {
   app2.post("/subscriptions/plans", async (c) => {
     try {
-      const { vendorId, name, price: price2, interval, features, description } = await c.req.json();
-      if (!vendorId || !name || !price2 || !interval) {
+      const { vendorId, name, price, interval, features, description } = await c.req.json();
+      if (!vendorId || !name || !price || !interval) {
         return c.json({ error: "vendorId, name, price, and interval are required" }, 400);
       }
       if (!["monthly", "yearly"].includes(interval)) {
@@ -242969,7 +243384,7 @@ function registerSubscriptionEndpoints(app2) {
         vendor_id: vendorId,
         name,
         description: description || null,
-        price: price2,
+        price,
         interval,
         features: features || [],
         is_active: true
@@ -246996,7 +247411,7 @@ function registerAdminIntegrationEndpoints(app2) {
         await putSecret("google-maps/api-key", apiKey, "Google Maps API Key for Warmpawz platform");
         console.log("[CONFIG] Google Maps API key stored in Secrets Manager");
       }
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "platform:integrations:google_maps",
@@ -247070,7 +247485,7 @@ function registerAdminIntegrationEndpoints(app2) {
   app2.put("/admin/integrations/payment-gateway", async (c) => {
     try {
       const { keyId, keySecret, mode, enabled } = await c.req.json();
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "platform:integrations:razorpay",
@@ -247117,7 +247532,7 @@ function registerAdminIntegrationEndpoints(app2) {
   app2.put("/admin/integrations/logistics", async (c) => {
     try {
       const logisticsData = await c.req.json();
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "platform:settings:logistics",
@@ -247885,7 +248300,7 @@ function registerReturnsEndpoints(app2) {
       } else {
         existingPolicies.push(policyData);
       }
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "admin:settings:return_policies",
@@ -248284,7 +248699,7 @@ function registerEnhancedOtpEndpoints(app2) {
         scheduledDate,
         scheduledTime,
         petId,
-        price: price2,
+        price,
         notes
       } = body2;
       if (!customerId || !vendorId || !serviceType || !serviceId) {
@@ -248303,8 +248718,8 @@ function registerEnhancedOtpEndpoints(app2) {
         booking_time: scheduledTime,
         status: "confirmed",
         service_type: serviceType,
-        base_price: parseFloat(price2 || "0"),
-        total_amount: parseFloat(price2 || "0"),
+        base_price: parseFloat(price || "0"),
+        total_amount: parseFloat(price || "0"),
         payment_status: "pending",
         notes: notes || null,
         otp_code: startOTP,
@@ -248624,9 +249039,12 @@ async function decodeJwtFromHeader(authHeader) {
     const parts = token.split(".");
     if (parts.length !== 3) return {};
     const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+    const phone = payload.phone || payload.phone_number || payload["cognito:username"];
+    const userId = payload.userId || payload.sub || payload.user_id;
+    console.log(`\u{1F510} [JWT-DECODE] Extracted phone: ${phone}, userId: ${userId}`);
     return {
-      phone: payload.phone_number || payload["cognito:username"],
-      userId: payload.sub
+      phone,
+      userId
     };
   } catch (e) {
     console.warn("Failed to decode JWT:", e);
@@ -249795,7 +250213,7 @@ function registerVendorSettingsEndpoints(app2) {
       const existingSettings = await select("platform_settings", { setting_key: "admin:settings:payment_rules" });
       const rules = existingSettings.length > 0 ? existingSettings[0].setting_value : [];
       rules.push(rule);
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "admin:settings:payment_rules",
@@ -249832,7 +250250,7 @@ function registerVendorSettingsEndpoints(app2) {
         return c.json({ error: "Payment rule not found" }, 404);
       }
       rules[ruleIndex] = { ...rules[ruleIndex], ...updates, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "admin:settings:payment_rules",
@@ -249854,7 +250272,7 @@ function registerVendorSettingsEndpoints(app2) {
       const existingSettings = await select("platform_settings", { setting_key: "admin:settings:payment_rules" });
       const rules = existingSettings.length > 0 ? existingSettings[0].setting_value : [];
       const filteredRules = rules.filter((r) => r.id !== id);
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "admin:settings:payment_rules",
@@ -249880,7 +250298,7 @@ function registerVendorSettingsEndpoints(app2) {
       const existingSettings = await select("platform_settings", { setting_key: "admin:settings:refund_tiers" });
       const tiers = existingSettings.length > 0 ? existingSettings[0].setting_value : [];
       tiers.push(tier);
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "admin:settings:refund_tiers",
@@ -249906,7 +250324,7 @@ function registerVendorSettingsEndpoints(app2) {
       const existingSettings = await select("platform_settings", { setting_key: "admin:settings:booking_rules" });
       const rules = existingSettings.length > 0 ? existingSettings[0].setting_value : [];
       rules.push(rule);
-      await upsert2(
+      await upsert(
         "platform_settings",
         {
           setting_key: "admin:settings:booking_rules",
@@ -252281,7 +252699,7 @@ function registerPushNotificationEndpoints(app2) {
 }
 
 // src/endpoints/commute-time.ts
-var import_crypto14 = require("crypto");
+var import_crypto15 = require("crypto");
 init_base_handler();
 var CalculateCommuteTimeHandler = class extends BaseHandler {
   async handle(context3) {
@@ -252387,20 +252805,20 @@ async function createApiGatewayEvent17(c) {
     pathParameters: c.req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto14.randomUUID)()
+      requestId: (0, import_crypto15.randomUUID)()
     }
   };
 }
 function createLambdaContext17() {
   return {
-    requestId: (0, import_crypto14.randomUUID)(),
+    requestId: (0, import_crypto15.randomUUID)(),
     functionName: "commute-time-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/booking-details-enhanced.ts
-var import_crypto15 = require("crypto");
+var import_crypto16 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetEnhancedBookingDetailsHandler = class extends BaseHandler {
@@ -252636,13 +253054,13 @@ function createApiGatewayEvent18(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto15.randomUUID)()
+      requestId: (0, import_crypto16.randomUUID)()
     }
   };
 }
 function createLambdaContext18() {
   return {
-    requestId: (0, import_crypto15.randomUUID)(),
+    requestId: (0, import_crypto16.randomUUID)(),
     functionName: "booking-details-enhanced-handler",
     functionVersion: "$LATEST"
   };
@@ -252652,7 +253070,7 @@ function createLambdaContext18() {
 init_base_handler();
 init_rds_connection();
 init_aws_clients();
-var import_crypto16 = __toESM(require("crypto"));
+var import_crypto17 = __toESM(require("crypto"));
 var RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "";
 var RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
 var RAZORPAY_BASE_URL = "https://api.razorpay.com/v1";
@@ -253196,12 +253614,12 @@ async function createApiGatewayEvent19(c) {
     body: body2,
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
-    requestContext: { requestId: import_crypto16.default.randomUUID() }
+    requestContext: { requestId: import_crypto17.default.randomUUID() }
   };
 }
 function createLambdaContext19() {
   return {
-    requestId: import_crypto16.default.randomUUID(),
+    requestId: import_crypto17.default.randomUUID(),
     functionName: "razorpay-settlement-handler",
     functionVersion: "$LATEST"
   };
@@ -254069,6 +254487,7 @@ function createSafeErrorResponse(error, defaultMessage = "Internal server error"
 }
 
 // src/endpoints/admin-advanced.ts
+var COLORS = ["#FF8C42", "#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#8B5CF6"];
 var GetVendorTypesHandler = class extends BaseHandler {
   async handle(context3) {
     const vendorTypes = await select("vendor_types", {});
@@ -254125,11 +254544,11 @@ var UpdateRegionalPricingHandler = class extends BaseHandler {
     if (!serviceId || !body2.pricing) {
       return this.error("Service ID and pricing are required", 400);
     }
-    for (const price2 of body2.pricing) {
+    for (const price of body2.pricing) {
       await update(
         "service_regional_pricing",
-        { service_id: serviceId, region_id: price2.regionId },
-        price2
+        { service_id: serviceId, region_id: price.regionId },
+        price
       );
     }
     return this.success({ success: true });
@@ -255481,15 +255900,15 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/catalog/products", async (c) => {
     try {
       const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, categoryId, price: price2, stock, status } = body2;
-      if (!name || !price2) {
+      const { name, description, categoryId, price, stock, status } = body2;
+      if (!name || !price) {
         return c.json({ success: false, error: "Product name and price are required" }, 400);
       }
       const newProduct = await insert("products", {
         name,
         description: description || "",
         category_id: categoryId || null,
-        price: parseFloat(price2) || 0,
+        price: parseFloat(price) || 0,
         stock: parseInt(stock || "0", 10),
         status: status || "active",
         is_active: status !== "inactive",
@@ -255599,8 +256018,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/catalog/services", async (c) => {
     try {
       const body2 = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price: price2, duration, serviceType, status, applicableRoles, categoryName, subCategoryName } = body2;
-      if (!name || !price2) {
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName } = body2;
+      if (!name || !price) {
         return c.json({ success: false, error: "Service name and price are required" }, 400);
       }
       let durationMinutes = 30;
@@ -255634,7 +256053,7 @@ function registerAdminAdvancedEndpoints(app2) {
         sub_category_name: subCategoryName || null,
         applicable_roles: roles,
         service_style: serviceStyle,
-        base_price: parseFloat(price2) || 0,
+        base_price: parseFloat(price) || 0,
         duration_minutes: durationMinutes,
         status: status || "active",
         publish_status: "published",
@@ -258167,6 +258586,38 @@ function registerAdminAdvancedEndpoints(app2) {
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
+  app2.post("/admin/fix/activate-approved-vendors", async (c) => {
+    try {
+      const result = await query("UPDATE vendors SET is_active = true, updated_at = NOW() WHERE status = 'approved' AND is_active = false RETURNING id, phone, business_name");
+      return c.json({ success: true, message: "All approved vendors activated", activated: result.rows.length, vendors: result.rows });
+    } catch (error) {
+      const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app2.post("/admin/fix/create-vendor-identity", async (c) => {
+    try {
+      const body2 = await c.req.json().catch(() => ({}));
+      const { phone, roleId } = body2;
+      if (!phone) {
+        return c.json({ success: false, error: "phone is required" }, 400);
+      }
+      const existing = await query("SELECT * FROM vendor_identity WHERE phone = $1", [phone]);
+      if (existing.rows.length > 0) {
+        await query("UPDATE vendor_identity SET selected_role_id = $1, onboarding_status = 'ACTIVATED', updated_at = NOW() WHERE phone = $2", [roleId, phone]);
+        return c.json({ success: true, message: "Vendor identity updated", identity: existing.rows[0] });
+      }
+      const result = await query(`
+        INSERT INTO vendor_identity (phone, selected_role_id, onboarding_status, metadata, created_at, updated_at)
+        VALUES ($1, $2, 'ACTIVATED', '{}', NOW(), NOW())
+        RETURNING *
+      `, [phone, roleId]);
+      return c.json({ success: true, message: "Vendor identity created", identity: result.rows[0] });
+    } catch (error) {
+      const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
   app2.post("/admin/fix/publish-vendor-services", async (c) => {
     try {
       await query("UPDATE vendor_services SET is_active = true WHERE is_active = false");
@@ -258342,6 +258793,1180 @@ function registerAdminAdvancedEndpoints(app2) {
     } catch (error) {
       console.error("Error fixing indexes:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/admin/vendors/compliance-issues/:issueId/investigate", async (c) => {
+    try {
+      const issueId = c.req.param("issueId");
+      const body2 = await c.req.json().catch(() => ({}));
+      const adminId = body2.adminId || "system";
+      try {
+        await query(`
+          UPDATE compliance_issues 
+          SET status = 'investigating', 
+              investigated_by = $1,
+              investigated_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $2
+        `, [adminId, issueId]);
+      } catch (err) {
+        await query(`
+          UPDATE vendors 
+          SET status = 'under_review',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [issueId]);
+      }
+      return c.json({
+        success: true,
+        message: "Issue marked as investigating",
+        issueId
+      });
+    } catch (error) {
+      console.error("Error investigating compliance issue:", error);
+      return c.json({ error: error.message || "Failed to update issue status" }, 500);
+    }
+  });
+  app2.post("/admin/vendors/compliance-issues/:issueId/resolve", async (c) => {
+    try {
+      const issueId = c.req.param("issueId");
+      const body2 = await c.req.json().catch(() => ({}));
+      const adminId = body2.adminId || "system";
+      const resolutionNotes = body2.notes || null;
+      try {
+        await query(`
+          UPDATE compliance_issues 
+          SET status = 'resolved', 
+              resolved_by = $1,
+              resolved_at = NOW(),
+              resolution_notes = $2,
+              updated_at = NOW()
+          WHERE id = $3
+        `, [adminId, resolutionNotes, issueId]);
+      } catch (err) {
+        await query(`
+          UPDATE vendors 
+          SET status = 'approved',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [issueId]);
+      }
+      return c.json({
+        success: true,
+        message: "Issue marked as resolved",
+        issueId
+      });
+    } catch (error) {
+      console.error("Error resolving compliance issue:", error);
+      return c.json({ error: error.message || "Failed to resolve issue" }, 500);
+    }
+  });
+  app2.get("/admin/vendors/insights", async (c) => {
+    try {
+      const range = c.req.query("range") || "30d";
+      const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
+      const salesData = await query(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN b.status = 'completed' THEN b.total_amount ELSE 0 END), 0) as total_sales,
+          COALESCE(SUM(CASE WHEN b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '${days} days' THEN b.total_amount ELSE 0 END), 0) as period_sales,
+          COALESCE(SUM(CASE WHEN b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '${days * 2} days' AND b.created_at < NOW() - INTERVAL '${days} days' THEN b.total_amount ELSE 0 END), 0) as previous_period_sales
+        FROM bookings b
+        WHERE b.created_at >= NOW() - INTERVAL '${days * 2} days'
+      `).catch(() => ({ rows: [{ total_sales: 0, period_sales: 0, previous_period_sales: 0 }] }));
+      const sales = salesData.rows[0] || { total_sales: 0, period_sales: 0, previous_period_sales: 0 };
+      const growth = sales.previous_period_sales > 0 ? (sales.period_sales - sales.previous_period_sales) / sales.previous_period_sales * 100 : 0;
+      const bookingStats = await query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE status = 'completed') as completed_bookings,
+          COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled_bookings,
+          COUNT(*) as total_bookings,
+          AVG(rating) FILTER (WHERE rating IS NOT NULL) as avg_rating
+        FROM bookings
+        WHERE created_at >= NOW() - INTERVAL '${days} days'
+      `).catch(() => ({ rows: [{ completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 }] }));
+      const stats = bookingStats.rows[0] || { completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 };
+      const cancellationRate = stats.total_bookings > 0 ? stats.cancelled_bookings / stats.total_bookings * 100 : 0;
+      const categoryDist = await query(`
+        SELECT 
+          COALESCE(v.category, v.vendor_type, 'other') as category,
+          COUNT(*) as count
+        FROM vendors v
+        WHERE v.is_active = true
+        GROUP BY COALESCE(v.category, v.vendor_type, 'other')
+      `).catch(() => ({ rows: [] }));
+      const totalVendors = categoryDist.rows.reduce((sum, r) => sum + parseInt(r.count), 0);
+      const byCategory = categoryDist.rows.map((r, idx) => ({
+        name: r.category.charAt(0).toUpperCase() + r.category.slice(1),
+        value: parseInt(r.count),
+        color: COLORS[idx % COLORS.length]
+      }));
+      const statusDist = await query(`
+        SELECT 
+          CASE 
+            WHEN is_active = true AND status = 'approved' THEN 'Active'
+            WHEN status = 'pending' OR status = 'pending_approval' THEN 'Pending'
+            WHEN is_active = false THEN 'Suspended'
+            ELSE 'Other'
+          END as status,
+          COUNT(*) as count
+        FROM vendors
+        GROUP BY 
+          CASE 
+            WHEN is_active = true AND status = 'approved' THEN 'Active'
+            WHEN status = 'pending' OR status = 'pending_approval' THEN 'Pending'
+            WHEN is_active = false THEN 'Suspended'
+            ELSE 'Other'
+          END
+      `).catch(() => ({ rows: [] }));
+      const byStatus = statusDist.rows.map((r, idx) => ({
+        name: r.status,
+        value: parseInt(r.count),
+        color: r.status === "Active" ? COLORS[1] : r.status === "Pending" ? COLORS[3] : COLORS[4]
+      }));
+      const trends = await query(`
+        SELECT 
+          DATE(b.created_at) as date,
+          COALESCE(SUM(CASE WHEN b.status = 'completed' THEN b.total_amount ELSE 0 END), 0) as sales,
+          COUNT(*) FILTER (WHERE b.status = 'completed') as bookings,
+          COUNT(DISTINCT b.vendor_id) as vendors
+        FROM bookings b
+        WHERE b.created_at >= NOW() - INTERVAL '${days} days'
+        GROUP BY DATE(b.created_at)
+        ORDER BY DATE(b.created_at) ASC
+      `).catch(() => ({ rows: [] }));
+      const trendsData = trends.rows.map((r) => ({
+        date: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        sales: parseFloat(r.sales) || 0,
+        bookings: parseInt(r.bookings) || 0,
+        vendors: parseInt(r.vendors) || 0
+      }));
+      return c.json({
+        sales: {
+          total: parseFloat(sales.total_sales) || 0,
+          growth: Math.round(growth * 10) / 10,
+          thisMonth: parseFloat(sales.period_sales) || 0,
+          lastMonth: parseFloat(sales.previous_period_sales) || 0,
+          trend: growth >= 0 ? "up" : "down"
+        },
+        activities: {
+          totalBookings: parseInt(stats.total_bookings) || 0,
+          completedBookings: parseInt(stats.completed_bookings) || 0,
+          cancelledBookings: parseInt(stats.cancelled_bookings) || 0,
+          cancellationRate: Math.round(cancellationRate * 10) / 10,
+          avgRating: parseFloat(stats.avg_rating) || 0
+        },
+        distribution: {
+          byCategory,
+          byStatus
+        },
+        trends: trendsData
+      });
+    } catch (error) {
+      console.error("Error fetching vendor insights:", error);
+      return c.json({ error: error.message || "Failed to fetch insights" }, 500);
+    }
+  });
+  app2.get("/admin/vendors/activities", async (c) => {
+    try {
+      const filter = c.req.query("filter") || "all";
+      const limit2 = parseInt(c.req.query("limit") || "50");
+      let activitiesQuery = `
+        SELECT 
+          'booking' as activity_type,
+          b.id as activity_id,
+          v.id as vendor_id,
+          v.business_name as vendor_name,
+          'New booking created' as description,
+          b.created_at as timestamp,
+          jsonb_build_object(
+            'bookingId', b.id,
+            'amount', b.total_amount,
+            'status', b.status
+          ) as metadata,
+          CASE 
+            WHEN b.status = 'completed' THEN 'success'
+            WHEN b.status = 'cancelled' THEN 'error'
+            ELSE 'info'
+          END as severity
+        FROM bookings b
+        INNER JOIN vendors v ON v.id = b.vendor_id
+        WHERE b.created_at >= NOW() - INTERVAL '7 days'
+      `;
+      if (filter !== "all") {
+        if (filter === "booking") {
+          activitiesQuery += ` AND true`;
+        } else if (filter === "payment") {
+          activitiesQuery = `
+            SELECT 
+              'payment' as activity_type,
+              t.id as activity_id,
+              v.id as vendor_id,
+              v.business_name as vendor_name,
+              'Payment received' as description,
+              t.created_at as timestamp,
+              jsonb_build_object('amount', t.amount, 'type', t.type) as metadata,
+              'success' as severity
+            FROM transactions t
+            INNER JOIN vendors v ON v.id = t.vendor_id
+            WHERE t.created_at >= NOW() - INTERVAL '7 days' AND t.type = 'payment'
+          `;
+        }
+      }
+      activitiesQuery += ` ORDER BY timestamp DESC LIMIT $1`;
+      const activities = await query(activitiesQuery, [limit2]).catch(() => ({ rows: [] }));
+      const formatted = activities.rows.map((r) => ({
+        id: r.activity_id,
+        vendorId: r.vendor_id,
+        vendorName: r.vendor_name,
+        activityType: r.activity_type,
+        description: r.description,
+        timestamp: r.timestamp,
+        metadata: r.metadata || {},
+        severity: r.severity || "info"
+      }));
+      return c.json({
+        activities: formatted
+      });
+    } catch (error) {
+      console.error("Error fetching vendor activities:", error);
+      return c.json({ activities: [] });
+    }
+  });
+  app2.get("/admin/vendors/fraud-alerts", async (c) => {
+    try {
+      const suspiciousPayments = await query(`
+        SELECT 
+          v.id as vendor_id,
+          v.business_name as vendor_name,
+          COUNT(DISTINCT t.id) as transaction_count,
+          COUNT(DISTINCT CASE WHEN t.type = 'refund' THEN t.id END) as refund_count,
+          COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_bookings,
+          ROUND(COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(DISTINCT b.id), 0) * 100, 1) as cancellation_rate
+        FROM vendors v
+        LEFT JOIN transactions t ON t.vendor_id = v.id AND t.created_at >= NOW() - INTERVAL '30 days'
+        LEFT JOIN bookings b ON b.vendor_id = v.id AND b.created_at >= NOW() - INTERVAL '30 days'
+        WHERE v.is_active = true
+        GROUP BY v.id, v.business_name
+        HAVING 
+          COUNT(DISTINCT CASE WHEN t.type = 'refund' THEN t.id END) > 5
+          OR COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled') > 10
+          OR (COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(DISTINCT b.id), 0)) > 0.3
+        ORDER BY refund_count DESC, cancellation_rate DESC
+        LIMIT 20
+      `).catch(() => ({ rows: [] }));
+      const alerts = suspiciousPayments.rows.map((r, idx) => {
+        let riskLevel = "low";
+        let alertType = "suspicious_payment";
+        if (r.refund_count > 10 || r.cancellation_rate > 40) {
+          riskLevel = "high";
+        } else if (r.refund_count > 5 || r.cancellation_rate > 25) {
+          riskLevel = "medium";
+        }
+        if (r.cancellation_rate > 30) {
+          alertType = "cancellation_pattern";
+        } else if (r.refund_count > 5) {
+          alertType = "suspicious_payment";
+        }
+        return {
+          id: `alert-${r.vendor_id}-${idx}`,
+          vendorId: r.vendor_id,
+          vendorName: r.vendor_name,
+          riskLevel,
+          alertType,
+          description: r.refund_count > 5 ? `Multiple refund requests (${r.refund_count}) in short time period` : `High cancellation rate (${r.cancellation_rate}%)`,
+          detectedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          evidence: {
+            transactionCount: parseInt(r.transaction_count) || 0,
+            cancellationRate: parseFloat(r.cancellation_rate) || 0
+          },
+          status: "new"
+        };
+      });
+      return c.json({ alerts });
+    } catch (error) {
+      console.error("Error fetching fraud alerts:", error);
+      return c.json({ alerts: [] });
+    }
+  });
+  app2.post("/admin/vendors/fraud-alerts/:alertId/:action", async (c) => {
+    try {
+      const alertId = c.req.param("alertId");
+      const action = c.req.param("action");
+      const body2 = await c.req.json().catch(() => ({}));
+      const adminId = body2.adminId || "system";
+      const vendorIdMatch = alertId.match(/alert-([^-]+)-/);
+      const vendorId = vendorIdMatch ? vendorIdMatch[1] : null;
+      if (action === "investigate" && vendorId) {
+        await query(`
+          UPDATE vendors 
+          SET status = 'under_review',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [vendorId]);
+      } else if (action === "resolve" && vendorId) {
+        await query(`
+          UPDATE vendors 
+          SET status = 'approved',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [vendorId]);
+      }
+      return c.json({
+        success: true,
+        message: `Alert ${action}d successfully`,
+        alertId
+      });
+    } catch (error) {
+      console.error("Error handling fraud alert:", error);
+      return c.json({ error: error.message || "Failed to handle alert" }, 500);
+    }
+  });
+  app2.get("/admin/vendors/abnormal-behavior", async (c) => {
+    try {
+      const behaviors = await query(`
+        SELECT 
+          v.id as vendor_id,
+          v.business_name as vendor_name,
+          COUNT(b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_count,
+          COUNT(b.id) as total_bookings,
+          ROUND(COUNT(b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(b.id), 0) * 100, 1) as cancellation_rate,
+          ROUND(AVG(b.rating) FILTER (WHERE b.rating IS NOT NULL), 1) as avg_rating
+        FROM vendors v
+        LEFT JOIN bookings b ON b.vendor_id = v.id AND b.created_at >= NOW() - INTERVAL '30 days'
+        WHERE v.is_active = true
+        GROUP BY v.id, v.business_name
+        HAVING 
+          COUNT(b.id) FILTER (WHERE b.status = 'cancelled') > 5
+          OR (COUNT(b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(b.id), 0)) > 0.2
+          OR AVG(b.rating) FILTER (WHERE b.rating IS NOT NULL) < 3.0
+        ORDER BY cancellation_rate DESC, avg_rating ASC
+        LIMIT 20
+      `).catch(() => ({ rows: [] }));
+      const formatted = behaviors.rows.map((r) => {
+        let behaviorType = "high_cancellation";
+        let severity = "warning";
+        let description = "";
+        let value = 0;
+        let threshold = 20;
+        if (r.cancellation_rate > 30) {
+          behaviorType = "high_cancellation";
+          severity = "alert";
+          description = `Cancellation rate above 30%`;
+          value = parseFloat(r.cancellation_rate) || 0;
+          threshold = 20;
+        } else if (r.avg_rating < 3) {
+          behaviorType = "low_rating";
+          severity = "warning";
+          description = `Average rating below 3.0`;
+          value = parseFloat(r.avg_rating) || 0;
+          threshold = 3.5;
+        } else if (r.cancellation_rate > 20) {
+          behaviorType = "high_cancellation";
+          severity = "warning";
+          description = `Cancellation rate above 20%`;
+          value = parseFloat(r.cancellation_rate) || 0;
+          threshold = 20;
+        }
+        return {
+          vendorId: r.vendor_id,
+          vendorName: r.vendor_name,
+          behaviorType,
+          severity,
+          description,
+          metrics: {
+            value,
+            threshold,
+            trend: value > threshold ? "up" : "down"
+          }
+        };
+      });
+      return c.json({ behaviors: formatted });
+    } catch (error) {
+      console.error("Error fetching abnormal behaviors:", error);
+      return c.json({ behaviors: [] });
+    }
+  });
+  app2.post("/admin/fix/remove-duplicate-permissions", async (c) => {
+    try {
+      const result = await query(`
+        WITH duplicates AS (
+          SELECT id, role_id, permission_name,
+                 ROW_NUMBER() OVER (PARTITION BY role_id, permission_name ORDER BY id) as rn
+          FROM role_permissions
+        )
+        DELETE FROM role_permissions
+        WHERE id IN (SELECT id FROM duplicates WHERE rn > 1)
+        RETURNING id, role_id, permission_name
+      `);
+      return c.json({
+        success: true,
+        message: `Removed ${result.rows.length} duplicate permission entries`,
+        removed: result.rows
+      });
+    } catch (error) {
+      console.error("Error removing duplicates:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app2.post("/admin/fix/capability-aliases", async (c) => {
+    try {
+      const aliases = {
+        // Booking aliases
+        "booking": "bookings",
+        "booking_create": "bookings",
+        "booking_view": "bookings",
+        // Prescription aliases
+        "prescription": "prescriptions",
+        "prescription_create": "prescriptions",
+        // Staff aliases
+        "staff_create": "staff_management",
+        "staff_schedule": "schedule_management",
+        // Inventory/Catalog aliases
+        "inventory_manage": "inventory",
+        "product_catalog": "catalog",
+        // Pricing aliases
+        "service_pricing": "pricing",
+        // Diagnostic aliases
+        "diagnostic_results": "diagnostics"
+      };
+      let deleted = 0;
+      let updated = 0;
+      const results = [];
+      for (const [wrongId, correctId] of Object.entries(aliases)) {
+        const perms = await query(
+          "SELECT id, role_id, permission_name FROM role_permissions WHERE permission_name = $1",
+          [wrongId]
+        );
+        for (const perm of perms.rows) {
+          const existing = await query(
+            "SELECT id FROM role_permissions WHERE role_id = $1 AND permission_name = $2",
+            [perm.role_id, correctId]
+          );
+          if (existing.rows.length > 0) {
+            await query("DELETE FROM role_permissions WHERE id = $1", [perm.id]);
+            results.push({ role_id: perm.role_id, action: "deleted", from: wrongId, reason: `${correctId} already exists` });
+            deleted++;
+          } else {
+            await query("UPDATE role_permissions SET permission_name = $1 WHERE id = $2", [correctId, perm.id]);
+            results.push({ role_id: perm.role_id, action: "updated", from: wrongId, to: correctId });
+            updated++;
+          }
+        }
+      }
+      return c.json({
+        success: true,
+        message: `Fixed capability aliases: ${updated} updated, ${deleted} deleted`,
+        total_changes: updated + deleted,
+        results
+      });
+    } catch (error) {
+      console.error("Error fixing capability aliases:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app2.post("/admin/fix/normalize-role-capabilities", async (c) => {
+    try {
+      const allCaps = await select("capabilities", {});
+      const nameToId = {};
+      const capIds = /* @__PURE__ */ new Set();
+      allCaps.forEach((cap) => {
+        nameToId[cap.name] = cap.id;
+        nameToId[cap.name.toLowerCase()] = cap.id;
+        capIds.add(cap.id);
+      });
+      const aliases = {
+        "booking": "bookings"
+        // booking should be bookings
+      };
+      const allPerms = await query("SELECT id, role_id, permission_name FROM role_permissions");
+      let deletedCount = 0;
+      let updatedCount = 0;
+      const fixes = [];
+      const permsByRole = {};
+      for (const perm of allPerms.rows) {
+        if (!permsByRole[perm.role_id]) {
+          permsByRole[perm.role_id] = [];
+        }
+        permsByRole[perm.role_id].push(perm);
+      }
+      for (const [roleId, perms] of Object.entries(permsByRole)) {
+        const existingPermNames = new Set(perms.map((p) => p.permission_name));
+        const normalizedNames = /* @__PURE__ */ new Set();
+        for (const perm of perms) {
+          const permName = perm.permission_name;
+          const normalizedName = permName.toLowerCase().replace(/\s+/g, "_");
+          if (aliases[permName] && capIds.has(aliases[permName])) {
+            const aliasTarget = aliases[permName];
+            if (existingPermNames.has(aliasTarget) || normalizedNames.has(aliasTarget)) {
+              await query("DELETE FROM role_permissions WHERE id = $1", [perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: "deleted (alias target exists)", new: aliasTarget });
+              deletedCount++;
+            } else {
+              await query("UPDATE role_permissions SET permission_name = $1 WHERE id = $2", [aliasTarget, perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: "aliased", new: aliasTarget });
+              normalizedNames.add(aliasTarget);
+              updatedCount++;
+            }
+            continue;
+          }
+          const isCapitalized = permName && permName[0] === permName[0].toUpperCase() && /[A-Z]/.test(permName);
+          if (isCapitalized) {
+            if (normalizedNames.has(normalizedName)) {
+              await query("DELETE FROM role_permissions WHERE id = $1", [perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: "deleted (duplicate)" });
+              deletedCount++;
+            } else {
+              const correctId = nameToId[permName] || normalizedName;
+              await query("UPDATE role_permissions SET permission_name = $1 WHERE id = $2", [correctId, perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: "updated", new: correctId });
+              normalizedNames.add(correctId.toLowerCase());
+              updatedCount++;
+            }
+          } else {
+            normalizedNames.add(normalizedName);
+          }
+        }
+      }
+      return c.json({
+        success: true,
+        message: `Normalized role capabilities: ${updatedCount} updated, ${deletedCount} duplicates deleted`,
+        fixes
+      });
+    } catch (error) {
+      console.error("Error normalizing role capabilities:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app2.get("/admin/debug/capabilities", async (c) => {
+    try {
+      const allCaps = await select("capabilities", {});
+      const capIds = allCaps.map((r) => r.id);
+      return c.json({
+        count: allCaps.length,
+        sampleCap: allCaps[0],
+        firstTenIds: capIds.slice(0, 10),
+        hasDashboard: capIds.includes("dashboard"),
+        hasProfile: capIds.includes("profile")
+      });
+    } catch (error) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/admin/fix/apply-role-capability-mappings", async (c) => {
+    try {
+      const ROLE_CAPABILITY_MAPPINGS = {
+        // ===== HOME GROOMER (Solo, no center) =====
+        "groomers": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "gps_tracking",
+          // Home service tracking
+          "gallery",
+          "portfolio",
+          "custom_services",
+          "pricing",
+          "services"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== CENTER GROOMER (With salon/center) =====
+        "pet_groomer": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          // Center operations
+          "gallery",
+          "portfolio",
+          "custom_services",
+          "package_management",
+          "pricing"
+        ],
+        // ===== WALKER (Home only, solo) =====
+        "pet_walker": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "gps_tracking",
+          "photo_updates",
+          "walking",
+          // Home/mobile service
+          "custom_services",
+          "package_management",
+          "pricing"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== SITTER (Home only) =====
+        "pet_sitter": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "photo_updates",
+          // Share updates during sitting
+          "custom_services",
+          "package_management",
+          "pricing"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== TRAINER (Center with home/tele options) =====
+        "pet_trainer": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          // Center operations
+          "training_programs",
+          "progress_tracking",
+          "custom_services",
+          "package_management",
+          "pricing",
+          "tele",
+          "video_calling"
+          // Remote training
+        ],
+        // ===== VETERINARIAN (Clinic with home/tele) =====
+        "veterinarian": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          // Clinic operations
+          "prescriptions",
+          "medical_records",
+          "diagnostics",
+          "emergency",
+          "patient_monitoring",
+          "vet_summary",
+          "custom_services",
+          "package_management",
+          "pricing",
+          "tele",
+          "video_calling"
+          // Tele-consultation
+        ],
+        // ===== VETERINARY CLINIC (Multi-doctor clinic) =====
+        "veterinary_clinic": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          // Clinic operations
+          "prescriptions",
+          "medical_records",
+          "diagnostics",
+          "emergency",
+          "emergency_protocols",
+          "patient_monitoring",
+          "vet_summary",
+          "diagnostic_lab",
+          "multi_doctor_management",
+          "ambulance_services",
+          "custom_services",
+          "package_management",
+          "pricing",
+          "tele",
+          "video_calling"
+        ],
+        // ===== TAXI (Mobile, solo) =====
+        "pet_taxi": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "gps_tracking",
+          "distance_pricing",
+          "emergency",
+          "custom_services",
+          "package_management"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== AMBULANCE (Mobile emergency) =====
+        "pet_ambulance": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "gps_tracking",
+          "emergency",
+          "emergency_protocols"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== RELOCATION (Mobile) =====
+        "pet_relocation": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "gps_tracking",
+          "distance_pricing",
+          "custom_services",
+          "pricing"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== BOARDING (Center only) =====
+        "pet_boarding": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          // Center operations
+          "rooms",
+          "room_management",
+          "cctv_access",
+          "photo_updates",
+          "occupancy_tracking",
+          "nightly_pricing",
+          "custom_services",
+          "package_management"
+        ],
+        // ===== RESORT (Premium boarding) =====
+        "pet_resort": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          "rooms",
+          "room_management",
+          "cctv_access",
+          "photo_updates",
+          "occupancy_tracking",
+          "nightly_pricing",
+          "custom_services",
+          "package_management",
+          "gallery",
+          "events"
+        ],
+        // ===== PET CAFE (Center only) =====
+        "pet_cafe": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          "menu",
+          "cafe_tables",
+          "table_management",
+          "pax_management",
+          "inventory",
+          "catalog",
+          "events",
+          "custom_services",
+          "package_management"
+        ],
+        // ===== NUTRITIONIST (Tele/Home, solo) =====
+        "nutritionist": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "meal_plans",
+          "diet_charts",
+          "progress_tracking",
+          "custom_services",
+          "package_management",
+          "pricing",
+          "tele",
+          "video_calling"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== BEHAVIORIST (Tele/Home, solo) =====
+        "pet_behaviorist": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "progress_tracking",
+          "custom_services",
+          "package_management",
+          "pricing",
+          "tele",
+          "video_calling"
+          // NO facility_management, NO staff_management
+        ],
+        // ===== PHOTOGRAPHER (Can have studio) =====
+        "pet_photographer": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          // Studio
+          "gallery",
+          "portfolio",
+          "custom_services",
+          "package_management",
+          "pricing"
+        ],
+        // ===== EVENT ORGANIZER (Mobile) =====
+        "pet_event_organizer": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "events",
+          "gallery",
+          "portfolio",
+          "custom_services",
+          "package_management",
+          "pricing"
+          // NO facility_management (mobile events)
+        ],
+        // ===== SHELTER (Center, NGO) =====
+        "pet_shelter": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          "adoption",
+          "donation",
+          "events",
+          "pet_profiles"
+          // Different financial model for NGO
+        ],
+        // ===== SUNSET SERVICES (Center/Home) =====
+        "pet_sunset_services": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          "staff_management",
+          "memorial",
+          "counseling",
+          "custom_services",
+          "package_management"
+        ],
+        // ===== BREEDER (Center) =====
+        "pet_breeder": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "bookings",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "notifications",
+          "facility_management",
+          // Breeding facility
+          "catalog",
+          "pet_profiles",
+          "custom_services",
+          "pricing"
+        ],
+        // ===== INSURANCE (Center, online) =====
+        "insurance": [
+          "dashboard",
+          "profile",
+          "chat",
+          "schedule",
+          "notifications",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "facility_management",
+          "staff_management",
+          "insurance_plans",
+          "policy_management",
+          "claims_management",
+          "custom_services",
+          "pricing"
+        ],
+        // ===== PET STORE (Seller - uses Seller Hub) =====
+        "pet_products_store": [
+          "dashboard",
+          "profile",
+          "chat",
+          "notifications",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "facility_management",
+          "staff_management",
+          "catalog",
+          "inventory",
+          "orders",
+          "delivery",
+          "pricing",
+          "promotions",
+          "coupons",
+          "analytics"
+          // NO bookings (uses orders)
+        ],
+        // ===== PET PHARMACY (Healthcare + Retail) =====
+        "pet_pharmacy": [
+          "dashboard",
+          "profile",
+          "chat",
+          "notifications",
+          "earnings",
+          "settlements",
+          "bank_account",
+          "facility_management",
+          "staff_management",
+          "catalog",
+          "inventory",
+          "orders",
+          "delivery",
+          "prescriptions",
+          "prescription_verification",
+          "controlled_substances",
+          "expiry_management"
+          // NO bookings (uses orders)
+        ]
+      };
+      const rolesResult = await query("SELECT id, name FROM roles");
+      const roles = rolesResult.rows;
+      const VALID_CAP_IDS = /* @__PURE__ */ new Set([
+        // Core Operations
+        "dashboard",
+        "bookings",
+        "services",
+        "staff",
+        "schedule",
+        "profile",
+        "staff_management",
+        "schedule_management",
+        // Finance & Payments
+        "earnings",
+        "settlements",
+        "bank_account",
+        "pricing",
+        // Communication
+        "chat",
+        "notifications",
+        "video_calling",
+        "tele",
+        // Healthcare
+        "prescriptions",
+        "medical_records",
+        "diagnostics",
+        "pharmacy",
+        "emergency",
+        "emergency_protocols",
+        "ambulance_services",
+        "diagnostic_lab",
+        "patient_monitoring",
+        "vet_summary",
+        "prescription_verification",
+        "controlled_substances",
+        "multi_doctor_management",
+        // Specialized Services
+        "ambulance",
+        "cafe_tables",
+        "table_management",
+        "rooms",
+        "room_management",
+        "insurance_plans",
+        "pet_profiles",
+        "meal_plans",
+        "training_programs",
+        "walking",
+        "pax_management",
+        "occupancy_tracking",
+        "nightly_pricing",
+        "menu",
+        "diet_charts",
+        "counseling",
+        "adoption",
+        "donation",
+        "events",
+        "memorial",
+        "claims_management",
+        "policy_management",
+        // Operations
+        "inventory",
+        "orders",
+        "delivery",
+        "gps_tracking",
+        "reports",
+        "settings",
+        "catalog",
+        "expiry_management",
+        "distance_pricing",
+        "facility_management",
+        "custom_services",
+        // Media
+        "photo_updates",
+        "gallery",
+        "portfolio",
+        "progress_tracking",
+        "cctv_access",
+        // Advanced Features
+        "packages",
+        "subscriptions",
+        "coupons",
+        "promotions",
+        "reviews",
+        "analytics",
+        "export",
+        "integrations",
+        "package_management"
+      ]);
+      const validCapIds = VALID_CAP_IDS;
+      const results = [];
+      for (const role of roles) {
+        const roleName = role.name;
+        const roleId = role.id;
+        if (!ROLE_CAPABILITY_MAPPINGS[roleName]) {
+          results.push({ role: roleName, action: "skipped", reason: "No mapping defined" });
+          continue;
+        }
+        const targetCaps = ROLE_CAPABILITY_MAPPINGS[roleName];
+        const validTargetCaps = targetCaps.filter((cap) => validCapIds.has(cap));
+        const invalidCaps = targetCaps.filter((cap) => !validCapIds.has(cap));
+        if (invalidCaps.length > 0) {
+          console.log(`Warning: Role ${roleName} has invalid capabilities: ${invalidCaps.join(", ")}`);
+        }
+        const currentPerms = await query(
+          "SELECT id, permission_name FROM role_permissions WHERE role_id = $1",
+          [roleId]
+        );
+        const currentCaps = new Set(currentPerms.rows.map((r) => r.permission_name));
+        const toAdd = validTargetCaps.filter((cap) => !currentCaps.has(cap));
+        const toRemove = [...currentCaps].filter((cap) => !validTargetCaps.includes(cap));
+        for (const cap of toAdd) {
+          await insert("role_permissions", {
+            role_id: roleId,
+            permission_name: cap,
+            resource: "*",
+            action: "*"
+          });
+        }
+        for (const cap of toRemove) {
+          await query(
+            "DELETE FROM role_permissions WHERE role_id = $1 AND permission_name = $2",
+            [roleId, cap]
+          );
+        }
+        results.push({
+          role: roleName,
+          action: "updated",
+          before: currentCaps.size,
+          after: validTargetCaps.length,
+          added: toAdd,
+          removed: toRemove,
+          invalid: invalidCaps
+        });
+      }
+      return c.json({
+        success: true,
+        message: `Applied capability mappings to ${results.filter((r) => r.action === "updated").length} roles`,
+        results
+      });
+    } catch (error) {
+      console.error("Error applying role capability mappings:", error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 }
@@ -261050,7 +262675,7 @@ var CreateHolidayPackageHandler = class extends BaseHandler {
         title,
         destination,
         duration_days,
-        price: price2,
+        price,
         group_size,
         tour_type,
         inclusions,
@@ -261063,7 +262688,7 @@ var CreateHolidayPackageHandler = class extends BaseHandler {
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
-      if (!title || !destination || !duration_days || !price2) {
+      if (!title || !destination || !duration_days || !price) {
         return this.error("Title, destination, duration, and price are required", 400);
       }
       const newPackage = await query(`
@@ -261090,7 +262715,7 @@ var CreateHolidayPackageHandler = class extends BaseHandler {
         title,
         destination,
         duration_days,
-        price2,
+        price,
         group_size || 1,
         tour_type || "group",
         inclusions ? JSON.stringify(inclusions) : null,
@@ -264649,9 +266274,9 @@ function registerSupportCrmEndpoints(app2) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select13 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select13("platform_settings", {
+        const settings = await select12("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -266276,21 +267901,74 @@ var GetVendorComplianceIssuesHandler = class extends BaseHandler {
       try {
         issues = await query(`
           SELECT 
-            v.*,
-            ci.issue_type,
-            ci.severity,
-            ci.description,
-            ci.created_at as issue_created_at,
-            ci.resolved_at
+            ci.id,
+            v.id as vendor_id,
+            v.business_name as vendor_name,
+            COALESCE(ci.issue_type, 'Missing Documentation') as issue_type,
+            COALESCE(ci.severity, 'medium') as severity,
+            COALESCE(ci.description, 'Compliance issue detected') as description,
+            COALESCE(ci.created_at, v.updated_at) as reported_at,
+            CASE 
+              WHEN ci.resolved_at IS NOT NULL THEN 'resolved'
+              WHEN ci.investigated_at IS NOT NULL THEN 'investigating'
+              ELSE 'open'
+            END as status
           FROM vendors v
-          INNER JOIN compliance_issues ci ON ci.vendor_id = v.id
-          WHERE ci.resolved_at IS NULL
-          ORDER BY ci.severity DESC, ci.created_at DESC
+          LEFT JOIN compliance_issues ci ON ci.vendor_id = v.id
+          WHERE (ci.resolved_at IS NULL OR ci.id IS NULL)
+            AND (
+              v.status IN ('pending', 'under_review', 'pending_clarification')
+              OR ci.id IS NOT NULL
+            )
+          ORDER BY 
+            CASE ci.severity
+              WHEN 'critical' THEN 1
+              WHEN 'high' THEN 2
+              WHEN 'medium' THEN 3
+              WHEN 'low' THEN 4
+              ELSE 5
+            END,
+            COALESCE(ci.created_at, v.updated_at) DESC
+          LIMIT 50
         `);
-      } catch {
-        issues = { rows: [] };
+      } catch (err) {
+        issues = await query(`
+          SELECT 
+            v.id as id,
+            v.id as vendor_id,
+            v.business_name as vendor_name,
+            'Missing Documentation' as issue_type,
+            CASE 
+              WHEN v.status = 'pending_clarification' THEN 'high'
+              WHEN v.status = 'under_review' THEN 'medium'
+              ELSE 'low'
+            END as severity,
+            CASE 
+              WHEN v.status = 'pending_clarification' THEN 'Updated documentation not uploaded'
+              WHEN v.status = 'under_review' THEN 'Vendor under review'
+              ELSE 'Compliance check required'
+            END as description,
+            v.updated_at as reported_at,
+            CASE 
+              WHEN v.status = 'under_review' THEN 'investigating'
+              ELSE 'open'
+            END as status
+          FROM vendors v
+          WHERE v.status IN ('pending_clarification', 'under_review', 'pending')
+          ORDER BY v.updated_at DESC
+          LIMIT 50
+        `);
       }
-      return this.success({ success: true, issues: issues.rows || [] });
+      const formatted = (issues.rows || []).map((r) => ({
+        id: r.id || r.vendor_id,
+        vendorName: r.vendor_name || r.business_name,
+        issueType: r.issue_type,
+        severity: r.severity || "medium",
+        description: r.description,
+        reportedAt: r.reported_at || r.issue_created_at,
+        status: r.status || "open"
+      }));
+      return this.success({ success: true, issues: formatted });
     } catch (error) {
       console.error("Error fetching compliance issues:", error);
       return this.success({ success: true, issues: [] });
@@ -266820,7 +268498,7 @@ var UpdateGeneralSettingsHandler = class extends BaseHandler {
   async handle(context3) {
     try {
       const body2 = this.parseBody(context3.event);
-      await upsert2("platform_settings", {
+      await upsert("platform_settings", {
         setting_key: "admin:settings:general",
         setting_value: body2.settings,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -267093,7 +268771,7 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.put("/admin/vendor-settings", async (c) => {
     try {
       const body2 = await c.req.json();
-      await upsert2("platform_settings", {
+      await upsert("platform_settings", {
         setting_key: "admin:vendor-settings",
         setting_value: body2.settings || {},
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -267260,7 +268938,7 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.post("/admin/settings/integrations", async (c) => {
     try {
       const body2 = await c.req.json();
-      await upsert2("platform_settings", {
+      await upsert("platform_settings", {
         setting_key: "admin:settings:integrations",
         setting_value: body2.settings || {},
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -267288,7 +268966,7 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.post("/admin/settings/notifications", async (c) => {
     try {
       const body2 = await c.req.json();
-      await upsert2("platform_settings", {
+      await upsert("platform_settings", {
         setting_key: "admin:settings:notifications",
         setting_value: body2.settings || {},
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -268198,113 +269876,28 @@ function registerVendorDashboardMissingEndpoints(app2) {
 
 // src/endpoints/ui-dashboard-config.ts
 init_rds_connection();
-var DEFAULT_DASHBOARD_BUTTONS = [
-  {
-    id: "veterinarian",
-    label: "Veterinarian",
-    icon: "\u{1FA7A}",
-    enabled: true,
-    serviceId: "vet",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "groomer",
-    label: "Groomer",
-    icon: "\u2702\uFE0F",
-    enabled: true,
-    serviceId: "grooming",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "walker",
-    label: "Walker",
-    icon: "\u{1F6B6}",
-    enabled: true,
-    serviceId: "walking",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "trainer",
-    label: "Trainer",
-    icon: "\u{1F393}",
-    enabled: true,
-    serviceId: "training",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "boarding",
-    label: "Boarding",
-    icon: "\u{1F3E0}",
-    enabled: true,
-    serviceId: "boarding",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "nutritionist",
-    label: "Nutritionist",
-    icon: "\u{1F957}",
-    enabled: true,
-    serviceId: "nutrition",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "insurance",
-    label: "Insurance",
-    icon: "\u{1F6E1}\uFE0F",
-    enabled: true,
-    serviceId: "insurance",
-    launchPhase: "full",
-    rolloutPercentage: 100
-  },
-  {
-    id: "complete_plan",
-    label: "Complete Plan",
-    icon: "\u{1F4CB}",
-    enabled: true,
-    serviceId: "care_plan",
-    launchPhase: "full",
-    rolloutPercentage: 100,
-    description: "AI-powered comprehensive pet care plan generation"
-  }
+var ALL_CUSTOMER_SERVICES = [
+  { id: "vet", label: "Vet Care", icon: "\u{1FA7A}", enabled: true, serviceId: "vet", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "grooming", label: "Grooming", icon: "\u2702\uFE0F", enabled: true, serviceId: "grooming", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "shop", label: "Shop", icon: "\u{1F6CD}\uFE0F", enabled: true, serviceId: "shop", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "training", label: "Training", icon: "\u{1F393}", enabled: true, serviceId: "training", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "walker", label: "Walker", icon: "\u{1F6B6}", enabled: true, serviceId: "walker", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "boarding", label: "Boarding", icon: "\u{1F3E0}", enabled: true, serviceId: "boarding", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "adoption", label: "Adoption", icon: "\u2764\uFE0F", enabled: true, serviceId: "adoption", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "mating", label: "Mating & Dating", icon: "\u{1F495}", enabled: true, serviceId: "mating-dating-hub", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "cafes", label: "Pet Cafes", icon: "\u2615", enabled: true, serviceId: "cafes", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "photography", label: "Photography", icon: "\u{1F4F7}", enabled: true, serviceId: "photography", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "insurance", label: "Insurance", icon: "\u{1F6E1}\uFE0F", enabled: true, serviceId: "insurance", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "breeder", label: "Breeder", icon: "\u{1F415}", enabled: true, serviceId: "breeder", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "ambulance", label: "Ambulance", icon: "\u{1F691}", enabled: true, serviceId: "ambulance", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "nutritionist", label: "Nutritionist", icon: "\u{1F957}", enabled: true, serviceId: "nutritionist", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "relocation", label: "Relocation", icon: "\u2708\uFE0F", enabled: true, serviceId: "relocation", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "resort", label: "Pet Resort", icon: "\u{1F3D6}\uFE0F", enabled: true, serviceId: "resort", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "holiday", label: "Pet Holiday", icon: "\u{1F334}", enabled: true, serviceId: "holiday", launchPhase: "full", rolloutPercentage: 100 },
+  { id: "sunset", label: "Sunset Care", icon: "\u{1F305}", enabled: true, serviceId: "sunset", launchPhase: "full", rolloutPercentage: 100 }
 ];
 function getDefaultButtonsForRole(roleId) {
-  const roleLower = roleId.toLowerCase();
-  const defaultButtons = {
-    veterinarian: [
-      { id: "vet_consultation", label: "Book Consultation", icon: "\u{1FA7A}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "vet_emergency", label: "Emergency Care", icon: "\u{1F6A8}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "vet_vaccination", label: "Vaccination", icon: "\u{1F489}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "vet_checkup", label: "Health Checkup", icon: "\u{1F4CB}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-    ],
-    groomer: [
-      { id: "grooming_booking", label: "Book Grooming", icon: "\u2702\uFE0F", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "grooming_spa", label: "Pet Spa", icon: "\u{1F6C1}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "grooming_nail", label: "Nail Trimming", icon: "\u{1F485}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-    ],
-    walker: [
-      { id: "walk_booking", label: "Book Walk", icon: "\u{1F6B6}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "walk_sitting", label: "Pet Sitting", icon: "\u{1F3E0}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-    ],
-    trainer: [
-      { id: "training_booking", label: "Book Training", icon: "\u{1F393}", enabled: true, launchPhase: "full", rolloutPercentage: 100 },
-      { id: "training_behavior", label: "Behavior Training", icon: "\u{1F415}", enabled: true, launchPhase: "full", rolloutPercentage: 100 }
-    ]
-  };
-  if (defaultButtons[roleLower]) {
-    return defaultButtons[roleLower];
-  }
-  for (const [key, buttons] of Object.entries(defaultButtons)) {
-    if (roleLower.includes(key) || key.includes(roleLower)) {
-      return buttons;
-    }
-  }
-  return DEFAULT_DASHBOARD_BUTTONS;
+  return [...ALL_CUSTOMER_SERVICES];
 }
 function registerUIDashboardConfigEndpoints(app2) {
   app2.get("/config/ui/dashboard", async (c) => {
@@ -268350,7 +269943,8 @@ function registerUIDashboardConfigEndpoints(app2) {
           buttons = [];
         }
       }
-      if (buttons.length === 0) {
+      if (!buttons || buttons.length === 0) {
+        console.log(`No buttons found for role ${roleId}, using defaults`);
         buttons = getDefaultButtonsForRole(roleId);
       }
       return c.json({
@@ -268427,20 +270021,22 @@ function registerUIDashboardConfigEndpoints(app2) {
           break;
         }
       }
+      if (existing && existing.key !== settingKey) {
+        await query(
+          `DELETE FROM platform_settings WHERE setting_key = $1`,
+          [existing.key]
+        ).catch(() => {
+        });
+      }
       if (existing) {
-        if (existing.key !== settingKey) {
-          await query(
-            `DELETE FROM platform_settings WHERE setting_key = $1`,
-            [existing.key]
-          ).catch(() => {
-          });
-        }
         await update(
           "platform_settings",
           { setting_key: settingKey },
           {
             setting_value: configToSave,
-            setting_type: "json",
+            setting_type: "object",
+            // Must be one of: string, number, boolean, object, array
+            description: `Dashboard UI configuration for role ${roleId}`,
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
           }
         );
@@ -268570,6 +270166,34 @@ function registerCarePlansEndpoints(app2) {
       }, 500);
     }
   });
+  app2.get("/crm/plans/templates", async (c) => {
+    try {
+      const planType = c.req.query("planType");
+      const petType = c.req.query("petType");
+      let filters = { is_active: true };
+      if (planType) filters.plan_type = planType;
+      if (petType) filters.pet_type = petType;
+      const templates = await select("care_plan_templates", filters);
+      return c.json({
+        success: true,
+        templates: templates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          planType: t.plan_type,
+          petType: t.pet_type,
+          condition: t.condition,
+          description: t.description,
+          templateData: t.template_data
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch templates"
+      }, 500);
+    }
+  });
   app2.get("/crm/plans/:planId", async (c) => {
     try {
       const planId = c.req.param("planId");
@@ -268656,34 +270280,6 @@ function registerCarePlansEndpoints(app2) {
       return c.json({
         success: false,
         error: error.message || "Failed to complete plan item"
-      }, 500);
-    }
-  });
-  app2.get("/crm/plans/templates", async (c) => {
-    try {
-      const planType = c.req.query("planType");
-      const petType = c.req.query("petType");
-      let filters = { is_active: true };
-      if (planType) filters.plan_type = planType;
-      if (petType) filters.pet_type = petType;
-      const templates = await select("care_plan_templates", filters);
-      return c.json({
-        success: true,
-        templates: templates.map((t) => ({
-          id: t.id,
-          name: t.name,
-          planType: t.plan_type,
-          petType: t.pet_type,
-          condition: t.condition,
-          description: t.description,
-          templateData: t.template_data
-        }))
-      });
-    } catch (error) {
-      console.error("Error fetching templates:", error);
-      return c.json({
-        success: false,
-        error: error.message || "Failed to fetch templates"
       }, 500);
     }
   });
@@ -268782,6 +270378,351 @@ Return ONLY valid JSON in this exact format:
       ]
     };
   }
+}
+
+// src/endpoints/vendor-support.ts
+init_rds_connection();
+function registerVendorSupportEndpoints(app2) {
+  app2.post("/vendor/support/tickets", async (c) => {
+    try {
+      const {
+        vendorId,
+        subject,
+        description,
+        category,
+        priority,
+        bookingId,
+        orderId,
+        metadata
+      } = await c.req.json();
+      if (!vendorId || !subject || !description) {
+        return c.json({
+          success: false,
+          error: "vendorId, subject, and description are required"
+        }, 400);
+      }
+      const vendors2 = await select("vendors", { id: vendorId });
+      if (vendors2.length === 0) {
+        return c.json({
+          success: false,
+          error: "Vendor not found"
+        }, 404);
+      }
+      const vendor = vendors2[0];
+      const ticketNumber = `VT-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0].replace(/-/g, "")}-${Date.now().toString().slice(-6)}`;
+      const ticket = await insert("support_tickets", {
+        ticket_number: ticketNumber,
+        subject,
+        message: description,
+        description,
+        category: category || "general",
+        priority: priority || "medium",
+        status: "open",
+        vendor_id: vendorId,
+        booking_id: bookingId || null,
+        order_id: orderId || null,
+        customer_name: vendor.business_name || vendor.owner_name,
+        customer_phone: vendor.phone,
+        customer_email: vendor.email,
+        metadata: JSON.stringify({
+          ...metadata,
+          vendor_type: vendor.vendor_type,
+          source: "vendor_dashboard"
+        }),
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return c.json({
+        success: true,
+        ticket: ticket[0],
+        ticketNumber,
+        message: "Support ticket created successfully"
+      });
+    } catch (error) {
+      console.error("Error creating vendor support ticket:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to create support ticket"
+      }, 500);
+    }
+  });
+  app2.get("/vendor/support/tickets", async (c) => {
+    try {
+      const vendorId = c.req.query("vendorId");
+      const status = c.req.query("status");
+      const category = c.req.query("category");
+      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      if (!vendorId) {
+        return c.json({
+          success: false,
+          error: "vendorId is required"
+        }, 400);
+      }
+      let queryStr = `
+        SELECT 
+          st.*,
+          COUNT(DISTINCT str.id) as message_count,
+          MAX(str.created_at) as last_message_at
+        FROM support_tickets st
+        LEFT JOIN support_ticket_responses str ON str.ticket_id = st.id
+        WHERE st.vendor_id = $1
+      `;
+      const params = [vendorId];
+      let paramIndex = 2;
+      if (status) {
+        queryStr += ` AND st.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+      if (category) {
+        queryStr += ` AND st.category = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+      queryStr += `
+        GROUP BY st.id
+        ORDER BY st.created_at DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+      params.push(limit2, offset2);
+      const result = await query(queryStr, params);
+      let countQuery = "SELECT COUNT(*) FROM support_tickets WHERE vendor_id = $1";
+      const countParams = [vendorId];
+      let countParamIndex = 2;
+      if (status) {
+        countQuery += ` AND status = $${countParamIndex}`;
+        countParams.push(status);
+        countParamIndex++;
+      }
+      if (category) {
+        countQuery += ` AND category = $${countParamIndex}`;
+        countParams.push(category);
+        countParamIndex++;
+      }
+      const countResult = await query(countQuery, countParams);
+      const total = parseInt(countResult.rows[0]?.count || "0", 10);
+      return c.json({
+        success: true,
+        tickets: result.rows || [],
+        pagination: {
+          total,
+          limit: limit2,
+          offset: offset2,
+          hasMore: offset2 + limit2 < total
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching vendor tickets:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch tickets"
+      }, 500);
+    }
+  });
+  app2.get("/vendor/support/tickets/:ticketId", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      const vendorId = c.req.query("vendorId");
+      if (!vendorId) {
+        return c.json({
+          success: false,
+          error: "vendorId is required"
+        }, 400);
+      }
+      const tickets = await select("support_tickets", {
+        id: ticketId,
+        vendor_id: vendorId
+      });
+      if (tickets.length === 0) {
+        return c.json({
+          success: false,
+          error: "Ticket not found"
+        }, 404);
+      }
+      const ticket = tickets[0];
+      const messages = await query(
+        `SELECT * FROM support_ticket_responses 
+         WHERE ticket_id = $1 
+         ORDER BY created_at ASC`,
+        [ticketId]
+      );
+      return c.json({
+        success: true,
+        ticket: {
+          ...ticket,
+          messages: messages.rows || []
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching ticket details:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch ticket details"
+      }, 500);
+    }
+  });
+  app2.post("/vendor/support/tickets/:ticketId/messages", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      const { vendorId, message: message2, attachments } = await c.req.json();
+      if (!vendorId || !message2) {
+        return c.json({
+          success: false,
+          error: "vendorId and message are required"
+        }, 400);
+      }
+      const tickets = await select("support_tickets", {
+        id: ticketId,
+        vendor_id: vendorId
+      });
+      if (tickets.length === 0) {
+        return c.json({
+          success: false,
+          error: "Ticket not found"
+        }, 404);
+      }
+      const response = await insert("support_ticket_responses", {
+        ticket_id: ticketId,
+        responder_id: vendorId,
+        responder_type: "vendor",
+        message: message2,
+        attachments: attachments ? JSON.stringify(attachments) : null,
+        is_internal: false,
+        created_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await update(
+        "support_tickets",
+        { id: ticketId },
+        {
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      );
+      return c.json({
+        success: true,
+        message: response[0]
+      });
+    } catch (error) {
+      console.error("Error adding ticket message:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to add message"
+      }, 500);
+    }
+  });
+  app2.put("/vendor/support/tickets/:ticketId/status", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      const { vendorId, status, resolution } = await c.req.json();
+      if (!vendorId || !status) {
+        return c.json({
+          success: false,
+          error: "vendorId and status are required"
+        }, 400);
+      }
+      const tickets = await select("support_tickets", {
+        id: ticketId,
+        vendor_id: vendorId
+      });
+      if (tickets.length === 0) {
+        return c.json({
+          success: false,
+          error: "Ticket not found"
+        }, 404);
+      }
+      const allowedStatuses = ["closed"];
+      if (!allowedStatuses.includes(status)) {
+        return c.json({
+          success: false,
+          error: "Vendors can only close tickets"
+        }, 403);
+      }
+      const updateData = {
+        status,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (status === "closed") {
+        updateData.resolved_at = (/* @__PURE__ */ new Date()).toISOString();
+        if (resolution) {
+          updateData.resolution_notes = resolution;
+        }
+      }
+      const updated = await update(
+        "support_tickets",
+        { id: ticketId },
+        updateData
+      );
+      return c.json({
+        success: true,
+        ticket: updated[0],
+        message: "Ticket status updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating ticket status:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to update status"
+      }, 500);
+    }
+  });
+  app2.get("/vendor/support/categories", async (c) => {
+    try {
+      const categories = [
+        { id: "general", label: "General Inquiry", description: "General questions or information" },
+        { id: "technical", label: "Technical Issue", description: "App issues, bugs, or technical problems" },
+        { id: "billing", label: "Billing & Payments", description: "Payment issues, invoices, or billing questions" },
+        { id: "account", label: "Account", description: "Account settings, profile, or verification" },
+        { id: "service", label: "Service", description: "Service quality, bookings, or availability" },
+        { id: "booking", label: "Booking", description: "Booking-related issues or modifications" },
+        { id: "payout", label: "Payout", description: "Payout delays or issues" },
+        { id: "verification", label: "Verification", description: "Document or identity verification" },
+        { id: "compliance", label: "Compliance", description: "Regulatory or compliance issues" },
+        { id: "other", label: "Other", description: "Other issues not covered above" }
+      ];
+      return c.json({
+        success: true,
+        categories
+      });
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch categories"
+      }, 500);
+    }
+  });
+  app2.get("/vendor/support/stats", async (c) => {
+    try {
+      const vendorId = c.req.query("vendorId");
+      if (!vendorId) {
+        return c.json({
+          success: false,
+          error: "vendorId is required"
+        }, 400);
+      }
+      const stats = await query(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'open') as open,
+          COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
+          COUNT(*) FILTER (WHERE status = 'resolved') as resolved,
+          COUNT(*) FILTER (WHERE status = 'closed') as closed,
+          COUNT(*) FILTER (WHERE priority = 'high' OR priority = 'urgent') as high_priority
+        FROM support_tickets
+        WHERE vendor_id = $1
+      `, [vendorId]);
+      return c.json({
+        success: true,
+        stats: stats.rows[0] || {}
+      });
+    } catch (error) {
+      console.error("Error fetching vendor ticket stats:", error);
+      return c.json({
+        success: false,
+        error: error.message || "Failed to fetch stats"
+      }, 500);
+    }
+  });
 }
 
 // src/handler/index.ts
@@ -268941,6 +270882,7 @@ registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
 registerUIDashboardConfigEndpoints(app);
 registerCarePlansEndpoints(app);
+registerVendorSupportEndpoints(app);
 app.notFound((c) => {
   return c.json({ error: "Not Found" }, 404);
 });

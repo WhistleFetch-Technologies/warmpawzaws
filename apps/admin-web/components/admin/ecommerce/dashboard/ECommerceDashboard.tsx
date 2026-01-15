@@ -1,66 +1,84 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import {
-  Store,
-  Package,
-  ShoppingCart,
-  DollarSign,
-  TrendingUp,
-  AlertCircle,
-  Eye,
-  ArrowUp,
-  ArrowDown,
+  Store, Package, ShoppingCart, DollarSign, TrendingUp, AlertCircle,
+  Eye, ArrowUp, ArrowDown, Users, Truck, FileText, Tag, CreditCard,
+  CheckCircle, Clock, XCircle, RefreshCcw, BarChart3, Settings
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
-export function ECommerceDashboard() {
+interface ECommerceDashboardProps {
+  onNavigateToSellers?: () => void;
+  onNavigateToProducts?: () => void;
+  onNavigateToOrders?: () => void;
+  onNavigateToSettlements?: () => void;
+  onNavigateToPromotions?: () => void;
+  onNavigateToCategories?: () => void;
+}
+
+export function ECommerceDashboard({
+  onNavigateToSellers,
+  onNavigateToProducts,
+  onNavigateToOrders,
+  onNavigateToSettlements,
+  onNavigateToPromotions,
+  onNavigateToCategories
+}: ECommerceDashboardProps) {
   const [analytics, setAnalytics] = useState<any>(null);
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [topSellers, setTopSellers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadAnalytics = async () => {
-      try {
-        setLoading(true);
-        const data = await apiClient.get<any>('/admin/ecommerce/analytics/platform');
-        setAnalytics((data as any).data || data);
-      } catch (error: any) {
-        console.error('Error loading analytics:', error);
-        // In UAT mode, show empty state instead of error
-        // This allows the UI to render even if API fails
-        if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-          console.warn('⚠️ API returned 401 - showing empty state (UAT mode)');
-          setAnalytics({}); // Empty object allows UI to render with 0 values
-        } else {
-          // For other errors, also show empty state to allow UI to render
-          setAnalytics({});
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAnalytics();
+    loadDashboardData();
   }, []);
 
-  // Always render the UI - show loading overlay only when actively loading after mount
-  // For static export, render the full UI structure immediately
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load analytics
+      const analyticsData = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({}));
+      setAnalytics(analyticsData || {});
+      
+      // Load recent orders
+      const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
+      setRecentOrders((ordersData as any)?.orders || []);
+      
+      // Load pending approvals
+      const approvalsData = await apiClient.get<any>('/admin/products?status=pending_approval&limit=5').catch(() => ({ products: [] }));
+      setPendingApprovals((approvalsData as any)?.products || []);
+      
+      // Load top sellers
+      const sellersData = await apiClient.get<any>('/admin/vendors/top-sellers?limit=5').catch(() => ({ sellers: [] }));
+      setTopSellers((sellersData as any)?.sellers || []);
+      
+    } catch (error) {
+      console.error('Error loading dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // Stats cards
   const stats = [
     {
-      title: 'Total Revenue',
-      value: `₹${analytics?.totalRevenue?.toLocaleString() || 0}`,
-      change: '+12.5%',
+      title: 'Total GMV',
+      value: `₹${(analytics?.totalGMV || analytics?.totalRevenue || 0).toLocaleString()}`,
+      change: '+18.5%',
       trend: 'up',
       icon: DollarSign,
-      color: 'bg-green-50 text-green-600',
+      gradient: 'from-emerald-500 to-teal-500',
     },
     {
-      title: 'Total Commission',
-      value: `₹${analytics?.totalCommission?.toLocaleString() || 0}`,
-      change: '+8.2%',
+      title: 'Platform Revenue',
+      value: `₹${(analytics?.totalCommission || 0).toLocaleString()}`,
+      change: '+12.3%',
       trend: 'up',
       icon: TrendingUp,
-      color: 'bg-blue-50 text-blue-600',
+      gradient: 'from-blue-500 to-indigo-500',
     },
     {
       title: 'Active Sellers',
@@ -68,176 +86,321 @@ export function ECommerceDashboard() {
       change: `${analytics?.totalSellers || 0} total`,
       trend: 'neutral',
       icon: Store,
-      color: 'bg-purple-50 text-purple-600',
+      gradient: 'from-purple-500 to-violet-500',
     },
     {
       title: 'Total Orders',
       value: analytics?.totalOrders || 0,
-      change: '+15.3%',
+      change: '+24.7%',
       trend: 'up',
       icon: ShoppingCart,
-      color: 'bg-orange-50 text-orange-600',
+      gradient: 'from-orange-500 to-amber-500',
     },
   ];
 
-  const quickActions = [
-    {
-      label: 'Pending Approvals',
-      count: analytics?.pendingApprovals || 0,
-      color: 'text-yellow-600',
-    },
-    {
-      label: 'Active Products',
-      count: analytics?.activeProducts || 0,
-      color: 'text-green-600',
-    },
-    {
-      label: 'Total Products',
-      count: analytics?.totalProducts || 0,
-      color: 'text-blue-600',
-    },
+  // Quick metrics
+  const quickMetrics = [
+    { label: 'Active Products', value: analytics?.activeProducts || 0, icon: Package, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Pending Approvals', value: analytics?.pendingApprovals || 0, icon: Clock, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Processing Orders', value: analytics?.processingOrders || 0, icon: RefreshCcw, color: 'text-blue-600 bg-blue-50' },
+    { label: 'Pending Settlements', value: analytics?.pendingSettlements || 0, icon: CreditCard, color: 'text-purple-600 bg-purple-50' },
   ];
+
+  // Quick actions
+  const quickActions = [
+    { label: 'Product Approvals', icon: CheckCircle, onClick: onNavigateToProducts, count: analytics?.pendingApprovals || 0 },
+    { label: 'Manage Sellers', icon: Store, onClick: onNavigateToSellers },
+    { label: 'View Orders', icon: ShoppingCart, onClick: onNavigateToOrders },
+    { label: 'Settlements', icon: CreditCard, onClick: onNavigateToSettlements },
+    { label: 'Promotions', icon: Tag, onClick: onNavigateToPromotions },
+    { label: 'Categories', icon: Settings, onClick: onNavigateToCategories },
+  ];
+
+  const getOrderStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      'pending': 'bg-amber-100 text-amber-700',
+      'confirmed': 'bg-blue-100 text-blue-700',
+      'processing': 'bg-indigo-100 text-indigo-700',
+      'shipped': 'bg-purple-100 text-purple-700',
+      'delivered': 'bg-emerald-100 text-emerald-700',
+      'cancelled': 'bg-red-100 text-red-700',
+    };
+    return styles[status] || 'bg-slate-100 text-slate-700';
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Welcome */}
-      <div>
-        <h2 className="text-black text-2xl">E-Commerce Overview</h2>
-        <p className="text-gray-500 mt-1">
-          Monitor your marketplace performance
-        </p>
+    <div className="p-6 space-y-6 bg-gradient-to-br from-slate-50 to-orange-50/30 min-h-screen">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">E-Commerce Dashboard</h1>
+          <p className="text-slate-500 mt-1">Multi-vendor marketplace analytics and management</p>
+        </div>
+        <button 
+          onClick={loadDashboardData}
+          className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-white transition-colors"
+        >
+          <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Main Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => (
-          <div
-            key={index}
-            className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div className={`p-3 rounded-lg ${stat.color}`}>
-                <stat.icon className="w-6 h-6" />
+          <div key={index} className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:shadow-lg transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className={`p-3 rounded-xl bg-gradient-to-br ${stat.gradient} shadow-lg`}>
+                <stat.icon className="w-6 h-6 text-white" />
               </div>
               {stat.trend === 'up' && (
-                <ArrowUp className="w-4 h-4 text-green-600" />
+                <span className="flex items-center gap-1 text-sm font-medium text-emerald-600">
+                  <ArrowUp className="w-4 h-4" />
+                  {stat.change}
+                </span>
               )}
               {stat.trend === 'down' && (
-                <ArrowDown className="w-4 h-4 text-red-600" />
+                <span className="flex items-center gap-1 text-sm font-medium text-red-600">
+                  <ArrowDown className="w-4 h-4" />
+                  {stat.change}
+                </span>
+              )}
+              {stat.trend === 'neutral' && (
+                <span className="text-sm text-slate-500">{stat.change}</span>
               )}
             </div>
-            <div className="mt-4">
-              <p className="text-gray-500 text-sm">{stat.title}</p>
-              <p className="text-black text-2xl mt-1">{stat.value}</p>
-              <p
-                className={`text-xs mt-1 ${
-                  stat.trend === 'up'
-                    ? 'text-green-600'
-                    : stat.trend === 'down'
-                      ? 'text-red-600'
-                      : 'text-gray-500'
-                }`}
-              >
-                {stat.change}
-              </p>
+            <p className="text-sm text-slate-500 font-medium">{stat.title}</p>
+            <p className="text-3xl font-bold text-slate-900 mt-1">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick Metrics */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {quickMetrics.map((metric, index) => (
+          <div key={index} className="bg-white rounded-xl border border-slate-100 p-4 flex items-center gap-3">
+            <div className={`p-2.5 rounded-lg ${metric.color}`}>
+              <metric.icon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900">{metric.value}</p>
+              <p className="text-xs text-slate-500">{metric.label}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-3 gap-4">
-        {quickActions.map((action, index) => (
-          <div
-            key={index}
-            className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">{action.label}</p>
-                <p className={`text-3xl font-bold mt-2 ${action.color}`}>
-                  {action.count}
-                </p>
+      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+        <h3 className="font-semibold text-slate-900 mb-4">Quick Actions</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {quickActions.map((action, index) => (
+            <button
+              key={index}
+              onClick={action.onClick}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border border-slate-200 hover:border-orange-300 hover:bg-orange-50 transition-all group"
+            >
+              <div className="p-3 rounded-xl bg-slate-100 group-hover:bg-orange-100 transition-colors relative">
+                <action.icon className="w-5 h-5 text-slate-600 group-hover:text-orange-600" />
+                {action.count !== undefined && action.count > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                    {action.count}
+                  </span>
+                )}
               </div>
-              <Eye className="w-6 h-6 text-gray-400" />
-            </div>
-          </div>
-        ))}
+              <span className="text-sm font-medium text-slate-700 group-hover:text-orange-700">{action.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Alerts */}
-      {analytics?.pendingApprovals > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Orders */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <p className="font-medium text-yellow-900">Action Required</p>
-              <p className="text-sm text-yellow-700 mt-1">
-                You have {analytics.pendingApprovals} product(s) waiting for
-                approval.
-                <button className="ml-1 underline hover:no-underline">
-                  Review now
-                </button>
-              </p>
+              <h3 className="font-semibold text-slate-900">Recent Orders</h3>
+              <p className="text-sm text-slate-500">Latest marketplace orders</p>
             </div>
+            <button 
+              onClick={onNavigateToOrders}
+              className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+            >
+              View All →
+            </button>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {recentOrders.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                <p>No recent orders</p>
+              </div>
+            ) : (
+              recentOrders.map((order) => (
+                <div key={order.id} className="p-4 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-slate-900">#{(order.order_number || order.id || '').slice(-8)}</p>
+                      <p className="text-sm text-slate-500">{order.vendor_name || 'Unknown Seller'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-slate-900">₹{(order.total_amount || 0).toLocaleString()}</p>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${getOrderStatusBadge(order.status)}`}>
+                        {order.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
-      )}
 
-      {/* Recent Activity */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-black font-semibold">Marketplace Health</h3>
+        {/* Pending Approvals */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Pending Approvals</h3>
+              <p className="text-sm text-slate-500">Products awaiting review</p>
+            </div>
+            <button 
+              onClick={onNavigateToProducts}
+              className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+            >
+              Review All →
+            </button>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {pendingApprovals.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-emerald-300" />
+                <p>All products reviewed!</p>
+              </div>
+            ) : (
+              pendingApprovals.map((product) => (
+                <div key={product.id} className="p-4 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-2xl">
+                      {product.emoji || '📦'}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-slate-900">{product.name}</p>
+                      <p className="text-sm text-slate-500">{product.vendor_name || 'Unknown Seller'}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors">
+                        <CheckCircle className="w-5 h-5" />
+                      </button>
+                      <button className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors">
+                        <XCircle className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-        <div className="p-6">
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Sellers */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="font-medium text-black">Sellers</h4>
-                <Store className="w-5 h-5 text-gray-400" />
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Active</span>
-                  <span className="font-semibold text-green-600">
-                    {analytics?.activeSellers || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Total</span>
-                  <span className="font-semibold text-black">
-                    {analytics?.totalSellers || 0}
-                  </span>
-                </div>
-              </div>
-            </div>
+      </div>
 
-            {/* Products */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="font-medium text-black">Products</h4>
-                <Package className="w-5 h-5 text-gray-400" />
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Active</span>
-                  <span className="font-semibold text-green-600">
-                    {analytics?.activeProducts || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Total</span>
-                  <span className="font-semibold text-black">
-                    {analytics?.totalProducts || 0}
-                  </span>
-                </div>
-              </div>
-            </div>
+      {/* Top Sellers */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900">Top Performing Sellers</h3>
+            <p className="text-sm text-slate-500">Based on revenue and order volume</p>
+          </div>
+          <button 
+            onClick={onNavigateToSellers}
+            className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+          >
+            View All Sellers →
+          </button>
+        </div>
+        {topSellers.length === 0 ? (
+          <div className="p-8 text-center text-slate-500">
+            <Store className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+            <p>No seller data available</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr>
+                  <th className="text-left p-4 font-semibold text-slate-600 text-sm">Rank</th>
+                  <th className="text-left p-4 font-semibold text-slate-600 text-sm">Seller</th>
+                  <th className="text-right p-4 font-semibold text-slate-600 text-sm">Revenue</th>
+                  <th className="text-center p-4 font-semibold text-slate-600 text-sm">Orders</th>
+                  <th className="text-center p-4 font-semibold text-slate-600 text-sm">Products</th>
+                  <th className="text-center p-4 font-semibold text-slate-600 text-sm">Rating</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {topSellers.map((seller, index) => (
+                  <tr key={seller.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4">
+                      <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
+                        index === 0 ? 'bg-amber-100 text-amber-700' :
+                        index === 1 ? 'bg-slate-200 text-slate-700' :
+                        index === 2 ? 'bg-orange-100 text-orange-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {index + 1}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-amber-100 rounded-full flex items-center justify-center">
+                          <Store className="w-5 h-5 text-orange-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">{seller.business_name || seller.businessName}</p>
+                          <p className="text-sm text-slate-500">{seller.phone}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4 text-right font-bold text-slate-900">₹{(seller.total_revenue || 0).toLocaleString()}</td>
+                    <td className="p-4 text-center text-slate-600">{seller.order_count || 0}</td>
+                    <td className="p-4 text-center text-slate-600">{seller.product_count || 0}</td>
+                    <td className="p-4 text-center">
+                      <span className="inline-flex items-center gap-1 text-amber-600">
+                        ⭐ {seller.rating || '4.5'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Commission & GST Summary */}
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
+        <h3 className="font-semibold text-lg mb-4">Financial Summary</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Total GMV</p>
+            <p className="text-2xl font-bold mt-1">₹{(analytics?.totalGMV || 0).toLocaleString()}</p>
+          </div>
+          <div className="bg-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Commission Earned</p>
+            <p className="text-2xl font-bold mt-1 text-emerald-400">₹{(analytics?.totalCommission || 0).toLocaleString()}</p>
+          </div>
+          <div className="bg-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">GST Collected</p>
+            <p className="text-2xl font-bold mt-1">₹{(analytics?.totalGST || 0).toLocaleString()}</p>
+          </div>
+          <div className="bg-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Seller Payouts</p>
+            <p className="text-2xl font-bold mt-1">₹{(analytics?.totalPayouts || 0).toLocaleString()}</p>
+          </div>
+          <div className="bg-white/10 rounded-xl p-4">
+            <p className="text-slate-400 text-sm">Pending Settlements</p>
+            <p className="text-2xl font-bold mt-1 text-amber-400">₹{(analytics?.pendingSettlementAmount || 0).toLocaleString()}</p>
           </div>
         </div>
       </div>
     </div>
   );
 }
-

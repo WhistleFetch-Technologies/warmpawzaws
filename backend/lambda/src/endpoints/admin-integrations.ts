@@ -22,6 +22,8 @@ import { select, upsert, query } from '../database/rds-connection';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { getSecret, getSecretJson, putSecret } from '../utils/secrets-manager';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**

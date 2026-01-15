@@ -78,10 +78,152 @@ export function CustomerHomeComplete({
   const [newPetData, setNewPetData] = useState({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
   const [savingPet, setSavingPet] = useState(false);
   const { itemCount } = useCart();
+  const [dashboardConfig, setDashboardConfig] = useState<any>(null);
+  const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
+  
+  // Define quickServices constant (moved before useEffect)
+  const quickServices = [
+    // PRIMARY SERVICES
+    { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet' },
+    { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming' },
+    { icon: ShoppingBag, label: 'Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop' },
+    { icon: GraduationCap, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training' },
+    
+    // CARE SERVICES
+    { icon: Bike, label: 'Walker', color: 'bg-green-100 text-green-600', screen: 'walker' },
+    { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding' },
+    { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption' },
+    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub' },
+    { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes' },
+    
+    // SPECIALIZED SERVICES - NEW
+    { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography' },
+    { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance' },
+    { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder' },
+    { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance' },
+    
+    // WELLNESS SERVICES - NEW
+    { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist' },
+    { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation' },
+    { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort' },
+    { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday' },
+    { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset' },
+  ];
 
   useEffect(() => {
     loadUserData();
   }, [phone, refreshKey]); // Add refreshKey to dependencies
+
+  // Load dashboard config - but ALWAYS show all services by default
+  // Dashboard config is only used for BLOCKING specific services (coming_soon phase),
+  // NOT for filtering what services to show
+  useEffect(() => {
+    const loadDashboardConfig = async () => {
+      try {
+        // IMPORTANT: Always start with all services visible
+        // Dashboard config should only RESTRICT services, not define what's available
+        setFilteredQuickServices(quickServices);
+        
+        // Get customer's role from profile (optional)
+        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null);
+        const profile = profileResponse as any;
+        
+        let roleId = 'customer'; // Default fallback for customers
+        if (profile && (profile.success || profile.profile)) {
+          const profileData = profile.profile || profile;
+          roleId = profileData.role_id || profileData.roleId || profileData.role?.id || 'customer';
+        }
+
+        // Fetch dashboard config (optional - only for blocking coming_soon services)
+        const configResponse = await apiClient.get(`/config/ui/dashboard?roleId=${roleId}`).catch(() => null);
+        
+        if (configResponse && (configResponse as any).success) {
+          const config = (configResponse as any).config;
+          setDashboardConfig(config);
+          
+          // Get buttons from config
+          const buttons = config.buttons || config.widgets || [];
+          
+          // Only filter OUT services that are explicitly blocked (coming_soon phase or disabled)
+          // But never hide services just because they're not in the config
+          const blockedServiceIds = new Set<string>();
+          
+          buttons.forEach((btn: any) => {
+            // Only block if explicitly disabled OR in coming_soon phase
+            if (btn.enabled === false || btn.launchPhase === 'coming_soon') {
+              // Map button IDs to service screens
+              const btnId = (btn.id || '').toLowerCase();
+              const serviceScreenMap: Record<string, string[]> = {
+                'vet': ['vet'],
+                'veterinarian': ['vet'],
+                'vet_consultation': ['vet'],
+                'vet_emergency': ['vet'],
+                'vet_vaccination': ['vet'],
+                'vet_checkup': ['vet'],
+                'grooming': ['grooming'],
+                'groomer': ['grooming'],
+                'grooming_booking': ['grooming'],
+                'grooming_spa': ['grooming'],
+                'grooming_nail': ['grooming'],
+                'training': ['training'],
+                'trainer': ['training'],
+                'training_booking': ['training'],
+                'training_behavior': ['training'],
+                'walker': ['walker'],
+                'walk': ['walker'],
+                'walk_booking': ['walker'],
+                'walk_sitting': ['walker'],
+                'boarding': ['boarding'],
+                'board': ['boarding'],
+                'adoption': ['adoption'],
+                'mating': ['mating-dating-hub'],
+                'dating': ['mating-dating-hub'],
+                'cafe': ['cafes'],
+                'cafes': ['cafes'],
+                'photography': ['photography'],
+                'insurance': ['insurance'],
+                'breeder': ['breeder'],
+                'ambulance': ['ambulance'],
+                'nutritionist': ['nutritionist'],
+                'nutrition': ['nutritionist'],
+                'relocation': ['relocation'],
+                'resort': ['resort'],
+                'holiday': ['holiday'],
+                'sunset': ['sunset'],
+                'shop': ['shop'],
+                'store': ['shop'],
+              };
+              
+              // Find matching screens to block
+              for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                if (btnId.includes(key) || key.includes(btnId)) {
+                  screens.forEach(screen => blockedServiceIds.add(screen));
+                }
+              }
+            }
+          });
+          
+          // Only filter if there are blocked services
+          if (blockedServiceIds.size > 0) {
+            const filtered = quickServices.filter(service => !blockedServiceIds.has(service.screen));
+            setFilteredQuickServices(filtered.length > 0 ? filtered : quickServices);
+          }
+          // If no services are blocked, keep all services visible (already set above)
+        }
+        // If no config found or error, keep all services visible (already set above)
+      } catch (error) {
+        console.error('Error loading dashboard config:', error);
+        // Keep all services visible on error (already set at start)
+      }
+    };
+    
+    if (phone) {
+      loadDashboardConfig();
+    } else {
+      // No phone means not logged in, show all services
+      setFilteredQuickServices(quickServices);
+    }
+  }, [phone, refreshKey]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -226,33 +368,6 @@ export function CustomerHomeComplete({
     }
   ];
 
-  const quickServices = [
-    // PRIMARY SERVICES
-    { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet' },
-    { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming' },
-    { icon: ShoppingBag, label: 'Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop' },
-    { icon: GraduationCap, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training' },
-    
-    // CARE SERVICES
-    { icon: Bike, label: 'Walker', color: 'bg-green-100 text-green-600', screen: 'walker' },
-    { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding' },
-    { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption' },
-    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub' },
-    { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes' },
-    
-    // SPECIALIZED SERVICES - NEW
-    { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography' },
-    { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance' },
-    { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder' },
-    { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance' },
-    
-    // WELLNESS SERVICES - NEW
-    { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist' },
-    { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation' },
-    { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort' },
-    { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday' },
-    { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset' },
-  ];
 
   const groomingServices = [
     { 
@@ -642,10 +757,10 @@ export function CustomerHomeComplete({
         <div className="px-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-black font-semibold">All Services</h2>
-            <span className="text-xs text-gray-500">{quickServices.length} services</span>
+            <span className="text-xs text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).length} services</span>
           </div>
           <div className="grid grid-cols-4 gap-4">
-            {quickServices.map((service, index) => (
+            {(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).map((service, index) => (
               <button
                 key={index}
                 onClick={() => onNavigate?.(service.screen)}

@@ -17,8 +17,8 @@ exports.CreateBookingRequestSchema = zod_1.z.object({
     staffId: zod_1.z.string().uuid('Invalid staff ID format').optional(),
     bookingDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
     bookingTime: zod_1.z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/, 'Invalid time format (HH:MM)'),
-    serviceType: zod_1.z.enum(['at_vendor', 'at_home', 'online'], {
-        errorMap: () => ({ message: 'Service type must be at_vendor, at_home, or online' }),
+    serviceType: zod_1.z.enum(['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product'], {
+        errorMap: () => ({ message: 'Service type must be at_vendor/at_center, at_home, or online/tele' }),
     }),
     address: zod_1.z.string().optional(),
     city: zod_1.z.string().optional(),
@@ -61,7 +61,7 @@ exports.BookingSchema = zod_1.z.object({
     bookingDate: zod_1.z.string(),
     bookingTime: zod_1.z.string(),
     status: zod_1.z.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled']),
-    serviceType: zod_1.z.enum(['at_vendor', 'at_home', 'online']),
+    serviceType: zod_1.z.enum(['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product']),
     address: zod_1.z.string().nullable(),
     city: zod_1.z.string().nullable(),
     state: zod_1.z.string().nullable(),

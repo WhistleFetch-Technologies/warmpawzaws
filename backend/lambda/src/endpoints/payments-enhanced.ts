@@ -24,6 +24,8 @@ import { query, select, insert, update, withTransaction } from '../database/rds-
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logPaymentStatusChange } from '../utils/audit-log';
 import { publishPaymentCreated, publishPaymentProcessed } from '../utils/sns-client';
+import { normalizeDbRow, buildPaymentResponse } from '../utils/entity-extractor';
+import { normalizePayment, isValidUUID } from '../types/entities';
 import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';

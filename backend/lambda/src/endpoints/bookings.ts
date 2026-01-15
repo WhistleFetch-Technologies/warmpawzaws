@@ -37,6 +37,8 @@ import { query, select, insert, update, withTransaction, getClient } from '../da
 import { withIdempotency, checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
 import { calculateStaffETA } from '../utils/commute-time-calculator';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // CONFIGURATION

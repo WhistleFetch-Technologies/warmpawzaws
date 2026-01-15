@@ -22,10 +22,43 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [featuredVets, setFeaturedVets] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [showBookingHistory, setShowBookingHistory] = useState(false);
+  const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
 
   useEffect(() => {
     loadVetData();
+    loadDashboardConfig();
   }, []);
+
+  const loadDashboardConfig = async () => {
+    try {
+      // Get customer's role
+      const profile = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null);
+      const profileData = profile as any;
+      const roleId = profileData?.profile?.role_id || profileData?.role_id || profileData?.roleId || 'veterinarian';
+      
+      // Fetch dashboard config
+      const config = await apiClient.get(`/config/ui/dashboard?roleId=${roleId}`).catch(() => null);
+      
+      if (config && (config as any).success) {
+        const configData = (config as any).config;
+        const buttons = configData.buttons || configData.widgets || [];
+        
+        // Find vet-related button
+        const vetButton = buttons.find((btn: any) => 
+          btn.id?.includes('vet') || 
+          btn.serviceId === 'vet' ||
+          btn.label?.toLowerCase().includes('vet') ||
+          btn.label?.toLowerCase().includes('consultation')
+        );
+        
+        if (vetButton?.allowedServiceStyles && vetButton.allowedServiceStyles.length > 0) {
+          setAllowedServiceStyles(vetButton.allowedServiceStyles);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading dashboard config:', error);
+    }
+  };
 
   const loadVetData = async () => {
     try {
@@ -88,53 +121,83 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
-  const serviceTypes = [
-    {
-      id: 'tele',
-      name: 'Tele Consultation',
-      description: 'Video call with vets',
-      icon: Video,
-      color: '#6B9FFF',
-      bgColor: 'bg-blue-50',
-      badge: '24/7 Available'
-    },
-    {
-      id: 'clinic',
-      name: 'Clinic Visit',
-      description: 'Book appointment',
-      icon: Building2,
-      color: '#7FD47F',
-      bgColor: 'bg-green-50',
-      badge: '200+ Clinics'
-    },
-    {
-      id: 'home',
-      name: 'Home Visit',
-      description: 'Vet comes to you',
-      icon: HomeIcon,
-      color: '#FF8C42',
-      bgColor: 'bg-orange-50',
-      badge: 'Track Live'
-    },
-    {
-      id: 'lab',
-      name: 'Lab Tests',
-      description: 'Sample collection',
-      icon: FlaskConical,
-      color: '#9F7FFF',
-      bgColor: 'bg-purple-50',
-      badge: 'Digital Reports'
-    },
-    {
-      id: 'medicine',
-      name: 'Medicine',
-      description: 'Order medicines',
-      icon: Pill,
-      color: '#FF6B9F',
-      bgColor: 'bg-pink-50',
-      badge: 'Fast Delivery'
+  // Map service types to dashboard config styles
+  const serviceTypeStyleMap: Record<string, string[]> = {
+    'tele': ['tele', 'video_consultation', 'video'],
+    'home': ['at_home', 'home_visit'],
+    'clinic': ['at_clinic', 'at_center', 'clinic'],
+    'lab': ['lab', 'diagnostics'],
+    'medicine': ['pharmacy', 'medicine'],
+  };
+
+  // Get filtered service types based on dashboard config
+  const getFilteredServiceTypes = () => {
+    const allServiceTypes = [
+      {
+        id: 'tele',
+        name: 'Tele Consultation',
+        description: 'Video call with vets',
+        icon: Video,
+        color: '#6B9FFF',
+        bgColor: 'bg-blue-50',
+        badge: '24/7 Available'
+      },
+      {
+        id: 'clinic',
+        name: 'Clinic Visit',
+        description: 'Book appointment',
+        icon: Building2,
+        color: '#7FD47F',
+        bgColor: 'bg-green-50',
+        badge: '200+ Clinics'
+      },
+      {
+        id: 'home',
+        name: 'Home Visit',
+        description: 'Vet comes to you',
+        icon: HomeIcon,
+        color: '#FF8C42',
+        bgColor: 'bg-orange-50',
+        badge: 'Track Live'
+      },
+      {
+        id: 'lab',
+        name: 'Lab Tests',
+        description: 'Sample collection',
+        icon: FlaskConical,
+        color: '#9F7FFF',
+        bgColor: 'bg-purple-50',
+        badge: 'Digital Reports'
+      },
+      {
+        id: 'medicine',
+        name: 'Medicine',
+        description: 'Order medicines',
+        icon: Pill,
+        color: '#FF6B9F',
+        bgColor: 'bg-pink-50',
+        badge: 'Fast Delivery'
+      }
+    ];
+
+    // If no restrictions, return all
+    if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
+      return allServiceTypes;
     }
-  ];
+
+    // Filter based on allowedServiceStyles
+    return allServiceTypes.filter(service => {
+      const styleMap = serviceTypeStyleMap[service.id] || [];
+      return styleMap.some(style => 
+        allowedServiceStyles.some(allowed => 
+          allowed.toLowerCase().includes(style.toLowerCase()) ||
+          style.toLowerCase().includes(allowed.toLowerCase())
+        )
+      );
+    });
+  };
+
+  const serviceTypes = getFilteredServiceTypes();
 
   if (loading) {
     return (

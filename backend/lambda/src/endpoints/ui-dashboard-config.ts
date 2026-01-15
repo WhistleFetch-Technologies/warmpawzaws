@@ -15,124 +15,39 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
-// Default dashboard buttons available for all roles
-const DEFAULT_DASHBOARD_BUTTONS = [
-  {
-    id: 'veterinarian',
-    label: 'Veterinarian',
-    icon: '🩺',
-    enabled: true,
-    serviceId: 'vet',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'groomer',
-    label: 'Groomer',
-    icon: '✂️',
-    enabled: true,
-    serviceId: 'grooming',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'walker',
-    label: 'Walker',
-    icon: '🚶',
-    enabled: true,
-    serviceId: 'walking',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'trainer',
-    label: 'Trainer',
-    icon: '🎓',
-    enabled: true,
-    serviceId: 'training',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'boarding',
-    label: 'Boarding',
-    icon: '🏠',
-    enabled: true,
-    serviceId: 'boarding',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'nutritionist',
-    label: 'Nutritionist',
-    icon: '🥗',
-    enabled: true,
-    serviceId: 'nutrition',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'insurance',
-    label: 'Insurance',
-    icon: '🛡️',
-    enabled: true,
-    serviceId: 'insurance',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-  },
-  {
-    id: 'complete_plan',
-    label: 'Complete Plan',
-    icon: '📋',
-    enabled: true,
-    serviceId: 'care_plan',
-    launchPhase: 'full',
-    rolloutPercentage: 100,
-    description: 'AI-powered comprehensive pet care plan generation',
-  },
+// All available customer services - used as default for all roles
+// These represent ALL services shown in the customer app dashboard
+// Admins can use this UI to enable/disable specific services per role
+const ALL_CUSTOMER_SERVICES = [
+  { id: 'vet', label: 'Vet Care', icon: '🩺', enabled: true, serviceId: 'vet', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'grooming', label: 'Grooming', icon: '✂️', enabled: true, serviceId: 'grooming', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'shop', label: 'Shop', icon: '🛍️', enabled: true, serviceId: 'shop', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'training', label: 'Training', icon: '🎓', enabled: true, serviceId: 'training', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'walker', label: 'Walker', icon: '🚶', enabled: true, serviceId: 'walker', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'boarding', label: 'Boarding', icon: '🏠', enabled: true, serviceId: 'boarding', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'adoption', label: 'Adoption', icon: '❤️', enabled: true, serviceId: 'adoption', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'mating', label: 'Mating & Dating', icon: '💕', enabled: true, serviceId: 'mating-dating-hub', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'cafes', label: 'Pet Cafes', icon: '☕', enabled: true, serviceId: 'cafes', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'photography', label: 'Photography', icon: '📷', enabled: true, serviceId: 'photography', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'insurance', label: 'Insurance', icon: '🛡️', enabled: true, serviceId: 'insurance', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'breeder', label: 'Breeder', icon: '🐕', enabled: true, serviceId: 'breeder', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'ambulance', label: 'Ambulance', icon: '🚑', enabled: true, serviceId: 'ambulance', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'nutritionist', label: 'Nutritionist', icon: '🥗', enabled: true, serviceId: 'nutritionist', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'relocation', label: 'Relocation', icon: '✈️', enabled: true, serviceId: 'relocation', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'resort', label: 'Pet Resort', icon: '🏖️', enabled: true, serviceId: 'resort', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'holiday', label: 'Pet Holiday', icon: '🌴', enabled: true, serviceId: 'holiday', launchPhase: 'full', rolloutPercentage: 100 },
+  { id: 'sunset', label: 'Sunset Care', icon: '🌅', enabled: true, serviceId: 'sunset', launchPhase: 'full', rolloutPercentage: 100 },
 ];
 
-// Default dashboard buttons by role
+// Default dashboard buttons - returns ALL customer services enabled
+// The Dashboard UI tab allows admins to enable/disable specific services per role
 function getDefaultButtonsForRole(roleId: string): any[] {
-  const roleLower = roleId.toLowerCase();
-  
-  const defaultButtons: Record<string, any[]> = {
-    veterinarian: [
-      { id: 'vet_consultation', label: 'Book Consultation', icon: '🩺', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'vet_emergency', label: 'Emergency Care', icon: '🚨', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'vet_vaccination', label: 'Vaccination', icon: '💉', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'vet_checkup', label: 'Health Checkup', icon: '📋', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-    ],
-    groomer: [
-      { id: 'grooming_booking', label: 'Book Grooming', icon: '✂️', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'grooming_spa', label: 'Pet Spa', icon: '🛁', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'grooming_nail', label: 'Nail Trimming', icon: '💅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-    ],
-    walker: [
-      { id: 'walk_booking', label: 'Book Walk', icon: '🚶', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'walk_sitting', label: 'Pet Sitting', icon: '🏠', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-    ],
-    trainer: [
-      { id: 'training_booking', label: 'Book Training', icon: '🎓', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'training_behavior', label: 'Behavior Training', icon: '🐕', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-    ],
-  };
-
-  // Try exact match first
-  if (defaultButtons[roleLower]) {
-    return defaultButtons[roleLower];
-  }
-
-  // Try partial match
-  for (const [key, buttons] of Object.entries(defaultButtons)) {
-    if (roleLower.includes(key) || key.includes(roleLower)) {
-      return buttons;
-    }
-  }
-
-  // Fallback to generic defaults
-  return DEFAULT_DASHBOARD_BUTTONS;
+  // For all roles, return ALL customer services enabled by default
+  // Admins can then disable specific services via the Dashboard UI tab
+  return [...ALL_CUSTOMER_SERVICES];
 }
 
 export function registerUIDashboardConfigEndpoints(app: Hono) {
@@ -198,8 +113,9 @@ export function registerUIDashboardConfigEndpoints(app: Hono) {
         }
       }
 
-      // If no buttons found, use role-specific defaults
-      if (buttons.length === 0) {
+      // If no buttons found OR buttons array is empty, use role-specific defaults
+      if (!buttons || buttons.length === 0) {
+        console.log(`No buttons found for role ${roleId}, using defaults`);
         buttons = getDefaultButtonsForRole(roleId);
       }
 
@@ -295,23 +211,25 @@ export function registerUIDashboardConfigEndpoints(app: Hono) {
         }
       }
 
+      // Use update/insert pattern (upsert might not be bundled correctly)
+      // First, delete old key if it exists and is different
+      if (existing && existing.key !== settingKey) {
+        await query(
+          `DELETE FROM platform_settings WHERE setting_key = $1`,
+          [existing.key]
+        ).catch(() => {});
+      }
+
+      // Update or insert the configuration
       if (existing) {
-        // Update existing (migrate to new key if needed)
-        if (existing.key !== settingKey) {
-          // Delete old key
-          await query(
-            `DELETE FROM platform_settings WHERE setting_key = $1`,
-            [existing.key]
-          ).catch(() => {});
-        }
-        
-        // Update with new key
+        // Update existing
         await update(
           'platform_settings',
           { setting_key: settingKey },
           {
             setting_value: configToSave,
-            setting_type: 'json',
+            setting_type: 'object',  // Must be one of: string, number, boolean, object, array
+            description: `Dashboard UI configuration for role ${roleId}`,
             updated_at: new Date().toISOString(),
           }
         );

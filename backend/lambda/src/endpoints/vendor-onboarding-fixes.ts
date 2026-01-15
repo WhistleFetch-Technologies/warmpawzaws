@@ -15,6 +15,8 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // Default form fields when onboarding_forms doesn't exist
 const DEFAULT_FORM_FIELDS = [

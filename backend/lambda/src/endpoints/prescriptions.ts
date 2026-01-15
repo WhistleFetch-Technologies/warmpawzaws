@@ -19,6 +19,8 @@
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
+import { extractEntityIds, normalizeDbRow } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerPrescriptionEndpoints(app: Hono) {
   /**
@@ -53,24 +55,53 @@ export function registerPrescriptionEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have prescription capability' }, 403);
       }
 
-      const prescription = await insert('prescriptions', {
-        booking_id: bookingId,
-        customer_id: customerId,
-        pet_id: petId || null,
-        vendor_id: vendorId,
-        staff_id: staffId || null,
-        medications: medications, // JSONB array
-        instructions: instructions || null,
-        diagnosis: diagnosis || null,
-        follow_up_date: followUpDate || null,
-        created_by: createdBy || null,
-        created_by_role: createdByRole || 'vendor',
-        is_active: true,
-      });
+      // Build prescription data based on available columns
+      // Schema 057 uses: medication_name, dosage, frequency, duration, instructions
+      // Schema 034/007/008 use: medications JSONB array
+      const prescriptionRecords: any[] = [];
+      
+      // For schemas that use medications JSONB, create single record
+      // For schema 057, create multiple records (one per medication)
+      // Try with medications JSONB first, fallback to individual columns
+      const meds = Array.isArray(medications) ? medications : [medications];
+      
+      for (const med of meds) {
+        // Include diagnosis and doctor_name in instructions if not a separate column
+        const combinedInstructions = [
+          diagnosis ? `Diagnosis: ${diagnosis}` : '',
+          med.instructions || instructions || ''
+        ].filter(Boolean).join('\n');
+        
+        const prescriptionRecord: Record<string, any> = {
+          booking_id: bookingId,
+          customer_id: customerId,
+          pet_id: petId || null,
+          vendor_id: vendorId,
+          prescription_date: new Date().toISOString().split('T')[0],
+          is_active: true,
+          // Schema 057 individual medication columns
+          medication_name: med.name || 'Prescription',
+          dosage: med.dosage || null,
+          frequency: med.frequency || null,
+          duration: med.duration || null,
+          instructions: combinedInstructions || null,
+        };
+        
+        prescriptionRecords.push(prescriptionRecord);
+      }
+      
+      // Insert all prescriptions (one per medication for schema 057)
+      const insertedPrescriptions = [];
+      for (const record of prescriptionRecords) {
+        const prescription = await insert('prescriptions', record);
+        insertedPrescriptions.push(prescription[0]);
+      }
 
       return c.json({
         success: true,
-        prescription: prescription[0],
+        prescription: insertedPrescriptions[0],
+        prescriptions: insertedPrescriptions,
+        totalMedications: insertedPrescriptions.length,
         message: 'Prescription created successfully',
       });
     } catch (error: any) {

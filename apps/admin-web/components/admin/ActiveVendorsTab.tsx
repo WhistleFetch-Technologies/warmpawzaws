@@ -53,11 +53,11 @@ export function ActiveVendorsTab() {
         experience: v.experience || 'N/A',
         lastActive: 'Just now',
         category: v.category || v.services?.[0] || 'General',
-        rating: v.rating || 0,
+        rating: parseFloat(v.rating) || 0,
         complaints: 0,
         module: v.services?.join(', ') || 'N/A',
         moduleTier: v.tier || 'Bronze',
-        revenue: v.revenue || 0,
+        revenue: parseFloat(v.revenue) || 0,
         revenuePeriod: 'This month',
         lastActiveDate: new Date(v.lastActive || v.joinedDate).toLocaleDateString()
       }));
@@ -103,9 +103,10 @@ export function ActiveVendorsTab() {
   const filteredVendors = vendors.filter(vendor => {
     if (categoryFilter !== 'all' && vendor.category.toLowerCase() !== categoryFilter.toLowerCase()) return false;
     if (performanceFilter !== 'all') {
-      if (performanceFilter === 'high' && vendor.rating < 4.5) return false;
-      if (performanceFilter === 'medium' && (vendor.rating < 3.5 || vendor.rating >= 4.5)) return false;
-      if (performanceFilter === 'low' && vendor.rating >= 3.5) return false;
+      const rating = typeof vendor.rating === 'number' ? vendor.rating : 0;
+      if (performanceFilter === 'high' && rating < 4.5) return false;
+      if (performanceFilter === 'medium' && (rating < 3.5 || rating >= 4.5)) return false;
+      if (performanceFilter === 'low' && rating >= 3.5) return false;
     }
     return true;
   });
@@ -184,7 +185,7 @@ export function ActiveVendorsTab() {
                     </div>
                     <div>
                       <span className="text-gray-500">Rating:</span>
-                      <span className="ml-0 text-gray-900">{vendor.rating.toFixed(1)} ⭐</span>
+                      <span className="ml-0 text-gray-900">{typeof vendor.rating === 'number' ? vendor.rating.toFixed(1) : '0.0'} ⭐</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Revenue:</span>

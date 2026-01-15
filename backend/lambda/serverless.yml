@@ -24,14 +24,13 @@ provider:
   # Environment variables
   environment:
     NODE_ENV: ${self:provider.stage}
-    AWS_REGION: ${self:provider.region}
     
     # RDS Configuration
     DB_HOST: ${ssm:/warmpawz/${self:provider.stage}/db/host}
     DB_PORT: ${ssm:/warmpawz/${self:provider.stage}/db/port, '5432'}
     DB_NAME: ${ssm:/warmpawz/${self:provider.stage}/db/name}
     DB_USER: ${ssm:/warmpawz/${self:provider.stage}/db/user}
-    DB_PASSWORD: ${ssm:/warmpawz/${self:provider.stage}/db/password~true}
+    DB_PASSWORD: ${ssm:/warmpawz/${self:provider.stage}/db/password}
     
     # Cognito Configuration
     COGNITO_USER_POOL_ID: ${ssm:/warmpawz/${self:provider.stage}/cognito/userPoolId}
@@ -43,8 +42,8 @@ provider:
     
     # Razorpay Configuration
     RAZORPAY_KEY_ID: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keyId}
-    RAZORPAY_KEY_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keySecret~true}
-    RAZORPAY_WEBHOOK_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/webhookSecret~true}
+    RAZORPAY_KEY_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keySecret}
+    RAZORPAY_WEBHOOK_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/webhookSecret}
     
     # Feature Flags
     UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
@@ -115,7 +114,7 @@ provider:
   httpApi:
     cors:
       allowedOrigins:
-        - ${ssm:/warmpawz/${self:provider.stage}/cors/allowedOrigins}
+        - ${ssm:/warmpawz/${self:provider.stage}/cors/allowedOrigin}
       allowedHeaders:
         - Content-Type
         - Authorization
@@ -142,15 +141,15 @@ functions:
           path: /
           method: ANY
 
-# CloudFront Distribution (via plugin)
-plugins:
-  - serverless-cloudfront-invalidate
+# CloudFront Distribution (disabled for now)
+# plugins:
+#   - serverless-cloudfront-invalidate
 
-custom:
-  cloudfront:
-    distributionId: ${ssm:/warmpawz/${self:provider.stage}/cloudfront/distributionId}
-    paths:
-      - '/*'
+# custom:
+#   cloudfront:
+#     distributionId: ${ssm:/warmpawz/${self:provider.stage}/cloudfront/distributionId}
+#     paths:
+#       - '/*'
 
 # Package Configuration
 package:

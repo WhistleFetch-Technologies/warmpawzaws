@@ -53,6 +53,14 @@ interface ServiceCatalogItem {
   };
   description: string;
   duration?: number;
+  // Snake_case variants for API compatibility
+  service_name?: string;
+  category_name?: string;
+  category?: string;
+  sub_category_name?: string;
+  category_id?: string;
+  sub_category_id?: string;
+  id?: string;
 }
 
 interface CategoryGroup {
@@ -99,18 +107,55 @@ export function VendorServiceCatalogView({
     try {
       setLoading(true);
 
-      console.log('📚 [CATALOG] Loading service catalog...');
+      // ✅ Get vendor's roleId for filtering services
+      const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
+      console.log('📚 [CATALOG] Loading service catalog for roleId:', vendorRoleId);
 
-      // Load all services from admin catalog API
-      const servicesData = await apiClient.get('/admin/service-catalog') as any;
+      // Load services from admin catalog API - pass roleId if available for better filtering
+      const catalogUrl = vendorRoleId 
+        ? `/admin/service-catalog?roleId=${vendorRoleId}`
+        : '/admin/service-catalog';
+      const servicesData = await apiClient.get(catalogUrl) as any;
 
       if (servicesData) {
         console.log('📚 [CATALOG] Loaded services:', servicesData);
         console.log('📚 [CATALOG] Total services:', servicesData.services?.length || 0);
         
         if (servicesData.services && servicesData.services.length > 0) {
-          console.log('📚 [CATALOG] Sample service:', servicesData.services[0]);
-          setServices(servicesData.services);
+          console.log('📚 [CATALOG] Sample service (raw):', servicesData.services[0]);
+          
+          // ✅ CRITICAL: Normalize services from snake_case to camelCase
+          const normalizedServices = servicesData.services.map((svc: any) => ({
+            ...svc,
+            // Normalize IDs
+            catalogId: svc.catalogId || svc.id || svc.service_id,
+            categoryId: svc.categoryId || svc.category_id || '',
+            subCategoryId: svc.subCategoryId || svc.sub_category_id || '',
+            serviceGroupId: svc.serviceGroupId || svc.service_group_id || '',
+            // Normalize names
+            serviceName: svc.serviceName || svc.service_name || svc.name || '',
+            categoryName: svc.categoryName || svc.category_name || svc.category || 'Uncategorized',
+            subCategoryName: svc.subCategoryName || svc.sub_category_name || '',
+            serviceGroupName: svc.serviceGroupName || svc.service_group_name || '',
+            // ✅ CRITICAL: Normalize serviceStyle - backend returns service_style
+            serviceStyle: svc.serviceStyle || svc.service_style || 'at_center',
+            // Normalize other fields
+            applicableRoles: svc.applicableRoles || svc.applicable_roles || [],
+            basePrice: parseFloat(svc.basePrice || svc.base_price || '0'),
+            duration: svc.duration || svc.duration_minutes || 30,
+            isPackage: svc.isPackage || svc.is_package || false,
+            description: svc.description || '',
+          }));
+          
+          console.log('📚 [CATALOG] Sample service (normalized):', normalizedServices[0]);
+          console.log('📚 [CATALOG] Service styles distribution:', 
+            normalizedServices.reduce((acc: any, s: any) => {
+              acc[s.serviceStyle] = (acc[s.serviceStyle] || 0) + 1;
+              return acc;
+            }, {})
+          );
+          
+          setServices(normalizedServices);
         } else {
           console.warn('⚠️ [CATALOG] No services in catalog!');
           toast.error('No services found in catalog. Please contact admin.');
@@ -151,10 +196,10 @@ export function VendorServiceCatalogView({
       }
 
       // ✅ Load role configuration to get allowed service styles AND role name
-      const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
-      if (vendorRoleId) {
+      const currentVendorRoleId = vendorData?.roleId || vendorData?.role_id;
+      if (currentVendorRoleId) {
         try {
-          const roleConfigData = await apiClient.get(`/config/roles/${vendorRoleId}`) as any;
+          const roleConfigData = await apiClient.get(`/config/roles/${currentVendorRoleId}`) as any;
           if (roleConfigData) {
             // ✅ Extract role name for service filtering (services use role names, not IDs)
             const roleName = roleConfigData.name || roleConfigData.roleName || roleConfigData.roleCode || '';
@@ -259,18 +304,27 @@ export function VendorServiceCatalogView({
 
     // 3. User-selected style filter
     if (activeStyle !== 'all') {
-      filteredServices = filteredServices.filter(service => service.serviceStyle === activeStyle);
+      filteredServices = filteredServices.filter(service => {
+        const style = service.serviceStyle || (service as any).service_style || 'at_center';
+        return style === activeStyle;
+      });
       console.log('🔍 [GROUPING] After user style filter:', filteredServices.length, 'services');
     }
 
     // 3. Search Filter
     if (searchQuery) {
-      filteredServices = filteredServices.filter(service =>
-        service.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.categoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (service.subCategoryName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (service.description || '').toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      const query = searchQuery.toLowerCase();
+      filteredServices = filteredServices.filter(service => {
+        const serviceName = (service.serviceName || service.service_name || '').toLowerCase();
+        const categoryName = (service.categoryName || service.category_name || service.category || '').toLowerCase();
+        const subCategoryName = (service.subCategoryName || service.sub_category_name || '').toLowerCase();
+        const description = (service.description || '').toLowerCase();
+        
+        return serviceName.includes(query) ||
+               categoryName.includes(query) ||
+               subCategoryName.includes(query) ||
+               description.includes(query);
+      });
       console.log('🔍 [GROUPING] After search filter:', filteredServices.length, 'services');
     }
 
@@ -278,18 +332,21 @@ export function VendorServiceCatalogView({
     const grouped: { [key: string]: CategoryGroup } = {};
 
     filteredServices.forEach(service => {
-      const catKey = service.categoryId || service.categoryName;
+      // Handle both camelCase and snake_case field names
+      const categoryName = service.categoryName || service.category_name || service.category || 'Uncategorized';
+      const categoryId = service.categoryId || service.category_id || categoryName;
+      const catKey = categoryId;
       
       if (!grouped[catKey]) {
         grouped[catKey] = {
-          categoryName: service.categoryName,
-          categoryId: service.categoryId,
+          categoryName: categoryName,
+          categoryId: categoryId,
           subcategories: []
         };
       }
 
-      const subCatName = service.subCategoryName || 'General';
-      const subCatId = service.subCategoryId || 'general';
+      const subCatName = service.subCategoryName || service.sub_category_name || 'General';
+      const subCatId = service.subCategoryId || service.sub_category_id || 'general';
       
       let subcategory = grouped[catKey].subcategories.find(
         sub => sub.subCategoryId === subCatId
@@ -380,12 +437,33 @@ export function VendorServiceCatalogView({
   };
 
   const isServiceAdded = (service: ServiceCatalogItem): boolean => {
+    // ✅ FIX: Handle both camelCase and snake_case property names
+    const catalogServiceId = service.catalogId || (service as any).id || (service as any).service_id;
+    const catalogServiceName = (service.serviceName || (service as any).service_name || '').toLowerCase();
+    const catalogCategoryName = (service.categoryName || (service as any).category_name || '').toLowerCase();
+    const catalogServiceStyle = service.serviceStyle || (service as any).service_style;
+    
     return vendorServices.some(vs => {
-      if (vs.catalogId && service.catalogId) {
-        return vs.catalogId === service.catalogId;
+      // Check by service_id (UUID) match
+      const vsServiceId = vs.serviceId || vs.service_id || vs.catalogId || vs.catalog_id;
+      if (vsServiceId && catalogServiceId && vsServiceId === catalogServiceId) {
+        return true;
       }
-      return vs.serviceName === service.serviceName && 
-             vs.categoryName === service.categoryName;
+      
+      // Check by name + category + style match
+      const vsServiceName = (vs.serviceName || vs.service_name || vs.name || '').toLowerCase();
+      const vsCategoryName = (vs.categoryName || vs.category_name || vs.category || '').toLowerCase();
+      const vsServiceStyle = vs.serviceStyle || vs.service_style;
+      
+      // Match by name and category (and optionally style)
+      if (vsServiceName === catalogServiceName && vsCategoryName === catalogCategoryName) {
+        // If styles match or no style specified, it's a match
+        if (!catalogServiceStyle || !vsServiceStyle || catalogServiceStyle === vsServiceStyle) {
+          return true;
+        }
+      }
+      
+      return false;
     });
   };
 
@@ -441,12 +519,22 @@ export function VendorServiceCatalogView({
   };
 
   const handleAddService = async (service: ServiceCatalogItem) => {
+    // ✅ FIX: Skip if already added
+    if (isServiceAdded(service)) {
+      toast.info(`${service.serviceName} is already added`);
+      return;
+    }
+    
     try {
       setAdding(true);
 
+      // Use catalogId as serviceId for backward compatibility with backend
+      const effectiveServiceId = service.catalogId || (service as any).id || (service as any).service_id;
+      
       const data = await apiClient.post(`/vendor/${vendorId}/services`, {
         vendorId,
-        catalogId: service.catalogId,
+        serviceId: effectiveServiceId, // Backend expects serviceId
+        catalogId: service.catalogId, // Also send catalogId for fallback
         categoryId: service.categoryId,
         categoryName: service.categoryName,
         subCategoryId: service.subCategoryId,
@@ -454,34 +542,77 @@ export function VendorServiceCatalogView({
         serviceGroupId: service.serviceGroupId,
         serviceGroupName: service.serviceGroupName,
         serviceName: service.serviceName,
-        serviceStyle: service.serviceStyle,
+        serviceStyle: service.serviceStyle || 'at_center', // Default to at_center if not specified
         basePrice: service.basePrice,
+        duration: service.duration,
         isPackage: service.isPackage,
         packageDetails: service.packageDetails,
         description: service.description,
-        duration: service.duration,
-        isActive: true
+        isActive: true,
+        publishStatus: 'draft' // ✅ NEW: Start as draft, vendor publishes later
       }) as any;
 
       if (data && data.success) {
         const result = data;
-        console.log('✅ Service added:', result);
-        toast.success(`Added ${service.serviceName}`);
         
-        setVendorServices(prev => [...prev, {
-          ...service,
-          vendorServiceId: result.vendorServiceId || result.id
-        }]);
+        // ✅ FIX: Handle alreadyExists flag from backend
+        if (result.alreadyExists) {
+          console.log('📋 Service already exists:', service.serviceName);
+          toast.info(`${service.serviceName} is already added`);
+          
+          // Update vendorServices with existing service info from backend
+          setVendorServices(prev => {
+            const exists = prev.some(s => 
+              (s.vendorServiceId === result.vendorServiceId) ||
+              (s.serviceId === service.catalogId) ||
+              ((s.serviceName || '').toLowerCase() === (service.serviceName || '').toLowerCase() &&
+               (s.serviceStyle || '').toLowerCase() === (service.serviceStyle || '').toLowerCase())
+            );
+            if (!exists) {
+              return [...prev, {
+                ...service,
+                vendorServiceId: result.vendorServiceId,
+                publishStatus: result.publishStatus || 'draft',
+                isEnabled: result.isEnabled ?? true
+              }];
+            }
+            return prev;
+          });
+        } else {
+          console.log('✅ Service added:', result);
+          toast.success(`Added ${service.serviceName} (Draft)`);
+          
+          setVendorServices(prev => [...prev, {
+            ...service,
+            vendorServiceId: result.vendorServiceId || result.id,
+            publishStatus: 'draft'
+          }]);
 
-        if (mode === 'browse' && onSelectService) {
-          onSelectService(service);
+          if (mode === 'browse' && onSelectService) {
+            onSelectService(service);
+          }
         }
       } else {
-        toast.error(data?.error || 'Failed to add service');
+        // Handle error response
+        if (data?.error?.includes('already exists') || data?.alreadyExists) {
+          toast.info(`${service.serviceName} is already added`);
+          // Refresh vendor services list to sync state
+          const vendorServicesData = await apiClient.get(`/vendor/${vendorId}/services`) as any;
+          if (vendorServicesData?.allServices) {
+            setVendorServices(vendorServicesData.allServices);
+          }
+        } else {
+          toast.error(data?.error || 'Failed to add service');
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding service:', error);
-      toast.error('Failed to add service');
+      // Handle 409 conflict from error response
+      if (error?.message?.includes('already exists') || error?.status === 409) {
+        toast.info(`${service.serviceName} is already added`);
+      } else {
+        toast.error('Failed to add service');
+      }
     } finally {
       setAdding(false);
     }
@@ -492,25 +623,43 @@ export function VendorServiceCatalogView({
       setAdding(true);
       
       const servicesToAdd: ServiceCatalogItem[] = [];
+      const alreadyAddedCount = { count: 0 };
       
       groupedServices.forEach(category => {
         category.subcategories.forEach(subcategory => {
           subcategory.services.forEach(service => {
-            if (isServiceSelected(service) && !isServiceAdded(service)) {
-              servicesToAdd.push(service);
+            if (isServiceSelected(service)) {
+              if (isServiceAdded(service)) {
+                alreadyAddedCount.count++;
+              } else {
+                servicesToAdd.push(service);
+              }
             }
           });
         });
       });
 
-      console.log(`Adding ${servicesToAdd.length} selected services...`);
+      console.log(`Adding ${servicesToAdd.length} new services, ${alreadyAddedCount.count} already added`);
 
+      let successCount = 0;
       for (const service of servicesToAdd) {
-        await handleAddService(service);
+        try {
+          await handleAddService(service);
+          successCount++;
+        } catch (e) {
+          // Individual errors handled in handleAddService
+        }
       }
 
       setSelectedServices(new Set());
-      toast.success(`Added ${servicesToAdd.length} services`);
+      
+      if (successCount > 0 && alreadyAddedCount.count > 0) {
+        toast.success(`Added ${successCount} services (${alreadyAddedCount.count} already existed)`);
+      } else if (successCount > 0) {
+        toast.success(`Added ${successCount} services as draft`);
+      } else if (alreadyAddedCount.count > 0) {
+        toast.info(`All ${alreadyAddedCount.count} selected services were already added`);
+      }
 
     } catch (error) {
       console.error('Error adding services:', error);

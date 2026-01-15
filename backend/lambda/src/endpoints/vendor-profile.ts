@@ -19,6 +19,8 @@ import { Hono } from 'hono';
 import { select, update, insert, query } from '../database/rds-connection';
 import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -48,9 +50,13 @@ async function decodeJwtFromHeader(authHeader: string | undefined): Promise<{ ph
     if (parts.length !== 3) return {};
     
     const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+    // ✅ FIX: Support multiple JWT formats - our custom JWT uses 'phone', Cognito uses 'phone_number'
+    const phone = payload.phone || payload.phone_number || payload['cognito:username'];
+    const userId = payload.userId || payload.sub || payload.user_id;
+    console.log(`🔐 [JWT-DECODE] Extracted phone: ${phone}, userId: ${userId}`);
     return {
-      phone: payload.phone_number || payload['cognito:username'],
-      userId: payload.sub,
+      phone,
+      userId,
     };
   } catch (e) {
     console.warn('Failed to decode JWT:', e);

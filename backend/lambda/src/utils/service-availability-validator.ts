@@ -14,6 +14,47 @@
 
 import { select, query } from '../database/rds-connection';
 
+/**
+ * Normalize service style to a common format for comparison.
+ * Different parts of the system use different naming conventions:
+ * - Role config: at_clinic, video_consultation, home_visit
+ * - Database: at_center, tele, at_home
+ * - Booking API: at_vendor, online, at_home
+ */
+function normalizeServiceStyle(style: string): string {
+  if (!style) return '';
+  const normalized = style.toLowerCase().replace(/[-_\s]/g, '_');
+  
+  // Map all variations to canonical styles
+  const styleMap: Record<string, string> = {
+    // At center/clinic/vendor variations
+    'at_clinic': 'at_center',
+    'at_center': 'at_center',
+    'at_vendor': 'at_center',
+    'clinic': 'at_center',
+    'center': 'at_center',
+    'in_clinic': 'at_center',
+    'in_center': 'at_center',
+    
+    // Tele/video/online variations
+    'tele': 'tele',
+    'video': 'tele',
+    'online': 'tele',
+    'video_consultation': 'tele',
+    'teleconsultation': 'tele',
+    'video_call': 'tele',
+    
+    // Home visit variations
+    'at_home': 'at_home',
+    'home': 'at_home',
+    'home_visit': 'at_home',
+    'doorstep': 'at_home',
+    'home_service': 'at_home',
+  };
+  
+  return styleMap[normalized] || normalized;
+}
+
 export interface ServiceAvailabilityResult {
   available: boolean;
   reason?: string;
@@ -253,11 +294,11 @@ export async function validateServiceAvailability(
         // Check allowed service styles
         if (serviceButton.allowedServiceStyles && serviceButton.allowedServiceStyles.length > 0) {
           const serviceStyle = service.service_style || service.serviceStyle || 'at_clinic';
-          const normalizedServiceStyle = serviceStyle.toLowerCase().replace(/_/g, '_');
+          const normalizedServiceStyle = normalizeServiceStyle(serviceStyle);
           
           const isStyleAllowed = serviceButton.allowedServiceStyles.some((allowedStyle: string) => {
-            const normalized = allowedStyle.toLowerCase().replace(/_/g, '_');
-            return normalizedServiceStyle === normalized;
+            const normalizedAllowed = normalizeServiceStyle(allowedStyle);
+            return normalizedServiceStyle === normalizedAllowed;
           });
 
           if (!isStyleAllowed) {
@@ -304,11 +345,11 @@ export async function validateServiceAvailability(
       // Check service style
       if (allowedServiceStyles.length > 0) {
         const serviceStyle = service.service_style || service.serviceStyle || 'at_clinic';
-        const normalizedServiceStyle = serviceStyle.toLowerCase().replace(/_/g, '_');
+        const normalizedServiceStyle = normalizeServiceStyle(serviceStyle);
         
         const isStyleAllowed = allowedServiceStyles.some((allowedStyle: string) => {
-          const normalized = allowedStyle.toLowerCase().replace(/_/g, '_');
-          return normalizedServiceStyle === normalized;
+          const normalizedAllowed = normalizeServiceStyle(allowedStyle);
+          return normalizedServiceStyle === normalizedAllowed;
         });
 
         if (!isStyleAllowed) {

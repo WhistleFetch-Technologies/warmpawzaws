@@ -27,6 +27,8 @@ import {
   UpdateCustomerProfileRequestSchema,
   AddPetRequestSchema,
 } from '@warmpawz/api-contracts/customers';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // CUSTOMER HANDLERS
