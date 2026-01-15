@@ -29,6 +29,12 @@ interface VendorBookingManagementProps {
   vendorId: string;
   vendorData?: any;
   onBack: () => void;
+  /** Whether chat capability is enabled for this vendor's role (from role config) */
+  chatEnabled?: boolean;
+  /** Vendor phone for chat identification */
+  vendorPhone?: string;
+  /** Vendor name for chat display */
+  vendorName?: string;
 }
 
 interface Booking {
@@ -68,7 +74,14 @@ interface TimeSlot {
   booked?: boolean;
 }
 
-export function VendorBookingManagement({ vendorId, vendorData, onBack }: VendorBookingManagementProps) {
+export function VendorBookingManagement({ 
+  vendorId, 
+  vendorData, 
+  onBack,
+  chatEnabled = true, // Default to true for backwards compatibility
+  vendorPhone,
+  vendorName
+}: VendorBookingManagementProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
   const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
@@ -737,8 +750,8 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                           </button>
                         )}
                         
-                        {/* Chat Button - ALL BOOKINGS */}
-                        {booking.chatEnabled !== false && (
+                        {/* Chat Button - Only show if chat capability is enabled for this role */}
+                        {chatEnabled && booking.chatEnabled !== false && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1138,15 +1151,25 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       {/* CHAT MODAL */}
       {showChatModal && chatBooking && (
         <VendorChatModal
-          bookingId={chatBooking.id}
-          vendorPhone={vendorData?.phone || vendorData?.mobile || '+91'}
-          vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          bookingId={chatBooking.bookingId || chatBooking.id}
+          vendorId={vendorId}
+          vendorPhone={vendorPhone || vendorData?.phone || vendorData?.mobile}
+          vendorName={vendorName || vendorData?.fullName || vendorData?.businessName || 'Vendor'}
           customerPhone={chatBooking.phone}
           customerName={chatBooking.customerName}
+          bookingStatus={chatBooking.status}
+          serviceName={chatBooking.serviceName}
           onClose={() => {
             setShowChatModal(false);
             setChatBooking(null);
             loadBookings(); // Reload to clear unread badges
+          }}
+          onSupportHandoff={(bookingId, reason) => {
+            // Handle support handoff - redirect to support ticket creation
+            setShowChatModal(false);
+            setChatBooking(null);
+            // Could navigate to support page or open support modal
+            console.log('Support handoff requested for booking:', bookingId, reason);
           }}
         />
       )}

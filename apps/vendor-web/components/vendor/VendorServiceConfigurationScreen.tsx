@@ -51,6 +51,10 @@ interface Service {
   icon?: string;
   petTypes?: string[];
   isCustomService?: boolean;
+  // ✅ FIX: Add optional aliases for API response compatibility
+  serviceName?: string;
+  category?: string;
+  subCategory?: string;
 }
 
 export function VendorServiceConfigurationScreen({ 
@@ -450,9 +454,9 @@ export function VendorServiceConfigurationScreen({
 
   // 🎨 Smart Icon Mapping for Pet Healthcare Services
   const getServiceIcon = (service: Service) => {
-    const name = service.name.toLowerCase();
-    const category = service.categoryName?.toLowerCase() || '';
-    const subCategory = service.subCategoryName?.toLowerCase() || '';
+    const name = (service.name || service.serviceName || '').toLowerCase();
+    const category = (service.categoryName || service.category || '').toLowerCase();
+    const subCategory = (service.subCategoryName || service.subCategory || '').toLowerCase();
 
     // Veterinary Services - Medical Icons
     if (category.includes('veterinary') || category.includes('medical') || category.includes('health')) {
@@ -588,12 +592,18 @@ export function VendorServiceConfigurationScreen({
 
   // ✅ Filter services based on search query
   const filteredServices = searchQuery
-    ? services.filter(service =>
-        service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.categoryName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.subCategoryName?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? services.filter(service => {
+        const query = searchQuery.toLowerCase();
+        const name = (service.name || service.serviceName || '').toLowerCase();
+        const description = (service.description || '').toLowerCase();
+        const categoryName = (service.categoryName || service.category || '').toLowerCase();
+        const subCategoryName = (service.subCategoryName || service.subCategory || '').toLowerCase();
+        
+        return name.includes(query) ||
+               description.includes(query) ||
+               categoryName.includes(query) ||
+               subCategoryName.includes(query);
+      })
     : services;
 
   // ✅ Group filtered services by category

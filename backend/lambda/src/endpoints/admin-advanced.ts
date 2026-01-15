@@ -4991,6 +4991,64 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * POST /admin/seed/ecommerce-categories
+   * Seed e-commerce product categories for the marketplace
+   */
+  app.post('/admin/seed/ecommerce-categories', async (c) => {
+    try {
+      const categories = [
+        { name: 'Pet Food', description: 'Dog food, cat food, and treats', display_order: 1 },
+        { name: 'Pet Accessories', description: 'Collars, leashes, bowls, and more', display_order: 2 },
+        { name: 'Pet Toys', description: 'Interactive toys, chew toys, and plush toys', display_order: 3 },
+        { name: 'Pet Grooming', description: 'Shampoos, brushes, and grooming tools', display_order: 4 },
+        { name: 'Pet Health', description: 'Supplements, vitamins, and health products', display_order: 5 },
+        { name: 'Pet Beds & Furniture', description: 'Beds, crates, and pet furniture', display_order: 6 },
+        { name: 'Pet Clothing', description: 'Jackets, sweaters, and costumes', display_order: 7 },
+        { name: 'Pet Travel', description: 'Carriers, car seats, and travel accessories', display_order: 8 },
+        { name: 'Pet Pharmacy', description: 'Medications and prescription items', display_order: 9 },
+        { name: 'Pet Training', description: 'Training aids, clickers, and pads', display_order: 10 },
+      ];
+
+      let inserted = 0;
+      let skipped = 0;
+
+      for (const cat of categories) {
+        try {
+          // Check if category already exists
+          const existing = await query(
+            'SELECT id FROM ecommerce_categories WHERE name = $1',
+            [cat.name]
+          );
+
+          if (existing.rows.length === 0) {
+            await query(
+              `INSERT INTO ecommerce_categories (name, description, display_order, is_active)
+               VALUES ($1, $2, $3, true)`,
+              [cat.name, cat.description, cat.display_order]
+            );
+            inserted++;
+          } else {
+            skipped++;
+          }
+        } catch (err: any) {
+          console.error(`Error inserting category ${cat.name}:`, err);
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: `E-commerce categories seeded: ${inserted} inserted, ${skipped} skipped (already exist)`,
+        inserted,
+        skipped,
+        total: categories.length,
+      });
+    } catch (error: any) {
+      console.error('Error seeding e-commerce categories:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.post('/admin/fix-vendor-categories', async (c) => {
     try {
       // Fix vendor categories - placeholder
@@ -5689,69 +5747,92 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Apply correct capability mappings to all roles based on service type
   app.post('/admin/fix/apply-role-capability-mappings', async (c) => {
     try {
+      // ============================================================================
+      // UNIVERSAL CAPABILITIES (Required for ALL vendors)
+      // ============================================================================
+      const UNIVERSAL_CAPS = [
+        'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+        'earnings', 'settlements', 'bank_account', 'notifications',
+        // VERIFICATION - Required for ALL vendors
+        'bank_verification',      // Razorpay Marketplace API verification
+        'location_verification',  // Google Maps address verification
+        'address_verification',   // Verify vendor address
+        'kyc_verification',       // KYC compliance
+      ];
+      
+      // HOME SERVICE CAPABILITIES (GPS/Live location for mobile services)
+      const HOME_SERVICE_CAPS = [
+        'gps_tracking',    // Real-time GPS tracking
+        'live_location',   // Share live location with customers
+        'photo_updates',   // Share photos during service
+      ];
+      
+      // CENTER CAPABILITIES (For vendors with physical locations)
+      const CENTER_CAPS = [
+        'facility_management',  // Manage center/clinic
+        'staff_management',     // Manage employees
+      ];
+      
       // Define proper capability mappings for each role
       const ROLE_CAPABILITY_MAPPINGS: Record<string, string[]> = {
-        // ===== HOME GROOMER (Solo, no center) =====
+        // ===== HOME GROOMER (Solo, mobile, no center) =====
         'groomers': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'gps_tracking', // Home service tracking
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           'gallery', 'portfolio', 'custom_services', 'pricing', 'services',
           // NO facility_management, NO staff_management
         ],
         
-        // ===== CENTER GROOMER (With salon/center) =====
+        // ===== PET SALON / CENTER GROOMER (With salon/center) =====
         'pet_groomer': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management', // Center operations
-          'gallery', 'portfolio', 'custom_services', 'package_management', 'pricing',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
+          'gallery', 'portfolio', 'custom_services', 'package_management', 'pricing', 'services',
         ],
         
-        // ===== WALKER (Home only, solo) =====
+        // ===== WALKER (Home only, solo, mobile) =====
         'pet_walker': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'gps_tracking', 'photo_updates', 'walking', // Home/mobile service
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          'walking', // Specialized walking feature
           'custom_services', 'package_management', 'pricing',
           // NO facility_management, NO staff_management
         ],
         
         // ===== SITTER (Home only) =====
         'pet_sitter': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
+          ...UNIVERSAL_CAPS,
           'photo_updates', // Share updates during sitting
+          'gps_tracking',  // For pickup/drop
           'custom_services', 'package_management', 'pricing',
           // NO facility_management, NO staff_management
         ],
         
-        // ===== TRAINER (Center with home/tele options) =====
+        // ===== TRAINER (HOME + TELE only, no center) =====
         'pet_trainer': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management', // Center operations
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           'training_programs', 'progress_tracking',
           'custom_services', 'package_management', 'pricing',
           'tele', 'video_calling', // Remote training
+          // NO facility_management, NO staff_management (home-based)
         ],
         
-        // ===== VETERINARIAN (Clinic with home/tele) =====
+        // ===== VETERINARIAN (HOME + TELE only, individual practice) =====
         'veterinarian': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management', // Clinic operations
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS, // For home visits
           'prescriptions', 'medical_records', 'diagnostics', 'emergency',
           'patient_monitoring', 'vet_summary',
           'custom_services', 'package_management', 'pricing',
           'tele', 'video_calling', // Tele-consultation
+          // NO facility_management, NO staff_management (individual, not clinic)
         ],
         
-        // ===== VETERINARY CLINIC (Multi-doctor clinic) =====
+        // ===== VETERINARY CLINIC (CENTER + TELE, multi-doctor facility) =====
         'veterinary_clinic': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management', // Clinic operations
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS, // Has facility and staff
           'prescriptions', 'medical_records', 'diagnostics', 'emergency',
           'emergency_protocols', 'patient_monitoring', 'vet_summary',
           'diagnostic_lab', 'multi_doctor_management', 'ambulance_services',
@@ -5761,45 +5842,43 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         
         // ===== TAXI (Mobile, solo) =====
         'pet_taxi': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'gps_tracking', 'distance_pricing', 'emergency',
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          'distance_pricing', 'emergency',
           'custom_services', 'package_management',
           // NO facility_management, NO staff_management
         ],
         
         // ===== AMBULANCE (Mobile emergency) =====
         'pet_ambulance': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'gps_tracking', 'emergency', 'emergency_protocols',
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          'emergency', 'emergency_protocols', 'ambulance',
           // NO facility_management, NO staff_management
         ],
         
         // ===== RELOCATION (Mobile) =====
         'pet_relocation': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'gps_tracking', 'distance_pricing',
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          'distance_pricing',
           'custom_services', 'pricing',
           // NO facility_management, NO staff_management
         ],
         
         // ===== BOARDING (Center only) =====
         'pet_boarding': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management', // Center operations
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'rooms', 'room_management', 'cctv_access', 'photo_updates',
           'occupancy_tracking', 'nightly_pricing',
           'custom_services', 'package_management',
         ],
         
-        // ===== RESORT (Premium boarding) =====
+        // ===== RESORT (Premium boarding center) =====
         'pet_resort': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'rooms', 'room_management', 'cctv_access', 'photo_updates',
           'occupancy_tracking', 'nightly_pricing',
           'custom_services', 'package_management', 'gallery', 'events',
@@ -5807,73 +5886,87 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         
         // ===== PET CAFE (Center only) =====
         'pet_cafe': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'menu', 'cafe_tables', 'table_management', 'pax_management',
           'inventory', 'catalog', 'events',
           'custom_services', 'package_management',
         ],
         
-        // ===== NUTRITIONIST (Tele/Home, solo) =====
+        // ===== NUTRITIONIST (Tele consultation + Food preparation & delivery) =====
+        // Dual model: 1) Consulting via tele/video  2) Prepare and deliver pet food
         'nutritionist': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'meal_plans', 'diet_charts', 'progress_tracking',
+          ...UNIVERSAL_CAPS,
+          'meal_plans', 'diet_charts', 'progress_tracking',  // Consulting & planning
           'custom_services', 'package_management', 'pricing',
-          'tele', 'video_calling',
-          // NO facility_management, NO staff_management
+          'tele', 'video_calling',  // Remote consultations
+          // Food preparation & delivery capabilities
+          'catalog',      // List meal plans/food items on customer app
+          'inventory',    // Manage food stock/ingredients
+          'orders',       // Receive food orders from customers
+          'delivery',     // Deliver prepared food/meals
+          // Delivery & Payment
+          'delivery_partner',      // Integration with delivery partners
+          'eta_tracking',          // Real-time ETA
+          'invoice_generation',    // Generate invoices
+          'cod_payment',           // Cash on delivery
+          'online_payment',        // Online payment
+          // NO facility_management, NO staff_management (solo operation)
         ],
         
         // ===== BEHAVIORIST (Tele/Home, solo) =====
         'pet_behaviorist': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
+          ...UNIVERSAL_CAPS,
           'progress_tracking',
           'custom_services', 'package_management', 'pricing',
           'tele', 'video_calling',
           // NO facility_management, NO staff_management
         ],
         
-        // ===== PHOTOGRAPHER (Can have studio) =====
+        // ===== PHOTOGRAPHER (Can have studio or mobile) =====
         'pet_photographer': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management', // Studio
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS, // Studio operations
           'gallery', 'portfolio',
           'custom_services', 'package_management', 'pricing',
         ],
         
-        // ===== EVENT ORGANIZER (Mobile) =====
+        // ===== EVENT ORGANIZER (Mobile events) =====
         'pet_event_organizer': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS, // Mobile event coverage
           'events', 'gallery', 'portfolio',
           'custom_services', 'package_management', 'pricing',
           // NO facility_management (mobile events)
         ],
         
+        // ===== EVENT ORGANIZER (Alternate name) =====
+        'event_organizer': [
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS, // Mobile event coverage
+          'events', 'gallery', 'portfolio',
+          'custom_services', 'package_management', 'pricing',
+        ],
+        
         // ===== SHELTER (Center, NGO) =====
         'pet_shelter': [
-          'dashboard', 'profile', 'chat', 'schedule', 'notifications',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'adoption', 'donation', 'events', 'pet_profiles',
           // Different financial model for NGO
         ],
         
         // ===== SUNSET SERVICES (Center/Home) =====
         'pet_sunset_services': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'memorial', 'counseling',
           'custom_services', 'package_management',
         ],
         
         // ===== BREEDER (Center) =====
         'pet_breeder': [
-          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
-          'earnings', 'settlements', 'bank_account', 'notifications',
+          ...UNIVERSAL_CAPS,
           'facility_management', // Breeding facility
           'catalog', 'pet_profiles',
           'custom_services', 'pricing',
@@ -5881,31 +5974,41 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         
         // ===== INSURANCE (Center, online) =====
         'insurance': [
-          'dashboard', 'profile', 'chat', 'schedule', 'notifications',
-          'earnings', 'settlements', 'bank_account',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'insurance_plans', 'policy_management', 'claims_management',
           'custom_services', 'pricing',
         ],
         
         // ===== PET STORE (Seller - uses Seller Hub) =====
         'pet_products_store': [
-          'dashboard', 'profile', 'chat', 'notifications',
-          'earnings', 'settlements', 'bank_account',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           'catalog', 'inventory', 'orders', 'delivery',
           'pricing', 'promotions', 'coupons', 'analytics',
           // NO bookings (uses orders)
         ],
         
-        // ===== PET PHARMACY (Healthcare + Retail) =====
+        // ===== PET PHARMACY (Healthcare + Retail + Uber-like order dispatch) =====
         'pet_pharmacy': [
-          'dashboard', 'profile', 'chat', 'notifications',
-          'earnings', 'settlements', 'bank_account',
-          'facility_management', 'staff_management',
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
+          // Core pharmacy capabilities
           'catalog', 'inventory', 'orders', 'delivery',
           'prescriptions', 'prescription_verification',
           'controlled_substances', 'expiry_management',
+          // Order dispatch (Uber-like flow)
+          'order_dispatch',        // Receive orders from nearby customers
+          'order_broadcast',       // Get order broadcasts within radius
+          'availability_check',    // Confirm medicine availability
+          'radius_service',        // Define service radius (e.g., 20km)
+          // Invoice & Payment
+          'invoice_generation',    // Generate proforma invoices
+          'cod_payment',           // Cash on delivery
+          'online_payment',        // Razorpay online payment
+          // Delivery tracking
+          'delivery_partner',      // Delivery partner integration
+          'eta_tracking',          // Real-time ETA calculation
           // NO bookings (uses orders)
         ],
       };
@@ -5937,11 +6040,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         // Operations
         'inventory', 'orders', 'delivery', 'gps_tracking', 'reports', 'settings',
         'catalog', 'expiry_management', 'distance_pricing', 'facility_management', 'custom_services',
+        'live_location', // Real-time location for home services
         // Media
         'photo_updates', 'gallery', 'portfolio', 'progress_tracking', 'cctv_access',
         // Advanced Features
         'packages', 'subscriptions', 'coupons', 'promotions', 'reviews', 'analytics',
         'export', 'integrations', 'package_management',
+        // Verification & Compliance (Required for ALL vendors)
+        'bank_verification', 'location_verification', 'address_verification', 'kyc_verification',
+        // Pharmacy & Delivery specific
+        'order_dispatch', 'order_broadcast', 'availability_check', 'radius_service',
+        'invoice_generation', 'cod_payment', 'online_payment', 'delivery_partner', 'eta_tracking',
       ]);
       const validCapIds = VALID_CAP_IDS;
       
@@ -6013,6 +6122,75 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error applying role capability mappings:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // PHARMACY ORDER BROADCASTS TABLE MIGRATION
+  // ============================================================================
+  app.post("/admin/fix/create-pharmacy-tables", async (c) => {
+    try {
+      const results: string[] = [];
+
+      // Create pharmacy_order_broadcasts table
+      await query(`
+        CREATE TABLE IF NOT EXISTS pharmacy_order_broadcasts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_id UUID,
+          pharmacy_id UUID,
+          status VARCHAR(20) DEFAULT 'pending',
+          broadcast_time TIMESTAMP DEFAULT NOW(),
+          response_time TIMESTAMP,
+          rejection_reason TEXT,
+          distance_km DECIMAL(5,2),
+          delivery_fee DECIMAL(10,2),
+          eta_minutes INTEGER,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      results.push('Created pharmacy_order_broadcasts table');
+
+      // Add indexes
+      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_order_id ON pharmacy_order_broadcasts(order_id)`).catch(() => {});
+      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_pharmacy_id ON pharmacy_order_broadcasts(pharmacy_id)`).catch(() => {});
+      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_status ON pharmacy_order_broadcasts(status)`).catch(() => {});
+      results.push('Created indexes');
+
+      // Add columns to orders table for pharmacy flow
+      const orderColumns = [
+        { name: 'prescription_id', type: 'UUID' },
+        { name: 'pharmacy_response_deadline', type: 'TIMESTAMP' },
+        { name: 'invoice_data', type: 'JSONB' },
+        { name: 'delivery_partner', type: 'VARCHAR(50)' },
+        { name: 'delivery_partner_id', type: 'VARCHAR(100)' },
+        { name: 'delivery_eta', type: 'TIMESTAMP' },
+        { name: 'delivery_otp', type: 'VARCHAR(6)' },
+        { name: 'status', type: 'VARCHAR(50) DEFAULT \'pending\'' },
+        { name: 'order_number', type: 'VARCHAR(50)' },
+        { name: 'payment_status', type: 'VARCHAR(50) DEFAULT \'pending\'' },
+        { name: 'payment_method', type: 'VARCHAR(50)' },
+        { name: 'total_amount', type: 'DECIMAL(10,2)' },
+        { name: 'discount_amount', type: 'DECIMAL(10,2) DEFAULT 0' },
+        { name: 'final_amount', type: 'DECIMAL(10,2)' },
+        { name: 'delivery_status', type: 'VARCHAR(50)' },
+        { name: 'tracking_number', type: 'VARCHAR(100)' },
+        { name: 'delivery_address', type: 'JSONB' },
+      ];
+
+      for (const col of orderColumns) {
+        await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`).catch(() => {});
+      }
+      results.push('Added pharmacy columns to orders table');
+
+      return c.json({
+        success: true,
+        message: 'Pharmacy tables and columns created',
+        results,
+      });
+    } catch (error: any) {
+      console.error('Error creating pharmacy tables:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });

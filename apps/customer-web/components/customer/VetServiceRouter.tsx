@@ -341,9 +341,26 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 key={service.id}
                 className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
                 onClick={() => {
-                  // Special handling for clinic visit - use new enhanced flow
+                  // Map service IDs to service styles
+                  const styleMap: Record<string, string> = {
+                    'tele': 'tele',
+                    'home': 'at_home', 
+                    'clinic': 'at_center',
+                    'lab': 'lab',
+                    'medicine': 'medicine'
+                  };
+                  const serviceStyle = styleMap[service.id] || service.id;
+                  
+                  // Navigate to services listing page for this style
                   if (service.id === 'clinic') {
                     onNavigate('vet-clinic-list');
+                  } else if (service.id === 'tele' || service.id === 'home') {
+                    // Navigate to service listing by style - shows actual configured services
+                    onNavigate('vet-services-by-style', { 
+                      serviceStyle, 
+                      serviceTypeName: service.name,
+                      category: 'vet'
+                    });
                   } else {
                     onNavigate('vet-booking', { serviceType: service.id });
                   }

@@ -642,6 +642,28 @@ class GetCapabilitiesHandler extends BaseHandler {
       { id: 'memorial', name: 'Memorial', category: 'Specialized Services', description: 'Memorial services' },
       { id: 'claims_management', name: 'Claims Management', category: 'Specialized Services', description: 'Insurance claims management' },
       { id: 'policy_management', name: 'Policy Management', category: 'Specialized Services', description: 'Insurance policy management' },
+      
+      // ============================================================================
+      // VERIFICATION & COMPLIANCE (Required for ALL vendors)
+      // ============================================================================
+      { id: 'bank_verification', name: 'Bank Verification', category: 'Verification & Compliance', description: 'Bank account verification via Razorpay Marketplace API' },
+      { id: 'location_verification', name: 'Location Verification', category: 'Verification & Compliance', description: 'Google location/address verification for vendor profile' },
+      { id: 'address_verification', name: 'Address Verification', category: 'Verification & Compliance', description: 'Verify vendor address using Google Maps API' },
+      { id: 'live_location', name: 'Live Location', category: 'Operations', description: 'Real-time location tracking for home/mobile services' },
+      { id: 'kyc_verification', name: 'KYC Verification', category: 'Verification & Compliance', description: 'Know Your Customer verification for vendors' },
+      
+      // ============================================================================
+      // PHARMACY & DELIVERY SPECIFIC
+      // ============================================================================
+      { id: 'order_dispatch', name: 'Order Dispatch', category: 'Pharmacy', description: 'Receive and dispatch orders from nearby customers (Uber-like)' },
+      { id: 'availability_check', name: 'Availability Check', category: 'Pharmacy', description: 'Confirm medicine/product availability before accepting order' },
+      { id: 'invoice_generation', name: 'Invoice Generation', category: 'Finance & Payments', description: 'Generate proforma and final invoices' },
+      { id: 'delivery_partner', name: 'Delivery Partner', category: 'Delivery', description: 'Integration with delivery partners for order fulfillment' },
+      { id: 'eta_tracking', name: 'ETA Tracking', category: 'Delivery', description: 'Real-time ETA calculation and tracking' },
+      { id: 'cod_payment', name: 'COD Payment', category: 'Finance & Payments', description: 'Accept Cash on Delivery payments' },
+      { id: 'online_payment', name: 'Online Payment', category: 'Finance & Payments', description: 'Accept online payments via Razorpay' },
+      { id: 'order_broadcast', name: 'Order Broadcast', category: 'Pharmacy', description: 'Receive order broadcasts from nearby customers' },
+      { id: 'radius_service', name: 'Radius Service', category: 'Operations', description: 'Define service radius for order acceptance' },
     ];
 
     return this.success({

@@ -131,6 +131,7 @@ import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-das
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
 import { registerVendorSupportEndpoints } from '../endpoints/vendor-support';
+import { registerPharmacyOrderEndpoints } from '../endpoints/pharmacy-orders';
 
 // Create Hono app
 const app = new Hono();
@@ -228,6 +229,7 @@ registerReviewEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerCustomerBookingHistoryEndpoints(app);
 registerPrescriptionEndpoints(app);
+registerPharmacyOrderEndpoints(app);
 registerMedicalRecordsEndpoints(app);
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
