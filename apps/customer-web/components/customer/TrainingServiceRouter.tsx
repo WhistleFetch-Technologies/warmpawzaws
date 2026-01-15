@@ -48,22 +48,30 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const loadActiveTrainingPackages = async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`);
-      if (response?.packages) {
+      if (response?.packages && Array.isArray(response.packages)) {
         setActivePackages(response.packages);
+      } else {
+        setActivePackages([]);
       }
-    } catch (error) {
-      console.log('No active training packages');
+    } catch (error: any) {
+      // Silently fail - no packages is not an error
+      console.log('No active training packages or error loading:', error?.message);
+      setActivePackages([]);
     }
   };
 
   const loadPetSkills = async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/pet-skills`);
-      if (response?.skills) {
+      if (response?.skills && Array.isArray(response.skills)) {
         setPetSkills(response.skills);
+      } else {
+        setPetSkills([]);
       }
-    } catch (error) {
-      console.log('No pet skills data');
+    } catch (error: any) {
+      // Silently fail - no skills data is not an error
+      console.log('No pet skills data or error loading:', error?.message);
+      setPetSkills([]);
     }
   };
 

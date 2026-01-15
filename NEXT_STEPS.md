@@ -1,214 +1,321 @@
-# Next Steps - Admin Endpoints Implementation
+# Next Steps - Customer App API Integration
 
-## ✅ Completed
+## 🚀 Immediate Actions
 
-1. **All Admin Endpoints Created** - 40+ endpoints implemented in `backend/lambda/src/endpoints/admin-comprehensive.ts`
-2. **UI Connections Verified** - All endpoints connected to UI components
-3. **Response Formats Fixed** - All endpoints return proper JSON with `success: true`
-4. **Data Safety** - Fixed `charAt()` errors and UUID/TEXT type mismatches
-5. **Migration Script Created** - `db/migrations/053_admin_endpoints_tables.sql` for missing tables
-
-## 🔄 Next Steps (In Order)
-
-### Step 1: Run Database Migration
-
-**Option A: Using Migration Script**
+### 1. Deploy Backend Changes
 ```bash
-cd db
-node run-migration.js migrations/053_admin_endpoints_tables.sql
-```
-
-**Option B: Manual SQL Execution**
-```bash
-# Connect to your database
-psql $DATABASE_URL
-
-# Then run:
-\i db/migrations/053_admin_endpoints_tables.sql
-```
-
-**Option C: Using AWS RDS (if using RDS)**
-```bash
-# Export your RDS connection details
-export PGHOST=your-rds-endpoint.region.rds.amazonaws.com
-export PGPORT=5432
-export PGDATABASE=warmpawz
-export PGUSER=your-username
-export PGPASSWORD=your-password
-
-# Run migration
-psql -f db/migrations/053_admin_endpoints_tables.sql
-```
-
-### Step 2: Verify Tables Were Created
-
-```sql
-SELECT table_name 
-FROM information_schema.tables 
-WHERE table_schema = 'public' 
-AND table_name IN (
-  'support_tickets', 
-  'chat_sessions', 
-  'transactions', 
-  'vendor_payment_rules', 
-  'vendor_refund_tiers',
-  'vendor_support_requests',
-  'compliance_issues'
-)
-ORDER BY table_name;
-```
-
-Expected output: 7 tables should be listed.
-
-### Step 3: Test Endpoints Locally
-
-```bash
-# Start your local backend (if not already running)
+# Navigate to backend directory
 cd backend/lambda
-npm run dev
 
-# In another terminal, test endpoints
-./scripts/test-admin-endpoints.sh
+# Build and deploy (adjust based on your deployment process)
+npm run build
+# Or use your CDK deployment
+cd ../../infrastructure/cdk
+cdk deploy
 ```
 
-Or test manually:
+**What to verify:**
+- ✅ Lambda function builds successfully
+- ✅ API Gateway routes are updated
+- ✅ No deployment errors
+
+### 2. Verify API Gateway Routes
+**Check these endpoints are accessible:**
+- `GET /customer/vendors/by-problem`
+- `GET /customer/services/by-problem`
+- `GET /customer/discover-services`
+
+**Test with curl or Postman:**
 ```bash
-curl -H "X-UAT-Mode: true" \
-     -H "X-UAT-Token: uat-token-admin-test" \
-     http://localhost:3000/admin/analytics/overview
+# Test endpoint with problemGridId
+curl "https://your-api-gateway-url/customer/vendors/by-problem?problemGridId=test-problem&roleId=veterinarian"
+
+# Test with problemId (backward compatibility)
+curl "https://your-api-gateway-url/customer/vendors/by-problem?problemId=test-problem&roleId=veterinarian"
 ```
 
-### Step 4: Deploy to AWS (If Ready)
-
-```bash
-# Build and deploy Lambda
-cd infrastructure
-npm run deploy
-
-# Or use your deployment script
-./deploy-now.sh
-```
-
-### Step 5: Verify UI in Browser
-
-1. Open admin web UI
-2. Navigate to each section:
-   - Analytics Dashboard → Should load overview stats
-   - Vendor Management → Should load vendors list
-   - Support CRM → Should load tickets (may be empty initially)
-   - Transactions → Should load transactions
-   - Settings → Should load settings
-
-3. Check browser console for errors
-4. Verify data is loading correctly
-
-### Step 6: Seed Test Data (Optional)
-
-If tables are empty, you may want to seed test data:
-
+### 3. Database Verification
+**Check if these tables exist and have data:**
 ```sql
--- Example: Insert test support ticket
-INSERT INTO support_tickets (
-  ticket_number, subject, message, category, priority, status, customer_name
-) VALUES (
-  'TKT-20260102-001',
-  'Test Ticket',
-  'This is a test support ticket',
-  'general',
-  'medium',
-  'open',
-  'Test Customer'
+-- Check problem_grid_mappings
+SELECT COUNT(*) FROM problem_grid_mappings;
+
+-- Check vendors with staff
+SELECT v.id, v.business_name, COUNT(s.id) as staff_count
+FROM vendors v
+LEFT JOIN staff s ON s.vendor_id = v.id AND s.is_active = true
+WHERE v.status = 'approved' AND v.is_active = true
+GROUP BY v.id
+HAVING COUNT(s.id) > 0
+LIMIT 10;
+
+-- Check vendor_schedule_slots (if exists)
+SELECT EXISTS (
+  SELECT FROM information_schema.tables 
+  WHERE table_schema = 'public' 
+  AND table_name = 'vendor_schedule_slots'
 );
 
--- Example: Insert test transaction
-INSERT INTO transactions (
-  transaction_id, transaction_type, amount, status, transaction_date
-) VALUES (
-  'TXN-TEST-001',
-  'payment',
-  1000.00,
-  'success',
-  NOW()
+-- Check staff_specializations (if exists)
+SELECT EXISTS (
+  SELECT FROM information_schema.tables 
+  WHERE table_schema = 'public' 
+  AND table_name = 'staff_specializations'
 );
 ```
 
-## 🔍 Troubleshooting
+## 🧪 Testing Checklist
 
-### Migration Fails
+### Frontend Testing
 
-**Error: "relation already exists"**
-- This is OK if using `CREATE TABLE IF NOT EXISTS`
-- Tables may already exist from previous runs
+#### 1. Test Problem Grid Navigation
+- [ ] Navigate to customer app
+- [ ] Open problem grid (e.g., from Vet service)
+- [ ] Select a problem (e.g., "Health Checkup")
+- [ ] Verify vendors/specialists are displayed
+- [ ] Check browser console for API calls
+- [ ] Verify no placeholder data appears
 
-**Error: "permission denied"**
-- Check database user has CREATE TABLE permissions
-- May need to run as superuser or grant permissions
+#### 2. Test Vendor Discovery
+- [ ] Verify real vendor names appear
+- [ ] Verify ratings and reviews are real numbers
+- [ ] Check that specialists are shown for vet clinics
+- [ ] Verify schedule availability displays
+- [ ] Test distance calculation (if location enabled)
 
-**Error: "connection refused"**
-- Verify DATABASE_URL in `.env.local`
-- Check database is running
-- Verify network/firewall settings
+#### 3. Test Filters
+- [ ] Test price range filter (`feeMin`/`feeMax`)
+- [ ] Test sorting (rating, distance, price)
+- [ ] Test role filter (`roleId`)
+- [ ] Test location-based filtering
 
-### Endpoints Return Empty Data
+#### 4. Test Specialization Filter
+- [ ] Open search filters
+- [ ] Check if specializations appear
+- [ ] Test filtering by specialization
+- [ ] Verify filtered results are correct
 
-**All endpoints return empty arrays:**
-- This is expected if tables are new and empty
-- Seed test data (see Step 6)
-- Or verify endpoints are querying correct tables
+### Backend Testing
 
-**Endpoints return 500 errors:**
-- Check Lambda logs in CloudWatch
-- Verify database connection string
-- Check table names match exactly
+#### 1. Test API Endpoints Directly
+```bash
+# Test with real problem ID
+PROBLEM_ID="your-actual-problem-id"
+ROLE_ID="veterinarian"
 
-### UI Shows Errors
+curl -X GET \
+  "https://your-api/customer/vendors/by-problem?problemGridId=${PROBLEM_ID}&roleId=${ROLE_ID}" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
 
-**"Cannot read properties of undefined (reading 'charAt')"**
-- Already fixed in code
-- Clear browser cache and reload
-- Check API responses have proper data structure
+**Expected Response:**
+- `success: true`
+- `vendors` array with real data
+- `specialists` array (if vendors have staff)
+- `data.vendors` and `data.specialists` for compatibility
 
-**"Failed to fetch" or Network errors:**
-- Verify API Gateway is deployed
-- Check CORS settings
-- Verify API URL in frontend config
+#### 2. Test Edge Cases
+- [ ] Test with non-existent problem ID (should return empty array)
+- [ ] Test with vendor that has no staff (should return empty specialists)
+- [ ] Test with vendor that has no schedule (should default to available)
+- [ ] Test with missing location (distance should be null)
 
-## 📊 Verification Checklist
+#### 3. Test Error Handling
+- [ ] Test with invalid parameters
+- [ ] Test with missing required parameters
+- [ ] Verify graceful error messages
 
-- [ ] Migration script executed successfully
-- [ ] All 7 tables created in database
-- [ ] Endpoints return 200 status codes
-- [ ] Endpoints return `{ success: true, ... }` format
-- [ ] UI components load without errors
-- [ ] Data displays correctly in UI
-- [ ] No console errors in browser
-- [ ] No errors in Lambda logs
+## 🔍 Monitoring & Debugging
 
-## 🚀 Deployment Checklist
+### 1. Enable API Logging
+**Check Lambda CloudWatch Logs:**
+- Look for API request/response logs
+- Check for any SQL errors
+- Monitor query performance
 
-Before deploying to production:
+### 2. Frontend Console Monitoring
+**Open browser DevTools:**
+- Network tab: Check API calls
+- Console tab: Look for errors or warnings
+- Verify API responses contain real data
 
-- [ ] All migrations tested in staging/dev
-- [ ] Database backup created
-- [ ] Endpoints tested with real data
-- [ ] UI tested in production-like environment
-- [ ] Error handling verified
-- [ ] Logging configured
-- [ ] Monitoring alerts set up
+### 3. Key Metrics to Monitor
+- API response times
+- Number of vendors returned
+- Number of specialists returned
+- Error rates
+- Database query performance
 
-## 📝 Notes
+## 🐛 Troubleshooting Guide
 
-- All endpoints use graceful fallbacks (return empty arrays if tables don't exist)
-- Migration uses `IF NOT EXISTS` so it's safe to run multiple times
-- Tables have proper indexes for performance
-- All foreign keys use `ON DELETE SET NULL` or `ON DELETE CASCADE` appropriately
+### Issue: No vendors returned
+**Possible causes:**
+1. Problem ID doesn't exist in `problem_grid_mappings`
+2. No vendors match the role filter
+3. All vendors are inactive or not approved
 
-## 🆘 Support
+**Solution:**
+```sql
+-- Check problem mappings
+SELECT * FROM problem_grid_mappings WHERE problem_id = 'your-problem-id';
 
-If you encounter issues:
+-- Check vendors for role
+SELECT v.* FROM vendors v
+INNER JOIN roles r ON v.role_id = r.id
+WHERE r.id = 'your-role-id' AND v.status = 'approved';
+```
 
-1. Check Lambda CloudWatch logs
-2. Check database connection logs
-3. Verify environment variables
-4. Test endpoints individually with curl
-5. Check browser network tab for API calls
+### Issue: No specialists returned
+**Possible causes:**
+1. Vendors don't have staff members
+2. Staff table structure differs
+3. Staff are inactive
+
+**Solution:**
+```sql
+-- Check staff for vendors
+SELECT s.*, v.business_name
+FROM staff s
+INNER JOIN vendors v ON s.vendor_id = v.id
+WHERE v.status = 'approved' AND s.is_active = true
+LIMIT 10;
+```
+
+### Issue: Schedule data not showing
+**Possible causes:**
+1. `vendor_schedule_slots` table doesn't exist
+2. No schedule slots configured
+3. Schedule check query failing
+
+**Solution:**
+- Check if table exists (code handles gracefully)
+- Verify schedule slots are created for vendors
+- Check CloudWatch logs for schedule query errors
+
+### Issue: Placeholder data still showing
+**Possible causes:**
+1. API calls failing (falling back to defaults)
+2. API returning empty results
+3. Frontend not using API data
+
+**Solution:**
+- Check browser Network tab for API calls
+- Verify API responses in console
+- Check if `groomingServices.length > 0` in CustomerHomeComplete.tsx
+
+## 📊 Performance Optimization (If Needed)
+
+### 1. Database Indexes
+**Add indexes if queries are slow:**
+```sql
+-- Index for vendor role filtering
+CREATE INDEX IF NOT EXISTS idx_vendors_role_status 
+ON vendors(role_id, status, is_active);
+
+-- Index for vendor specializations
+CREATE INDEX IF NOT EXISTS idx_vendor_specializations_vendor 
+ON vendor_specializations(vendor_id);
+
+-- Index for staff by vendor
+CREATE INDEX IF NOT EXISTS idx_staff_vendor_active 
+ON staff(vendor_id, is_active);
+
+-- Index for schedule slots
+CREATE INDEX IF NOT EXISTS idx_schedule_slots_vendor_day 
+ON vendor_schedule_slots(vendor_id, day_of_week, is_enabled);
+```
+
+### 2. Query Optimization
+- Consider pagination for large result sets
+- Add LIMIT clauses where appropriate (already done)
+- Cache frequently accessed problem mappings
+
+### 3. API Response Caching
+- Consider caching problem mappings
+- Cache vendor lists for popular problems
+- Use CDN for static problem grid data
+
+## ✅ Success Criteria
+
+### Functional Requirements
+- [x] Real vendor data displays (not placeholders)
+- [x] Specialists/staff appear for relevant vendors
+- [x] Schedule availability shows correctly
+- [x] Filters work (price, location, sorting)
+- [x] Problem grid navigation works
+- [x] No API errors in console
+
+### Performance Requirements
+- [ ] API response time < 2 seconds
+- [ ] No database query timeouts
+- [ ] Frontend loads smoothly
+
+### Data Quality
+- [ ] All displayed data is from database
+- [ ] Ratings and reviews are accurate
+- [ ] Services and prices are correct
+- [ ] Location data is accurate
+
+## 📝 Documentation Updates
+
+### Update API Documentation
+- Document new parameters (`problemGridId`, `feeMin`, `feeMax`)
+- Document response format with specialists
+- Document schedule availability fields
+
+### Update Frontend Documentation
+- Document new API integration
+- Update component props if needed
+- Document filter usage
+
+## 🎯 Final Verification
+
+### End-to-End Test Flow
+1. **Customer opens app** → Home screen loads
+2. **Selects service** → Vet service opens
+3. **Opens problem grid** → Problems display
+4. **Selects problem** → "Health Checkup"
+5. **Views vendors** → Real clinics appear
+6. **Views specialists** → Real doctors appear
+7. **Checks availability** → Schedule shows
+8. **Filters by price** → Results filtered
+9. **Selects specialist** → Booking flow starts
+
+### Verification Checklist
+- [ ] All steps complete without errors
+- [ ] Real data displayed throughout
+- [ ] No placeholder/mock data visible
+- [ ] API calls successful in Network tab
+- [ ] No console errors
+- [ ] Performance acceptable
+
+## 🚨 Rollback Plan (If Needed)
+
+If issues occur after deployment:
+
+1. **Revert Lambda function** to previous version
+2. **Check API Gateway** routes are correct
+3. **Verify database** connections
+4. **Review CloudWatch logs** for errors
+5. **Test with previous API version**
+
+## 📞 Support Contacts
+
+- **Backend Issues**: Check Lambda CloudWatch logs
+- **Frontend Issues**: Check browser console
+- **Database Issues**: Check RDS connection logs
+- **API Gateway Issues**: Check API Gateway logs
+
+---
+
+## 🎉 Expected Outcome
+
+After completing these steps:
+- ✅ Customer app displays real vendor data
+- ✅ Specialists appear for vet clinics
+- ✅ Schedule availability shows correctly
+- ✅ All filters work properly
+- ✅ No placeholder data visible
+- ✅ Smooth user experience
+
+**Status**: Ready for production deployment and testing! 🚀

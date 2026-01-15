@@ -487,14 +487,31 @@ export function registerProblemGridEndpoints(app: Hono) {
             }
 
             // Get services offered by this staff member
-            const staffServicesResult = await query(
-              `SELECT vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style
-               FROM vendor_services vs
-               INNER JOIN staff_services sts ON vs.id = sts.service_id
-               WHERE sts.staff_id = $1 AND vs.is_enabled = true
-               LIMIT 5`,
-              [staff.staff_id]
-            );
+            let staffServicesResult: any = { rows: [] };
+            try {
+              staffServicesResult = await query(
+                `SELECT vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style
+                 FROM vendor_services vs
+                 INNER JOIN staff_services sts ON vs.id = sts.service_id
+                 WHERE sts.staff_id = $1 AND vs.is_enabled = true
+                 LIMIT 5`,
+                [staff.staff_id]
+              );
+            } catch (serviceError: any) {
+              // If staff_services table doesn't exist, get all vendor services
+              console.warn('staff_services table not found, using all vendor services');
+              try {
+                staffServicesResult = await query(
+                  `SELECT id, service_name, price, duration_minutes, service_style
+                   FROM vendor_services
+                   WHERE vendor_id = $1 AND is_enabled = true
+                   LIMIT 5`,
+                  [vendor.id]
+                );
+              } catch (fallbackError: any) {
+                console.warn('Could not fetch services for staff:', fallbackError.message);
+              }
+            }
 
             specialists.push({
               staffId: staff.staff_id,

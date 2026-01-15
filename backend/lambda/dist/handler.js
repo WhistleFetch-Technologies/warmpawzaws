@@ -271844,21 +271844,50 @@ function registerProblemGridEndpoints(app2) {
           );
           const specialists = [];
           for (const staff of staffResult.rows) {
-            const staffSpecsResult = await query(
-              `SELECT specialization, display_name, icon
-               FROM staff_specializations ss
-               LEFT JOIN specializations sp ON ss.specialization_id = sp.id
-               WHERE ss.staff_id = $1`,
-              [staff.staff_id]
-            );
-            const staffServicesResult = await query(
-              `SELECT vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style
-               FROM vendor_services vs
-               INNER JOIN staff_services sts ON vs.id = sts.service_id
-               WHERE sts.staff_id = $1 AND vs.is_enabled = true
-               LIMIT 5`,
-              [staff.staff_id]
-            );
+            let staffSpecsResult = { rows: [] };
+            try {
+              staffSpecsResult = await query(
+                `SELECT specialization, display_name, icon
+                 FROM staff_specializations ss
+                 LEFT JOIN specializations sp ON ss.specialization_id = sp.id
+                 WHERE ss.staff_id = $1`,
+                [staff.staff_id]
+              );
+            } catch (specError) {
+              console.warn("staff_specializations table not found, using staff.specialization column");
+              if (staff.specialization) {
+                const specs = typeof staff.specialization === "string" ? staff.specialization.includes(",") ? staff.specialization.split(",").map((s) => s.trim()) : [staff.specialization] : Array.isArray(staff.specialization) ? staff.specialization : [];
+                staffSpecsResult.rows = specs.map((spec) => ({
+                  specialization: spec,
+                  display_name: spec,
+                  icon: "\u{1F468}\u200D\u2695\uFE0F"
+                }));
+              }
+            }
+            let staffServicesResult = { rows: [] };
+            try {
+              staffServicesResult = await query(
+                `SELECT vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style
+                 FROM vendor_services vs
+                 INNER JOIN staff_services sts ON vs.id = sts.service_id
+                 WHERE sts.staff_id = $1 AND vs.is_enabled = true
+                 LIMIT 5`,
+                [staff.staff_id]
+              );
+            } catch (serviceError) {
+              console.warn("staff_services table not found, using all vendor services");
+              try {
+                staffServicesResult = await query(
+                  `SELECT id, service_name, price, duration_minutes, service_style
+                   FROM vendor_services
+                   WHERE vendor_id = $1 AND is_enabled = true
+                   LIMIT 5`,
+                  [vendor.id]
+                );
+              } catch (fallbackError) {
+                console.warn("Could not fetch services for staff:", fallbackError.message);
+              }
+            }
             specialists.push({
               staffId: staff.staff_id,
               id: staff.staff_id,

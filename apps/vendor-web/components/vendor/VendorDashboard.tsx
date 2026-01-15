@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
+import { CapabilityGate } from './CapabilityGate';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth

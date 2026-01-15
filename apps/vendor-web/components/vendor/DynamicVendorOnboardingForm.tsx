@@ -346,6 +346,19 @@ export function DynamicVendorOnboardingForm({
         
         setForm(formStructure);
         
+        // ✅ NEW: Initialize default values for fields (including multiselect)
+        const defaultFormData: Record<string, any> = {};
+        formStructure.sections.forEach(section => {
+          section.fields.forEach(field => {
+            if (field.defaultValue !== undefined) {
+              defaultFormData[field.name] = field.defaultValue;
+            }
+          });
+        });
+        
+        // Merge with existing formData (initialData takes precedence)
+        setFormData(prev => ({ ...prev, ...defaultFormData }));
+        
         if (data.existingApplication && data.existingApplication.application_payload) {
           setFormData(data.existingApplication.application_payload);
         }
@@ -980,6 +993,73 @@ export function DynamicVendorOnboardingForm({
               ))}
             </SelectContent>
           </Select>
+        );
+
+      case 'multiselect':
+        const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+        return (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2 min-h-[60px] p-3 rounded-2xl border border-gray-200 bg-white">
+              {selectedValues.length === 0 ? (
+                <span className="text-gray-400 text-sm">{field.placeholder || `Select ${field.label}`}</span>
+              ) : (
+                selectedValues.map((val: string) => {
+                  const option = field.options?.find(opt => opt.value === val);
+                  return (
+                    <div
+                      key={`${field.name}-${val}`}
+                      className="inline-flex items-center gap-2 bg-[#FF8C42] text-white px-3 py-1.5 rounded-full text-sm font-medium"
+                    >
+                      <span>{option?.label || val}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newValues = selectedValues.filter((v: string) => v !== val);
+                          handleFieldChange(field.name, newValues);
+                        }}
+                        className="hover:bg-white/20 rounded-full p-0.5 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-2 border border-gray-100 rounded-xl bg-gray-50">
+              {field.options?.map((opt, index) => {
+                const isSelected = selectedValues.includes(opt.value);
+                return (
+                  <button
+                    key={`${field.name}-${opt.value}-${index}`}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        const newValues = selectedValues.filter((v: string) => v !== opt.value);
+                        handleFieldChange(field.name, newValues);
+                      } else {
+                        handleFieldChange(field.name, [...selectedValues, opt.value]);
+                      }
+                    }}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                      isSelected
+                        ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
+                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                      isSelected
+                        ? 'border-[#FF8C42] bg-[#FF8C42]'
+                        : 'border-gray-300'
+                    }`}>
+                      {isSelected && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <span className="text-sm font-medium text-gray-900">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         );
 
       case 'checkbox':

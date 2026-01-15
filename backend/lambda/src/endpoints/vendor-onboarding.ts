@@ -298,6 +298,10 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           : forms[0].fields || [];
       }
 
+      // ✅ NEW: Inject role-specific fields
+      const roleSpecificFields = this.getRoleSpecificFields(selectedRoleId);
+      fields = [...fields, ...roleSpecificFields];
+
       // Filter active fields only
       const activeFields = fields.filter((f: any) => f.isActive !== false);
 
@@ -362,6 +366,306 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
       console.error('Error getting form schema:', error);
       return this.error(error.message || 'Failed to get form schema', 500);
     }
+  }
+
+  /**
+   * Get role-specific onboarding fields
+   * Returns additional fields based on the vendor role
+   */
+  private getRoleSpecificFields(roleId: string): any[] {
+    const normalizedRoleId = (roleId || '').toLowerCase().trim();
+    const fields: any[] = [];
+
+    // Walker-specific fields
+    if (normalizedRoleId === 'walker' || normalizedRoleId === 'pet_walker') {
+      fields.push(
+        {
+          id: 'walker_gps_tracking',
+          name: 'gpsTrackingEnabled',
+          label: 'Enable GPS Tracking',
+          type: 'checkbox',
+          section: 'additional_information',
+          helpText: 'Allow customers to track your location during active walks',
+          validation: { required: true },
+          defaultValue: true,
+          order: 1,
+          isActive: true,
+        },
+        {
+          id: 'walker_service_radius',
+          name: 'serviceRadius',
+          label: 'Maximum Service Radius (km)',
+          type: 'number',
+          section: 'additional_information',
+          helpText: 'Maximum distance you\'re willing to travel for walks',
+          placeholder: '5',
+          validation: { required: true, min: 1, max: 50 },
+          defaultValue: 5,
+          order: 2,
+          isActive: true,
+        },
+        {
+          id: 'walker_max_dogs',
+          name: 'maxDogsPerWalk',
+          label: 'Maximum Dogs Per Walk',
+          type: 'number',
+          section: 'additional_information',
+          helpText: 'How many dogs can you walk simultaneously?',
+          placeholder: '3',
+          validation: { required: true, min: 1, max: 10 },
+          defaultValue: 3,
+          order: 3,
+          isActive: true,
+        },
+        {
+          id: 'walker_durations',
+          name: 'walkDurations',
+          label: 'Available Walk Durations',
+          type: 'multiselect',
+          section: 'additional_information',
+          helpText: 'Select all walk durations you offer',
+          options: [
+            { value: '15', label: '15 minutes' },
+            { value: '20', label: '20 minutes' },
+            { value: '30', label: '30 minutes' },
+            { value: '45', label: '45 minutes' },
+            { value: '60', label: '60 minutes' },
+          ],
+          validation: { required: true },
+          defaultValue: ['30'],
+          order: 4,
+          isActive: true,
+        },
+        {
+          id: 'walker_experience',
+          name: 'experienceLevel',
+          label: 'Years of Experience',
+          type: 'select',
+          section: 'additional_information',
+          options: [
+            { value: 'less_than_1', label: 'Less than 1 year' },
+            { value: '1_2', label: '1-2 years' },
+            { value: '3_5', label: '3-5 years' },
+            { value: '5_plus', label: '5+ years' },
+          ],
+          validation: { required: true },
+          order: 5,
+          isActive: true,
+        },
+        {
+          id: 'walker_dog_sizes',
+          name: 'dogSizePreferences',
+          label: 'Dog Sizes You Can Handle',
+          type: 'multiselect',
+          section: 'additional_information',
+          options: [
+            { value: 'small', label: 'Small (under 20 lbs)' },
+            { value: 'medium', label: 'Medium (20-50 lbs)' },
+            { value: 'large', label: 'Large (50-100 lbs)' },
+            { value: 'extra_large', label: 'Extra Large (100+ lbs)' },
+          ],
+          validation: { required: true },
+          order: 6,
+          isActive: true,
+        },
+        {
+          id: 'walker_background_check',
+          name: 'backgroundCheck',
+          label: 'Background Check Certificate',
+          type: 'file',
+          section: 'document_verification',
+          helpText: 'Upload your background check certificate',
+          acceptedFileTypes: ['pdf', 'jpg', 'jpeg', 'png'],
+          validation: { required: true },
+          order: 10,
+          isActive: true,
+        },
+        {
+          id: 'walker_insurance',
+          name: 'insuranceCertificate',
+          label: 'Pet Care Insurance Certificate',
+          type: 'file',
+          section: 'document_verification',
+          helpText: 'Upload your insurance certificate',
+          acceptedFileTypes: ['pdf', 'jpg', 'jpeg', 'png'],
+          validation: { required: true },
+          order: 11,
+          isActive: true,
+        },
+        {
+          id: 'walker_emergency_contact',
+          name: 'emergencyContactName',
+          label: 'Emergency Contact Name',
+          type: 'text',
+          section: 'additional_information',
+          validation: { required: true },
+          order: 7,
+          isActive: true,
+        },
+        {
+          id: 'walker_emergency_phone',
+          name: 'emergencyContactPhone',
+          label: 'Emergency Contact Phone',
+          type: 'tel',
+          section: 'additional_information',
+          validation: { required: true },
+          order: 8,
+          isActive: true,
+        }
+      );
+    }
+
+    // Seller/E-commerce-specific fields
+    if (normalizedRoleId === 'seller' || normalizedRoleId === 'pet_products_store' || normalizedRoleId === 'ecommerce') {
+      fields.push(
+        {
+          id: 'seller_business_type',
+          name: 'businessType',
+          label: 'Business Type',
+          type: 'select',
+          section: 'business_information',
+          options: [
+            { value: 'individual', label: 'Individual seller' },
+            { value: 'small_business', label: 'Small business' },
+            { value: 'retail_store', label: 'Retail store' },
+            { value: 'online_store', label: 'Online store' },
+            { value: 'manufacturer', label: 'Manufacturer' },
+          ],
+          validation: { required: true },
+          order: 2,
+          isActive: true,
+        },
+        {
+          id: 'seller_product_categories',
+          name: 'productCategories',
+          label: 'Product Categories You Sell',
+          type: 'multiselect',
+          section: 'business_information',
+          helpText: 'Select all product categories you sell (minimum 1 required)',
+          options: [
+            { value: 'pet_food_treats', label: 'Pet Food & Treats' },
+            { value: 'toys_accessories', label: 'Toys & Accessories' },
+            { value: 'grooming_products', label: 'Grooming Products' },
+            { value: 'health_wellness', label: 'Health & Wellness' },
+            { value: 'beds_furniture', label: 'Beds & Furniture' },
+            { value: 'leashes_collars', label: 'Leashes & Collars' },
+            { value: 'training_equipment', label: 'Training Equipment' },
+            { value: 'pet_clothing', label: 'Pet Clothing' },
+            { value: 'crates_carriers', label: 'Crates & Carriers' },
+            { value: 'litter_waste', label: 'Litter & Waste Management' },
+            { value: 'aquarium_supplies', label: 'Aquarium Supplies' },
+            { value: 'bird_supplies', label: 'Bird Supplies' },
+            { value: 'small_animal_supplies', label: 'Small Animal Supplies' },
+            { value: 'reptile_supplies', label: 'Reptile Supplies' },
+          ],
+          validation: { required: true },
+          order: 3,
+          isActive: true,
+        },
+        {
+          id: 'seller_shipping_options',
+          name: 'shippingOptions',
+          label: 'Shipping Methods Offered',
+          type: 'multiselect',
+          section: 'business_information',
+          helpText: 'Select all shipping methods you offer (minimum 1 required)',
+          options: [
+            { value: 'standard', label: 'Standard shipping' },
+            { value: 'express', label: 'Express shipping' },
+            { value: 'same_day', label: 'Same-day delivery' },
+            { value: 'pickup', label: 'Pickup available' },
+          ],
+          validation: { required: true },
+          defaultValue: ['standard'],
+          order: 4,
+          isActive: true,
+        },
+        {
+          id: 'seller_shipping_radius',
+          name: 'shippingRadius',
+          label: 'Local Delivery Radius (km)',
+          type: 'number',
+          section: 'business_information',
+          helpText: 'Maximum distance for same-day/local delivery (0 = shipping only)',
+          placeholder: '0',
+          validation: { required: true, min: 0, max: 100 },
+          defaultValue: 0,
+          order: 5,
+          isActive: true,
+        },
+        {
+          id: 'seller_inventory_management',
+          name: 'inventoryManagement',
+          label: 'Inventory Management System',
+          type: 'select',
+          section: 'business_information',
+          options: [
+            { value: 'manual', label: 'Manual' },
+            { value: 'automated', label: 'Automated' },
+            { value: 'third_party', label: 'Third-party integration' },
+          ],
+          validation: { required: true },
+          defaultValue: 'manual',
+          order: 6,
+          isActive: true,
+        },
+        {
+          id: 'seller_return_policy',
+          name: 'returnPolicy',
+          label: 'Return Policy',
+          type: 'textarea',
+          section: 'business_information',
+          helpText: 'Describe your return and refund policy (minimum 50 characters)',
+          placeholder: 'e.g., 7-day return policy, items must be unused...',
+          validation: { required: true, minLength: 50 },
+          order: 7,
+          isActive: true,
+        },
+        {
+          id: 'seller_gst_vat',
+          name: 'gstVatNumber',
+          label: 'GST/VAT Registration Number',
+          type: 'text',
+          section: 'business_information',
+          helpText: 'Your tax registration number for e-commerce',
+          validation: { required: false },
+          order: 8,
+          isActive: true,
+        },
+        {
+          id: 'seller_product_catalog',
+          name: 'productCatalog',
+          label: 'Product Catalog (PDF or images)',
+          type: 'file',
+          section: 'document_verification',
+          helpText: 'Upload a sample of your product catalog (PDF or ZIP for multiple images, max 10MB)',
+          acceptedFileTypes: ['pdf', 'zip', 'jpg', 'jpeg', 'png'],
+          validation: { required: true },
+          order: 10,
+          isActive: true,
+        },
+        {
+          id: 'seller_payment_methods',
+          name: 'paymentMethods',
+          label: 'Payment Methods Accepted',
+          type: 'multiselect',
+          section: 'business_information',
+          options: [
+            { value: 'cod', label: 'Cash on delivery' },
+            { value: 'card', label: 'Credit/Debit card' },
+            { value: 'upi', label: 'UPI' },
+            { value: 'netbanking', label: 'Net banking' },
+            { value: 'wallet', label: 'Wallet' },
+          ],
+          validation: { required: true },
+          defaultValue: ['upi', 'card'],
+          order: 9,
+          isActive: true,
+        }
+      );
+    }
+
+    return fields;
   }
 }
 
