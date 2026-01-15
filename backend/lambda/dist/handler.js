@@ -244895,6 +244895,183 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.get("/customer/:phone/packages", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const serviceType = c.req.query("serviceType");
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ packages: [], success: true });
+      }
+      let packageQuery = `
+        SELECT 
+          pp.*,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          (pp.total_sessions - pp.remaining_sessions) as sessions_used,
+          CASE 
+            WHEN pp.expires_at IS NOT NULL AND pp.expires_at < NOW() THEN 'expired'
+            WHEN pp.remaining_sessions <= 0 AND pp.unlimited_usage = false THEN 'exhausted'
+            ELSE pp.status
+          END as computed_status
+        FROM package_purchases pp
+        LEFT JOIN vendors v ON pp.vendor_id = v.id
+        WHERE pp.customer_id = $1
+        AND pp.status = 'active'
+        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
+        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+      `;
+      const params = [customerId];
+      if (serviceType) {
+        packageQuery += ` AND pp.package_type = $2`;
+        params.push(serviceType);
+      }
+      packageQuery += ` ORDER BY pp.expires_at ASC NULLS LAST, pp.created_at DESC`;
+      const result = await query(packageQuery, params);
+      const packages = result.rows.map((pkg) => ({
+        id: pkg.id,
+        packageName: pkg.package_name || pkg.name,
+        vendorName: pkg.vendor_name,
+        vendorId: pkg.vendor_id,
+        totalSessions: pkg.total_sessions,
+        remainingSessions: pkg.unlimited_usage ? "unlimited" : pkg.remaining_sessions,
+        sessionsUsed: pkg.sessions_used || 0,
+        expiresAt: pkg.expires_at,
+        isUnlimited: pkg.unlimited_usage,
+        packageType: pkg.package_type,
+        status: pkg.computed_status
+      }));
+      return c.json({
+        success: true,
+        packages,
+        count: packages.length
+      });
+    } catch (error) {
+      console.error("Error fetching packages by phone:", error);
+      return c.json({ packages: [], success: true });
+    }
+  });
+  app2.get("/customer/:phone/active-walks", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ walks: [], success: true });
+      }
+      const activeWalks = await query(`
+        SELECT 
+          wls.*,
+          b.id as booking_id,
+          b.pet_id,
+          p.name as pet_name,
+          v.id as walker_id,
+          v.business_name as walker_name,
+          wr.distance_covered_km as distanceCovered,
+          wr.waypoints
+        FROM walker_live_sessions wls
+        LEFT JOIN bookings b ON wls.booking_id = b.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN vendors v ON wls.walker_id = v.id
+        LEFT JOIN walk_routes wr ON wls.booking_id = wr.booking_id
+        WHERE wls.customer_id = $1
+        AND wls.is_active = true
+        UNION
+        SELECT 
+          ps.id,
+          ps.booking_id,
+          ps.pet_id,
+          p.name as pet_name,
+          ps.staff_id as walker_id,
+          s.name as walker_name,
+          NULL as distanceCovered,
+          NULL as waypoints,
+          ps.status,
+          ps.scheduled_start_time as started_at,
+          ps.actual_start_time,
+          ps.actual_end_time,
+          ps.location
+        FROM package_sessions ps
+        LEFT JOIN bookings b ON ps.booking_id = b.id
+        LEFT JOIN pets p ON ps.pet_id = p.id
+        LEFT JOIN staff s ON ps.staff_id = s.id
+        WHERE ps.package_purchase_id IN (
+          SELECT id FROM package_purchases WHERE customer_id = $1
+        )
+        AND ps.status = 'in_progress'
+      `, [customerId]);
+      const walks = activeWalks.rows.map((walk) => ({
+        id: walk.id || walk.booking_id,
+        walkerName: walk.walker_name || "Walker",
+        petName: walk.pet_name || "Pet",
+        startTime: walk.started_at || walk.actual_start_time,
+        status: walk.status || "in_progress",
+        distanceCovered: walk.distanceCovered || 0,
+        currentLocation: walk.location || (walk.waypoints && walk.waypoints.length > 0 ? walk.waypoints[walk.waypoints.length - 1] : null)
+      }));
+      return c.json({
+        success: true,
+        walks,
+        count: walks.length
+      });
+    } catch (error) {
+      console.error("Error fetching active walks by phone:", error);
+      return c.json({ walks: [], success: true });
+    }
+  });
+  app2.get("/customer/:phone/pet-skills", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ skills: [], success: true });
+      }
+      const pets = await query(`
+        SELECT id, name FROM pets WHERE customer_id = $1
+      `, [customerId]);
+      if (pets.rows.length === 0) {
+        return c.json({ skills: [], success: true });
+      }
+      const petIds = pets.rows.map((p) => p.id);
+      const skillsResult = await query(`
+        SELECT 
+          psp.*,
+          ts.skill_name,
+          ts.category,
+          ts.difficulty_level,
+          p.name as pet_name
+        FROM pet_skill_progress psp
+        LEFT JOIN training_skills ts ON psp.skill_id = ts.id
+        LEFT JOIN pets p ON psp.pet_id = p.id
+        WHERE psp.pet_id = ANY($1)
+        ORDER BY psp.updated_at DESC
+      `, [petIds]);
+      const skills = skillsResult.rows.map((skill) => {
+        const progressLevel = skill.progress_level || 0;
+        let status = "not_started";
+        if (progressLevel >= 100) {
+          status = "mastered";
+        } else if (progressLevel > 0) {
+          status = "in_progress";
+        }
+        return {
+          skillName: skill.skill_name || "Unknown Skill",
+          level: progressLevel,
+          status,
+          petName: skill.pet_name,
+          category: skill.category,
+          lastUpdated: skill.updated_at
+        };
+      });
+      return c.json({
+        success: true,
+        skills,
+        count: skills.length
+      });
+    } catch (error) {
+      console.error("Error fetching pet skills by phone:", error);
+      return c.json({ skills: [], success: true });
+    }
+  });
 }
 
 // src/endpoints/insurance.ts
@@ -245370,13 +245547,26 @@ function registerPackageBookingEndpoints(app2) {
   });
   app2.get("/packages/check-for-booking", async (c) => {
     try {
-      const customerId = c.req.query("customerId");
+      let customerId = c.req.query("customerId");
+      const phone = c.req.query("phone");
       const vendorId = c.req.query("vendorId");
       const serviceType = c.req.query("serviceType");
+      if (phone && !customerId) {
+        const cleanPhone = phone.replace(/[^0-9]/g, "");
+        if (cleanPhone && cleanPhone.length >= 10) {
+          const customers = await query(
+            "SELECT id FROM customers WHERE phone = $1 LIMIT 1",
+            [cleanPhone]
+          );
+          if (customers.rows.length > 0) {
+            customerId = customers.rows[0].id;
+          }
+        }
+      }
       if (!customerId || !vendorId) {
         return c.json({
           hasActivePackage: false,
-          message: "customerId and vendorId required"
+          message: "customerId (or phone) and vendorId required"
         });
       }
       const result = await query(`
@@ -245923,6 +246113,86 @@ function registerPackageBookingEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error fetching package customers:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/package-sessions", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const {
+        packagePurchaseId,
+        scheduledStartTime,
+        petId,
+        staffId,
+        location: location2,
+        notes
+      } = body2;
+      if (!packagePurchaseId || !scheduledStartTime) {
+        return c.json({
+          error: "packagePurchaseId and scheduledStartTime are required"
+        }, 400);
+      }
+      const packageResult = await query(`
+        SELECT * FROM package_purchases
+        WHERE id = $1
+        AND status = 'active'
+        AND (expires_at IS NULL OR expires_at > NOW())
+        AND (remaining_sessions > 0 OR unlimited_usage = true)
+      `, [packagePurchaseId]);
+      if (packageResult.rows.length === 0) {
+        return c.json({
+          error: "Package not found, expired, or has no remaining sessions"
+        }, 400);
+      }
+      const pkg = packageResult.rows[0];
+      const sessionsUsed = pkg.total_sessions - pkg.remaining_sessions;
+      const nextSessionNumber = sessionsUsed + 1;
+      const scheduledDate = new Date(scheduledStartTime);
+      if (isNaN(scheduledDate.getTime())) {
+        return c.json({ error: "Invalid scheduledStartTime format" }, 400);
+      }
+      const sessionResult = await query(`
+        INSERT INTO package_sessions (
+          package_purchase_id,
+          scheduled_start_time,
+          pet_id,
+          staff_id,
+          location,
+          notes,
+          status,
+          session_number
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled', $7)
+        RETURNING *
+      `, [
+        packagePurchaseId,
+        scheduledDate.toISOString(),
+        petId || null,
+        staffId || null,
+        location2 ? JSON.stringify(location2) : null,
+        notes || null,
+        nextSessionNumber
+      ]);
+      const session = sessionResult.rows[0];
+      if (!pkg.unlimited_usage) {
+        await query(`
+          UPDATE package_purchases
+          SET remaining_sessions = remaining_sessions - 1,
+              updated_at = NOW()
+          WHERE id = $1
+        `, [packagePurchaseId]);
+      }
+      return c.json({
+        success: true,
+        session: {
+          id: session.id,
+          packagePurchaseId: session.package_purchase_id,
+          scheduledStartTime: session.scheduled_start_time,
+          status: session.status,
+          sessionNumber: session.session_number
+        }
+      });
+    } catch (error) {
+      console.error("Error creating package session:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -271351,11 +271621,11 @@ function registerProblemGridEndpoints(app2) {
   });
   app2.get("/customer/services/by-problem", async (c) => {
     try {
-      const problemId = c.req.query("problemId");
-      const latitude = c.req.query("lat");
-      const longitude = c.req.query("lng");
+      const problemId = c.req.query("problemId") || c.req.query("problemGridId");
+      const latitude = c.req.query("lat") || c.req.query("latitude");
+      const longitude = c.req.query("lng") || c.req.query("longitude");
       if (!problemId) {
-        return c.json({ error: "problemId is required" }, 400);
+        return c.json({ error: "problemId or problemGridId is required" }, 400);
       }
       const mappingsResult = await query(
         `SELECT DISTINCT sub_category_id, role_id
@@ -271463,11 +271733,15 @@ function registerProblemGridEndpoints(app2) {
   });
   app2.get("/customer/vendors/by-problem", async (c) => {
     try {
-      const problemId = c.req.query("problemId");
-      const latitude = c.req.query("lat");
-      const longitude = c.req.query("lng");
+      const problemId = c.req.query("problemId") || c.req.query("problemGridId");
+      const roleId = c.req.query("roleId");
+      const latitude = c.req.query("lat") || c.req.query("latitude");
+      const longitude = c.req.query("lng") || c.req.query("longitude");
+      const sortBy = c.req.query("sortBy") || "rating";
+      const feeMin = c.req.query("feeMin");
+      const feeMax = c.req.query("feeMax");
       if (!problemId) {
-        return c.json({ error: "problemId is required" }, 400);
+        return c.json({ error: "problemId or problemGridId is required" }, 400);
       }
       const mappingsResult = await query(
         `SELECT DISTINCT sub_category_id, role_id
@@ -271483,7 +271757,10 @@ function registerProblemGridEndpoints(app2) {
         });
       }
       const subCategoryIds = mappingsResult.rows.map((r) => r.sub_category_id);
-      const roleIds = [...new Set(mappingsResult.rows.map((r) => r.role_id))];
+      let roleIds = [...new Set(mappingsResult.rows.map((r) => r.role_id))];
+      if (roleId) {
+        roleIds = [roleId];
+      }
       let vendorsQuery = `
         SELECT DISTINCT
           v.*,
@@ -271515,6 +271792,24 @@ function registerProblemGridEndpoints(app2) {
         params.push(subCategoryIds);
         paramIndex++;
       }
+      if (feeMin || feeMax) {
+        vendorsQuery += ` AND v.id IN (
+          SELECT DISTINCT vs.vendor_id
+          FROM vendor_services vs
+          WHERE vs.is_enabled = true
+            AND vs.publish_status = 'published'
+            ${feeMin ? `AND vs.price >= $${paramIndex}` : ""}
+            ${feeMax ? `AND vs.price <= $${paramIndex + (feeMin ? 1 : 0)}` : ""}
+        )`;
+        if (feeMin) {
+          params.push(parseFloat(feeMin));
+          paramIndex++;
+        }
+        if (feeMax) {
+          params.push(parseFloat(feeMax));
+          paramIndex++;
+        }
+      }
       vendorsQuery += `
         GROUP BY v.id, r.name, r.display_name
         ORDER BY avg_rating DESC, total_bookings DESC
@@ -271524,31 +271819,160 @@ function registerProblemGridEndpoints(app2) {
       const vendors2 = await Promise.all(
         vendorsResult.rows.map(async (vendor) => {
           const servicesResult = await query(
-            `SELECT id, service_name, price, duration_minutes
+            `SELECT id, service_id, service_name, price, duration_minutes, service_style, category, sub_category
              FROM vendor_services
-             WHERE vendor_id = $1 AND is_active = true
-             LIMIT 5`,
+             WHERE vendor_id = $1 AND is_enabled = true AND publish_status = 'published'
+             ORDER BY price ASC
+             LIMIT 10`,
             [vendor.id]
           );
+          const staffResult = await query(
+            `SELECT 
+              s.id as staff_id,
+              s.name as full_name,
+              s.role,
+              s.experience_years,
+              s.specialization,
+              s.rating as staff_rating,
+              s.is_active,
+              s.photo_url
+             FROM staff s
+             WHERE s.vendor_id = $1 AND s.is_active = true
+             ORDER BY s.rating DESC NULLS LAST, s.experience_years DESC
+             LIMIT 20`,
+            [vendor.id]
+          );
+          const specialists = [];
+          for (const staff of staffResult.rows) {
+            const staffSpecsResult = await query(
+              `SELECT specialization, display_name, icon
+               FROM staff_specializations ss
+               LEFT JOIN specializations sp ON ss.specialization_id = sp.id
+               WHERE ss.staff_id = $1`,
+              [staff.staff_id]
+            );
+            const staffServicesResult = await query(
+              `SELECT vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style
+               FROM vendor_services vs
+               INNER JOIN staff_services sts ON vs.id = sts.service_id
+               WHERE sts.staff_id = $1 AND vs.is_enabled = true
+               LIMIT 5`,
+              [staff.staff_id]
+            );
+            specialists.push({
+              staffId: staff.staff_id,
+              id: staff.staff_id,
+              fullName: staff.full_name,
+              role: staff.role,
+              experienceYears: staff.experience_years || 0,
+              rating: parseFloat(staff.staff_rating || "0"),
+              photoUrl: staff.photo_url,
+              clinicId: vendor.id,
+              clinicName: vendor.business_name,
+              clinicAddress: vendor.address,
+              specializationDetails: staffSpecsResult.rows.map((spec) => ({
+                id: spec.specialization,
+                displayName: spec.display_name || spec.specialization,
+                icon: spec.icon || "\u{1F468}\u200D\u2695\uFE0F"
+              })),
+              services: staffServicesResult.rows.map((s) => ({
+                id: s.id,
+                name: s.service_name,
+                price: parseFloat(s.price || "0"),
+                duration: parseInt(s.duration_minutes || "0"),
+                serviceStyle: s.service_style
+              }))
+            });
+          }
+          let nextAvailableSlot = null;
+          let isAvailableToday = false;
+          try {
+            const scheduleCheck = await query(
+              `SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'vendor_schedule_slots'
+              )`
+            );
+            if (scheduleCheck.rows[0]?.exists) {
+              const today = /* @__PURE__ */ new Date();
+              const dayOfWeek = today.getDay();
+              const tomorrow = new Date(today);
+              tomorrow.setDate(tomorrow.getDate() + 1);
+              const todaySlots = await query(
+                `SELECT start_time, end_time 
+                 FROM vendor_schedule_slots 
+                 WHERE vendor_id = $1 
+                   AND day_of_week = $2 
+                   AND is_enabled = true 
+                   AND start_time > NOW()::time
+                 ORDER BY start_time ASC
+                 LIMIT 1`,
+                [vendor.id, dayOfWeek]
+              );
+              isAvailableToday = todaySlots.rows.length > 0;
+              const nextSlot = await query(
+                `SELECT start_time, end_time, day_of_week
+                 FROM vendor_schedule_slots 
+                 WHERE vendor_id = $1 
+                   AND is_enabled = true 
+                   AND (day_of_week > $2 OR (day_of_week = $2 AND start_time > NOW()::time))
+                 ORDER BY day_of_week ASC, start_time ASC
+                 LIMIT 1`,
+                [vendor.id, dayOfWeek]
+              );
+              if (nextSlot.rows.length > 0) {
+                const slot = nextSlot.rows[0];
+                const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                nextAvailableSlot = {
+                  date: days[slot.day_of_week] || "Soon",
+                  time: slot.start_time || "Available"
+                };
+              }
+            }
+          } catch (scheduleError) {
+            console.warn("Schedule check failed:", scheduleError.message);
+            isAvailableToday = true;
+          }
           const vendorData = {
             id: vendor.id,
+            vendorId: vendor.id,
             name: vendor.business_name,
+            businessName: vendor.business_name,
             ownerName: vendor.owner_name,
             role: vendor.role_name,
+            roleId: vendor.role_id,
             roleDisplayName: vendor.role_display_name,
             city: vendor.city,
             state: vendor.state,
             address: vendor.address,
+            phone: vendor.phone,
+            email: vendor.email,
             rating: parseFloat(vendor.avg_rating || "0"),
             reviews: parseInt(vendor.total_reviews || "0"),
             bookings: parseInt(vendor.total_bookings || "0"),
             services: servicesResult.rows.map((s) => ({
               id: s.id,
+              serviceId: s.service_id,
+              name: s.service_name,
+              price: parseFloat(s.price || "0"),
+              duration: parseInt(s.duration_minutes || "0"),
+              serviceStyle: s.service_style,
+              category: s.category,
+              subCategory: s.sub_category
+            })),
+            vendorServices: servicesResult.rows.map((s) => ({
+              id: s.id,
               name: s.service_name,
               price: parseFloat(s.price || "0"),
               duration: parseInt(s.duration_minutes || "0")
             })),
-            distance: null
+            specialistCount: specialists.length,
+            specialists,
+            distance: null,
+            nextAvailable: nextAvailableSlot,
+            isAvailableToday,
+            availableServiceStyles: [...new Set(servicesResult.rows.map((s) => s.service_style).filter(Boolean))]
           };
           if (latitude && longitude && vendor.latitude && vendor.longitude) {
             vendorData.distance = calculateDistance6(
@@ -271561,14 +271985,40 @@ function registerProblemGridEndpoints(app2) {
           return vendorData;
         })
       );
-      vendors2.sort((a, b) => {
-        const aScore = a.rating * 0.7 + (a.distance ? 1 / (a.distance + 1) * 0.3 : 0);
-        const bScore = b.rating * 0.7 + (b.distance ? 1 / (b.distance + 1) * 0.3 : 0);
-        return bScore - aScore;
-      });
+      if (sortBy === "distance" && latitude && longitude) {
+        vendors2.sort((a, b) => {
+          if (a.distance === null) return 1;
+          if (b.distance === null) return -1;
+          return a.distance - b.distance;
+        });
+      } else if (sortBy === "rating") {
+        vendors2.sort((a, b) => {
+          const aScore = a.rating * 0.7 + (a.distance ? 1 / (a.distance + 1) * 0.3 : 0);
+          const bScore = b.rating * 0.7 + (b.distance ? 1 / (b.distance + 1) * 0.3 : 0);
+          return bScore - aScore;
+        });
+      } else if (sortBy === "price") {
+        vendors2.sort((a, b) => {
+          const aPrice = a.services[0]?.price || 999999;
+          const bPrice = b.services[0]?.price || 999999;
+          return aPrice - bPrice;
+        });
+      }
+      const allSpecialists = vendors2.flatMap(
+        (v) => (v.specialists || []).map((s) => ({
+          ...s,
+          vendorId: v.vendorId,
+          vendorName: v.businessName
+        }))
+      );
       return c.json({
         success: true,
         vendors: vendors2,
+        specialists: allSpecialists.length > 0 ? allSpecialists : void 0,
+        data: {
+          vendors: vendors2,
+          specialists: allSpecialists.length > 0 ? allSpecialists : void 0
+        },
         total: vendors2.length,
         problemId
       });

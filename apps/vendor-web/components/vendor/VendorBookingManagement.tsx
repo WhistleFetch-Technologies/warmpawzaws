@@ -24,6 +24,7 @@ import {
   RefreshCw, 
   X 
 } from 'lucide-react';
+import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 
 interface VendorBookingManagementProps {
   vendorId: string;

@@ -10,6 +10,7 @@ import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import VendorUtils from '@/lib/vendor-utils';
+import { getVendorRoleId, normalizeServiceStyle } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
 import Analytics from '@/lib/analytics';

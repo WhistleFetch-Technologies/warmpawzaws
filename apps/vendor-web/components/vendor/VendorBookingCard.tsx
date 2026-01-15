@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 
 interface BookingCardProps {
   booking: any;
@@ -41,7 +42,7 @@ export function VendorBookingCard({
   onOpenChat,
 }: BookingCardProps) {
   
-  const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
+  const isVet = hasVendorRole(vendorData, ['veterinarian', 'vet']);
   const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
                       booking.serviceName?.toLowerCase().includes('walking');
   
