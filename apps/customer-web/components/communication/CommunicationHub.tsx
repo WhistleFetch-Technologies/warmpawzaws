@@ -328,12 +328,29 @@ export function CommunicationHub({
     }
   };
 
-  const handleContactSupport = () => {
-    if (onContactSupport) {
-      onContactSupport(bookingId, 'Customer needs assistance after booking');
-    } else {
-      // Navigate to support page or open support modal
-      toast.info('Redirecting to support...');
+  const handleContactSupport = async () => {
+    try {
+      // Create support ticket via chat handoff endpoint
+      const response = await apiClient.post('/support/chat-handoff', {
+        bookingId,
+        customerId,
+        userType: 'customer',
+        reason: 'Customer needs support assistance after booking chat ended',
+      }) as any;
+
+      if (response.success) {
+        toast.success('Support ticket created! Our team will assist you shortly.');
+        if (onContactSupport) {
+          onContactSupport(bookingId, 'Support ticket created');
+        }
+      } else {
+        toast.error('Failed to create support ticket');
+        // Fallback to support page
+        window.location.href = `/support?bookingId=${bookingId}`;
+      }
+    } catch (err: any) {
+      console.error('Error creating support handoff:', err);
+      toast.error('Redirecting to support page...');
       window.location.href = `/support?bookingId=${bookingId}`;
     }
   };

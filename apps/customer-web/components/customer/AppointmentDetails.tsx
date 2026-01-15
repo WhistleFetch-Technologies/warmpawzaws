@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Calendar, Clock, MapPin, User, Phone, Mail, CreditCard, FileText, Navigation, AlertCircle, XCircle, RefreshCw, Download, Star, Package, Pill, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,6 +23,7 @@ interface AppointmentDetailsProps {
 }
 
 export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel, onReschedule }: AppointmentDetailsProps) {
+  const router = useRouter();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -431,8 +433,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
                   variant="outline" 
                   className="w-full mt-2 border-blue-200 text-blue-700 hover:bg-blue-50"
                   onClick={() => {
-                    // Order Medicine Flow
-                    alert('Navigating to pharmacy with prescription...');
+                    // Navigate to pharmacy order flow with prescription
+                    router.push(`/prescriptions/${booking.prescriptionId}/order`);
                   }}
                 >
                   <Pill className="w-4 h-4 mr-2" />

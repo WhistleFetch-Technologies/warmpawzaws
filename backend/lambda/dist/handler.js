@@ -207,7 +207,7 @@ var require_aggregate_errors = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     var is = require_is();
     var string = require_string();
-    function applyAggregateErrorsToEvent(exceptionFromErrorImplementation, parser, maxValueLimit = 250, key, limit2, event, hint) {
+    function applyAggregateErrorsToEvent(exceptionFromErrorImplementation, parser, maxValueLimit = 250, key, limit, event, hint) {
       if (!event.exception || !event.exception.values || !hint || !is.isInstanceOf(hint.originalException, Error)) {
         return;
       }
@@ -217,7 +217,7 @@ var require_aggregate_errors = __commonJS({
           aggregateExceptionsFromError(
             exceptionFromErrorImplementation,
             parser,
-            limit2,
+            limit,
             hint.originalException,
             key,
             event.exception.values,
@@ -228,8 +228,8 @@ var require_aggregate_errors = __commonJS({
         );
       }
     }
-    function aggregateExceptionsFromError(exceptionFromErrorImplementation, parser, limit2, error, key, prevExceptions, exception, exceptionId) {
-      if (prevExceptions.length >= limit2 + 1) {
+    function aggregateExceptionsFromError(exceptionFromErrorImplementation, parser, limit, error, key, prevExceptions, exception, exceptionId) {
+      if (prevExceptions.length >= limit + 1) {
         return prevExceptions;
       }
       let newExceptions = [...prevExceptions];
@@ -241,7 +241,7 @@ var require_aggregate_errors = __commonJS({
         newExceptions = aggregateExceptionsFromError(
           exceptionFromErrorImplementation,
           parser,
-          limit2,
+          limit,
           error[key],
           key,
           [newException, ...newExceptions],
@@ -259,7 +259,7 @@ var require_aggregate_errors = __commonJS({
             newExceptions = aggregateExceptionsFromError(
               exceptionFromErrorImplementation,
               parser,
-              limit2,
+              limit,
               childError,
               key,
               [newException, ...newExceptions],
@@ -2375,10 +2375,10 @@ var require_promisebuffer = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     var error = require_error();
     var syncpromise = require_syncpromise();
-    function makePromiseBuffer(limit2) {
+    function makePromiseBuffer(limit) {
       const buffer = [];
       function isReady() {
-        return limit2 === void 0 || buffer.length < limit2;
+        return limit === void 0 || buffer.length < limit;
       }
       function remove(task) {
         return buffer.splice(buffer.indexOf(task), 1)[0];
@@ -3045,10 +3045,10 @@ ${JSON.stringify(itemHeaders)}
     function concatBuffers(buffers) {
       const totalLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
       const merged = new Uint8Array(totalLength);
-      let offset2 = 0;
+      let offset = 0;
       for (const buffer of buffers) {
-        merged.set(buffer, offset2);
-        offset2 += buffer.length;
+        merged.set(buffer, offset);
+        offset += buffer.length;
       }
       return merged;
     }
@@ -3188,8 +3188,8 @@ var require_ratelimit = __commonJS({
       const rateLimitHeader = headers && headers["x-sentry-rate-limits"];
       const retryAfterHeader = headers && headers["retry-after"];
       if (rateLimitHeader) {
-        for (const limit2 of rateLimitHeader.trim().split(",")) {
-          const [retryAfter, categories, , , namespaces] = limit2.split(":", 5);
+        for (const limit of rateLimitHeader.trim().split(",")) {
+          const [retryAfter, categories, , , namespaces] = limit.split(":", 5);
           const headerDelay = parseInt(retryAfter, 10);
           const delay = (!isNaN(headerDelay) ? headerDelay : 60) * 1e3;
           if (!categories) {
@@ -10165,7 +10165,7 @@ var require_linkederrors = __commonJS({
     var DEFAULT_LIMIT = 5;
     var INTEGRATION_NAME = "LinkedErrors";
     var _linkedErrorsIntegration = ((options = {}) => {
-      const limit2 = options.limit || DEFAULT_LIMIT;
+      const limit = options.limit || DEFAULT_LIMIT;
       const key = options.key || DEFAULT_KEY;
       return {
         name: INTEGRATION_NAME,
@@ -10180,7 +10180,7 @@ var require_linkederrors = __commonJS({
             options2.stackParser,
             options2.maxValueLength,
             key,
-            limit2,
+            limit,
             event,
             hint
           );
@@ -30550,8 +30550,8 @@ var require_bytesToUuid = __commonJS({
       byteToHex4[i] = (i + 256).toString(16).substr(1);
     }
     var i;
-    function bytesToUuid(buf, offset2) {
-      var i2 = offset2 || 0;
+    function bytesToUuid(buf, offset) {
+      var i2 = offset || 0;
       var bth = byteToHex4;
       return [bth[buf[i2++]], bth[buf[i2++]], bth[buf[i2++]], bth[buf[i2++]], "-", bth[buf[i2++]], bth[buf[i2++]], "-", bth[buf[i2++]], bth[buf[i2++]], "-", bth[buf[i2++]], bth[buf[i2++]], "-", bth[buf[i2++]], bth[buf[i2++]], bth[buf[i2++]], bth[buf[i2++]], bth[buf[i2++]], bth[buf[i2++]]].join("");
     }
@@ -30577,8 +30577,8 @@ var require_v1 = __commonJS({
     var _clockseq4;
     var _lastMSecs4 = 0;
     var _lastNSecs4 = 0;
-    function v14(options, buf, offset2) {
-      var i = buf && offset2 || 0;
+    function v14(options, buf, offset) {
+      var i = buf && offset || 0;
       var b = buf || [];
       options = options || {};
       var node = options.node || _nodeId4;
@@ -30663,8 +30663,8 @@ var require_v35 = __commonJS({
     var URL5 = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
     exports2.URL = URL5;
     function _default(name, version4, hashfunc) {
-      var generateUUID = function(value, namespace, buf, offset2) {
-        var off = buf && offset2 || 0;
+      var generateUUID = function(value, namespace, buf, offset) {
+        var off = buf && offset || 0;
         if (typeof value == "string") value = stringToBytes4(value);
         if (typeof namespace == "string") namespace = uuidToBytes(namespace);
         if (!Array.isArray(value)) throw TypeError("value must be an array of bytes");
@@ -30747,8 +30747,8 @@ var require_v42 = __commonJS({
     function _interopRequireDefault(obj) {
       return obj && obj.__esModule ? obj : { default: obj };
     }
-    function v44(options, buf, offset2) {
-      var i = buf && offset2 || 0;
+    function v44(options, buf, offset) {
+      var i = buf && offset || 0;
       if (typeof options == "string") {
         buf = options === "binary" ? new Array(16) : null;
         options = null;
@@ -30985,14 +30985,14 @@ var require_util = __commonJS({
          * Concatenates a list of Buffer objects.
          */
         concat: function(buffers) {
-          var length = 0, offset2 = 0, buffer = null, i;
+          var length = 0, offset = 0, buffer = null, i;
           for (i = 0; i < buffers.length; i++) {
             length += buffers[i].length;
           }
           buffer = util3.buffer.alloc(length);
           for (i = 0; i < buffers.length; i++) {
-            buffers[i].copy(buffer, offset2);
-            offset2 += buffers[i].length;
+            buffers[i].copy(buffer, offset);
+            offset += buffers[i].length;
           }
           return buffer;
         }
@@ -32448,11 +32448,11 @@ var require_event_message_chunker = __commonJS({
   "node_modules/aws-sdk/lib/event-stream/event-message-chunker.js"(exports2, module2) {
     function eventMessageChunker(buffer) {
       var messages = [];
-      var offset2 = 0;
-      while (offset2 < buffer.length) {
-        var totalLength = buffer.readInt32BE(offset2);
-        var message2 = buffer.slice(offset2, totalLength + offset2);
-        offset2 += totalLength;
+      var offset = 0;
+      while (offset < buffer.length) {
+        var totalLength = buffer.readInt32BE(offset);
+        var message2 = buffer.slice(offset, totalLength + offset);
+        offset += totalLength;
         messages.push(message2);
       }
       return messages;
@@ -35562,19 +35562,19 @@ var require_XMLCharacterData = __commonJS({
         XMLCharacterData2.prototype.clone = function() {
           return Object.create(this);
         };
-        XMLCharacterData2.prototype.substringData = function(offset2, count) {
+        XMLCharacterData2.prototype.substringData = function(offset, count) {
           throw new Error("This DOM method is not implemented." + this.debugInfo());
         };
         XMLCharacterData2.prototype.appendData = function(arg) {
           throw new Error("This DOM method is not implemented." + this.debugInfo());
         };
-        XMLCharacterData2.prototype.insertData = function(offset2, arg) {
+        XMLCharacterData2.prototype.insertData = function(offset, arg) {
           throw new Error("This DOM method is not implemented." + this.debugInfo());
         };
-        XMLCharacterData2.prototype.deleteData = function(offset2, count) {
+        XMLCharacterData2.prototype.deleteData = function(offset, count) {
           throw new Error("This DOM method is not implemented." + this.debugInfo());
         };
-        XMLCharacterData2.prototype.replaceData = function(offset2, count, arg) {
+        XMLCharacterData2.prototype.replaceData = function(offset, count, arg) {
           throw new Error("This DOM method is not implemented." + this.debugInfo());
         };
         XMLCharacterData2.prototype.isEqualNode = function(node) {
@@ -36246,7 +36246,7 @@ var require_XMLText = __commonJS({
         XMLText2.prototype.toString = function(options) {
           return this.options.writer.text(this, this.options.writer.filterOptions(options));
         };
-        XMLText2.prototype.splitText = function(offset2) {
+        XMLText2.prototype.splitText = function(offset) {
           throw new Error("This DOM method is not implemented." + this.debugInfo());
         };
         XMLText2.prototype.replaceWholeText = function(content) {
@@ -48060,19 +48060,19 @@ var require_aspromise = __commonJS({
     "use strict";
     module2.exports = asPromise;
     function asPromise(fn, ctx) {
-      var params = new Array(arguments.length - 1), offset2 = 0, index = 2, pending = true;
+      var params = new Array(arguments.length - 1), offset = 0, index = 2, pending = true;
       while (index < arguments.length)
-        params[offset2++] = arguments[index++];
+        params[offset++] = arguments[index++];
       return new Promise(function executor(resolve, reject) {
-        params[offset2] = function callback(err) {
+        params[offset] = function callback(err) {
           if (pending) {
             pending = false;
             if (err)
               reject(err);
             else {
-              var params2 = new Array(arguments.length - 1), offset3 = 0;
-              while (offset3 < params2.length)
-                params2[offset3++] = arguments[offset3];
+              var params2 = new Array(arguments.length - 1), offset2 = 0;
+              while (offset2 < params2.length)
+                params2[offset2++] = arguments[offset2];
               resolve.apply(null, params2);
             }
           }
@@ -48150,8 +48150,8 @@ var require_base64 = __commonJS({
       return String.fromCharCode.apply(String, chunk.slice(0, i2));
     };
     var invalidEncoding = "invalid encoding";
-    base64.decode = function decode3(string, buffer, offset2) {
-      var start = offset2;
+    base64.decode = function decode3(string, buffer, offset) {
+      var start = offset;
       var j = 0, t;
       for (var i2 = 0; i2 < string.length; ) {
         var c = string.charCodeAt(i2++);
@@ -48165,24 +48165,24 @@ var require_base64 = __commonJS({
             j = 1;
             break;
           case 1:
-            buffer[offset2++] = t << 2 | (c & 48) >> 4;
+            buffer[offset++] = t << 2 | (c & 48) >> 4;
             t = c;
             j = 2;
             break;
           case 2:
-            buffer[offset2++] = (t & 15) << 4 | (c & 60) >> 2;
+            buffer[offset++] = (t & 15) << 4 | (c & 60) >> 2;
             t = c;
             j = 3;
             break;
           case 3:
-            buffer[offset2++] = (t & 3) << 6 | c;
+            buffer[offset++] = (t & 3) << 6 | c;
             j = 0;
             break;
         }
       }
       if (j === 1)
         throw Error(invalidEncoding);
-      return offset2 - start;
+      return offset - start;
     };
     base64.test = function test(string) {
       return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(string);
@@ -48497,29 +48497,29 @@ var require_utf8 = __commonJS({
       }
       return String.fromCharCode.apply(String, chunk.slice(0, i));
     };
-    utf8.write = function utf8_write(string, buffer, offset2) {
-      var start = offset2, c1, c2;
+    utf8.write = function utf8_write(string, buffer, offset) {
+      var start = offset, c1, c2;
       for (var i = 0; i < string.length; ++i) {
         c1 = string.charCodeAt(i);
         if (c1 < 128) {
-          buffer[offset2++] = c1;
+          buffer[offset++] = c1;
         } else if (c1 < 2048) {
-          buffer[offset2++] = c1 >> 6 | 192;
-          buffer[offset2++] = c1 & 63 | 128;
+          buffer[offset++] = c1 >> 6 | 192;
+          buffer[offset++] = c1 & 63 | 128;
         } else if ((c1 & 64512) === 55296 && ((c2 = string.charCodeAt(i + 1)) & 64512) === 56320) {
           c1 = 65536 + ((c1 & 1023) << 10) + (c2 & 1023);
           ++i;
-          buffer[offset2++] = c1 >> 18 | 240;
-          buffer[offset2++] = c1 >> 12 & 63 | 128;
-          buffer[offset2++] = c1 >> 6 & 63 | 128;
-          buffer[offset2++] = c1 & 63 | 128;
+          buffer[offset++] = c1 >> 18 | 240;
+          buffer[offset++] = c1 >> 12 & 63 | 128;
+          buffer[offset++] = c1 >> 6 & 63 | 128;
+          buffer[offset++] = c1 & 63 | 128;
         } else {
-          buffer[offset2++] = c1 >> 12 | 224;
-          buffer[offset2++] = c1 >> 6 & 63 | 128;
-          buffer[offset2++] = c1 & 63 | 128;
+          buffer[offset++] = c1 >> 12 | 224;
+          buffer[offset++] = c1 >> 6 & 63 | 128;
+          buffer[offset++] = c1 & 63 | 128;
         }
       }
-      return offset2 - start;
+      return offset - start;
     };
   }
 });
@@ -48533,17 +48533,17 @@ var require_pool = __commonJS({
       var SIZE = size || 8192;
       var MAX = SIZE >>> 1;
       var slab = null;
-      var offset2 = SIZE;
+      var offset = SIZE;
       return function pool_alloc(size2) {
         if (size2 < 1 || size2 > MAX)
           return alloc(size2);
-        if (offset2 + size2 > SIZE) {
+        if (offset + size2 > SIZE) {
           slab = alloc(SIZE);
-          offset2 = 0;
+          offset = 0;
         }
-        var buf = slice.call(slab, offset2, offset2 += size2);
-        if (offset2 & 7)
-          offset2 = (offset2 | 7) + 1;
+        var buf = slice.call(slab, offset, offset += size2);
+        if (offset & 7)
+          offset = (offset | 7) + 1;
         return buf;
       };
     }
@@ -51291,10 +51291,10 @@ var require_types2 = __commonJS({
       "bytes"
       // 14
     ];
-    function bake(values, offset2) {
+    function bake(values, offset) {
       var i = 0, o = {};
-      offset2 |= 0;
-      while (i < values.length) o[s[i + offset2]] = values[i++];
+      offset |= 0;
+      while (i < values.length) o[s[i + offset]] = values[i++];
       return o;
     }
     types5.basic = bake([
@@ -52173,7 +52173,7 @@ var require_tokenize = __commonJS({
     tokenize.unescape = unescape2;
     function tokenize(source, alternateCommentMode) {
       source = source.toString();
-      var offset2 = 0, length = source.length, line = 1, lastCommentLine = 0, comments = {};
+      var offset = 0, length = source.length, line = 1, lastCommentLine = 0, comments = {};
       var stack = [];
       var stringDelim = null;
       function illegal(subject) {
@@ -52181,11 +52181,11 @@ var require_tokenize = __commonJS({
       }
       function readString() {
         var re2 = stringDelim === "'" ? stringSingleRe : stringDoubleRe;
-        re2.lastIndex = offset2 - 1;
+        re2.lastIndex = offset - 1;
         var match2 = re2.exec(source);
         if (!match2)
           throw illegal("string");
-        offset2 = re2.lastIndex;
+        offset = re2.lastIndex;
         push(stringDelim);
         stringDelim = null;
         return unescape2(match2[1]);
@@ -52237,79 +52237,79 @@ var require_tokenize = __commonJS({
           return stack.shift();
         if (stringDelim)
           return readString();
-        var repeat, prev, curr, start, isDoc, isLeadingComment = offset2 === 0;
+        var repeat, prev, curr, start, isDoc, isLeadingComment = offset === 0;
         do {
-          if (offset2 === length)
+          if (offset === length)
             return null;
           repeat = false;
-          while (whitespaceRe.test(curr = charAt(offset2))) {
+          while (whitespaceRe.test(curr = charAt(offset))) {
             if (curr === "\n") {
               isLeadingComment = true;
               ++line;
             }
-            if (++offset2 === length)
+            if (++offset === length)
               return null;
           }
-          if (charAt(offset2) === "/") {
-            if (++offset2 === length) {
+          if (charAt(offset) === "/") {
+            if (++offset === length) {
               throw illegal("comment");
             }
-            if (charAt(offset2) === "/") {
+            if (charAt(offset) === "/") {
               if (!alternateCommentMode) {
-                isDoc = charAt(start = offset2 + 1) === "/";
-                while (charAt(++offset2) !== "\n") {
-                  if (offset2 === length) {
+                isDoc = charAt(start = offset + 1) === "/";
+                while (charAt(++offset) !== "\n") {
+                  if (offset === length) {
                     return null;
                   }
                 }
-                ++offset2;
+                ++offset;
                 if (isDoc) {
-                  setComment(start, offset2 - 1, isLeadingComment);
+                  setComment(start, offset - 1, isLeadingComment);
                   isLeadingComment = true;
                 }
                 ++line;
                 repeat = true;
               } else {
-                start = offset2;
+                start = offset;
                 isDoc = false;
-                if (isDoubleSlashCommentLine(offset2 - 1)) {
+                if (isDoubleSlashCommentLine(offset - 1)) {
                   isDoc = true;
                   do {
-                    offset2 = findEndOfLine(offset2);
-                    if (offset2 === length) {
+                    offset = findEndOfLine(offset);
+                    if (offset === length) {
                       break;
                     }
-                    offset2++;
+                    offset++;
                     if (!isLeadingComment) {
                       break;
                     }
-                  } while (isDoubleSlashCommentLine(offset2));
+                  } while (isDoubleSlashCommentLine(offset));
                 } else {
-                  offset2 = Math.min(length, findEndOfLine(offset2) + 1);
+                  offset = Math.min(length, findEndOfLine(offset) + 1);
                 }
                 if (isDoc) {
-                  setComment(start, offset2, isLeadingComment);
+                  setComment(start, offset, isLeadingComment);
                   isLeadingComment = true;
                 }
                 line++;
                 repeat = true;
               }
-            } else if ((curr = charAt(offset2)) === "*") {
-              start = offset2 + 1;
+            } else if ((curr = charAt(offset)) === "*") {
+              start = offset + 1;
               isDoc = alternateCommentMode || charAt(start) === "*";
               do {
                 if (curr === "\n") {
                   ++line;
                 }
-                if (++offset2 === length) {
+                if (++offset === length) {
                   throw illegal("comment");
                 }
                 prev = curr;
-                curr = charAt(offset2);
+                curr = charAt(offset);
               } while (prev !== "*" || curr !== "/");
-              ++offset2;
+              ++offset;
               if (isDoc) {
-                setComment(start, offset2 - 2, isLeadingComment);
+                setComment(start, offset - 2, isLeadingComment);
                 isLeadingComment = true;
               }
               repeat = true;
@@ -52318,13 +52318,13 @@ var require_tokenize = __commonJS({
             }
           }
         } while (repeat);
-        var end = offset2;
+        var end = offset;
         delimRe.lastIndex = 0;
         var delim = delimRe.test(charAt(end++));
         if (!delim)
           while (end < length && !delimRe.test(charAt(end)))
             ++end;
-        var token = source.substring(offset2, offset2 = end);
+        var token = source.substring(offset, offset = end);
         if (token === '"' || token === "'")
           stringDelim = token;
         return token;
@@ -71074,11 +71074,11 @@ var init_validate = __esm({
 });
 
 // node_modules/gaxios/node_modules/uuid/dist/esm-node/stringify.js
-function unsafeStringify(arr, offset2 = 0) {
-  return byteToHex[arr[offset2 + 0]] + byteToHex[arr[offset2 + 1]] + byteToHex[arr[offset2 + 2]] + byteToHex[arr[offset2 + 3]] + "-" + byteToHex[arr[offset2 + 4]] + byteToHex[arr[offset2 + 5]] + "-" + byteToHex[arr[offset2 + 6]] + byteToHex[arr[offset2 + 7]] + "-" + byteToHex[arr[offset2 + 8]] + byteToHex[arr[offset2 + 9]] + "-" + byteToHex[arr[offset2 + 10]] + byteToHex[arr[offset2 + 11]] + byteToHex[arr[offset2 + 12]] + byteToHex[arr[offset2 + 13]] + byteToHex[arr[offset2 + 14]] + byteToHex[arr[offset2 + 15]];
+function unsafeStringify(arr, offset = 0) {
+  return byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]];
 }
-function stringify(arr, offset2 = 0) {
-  const uuid = unsafeStringify(arr, offset2);
+function stringify(arr, offset = 0) {
+  const uuid = unsafeStringify(arr, offset);
   if (!validate_default(uuid)) {
     throw TypeError("Stringified UUID is invalid");
   }
@@ -71097,8 +71097,8 @@ var init_stringify = __esm({
 });
 
 // node_modules/gaxios/node_modules/uuid/dist/esm-node/v1.js
-function v1(options, buf, offset2) {
-  let i = buf && offset2 || 0;
+function v1(options, buf, offset) {
+  let i = buf && offset || 0;
   const b = buf || new Array(16);
   options = options || {};
   let node = options.node || _nodeId;
@@ -71199,7 +71199,7 @@ function stringToBytes(str) {
   return bytes;
 }
 function v35(name, version4, hashfunc) {
-  function generateUUID(value, namespace, buf, offset2) {
+  function generateUUID(value, namespace, buf, offset) {
     var _namespace;
     if (typeof value === "string") {
       value = stringToBytes(value);
@@ -71217,9 +71217,9 @@ function v35(name, version4, hashfunc) {
     bytes[6] = bytes[6] & 15 | version4;
     bytes[8] = bytes[8] & 63 | 128;
     if (buf) {
-      offset2 = offset2 || 0;
+      offset = offset || 0;
       for (let i = 0; i < 16; ++i) {
-        buf[offset2 + i] = bytes[i];
+        buf[offset + i] = bytes[i];
       }
       return buf;
     }
@@ -71283,7 +71283,7 @@ var init_native = __esm({
 });
 
 // node_modules/gaxios/node_modules/uuid/dist/esm-node/v4.js
-function v4(options, buf, offset2) {
+function v4(options, buf, offset) {
   if (native_default.randomUUID && !buf && !options) {
     return native_default.randomUUID();
   }
@@ -71292,9 +71292,9 @@ function v4(options, buf, offset2) {
   rnds[6] = rnds[6] & 15 | 64;
   rnds[8] = rnds[8] & 63 | 128;
   if (buf) {
-    offset2 = offset2 || 0;
+    offset = offset || 0;
     for (let i = 0; i < 16; ++i) {
-      buf[offset2 + i] = rnds[i];
+      buf[offset + i] = rnds[i];
     }
     return buf;
   }
@@ -76124,55 +76124,55 @@ var require_ecdsa_sig_formatter = __commonJS({
       var paramBytes = getParamBytesForAlg(alg);
       var maxEncodedParamLength = paramBytes + 1;
       var inputLength = signature.length;
-      var offset2 = 0;
-      if (signature[offset2++] !== ENCODED_TAG_SEQ) {
+      var offset = 0;
+      if (signature[offset++] !== ENCODED_TAG_SEQ) {
         throw new Error('Could not find expected "seq"');
       }
-      var seqLength = signature[offset2++];
+      var seqLength = signature[offset++];
       if (seqLength === (MAX_OCTET | 1)) {
-        seqLength = signature[offset2++];
+        seqLength = signature[offset++];
       }
-      if (inputLength - offset2 < seqLength) {
-        throw new Error('"seq" specified length of "' + seqLength + '", only "' + (inputLength - offset2) + '" remaining');
+      if (inputLength - offset < seqLength) {
+        throw new Error('"seq" specified length of "' + seqLength + '", only "' + (inputLength - offset) + '" remaining');
       }
-      if (signature[offset2++] !== ENCODED_TAG_INT) {
+      if (signature[offset++] !== ENCODED_TAG_INT) {
         throw new Error('Could not find expected "int" for "r"');
       }
-      var rLength = signature[offset2++];
-      if (inputLength - offset2 - 2 < rLength) {
-        throw new Error('"r" specified length of "' + rLength + '", only "' + (inputLength - offset2 - 2) + '" available');
+      var rLength = signature[offset++];
+      if (inputLength - offset - 2 < rLength) {
+        throw new Error('"r" specified length of "' + rLength + '", only "' + (inputLength - offset - 2) + '" available');
       }
       if (maxEncodedParamLength < rLength) {
         throw new Error('"r" specified length of "' + rLength + '", max of "' + maxEncodedParamLength + '" is acceptable');
       }
-      var rOffset = offset2;
-      offset2 += rLength;
-      if (signature[offset2++] !== ENCODED_TAG_INT) {
+      var rOffset = offset;
+      offset += rLength;
+      if (signature[offset++] !== ENCODED_TAG_INT) {
         throw new Error('Could not find expected "int" for "s"');
       }
-      var sLength = signature[offset2++];
-      if (inputLength - offset2 !== sLength) {
-        throw new Error('"s" specified length of "' + sLength + '", expected "' + (inputLength - offset2) + '"');
+      var sLength = signature[offset++];
+      if (inputLength - offset !== sLength) {
+        throw new Error('"s" specified length of "' + sLength + '", expected "' + (inputLength - offset) + '"');
       }
       if (maxEncodedParamLength < sLength) {
         throw new Error('"s" specified length of "' + sLength + '", max of "' + maxEncodedParamLength + '" is acceptable');
       }
-      var sOffset = offset2;
-      offset2 += sLength;
-      if (offset2 !== inputLength) {
-        throw new Error('Expected to consume entire buffer, but "' + (inputLength - offset2) + '" bytes remain');
+      var sOffset = offset;
+      offset += sLength;
+      if (offset !== inputLength) {
+        throw new Error('Expected to consume entire buffer, but "' + (inputLength - offset) + '" bytes remain');
       }
       var rPadding = paramBytes - rLength, sPadding = paramBytes - sLength;
       var dst = Buffer5.allocUnsafe(rPadding + rLength + sPadding + sLength);
-      for (offset2 = 0; offset2 < rPadding; ++offset2) {
-        dst[offset2] = 0;
+      for (offset = 0; offset < rPadding; ++offset) {
+        dst[offset] = 0;
       }
-      signature.copy(dst, offset2, rOffset + Math.max(-rPadding, 0), rOffset + rLength);
-      offset2 = paramBytes;
-      for (var o = offset2; offset2 < o + sPadding; ++offset2) {
-        dst[offset2] = 0;
+      signature.copy(dst, offset, rOffset + Math.max(-rPadding, 0), rOffset + rLength);
+      offset = paramBytes;
+      for (var o = offset; offset < o + sPadding; ++offset) {
+        dst[offset] = 0;
       }
-      signature.copy(dst, offset2, sOffset + Math.max(-sPadding, 0), sOffset + sLength);
+      signature.copy(dst, offset, sOffset + Math.max(-sPadding, 0), sOffset + sLength);
       dst = dst.toString("base64");
       dst = base64Url(dst);
       return dst;
@@ -76202,29 +76202,29 @@ var require_ecdsa_sig_formatter = __commonJS({
       var rsBytes = 1 + 1 + rLength + 1 + 1 + sLength;
       var shortLength = rsBytes < MAX_OCTET;
       var dst = Buffer5.allocUnsafe((shortLength ? 2 : 3) + rsBytes);
-      var offset2 = 0;
-      dst[offset2++] = ENCODED_TAG_SEQ;
+      var offset = 0;
+      dst[offset++] = ENCODED_TAG_SEQ;
       if (shortLength) {
-        dst[offset2++] = rsBytes;
+        dst[offset++] = rsBytes;
       } else {
-        dst[offset2++] = MAX_OCTET | 1;
-        dst[offset2++] = rsBytes & 255;
+        dst[offset++] = MAX_OCTET | 1;
+        dst[offset++] = rsBytes & 255;
       }
-      dst[offset2++] = ENCODED_TAG_INT;
-      dst[offset2++] = rLength;
+      dst[offset++] = ENCODED_TAG_INT;
+      dst[offset++] = rLength;
       if (rPadding < 0) {
-        dst[offset2++] = 0;
-        offset2 += signature.copy(dst, offset2, 0, paramBytes);
+        dst[offset++] = 0;
+        offset += signature.copy(dst, offset, 0, paramBytes);
       } else {
-        offset2 += signature.copy(dst, offset2, rPadding, paramBytes);
+        offset += signature.copy(dst, offset, rPadding, paramBytes);
       }
-      dst[offset2++] = ENCODED_TAG_INT;
-      dst[offset2++] = sLength;
+      dst[offset++] = ENCODED_TAG_INT;
+      dst[offset++] = sLength;
       if (sPadding < 0) {
-        dst[offset2++] = 0;
-        signature.copy(dst, offset2, paramBytes);
+        dst[offset++] = 0;
+        signature.copy(dst, offset, paramBytes);
       } else {
-        signature.copy(dst, offset2, paramBytes + sPadding);
+        signature.copy(dst, offset, paramBytes + sPadding);
       }
       return dst;
     }
@@ -82213,11 +82213,11 @@ var init_validate2 = __esm({
 });
 
 // node_modules/google-gax/node_modules/uuid/dist/esm-node/stringify.js
-function unsafeStringify2(arr, offset2 = 0) {
-  return byteToHex2[arr[offset2 + 0]] + byteToHex2[arr[offset2 + 1]] + byteToHex2[arr[offset2 + 2]] + byteToHex2[arr[offset2 + 3]] + "-" + byteToHex2[arr[offset2 + 4]] + byteToHex2[arr[offset2 + 5]] + "-" + byteToHex2[arr[offset2 + 6]] + byteToHex2[arr[offset2 + 7]] + "-" + byteToHex2[arr[offset2 + 8]] + byteToHex2[arr[offset2 + 9]] + "-" + byteToHex2[arr[offset2 + 10]] + byteToHex2[arr[offset2 + 11]] + byteToHex2[arr[offset2 + 12]] + byteToHex2[arr[offset2 + 13]] + byteToHex2[arr[offset2 + 14]] + byteToHex2[arr[offset2 + 15]];
+function unsafeStringify2(arr, offset = 0) {
+  return byteToHex2[arr[offset + 0]] + byteToHex2[arr[offset + 1]] + byteToHex2[arr[offset + 2]] + byteToHex2[arr[offset + 3]] + "-" + byteToHex2[arr[offset + 4]] + byteToHex2[arr[offset + 5]] + "-" + byteToHex2[arr[offset + 6]] + byteToHex2[arr[offset + 7]] + "-" + byteToHex2[arr[offset + 8]] + byteToHex2[arr[offset + 9]] + "-" + byteToHex2[arr[offset + 10]] + byteToHex2[arr[offset + 11]] + byteToHex2[arr[offset + 12]] + byteToHex2[arr[offset + 13]] + byteToHex2[arr[offset + 14]] + byteToHex2[arr[offset + 15]];
 }
-function stringify2(arr, offset2 = 0) {
-  const uuid = unsafeStringify2(arr, offset2);
+function stringify2(arr, offset = 0) {
+  const uuid = unsafeStringify2(arr, offset);
   if (!validate_default2(uuid)) {
     throw TypeError("Stringified UUID is invalid");
   }
@@ -82236,8 +82236,8 @@ var init_stringify2 = __esm({
 });
 
 // node_modules/google-gax/node_modules/uuid/dist/esm-node/v1.js
-function v12(options, buf, offset2) {
-  let i = buf && offset2 || 0;
+function v12(options, buf, offset) {
+  let i = buf && offset || 0;
   const b = buf || new Array(16);
   options = options || {};
   let node = options.node || _nodeId2;
@@ -82338,7 +82338,7 @@ function stringToBytes2(str) {
   return bytes;
 }
 function v352(name, version4, hashfunc) {
-  function generateUUID(value, namespace, buf, offset2) {
+  function generateUUID(value, namespace, buf, offset) {
     var _namespace;
     if (typeof value === "string") {
       value = stringToBytes2(value);
@@ -82356,9 +82356,9 @@ function v352(name, version4, hashfunc) {
     bytes[6] = bytes[6] & 15 | version4;
     bytes[8] = bytes[8] & 63 | 128;
     if (buf) {
-      offset2 = offset2 || 0;
+      offset = offset || 0;
       for (let i = 0; i < 16; ++i) {
-        buf[offset2 + i] = bytes[i];
+        buf[offset + i] = bytes[i];
       }
       return buf;
     }
@@ -82422,7 +82422,7 @@ var init_native2 = __esm({
 });
 
 // node_modules/google-gax/node_modules/uuid/dist/esm-node/v4.js
-function v42(options, buf, offset2) {
+function v42(options, buf, offset) {
   if (native_default2.randomUUID && !buf && !options) {
     return native_default2.randomUUID();
   }
@@ -82431,9 +82431,9 @@ function v42(options, buf, offset2) {
   rnds[6] = rnds[6] & 15 | 64;
   rnds[8] = rnds[8] & 63 | 128;
   if (buf) {
-    offset2 = offset2 || 0;
+    offset = offset || 0;
     for (let i = 0; i < 16; ++i) {
-      buf[offset2 + i] = rnds[i];
+      buf[offset + i] = rnds[i];
     }
     return buf;
   }
@@ -94503,8 +94503,8 @@ var require_buffer_list = __commonJS({
     var _require2 = require("util");
     var inspect = _require2.inspect;
     var custom = inspect && inspect.custom || "inspect";
-    function copyBuffer(src, target, offset2) {
-      Buffer5.prototype.copy.call(src, target, offset2);
+    function copyBuffer(src, target, offset) {
+      Buffer5.prototype.copy.call(src, target, offset);
     }
     module2.exports = /* @__PURE__ */ (function() {
       function BufferList() {
@@ -102551,14 +102551,14 @@ var require_postgres_date = __commonJS({
       var ms = matches[7];
       ms = ms ? 1e3 * parseFloat(ms) : 0;
       var date;
-      var offset2 = timeZoneOffset(isoDate);
-      if (offset2 != null) {
+      var offset = timeZoneOffset(isoDate);
+      if (offset != null) {
         date = new Date(Date.UTC(year2, month, day2, hour2, minute2, second, ms));
         if (is0To99(year2)) {
           date.setUTCFullYear(year2);
         }
-        if (offset2 !== 0) {
-          date.setTime(date.getTime() - offset2);
+        if (offset !== 0) {
+          date.setTime(date.getTime() - offset);
         }
       } else {
         date = new Date(year2, month, day2, hour2, minute2, second, ms);
@@ -102597,8 +102597,8 @@ var require_postgres_date = __commonJS({
         return 0;
       }
       var sign3 = type === "-" ? -1 : 1;
-      var offset2 = parseInt(zone[2], 10) * 3600 + parseInt(zone[3] || 0, 10) * 60 + parseInt(zone[4] || 0, 10);
-      return offset2 * sign3 * 1e3;
+      var offset = parseInt(zone[2], 10) * 3600 + parseInt(zone[3] || 0, 10) * 60 + parseInt(zone[4] || 0, 10);
+      return offset * sign3 * 1e3;
     }
     function bcYearToNegativeYear(year2) {
       return -(year2 - 1);
@@ -103039,13 +103039,13 @@ var require_pg_int8 = __commonJS({
 var require_binaryParsers = __commonJS({
   "node_modules/pg-types/lib/binaryParsers.js"(exports2, module2) {
     var parseInt64 = require_pg_int8();
-    var parseBits = function(data, bits, offset2, invert, callback) {
-      offset2 = offset2 || 0;
+    var parseBits = function(data, bits, offset, invert, callback) {
+      offset = offset || 0;
       invert = invert || false;
       callback = callback || function(lastValue, newValue, bits2) {
         return lastValue * Math.pow(2, bits2) + newValue;
       };
-      var offsetBytes = offset2 >> 3;
+      var offsetBytes = offset >> 3;
       var inv = function(value) {
         if (invert) {
           return ~value & 255;
@@ -103053,23 +103053,23 @@ var require_binaryParsers = __commonJS({
         return value;
       };
       var mask = 255;
-      var firstBits = 8 - offset2 % 8;
+      var firstBits = 8 - offset % 8;
       if (bits < firstBits) {
         mask = 255 << 8 - bits & 255;
         firstBits = bits;
       }
-      if (offset2) {
-        mask = mask >> offset2 % 8;
+      if (offset) {
+        mask = mask >> offset % 8;
       }
       var result = 0;
-      if (offset2 % 8 + bits >= 8) {
+      if (offset % 8 + bits >= 8) {
         result = callback(0, inv(data[offsetBytes]) & mask, firstBits);
       }
-      var bytes = bits + offset2 >> 3;
+      var bytes = bits + offset >> 3;
       for (var i = offsetBytes + 1; i < bytes; i++) {
         result = callback(result, inv(data[i]), 8);
       }
-      var lastBits = (bits + offset2) % 8;
+      var lastBits = (bits + offset) % 8;
       if (lastBits > 0) {
         result = callback(result, inv(data[bytes]) >> 8 - lastBits, lastBits);
       }
@@ -103161,26 +103161,26 @@ var require_binaryParsers = __commonJS({
       var dim = parseBits(value, 32);
       var flags = parseBits(value, 32, 32);
       var elementType = parseBits(value, 32, 64);
-      var offset2 = 96;
+      var offset = 96;
       var dims = [];
       for (var i = 0; i < dim; i++) {
-        dims[i] = parseBits(value, 32, offset2);
-        offset2 += 32;
-        offset2 += 32;
+        dims[i] = parseBits(value, 32, offset);
+        offset += 32;
+        offset += 32;
       }
       var parseElement = function(elementType2) {
-        var length = parseBits(value, 32, offset2);
-        offset2 += 32;
+        var length = parseBits(value, 32, offset);
+        offset += 32;
         if (length == 4294967295) {
           return null;
         }
         var result;
         if (elementType2 == 23 || elementType2 == 20) {
-          result = parseBits(value, length * 8, offset2);
-          offset2 += length * 8;
+          result = parseBits(value, length * 8, offset);
+          offset += length * 8;
           return result;
         } else if (elementType2 == 25) {
-          result = value.toString(this.encoding, offset2 >> 3, (offset2 += length << 3) >> 3);
+          result = value.toString(this.encoding, offset >> 3, (offset += length << 3) >> 3);
           return result;
         } else {
           console.log("ERROR: ElementType not implemented: " + elementType2);
@@ -103486,18 +103486,18 @@ var require_utils8 = __commonJS({
       return JSON.stringify(val);
     }
     function dateToString(date) {
-      let offset2 = -date.getTimezoneOffset();
+      let offset = -date.getTimezoneOffset();
       let year2 = date.getFullYear();
       const isBCYear = year2 < 1;
       if (isBCYear) year2 = Math.abs(year2) + 1;
       let ret = String(year2).padStart(4, "0") + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0") + "T" + String(date.getHours()).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0") + ":" + String(date.getSeconds()).padStart(2, "0") + "." + String(date.getMilliseconds()).padStart(3, "0");
-      if (offset2 < 0) {
+      if (offset < 0) {
         ret += "-";
-        offset2 *= -1;
+        offset *= -1;
       } else {
         ret += "+";
       }
-      ret += String(Math.floor(offset2 / 60)).padStart(2, "0") + ":" + String(offset2 % 60).padStart(2, "0");
+      ret += String(Math.floor(offset / 60)).padStart(2, "0") + ":" + String(offset % 60).padStart(2, "0");
       if (isBCYear) ret += " BC";
       return ret;
     }
@@ -105046,13 +105046,13 @@ var require_buffer_reader = __commonJS({
     exports2.BufferReader = void 0;
     var emptyBuffer = Buffer.allocUnsafe(0);
     var BufferReader = class {
-      constructor(offset2 = 0) {
-        this.offset = offset2;
+      constructor(offset = 0) {
+        this.offset = offset;
         this.buffer = emptyBuffer;
         this.encoding = "utf-8";
       }
-      setBuffer(offset2, buffer) {
-        this.offset = offset2;
+      setBuffer(offset, buffer) {
+        this.offset = offset;
         this.buffer = buffer;
       }
       int16() {
@@ -105124,26 +105124,26 @@ var require_parser3 = __commonJS({
       parse(buffer, callback) {
         this.mergeBuffer(buffer);
         const bufferFullLength = this.bufferOffset + this.bufferLength;
-        let offset2 = this.bufferOffset;
-        while (offset2 + HEADER_LENGTH <= bufferFullLength) {
-          const code = this.buffer[offset2];
-          const length = this.buffer.readUInt32BE(offset2 + CODE_LENGTH);
+        let offset = this.bufferOffset;
+        while (offset + HEADER_LENGTH <= bufferFullLength) {
+          const code = this.buffer[offset];
+          const length = this.buffer.readUInt32BE(offset + CODE_LENGTH);
           const fullMessageLength = CODE_LENGTH + length;
-          if (fullMessageLength + offset2 <= bufferFullLength) {
-            const message2 = this.handlePacket(offset2 + HEADER_LENGTH, code, length, this.buffer);
+          if (fullMessageLength + offset <= bufferFullLength) {
+            const message2 = this.handlePacket(offset + HEADER_LENGTH, code, length, this.buffer);
             callback(message2);
-            offset2 += fullMessageLength;
+            offset += fullMessageLength;
           } else {
             break;
           }
         }
-        if (offset2 === bufferFullLength) {
+        if (offset === bufferFullLength) {
           this.buffer = emptyBuffer;
           this.bufferLength = 0;
           this.bufferOffset = 0;
         } else {
-          this.bufferLength = bufferFullLength - offset2;
-          this.bufferOffset = offset2;
+          this.bufferLength = bufferFullLength - offset;
+          this.bufferOffset = offset;
         }
       }
       mergeBuffer(buffer) {
@@ -105173,7 +105173,7 @@ var require_parser3 = __commonJS({
           this.bufferLength = buffer.byteLength;
         }
       }
-      handlePacket(offset2, code, length, bytes) {
+      handlePacket(offset, code, length, bytes) {
         switch (code) {
           case 50:
             return messages_1.bindComplete;
@@ -105192,59 +105192,59 @@ var require_parser3 = __commonJS({
           case 73:
             return messages_1.emptyQuery;
           case 68:
-            return this.parseDataRowMessage(offset2, length, bytes);
+            return this.parseDataRowMessage(offset, length, bytes);
           case 67:
-            return this.parseCommandCompleteMessage(offset2, length, bytes);
+            return this.parseCommandCompleteMessage(offset, length, bytes);
           case 90:
-            return this.parseReadyForQueryMessage(offset2, length, bytes);
+            return this.parseReadyForQueryMessage(offset, length, bytes);
           case 65:
-            return this.parseNotificationMessage(offset2, length, bytes);
+            return this.parseNotificationMessage(offset, length, bytes);
           case 82:
-            return this.parseAuthenticationResponse(offset2, length, bytes);
+            return this.parseAuthenticationResponse(offset, length, bytes);
           case 83:
-            return this.parseParameterStatusMessage(offset2, length, bytes);
+            return this.parseParameterStatusMessage(offset, length, bytes);
           case 75:
-            return this.parseBackendKeyData(offset2, length, bytes);
+            return this.parseBackendKeyData(offset, length, bytes);
           case 69:
-            return this.parseErrorMessage(offset2, length, bytes, "error");
+            return this.parseErrorMessage(offset, length, bytes, "error");
           case 78:
-            return this.parseErrorMessage(offset2, length, bytes, "notice");
+            return this.parseErrorMessage(offset, length, bytes, "notice");
           case 84:
-            return this.parseRowDescriptionMessage(offset2, length, bytes);
+            return this.parseRowDescriptionMessage(offset, length, bytes);
           case 116:
-            return this.parseParameterDescriptionMessage(offset2, length, bytes);
+            return this.parseParameterDescriptionMessage(offset, length, bytes);
           case 71:
-            return this.parseCopyInMessage(offset2, length, bytes);
+            return this.parseCopyInMessage(offset, length, bytes);
           case 72:
-            return this.parseCopyOutMessage(offset2, length, bytes);
+            return this.parseCopyOutMessage(offset, length, bytes);
           case 100:
-            return this.parseCopyData(offset2, length, bytes);
+            return this.parseCopyData(offset, length, bytes);
           default:
             return new messages_1.DatabaseError("received invalid response: " + code.toString(16), length, "error");
         }
       }
-      parseReadyForQueryMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseReadyForQueryMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const status = this.reader.string(1);
         return new messages_1.ReadyForQueryMessage(length, status);
       }
-      parseCommandCompleteMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseCommandCompleteMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const text = this.reader.cstring();
         return new messages_1.CommandCompleteMessage(length, text);
       }
-      parseCopyData(offset2, length, bytes) {
-        const chunk = bytes.slice(offset2, offset2 + (length - 4));
+      parseCopyData(offset, length, bytes) {
+        const chunk = bytes.slice(offset, offset + (length - 4));
         return new messages_1.CopyDataMessage(length, chunk);
       }
-      parseCopyInMessage(offset2, length, bytes) {
-        return this.parseCopyMessage(offset2, length, bytes, "copyInResponse");
+      parseCopyInMessage(offset, length, bytes) {
+        return this.parseCopyMessage(offset, length, bytes, "copyInResponse");
       }
-      parseCopyOutMessage(offset2, length, bytes) {
-        return this.parseCopyMessage(offset2, length, bytes, "copyOutResponse");
+      parseCopyOutMessage(offset, length, bytes) {
+        return this.parseCopyMessage(offset, length, bytes, "copyOutResponse");
       }
-      parseCopyMessage(offset2, length, bytes, messageName) {
-        this.reader.setBuffer(offset2, bytes);
+      parseCopyMessage(offset, length, bytes, messageName) {
+        this.reader.setBuffer(offset, bytes);
         const isBinary = this.reader.byte() !== 0;
         const columnCount = this.reader.int16();
         const message2 = new messages_1.CopyResponse(length, messageName, isBinary, columnCount);
@@ -105253,15 +105253,15 @@ var require_parser3 = __commonJS({
         }
         return message2;
       }
-      parseNotificationMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseNotificationMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const processId = this.reader.int32();
         const channel = this.reader.cstring();
         const payload = this.reader.cstring();
         return new messages_1.NotificationResponseMessage(length, processId, channel, payload);
       }
-      parseRowDescriptionMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseRowDescriptionMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const fieldCount = this.reader.int16();
         const message2 = new messages_1.RowDescriptionMessage(length, fieldCount);
         for (let i = 0; i < fieldCount; i++) {
@@ -105279,8 +105279,8 @@ var require_parser3 = __commonJS({
         const mode = this.reader.int16() === 0 ? "text" : "binary";
         return new messages_1.Field(name, tableID, columnID, dataTypeID, dataTypeSize, dataTypeModifier, mode);
       }
-      parseParameterDescriptionMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseParameterDescriptionMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const parameterCount = this.reader.int16();
         const message2 = new messages_1.ParameterDescriptionMessage(length, parameterCount);
         for (let i = 0; i < parameterCount; i++) {
@@ -105288,8 +105288,8 @@ var require_parser3 = __commonJS({
         }
         return message2;
       }
-      parseDataRowMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseDataRowMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const fieldCount = this.reader.int16();
         const fields = new Array(fieldCount);
         for (let i = 0; i < fieldCount; i++) {
@@ -105298,20 +105298,20 @@ var require_parser3 = __commonJS({
         }
         return new messages_1.DataRowMessage(length, fields);
       }
-      parseParameterStatusMessage(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseParameterStatusMessage(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const name = this.reader.cstring();
         const value = this.reader.cstring();
         return new messages_1.ParameterStatusMessage(length, name, value);
       }
-      parseBackendKeyData(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseBackendKeyData(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const processID = this.reader.int32();
         const secretKey = this.reader.int32();
         return new messages_1.BackendKeyDataMessage(length, processID, secretKey);
       }
-      parseAuthenticationResponse(offset2, length, bytes) {
-        this.reader.setBuffer(offset2, bytes);
+      parseAuthenticationResponse(offset, length, bytes) {
+        this.reader.setBuffer(offset, bytes);
         const code = this.reader.int32();
         const message2 = {
           name: "authenticationOk",
@@ -105358,8 +105358,8 @@ var require_parser3 = __commonJS({
         }
         return message2;
       }
-      parseErrorMessage(offset2, length, bytes, name) {
-        this.reader.setBuffer(offset2, bytes);
+      parseErrorMessage(offset, length, bytes, name) {
+        this.reader.setBuffer(offset, bytes);
         const fields = {};
         let fieldType = this.reader.string(1);
         while (fieldType !== "\0") {
@@ -107679,11 +107679,11 @@ function concat(...buffers) {
 function p2s(alg, p2sInput) {
   return concat(encoder.encode(alg), new Uint8Array([0]), p2sInput);
 }
-function writeUInt32BE(buf, value, offset2) {
+function writeUInt32BE(buf, value, offset) {
   if (value < 0 || value >= MAX_INT32) {
     throw new RangeError(`value must be >= 0 and <= ${MAX_INT32 - 1}. Received ${value}`);
   }
-  buf.set([value >>> 24, value >>> 16, value >>> 8, value & 255], offset2);
+  buf.set([value >>> 24, value >>> 16, value >>> 8, value & 255], offset);
 }
 function uint64be(value) {
   const high = Math.floor(value / MAX_INT32);
@@ -117688,7 +117688,7 @@ async function logPaymentStatusChange(paymentId, oldStatus, newStatus, changedBy
     console.error("[AUDIT] Failed to log payment status change:", error);
   }
 }
-async function getAuditHistory(entityType, entityId, limit2 = 100) {
+async function getAuditHistory(entityType, entityId, limit = 100) {
   const hasTable = await checkTableExists2("entity_audit_log");
   if (!hasTable) {
     return [];
@@ -117699,7 +117699,7 @@ async function getAuditHistory(entityType, entityId, limit2 = 100) {
        WHERE entity_type = $1 AND entity_id = $2 
        ORDER BY event_timestamp DESC 
        LIMIT $3`,
-      [entityType, entityId, limit2]
+      [entityType, entityId, limit]
     );
     return result.rows;
   } catch (error) {
@@ -128178,26 +128178,26 @@ var require_util10 = __commonJS({
     util3.binary.raw.encode = function(bytes) {
       return String.fromCharCode.apply(null, bytes);
     };
-    util3.binary.raw.decode = function(str, output, offset2) {
+    util3.binary.raw.decode = function(str, output, offset) {
       var out = output;
       if (!out) {
         out = new Uint8Array(str.length);
       }
-      offset2 = offset2 || 0;
-      var j = offset2;
+      offset = offset || 0;
+      var j = offset;
       for (var i = 0; i < str.length; ++i) {
         out[j++] = str.charCodeAt(i);
       }
-      return output ? j - offset2 : out;
+      return output ? j - offset : out;
     };
     util3.binary.hex.encode = util3.bytesToHex;
-    util3.binary.hex.decode = function(hex, output, offset2) {
+    util3.binary.hex.decode = function(hex, output, offset) {
       var out = output;
       if (!out) {
         out = new Uint8Array(Math.ceil(hex.length / 2));
       }
-      offset2 = offset2 || 0;
-      var i = 0, j = offset2;
+      offset = offset || 0;
+      var i = 0, j = offset;
       if (hex.length & 1) {
         i = 1;
         out[j++] = parseInt(hex[0], 16);
@@ -128205,7 +128205,7 @@ var require_util10 = __commonJS({
       for (; i < hex.length; i += 2) {
         out[j++] = parseInt(hex.substr(i, 2), 16);
       }
-      return output ? j - offset2 : out;
+      return output ? j - offset : out;
     };
     util3.binary.base64.encode = function(input, maxline) {
       var line = "";
@@ -128232,15 +128232,15 @@ var require_util10 = __commonJS({
       output += line;
       return output;
     };
-    util3.binary.base64.decode = function(input, output, offset2) {
+    util3.binary.base64.decode = function(input, output, offset) {
       var out = output;
       if (!out) {
         out = new Uint8Array(Math.ceil(input.length / 4) * 3);
       }
       input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
-      offset2 = offset2 || 0;
+      offset = offset || 0;
       var enc1, enc2, enc3, enc4;
-      var i = 0, j = offset2;
+      var i = 0, j = offset;
       while (i < input.length) {
         enc1 = _base64Idx[input.charCodeAt(i++) - 43];
         enc2 = _base64Idx[input.charCodeAt(i++) - 43];
@@ -128254,7 +128254,7 @@ var require_util10 = __commonJS({
           }
         }
       }
-      return output ? j - offset2 : out.subarray(0, j);
+      return output ? j - offset : out.subarray(0, j);
     };
     util3.binary.base58.encode = function(input, maxline) {
       return util3.binary.baseN.encode(input, _base58, maxline);
@@ -128266,36 +128266,36 @@ var require_util10 = __commonJS({
       utf8: {},
       utf16: {}
     };
-    util3.text.utf8.encode = function(str, output, offset2) {
+    util3.text.utf8.encode = function(str, output, offset) {
       str = util3.encodeUtf8(str);
       var out = output;
       if (!out) {
         out = new Uint8Array(str.length);
       }
-      offset2 = offset2 || 0;
-      var j = offset2;
+      offset = offset || 0;
+      var j = offset;
       for (var i = 0; i < str.length; ++i) {
         out[j++] = str.charCodeAt(i);
       }
-      return output ? j - offset2 : out;
+      return output ? j - offset : out;
     };
     util3.text.utf8.decode = function(bytes) {
       return util3.decodeUtf8(String.fromCharCode.apply(null, bytes));
     };
-    util3.text.utf16.encode = function(str, output, offset2) {
+    util3.text.utf16.encode = function(str, output, offset) {
       var out = output;
       if (!out) {
         out = new Uint8Array(str.length * 2);
       }
       var view = new Uint16Array(out.buffer);
-      offset2 = offset2 || 0;
-      var j = offset2;
-      var k = offset2;
+      offset = offset || 0;
+      var j = offset;
+      var k = offset;
       for (var i = 0; i < str.length; ++i) {
         view[k++] = str.charCodeAt(i);
         j += 2;
       }
-      return output ? j - offset2 : out;
+      return output ? j - offset : out;
     };
     util3.text.utf16.decode = function(bytes) {
       return String.fromCharCode.apply(null, new Uint16Array(bytes.buffer));
@@ -130321,12 +130321,12 @@ var require_asn1 = __commonJS({
         if (c === "+" || c === "-") {
           var hhoffset = parseInt(utc.substr(end + 1, 2), 10);
           var mmoffset = parseInt(utc.substr(end + 4, 2), 10);
-          var offset2 = hhoffset * 60 + mmoffset;
-          offset2 *= 6e4;
+          var offset = hhoffset * 60 + mmoffset;
+          offset *= 6e4;
           if (c === "+") {
-            date.setTime(+date - offset2);
+            date.setTime(+date - offset);
           } else {
-            date.setTime(+date + offset2);
+            date.setTime(+date + offset);
           }
         }
       }
@@ -130341,7 +130341,7 @@ var require_asn1 = __commonJS({
       var mm = parseInt(gentime.substr(10, 2), 10);
       var ss = parseInt(gentime.substr(12, 2), 10);
       var fff = 0;
-      var offset2 = 0;
+      var offset = 0;
       var isUTC = false;
       if (gentime.charAt(gentime.length - 1) === "Z") {
         isUTC = true;
@@ -130350,10 +130350,10 @@ var require_asn1 = __commonJS({
       if (c === "+" || c === "-") {
         var hhoffset = parseInt(gentime.substr(end + 1, 2), 10);
         var mmoffset = parseInt(gentime.substr(end + 4, 2), 10);
-        offset2 = hhoffset * 60 + mmoffset;
-        offset2 *= 6e4;
+        offset = hhoffset * 60 + mmoffset;
+        offset *= 6e4;
         if (c === "+") {
-          offset2 *= -1;
+          offset *= -1;
         }
         isUTC = true;
       }
@@ -130363,7 +130363,7 @@ var require_asn1 = __commonJS({
       if (isUTC) {
         date.setUTCFullYear(YYYY, MM, DD);
         date.setUTCHours(hh, mm, ss, fff);
-        date.setTime(+date + offset2);
+        date.setTime(+date + offset);
       } else {
         date.setFullYear(YYYY, MM, DD);
         date.setHours(hh, mm, ss, fff);
@@ -131214,12 +131214,12 @@ var require_pem = __commonJS({
       var candidate = -1;
       for (var i = 0; i < rval.length; ++i, ++length) {
         if (length > 65 && candidate !== -1) {
-          var insert7 = rval[candidate];
-          if (insert7 === ",") {
+          var insert8 = rval[candidate];
+          if (insert8 === ",") {
             ++candidate;
             rval = rval.substr(0, candidate) + "\r\n " + rval.substr(candidate);
           } else {
-            rval = rval.substr(0, candidate) + "\r\n" + insert7 + rval.substr(candidate + 1);
+            rval = rval.substr(0, candidate) + "\r\n" + insert8 + rval.substr(candidate + 1);
           }
           length = i - candidate - 1;
           candidate = -1;
@@ -149763,11 +149763,11 @@ var require_buffer_utils = __commonJS({
       return concat2(exports2.encoder.encode(alg), new Uint8Array([0]), p2sInput);
     }
     exports2.p2s = p2s2;
-    function writeUInt32BE2(buf, value, offset2) {
+    function writeUInt32BE2(buf, value, offset) {
       if (value < 0 || value >= MAX_INT322) {
         throw new RangeError(`value must be >= 0 and <= ${MAX_INT322 - 1}. Received ${value}`);
       }
-      buf.set([value >>> 24, value >>> 16, value >>> 8, value & 255], offset2);
+      buf.set([value >>> 24, value >>> 16, value >>> 8, value & 255], offset);
     }
     function uint64be2(value) {
       const high = Math.floor(value / MAX_INT322);
@@ -151106,11 +151106,11 @@ var require_asn1_sequence_encoder = __commonJS({
         return buffer_1.Buffer.from([len]);
       const buffer = buffer_1.Buffer.alloc(5);
       buffer.writeUInt32BE(len, 1);
-      let offset2 = 1;
-      while (buffer[offset2] === 0)
-        offset2++;
-      buffer[offset2 - 1] = 128 | 5 - offset2;
-      return buffer.slice(offset2 - 1);
+      let offset = 1;
+      while (buffer[offset] === 0)
+        offset++;
+      buffer[offset - 1] = 128 | 5 - offset;
+      return buffer.slice(offset - 1);
     };
     var oids = /* @__PURE__ */ new Map([
       ["P-256", buffer_1.Buffer.from("06 08 2A 86 48 CE 3D 03 01 07".replace(/ /g, ""), "hex")],
@@ -152086,27 +152086,27 @@ var require_key_to_jwk = __commonJS({
             case "ec": {
               const crv = (0, get_named_curve_js_1.default)(keyObject);
               let len;
-              let offset2;
+              let offset;
               let correction;
               switch (crv) {
                 case "secp256k1":
                   len = 64;
-                  offset2 = 31 + 2;
+                  offset = 31 + 2;
                   correction = -1;
                   break;
                 case "P-256":
                   len = 64;
-                  offset2 = 34 + 2;
+                  offset = 34 + 2;
                   correction = -1;
                   break;
                 case "P-384":
                   len = 96;
-                  offset2 = 33 + 2;
+                  offset = 33 + 2;
                   correction = -3;
                   break;
                 case "P-521":
                   len = 132;
-                  offset2 = 33 + 2;
+                  offset = 33 + 2;
                   correction = -3;
                   break;
                 default:
@@ -152123,11 +152123,11 @@ var require_key_to_jwk = __commonJS({
               }
               const der = keyObject.export({ type: "pkcs8", format: "der" });
               if (der.length < 100) {
-                offset2 += correction;
+                offset += correction;
               }
               return {
                 ...keyToJWK2((0, crypto_1.createPublicKey)(keyObject)),
-                d: (0, base64url_js_1.encode)(der.subarray(offset2, offset2 + len / 2))
+                d: (0, base64url_js_1.encode)(der.subarray(offset, offset + len / 2))
               };
             }
             case "ed25519":
@@ -154920,7 +154920,7 @@ var require_yallist = __commonJS({
         walker = walker.prev;
       }
       for (var i = 0; i < nodes.length; i++) {
-        walker = insert7(this, walker, nodes[i]);
+        walker = insert8(this, walker, nodes[i]);
       }
       return ret;
     };
@@ -154936,7 +154936,7 @@ var require_yallist = __commonJS({
       this.tail = head;
       return this;
     };
-    function insert7(self2, node, value) {
+    function insert8(self2, node, value) {
       var inserted = node === self2.head ? new Node3(value, null, node, self2) : new Node3(value, node, node.next, self2);
       if (inserted.next === null) {
         self2.tail = inserted;
@@ -155320,9 +155320,9 @@ var require_lodash9 = __commonJS({
       return array;
     }
     function arrayPush(array, values) {
-      var index = -1, length = values.length, offset2 = array.length;
+      var index = -1, length = values.length, offset = array.length;
       while (++index < length) {
-        array[offset2 + index] = values[index];
+        array[offset + index] = values[index];
       }
       return array;
     }
@@ -160199,20 +160199,20 @@ var require_index_node_cjs = __commonJS({
           this.inbuf_ = 0;
           this.total_ = 0;
         };
-        Sha12.prototype.compress_ = function(buf, offset2) {
-          if (!offset2) {
-            offset2 = 0;
+        Sha12.prototype.compress_ = function(buf, offset) {
+          if (!offset) {
+            offset = 0;
           }
           var W = this.W_;
           if (typeof buf === "string") {
             for (var i = 0; i < 16; i++) {
-              W[i] = buf.charCodeAt(offset2) << 24 | buf.charCodeAt(offset2 + 1) << 16 | buf.charCodeAt(offset2 + 2) << 8 | buf.charCodeAt(offset2 + 3);
-              offset2 += 4;
+              W[i] = buf.charCodeAt(offset) << 24 | buf.charCodeAt(offset + 1) << 16 | buf.charCodeAt(offset + 2) << 8 | buf.charCodeAt(offset + 3);
+              offset += 4;
             }
           } else {
             for (var i = 0; i < 16; i++) {
-              W[i] = buf[offset2] << 24 | buf[offset2 + 1] << 16 | buf[offset2 + 2] << 8 | buf[offset2 + 3];
-              offset2 += 4;
+              W[i] = buf[offset] << 24 | buf[offset + 1] << 16 | buf[offset + 2] << 8 | buf[offset + 3];
+              offset += 4;
             }
           }
           for (var i = 16; i < 80; i++) {
@@ -162605,11 +162605,11 @@ var require_index_standalone = __commonJS({
     };
     util$a.inherits(Hybi$2, Base$6);
     Hybi$2.VERSION = "13";
-    Hybi$2.mask = function(payload, mask, offset2) {
+    Hybi$2.mask = function(payload, mask, offset) {
       if (!mask || mask.length === 0) return payload;
-      offset2 = offset2 || 0;
-      for (var i = 0, n = payload.length - offset2; i < n; i++) {
-        payload[offset2 + i] = payload[offset2 + i] ^ mask[i % 4];
+      offset = offset || 0;
+      for (var i = 0, n = payload.length - offset; i < n; i++) {
+        payload[offset + i] = payload[offset + i] ^ mask[i % 4];
       }
       return payload;
     };
@@ -162770,7 +162770,7 @@ var require_index_standalone = __commonJS({
         return true;
       },
       _sendFrame: function(frame2) {
-        var length = frame2.length, header = length <= 125 ? 2 : length <= 65535 ? 4 : 10, offset2 = header + (frame2.masked ? 4 : 0), buffer = Buffer$5.allocUnsafe(offset2 + length), masked = frame2.masked ? this.MASK : 0;
+        var length = frame2.length, header = length <= 125 ? 2 : length <= 65535 ? 4 : 10, offset = header + (frame2.masked ? 4 : 0), buffer = Buffer$5.allocUnsafe(offset + length), masked = frame2.masked ? this.MASK : 0;
         buffer[0] = (frame2.final ? this.FIN : 0) | (frame2.rsv1 ? this.RSV1 : 0) | (frame2.rsv2 ? this.RSV2 : 0) | (frame2.rsv3 ? this.RSV3 : 0) | frame2.opcode;
         if (length <= 125) {
           buffer[1] = masked | length;
@@ -162782,10 +162782,10 @@ var require_index_standalone = __commonJS({
           buffer.writeUInt32BE(Math.floor(length / 4294967296), 2);
           buffer.writeUInt32BE(length % 4294967296, 6);
         }
-        frame2.payload.copy(buffer, offset2);
+        frame2.payload.copy(buffer, offset);
         if (frame2.masked) {
           frame2.maskingKey.copy(buffer, header);
-          Hybi$2.mask(buffer, frame2.maskingKey, offset2);
+          Hybi$2.mask(buffer, frame2.maskingKey, offset);
         }
         this._write(buffer);
       },
@@ -171494,8 +171494,8 @@ var require_index_standalone = __commonJS({
     }
     function repoServerTime(repo) {
       var offsetNode = repo.infoData_.getNode(new Path(".info/serverTimeOffset"));
-      var offset2 = offsetNode.val() || 0;
-      return (/* @__PURE__ */ new Date()).getTime() + offset2;
+      var offset = offsetNode.val() || 0;
+      return (/* @__PURE__ */ new Date()).getTime() + offset;
     }
     function repoGenerateServerValues(repo) {
       return generateWithValues({
@@ -173002,11 +173002,11 @@ var require_index_standalone = __commonJS({
         return QueryLimitToFirstConstraint2;
       })(QueryConstraint)
     );
-    function limitToFirst(limit2) {
-      if (typeof limit2 !== "number" || Math.floor(limit2) !== limit2 || limit2 <= 0) {
+    function limitToFirst(limit) {
+      if (typeof limit !== "number" || Math.floor(limit) !== limit || limit <= 0) {
         throw new Error("limitToFirst: First argument must be a positive integer.");
       }
-      return new QueryLimitToFirstConstraint(limit2);
+      return new QueryLimitToFirstConstraint(limit);
     }
     var QueryLimitToLastConstraint = (
       /** @class */
@@ -173027,11 +173027,11 @@ var require_index_standalone = __commonJS({
         return QueryLimitToLastConstraint2;
       })(QueryConstraint)
     );
-    function limitToLast(limit2) {
-      if (typeof limit2 !== "number" || Math.floor(limit2) !== limit2 || limit2 <= 0) {
+    function limitToLast(limit) {
+      if (typeof limit !== "number" || Math.floor(limit) !== limit || limit <= 0) {
         throw new Error("limitToLast: First argument must be a positive integer.");
       }
-      return new QueryLimitToLastConstraint(limit2);
+      return new QueryLimitToLastConstraint(limit);
     }
     var QueryOrderByChildConstraint = (
       /** @class */
@@ -173842,13 +173842,13 @@ var require_index_standalone = __commonJS({
           }
           return deferred.promise;
         };
-        Query3.prototype.limitToFirst = function(limit2) {
+        Query3.prototype.limitToFirst = function(limit) {
           require$$1$3.validateArgCount("Query.limitToFirst", 1, 1, arguments.length);
-          return new Query3(this.database, query_1(this._delegate, limitToFirst_1(limit2)));
+          return new Query3(this.database, query_1(this._delegate, limitToFirst_1(limit)));
         };
-        Query3.prototype.limitToLast = function(limit2) {
+        Query3.prototype.limitToLast = function(limit) {
           require$$1$3.validateArgCount("Query.limitToLast", 1, 1, arguments.length);
-          return new Query3(this.database, query_1(this._delegate, limitToLast_1(limit2)));
+          return new Query3(this.database, query_1(this._delegate, limitToLast_1(limit)));
         };
         Query3.prototype.orderByChild = function(path) {
           require$$1$3.validateArgCount("Query.orderByChild", 1, 1, arguments.length);
@@ -176049,11 +176049,11 @@ var init_validate3 = __esm({
 });
 
 // node_modules/teeny-request/node_modules/uuid/dist/esm-node/stringify.js
-function unsafeStringify3(arr, offset2 = 0) {
-  return byteToHex3[arr[offset2 + 0]] + byteToHex3[arr[offset2 + 1]] + byteToHex3[arr[offset2 + 2]] + byteToHex3[arr[offset2 + 3]] + "-" + byteToHex3[arr[offset2 + 4]] + byteToHex3[arr[offset2 + 5]] + "-" + byteToHex3[arr[offset2 + 6]] + byteToHex3[arr[offset2 + 7]] + "-" + byteToHex3[arr[offset2 + 8]] + byteToHex3[arr[offset2 + 9]] + "-" + byteToHex3[arr[offset2 + 10]] + byteToHex3[arr[offset2 + 11]] + byteToHex3[arr[offset2 + 12]] + byteToHex3[arr[offset2 + 13]] + byteToHex3[arr[offset2 + 14]] + byteToHex3[arr[offset2 + 15]];
+function unsafeStringify3(arr, offset = 0) {
+  return byteToHex3[arr[offset + 0]] + byteToHex3[arr[offset + 1]] + byteToHex3[arr[offset + 2]] + byteToHex3[arr[offset + 3]] + "-" + byteToHex3[arr[offset + 4]] + byteToHex3[arr[offset + 5]] + "-" + byteToHex3[arr[offset + 6]] + byteToHex3[arr[offset + 7]] + "-" + byteToHex3[arr[offset + 8]] + byteToHex3[arr[offset + 9]] + "-" + byteToHex3[arr[offset + 10]] + byteToHex3[arr[offset + 11]] + byteToHex3[arr[offset + 12]] + byteToHex3[arr[offset + 13]] + byteToHex3[arr[offset + 14]] + byteToHex3[arr[offset + 15]];
 }
-function stringify3(arr, offset2 = 0) {
-  const uuid = unsafeStringify3(arr, offset2);
+function stringify3(arr, offset = 0) {
+  const uuid = unsafeStringify3(arr, offset);
   if (!validate_default3(uuid)) {
     throw TypeError("Stringified UUID is invalid");
   }
@@ -176072,8 +176072,8 @@ var init_stringify3 = __esm({
 });
 
 // node_modules/teeny-request/node_modules/uuid/dist/esm-node/v1.js
-function v13(options, buf, offset2) {
-  let i = buf && offset2 || 0;
+function v13(options, buf, offset) {
+  let i = buf && offset || 0;
   const b = buf || new Array(16);
   options = options || {};
   let node = options.node || _nodeId3;
@@ -176174,7 +176174,7 @@ function stringToBytes3(str) {
   return bytes;
 }
 function v353(name, version4, hashfunc) {
-  function generateUUID(value, namespace, buf, offset2) {
+  function generateUUID(value, namespace, buf, offset) {
     var _namespace;
     if (typeof value === "string") {
       value = stringToBytes3(value);
@@ -176192,9 +176192,9 @@ function v353(name, version4, hashfunc) {
     bytes[6] = bytes[6] & 15 | version4;
     bytes[8] = bytes[8] & 63 | 128;
     if (buf) {
-      offset2 = offset2 || 0;
+      offset = offset || 0;
       for (let i = 0; i < 16; ++i) {
-        buf[offset2 + i] = bytes[i];
+        buf[offset + i] = bytes[i];
       }
       return buf;
     }
@@ -176258,7 +176258,7 @@ var init_native3 = __esm({
 });
 
 // node_modules/teeny-request/node_modules/uuid/dist/esm-node/v4.js
-function v43(options, buf, offset2) {
+function v43(options, buf, offset) {
   if (native_default3.randomUUID && !buf && !options) {
     return native_default3.randomUUID();
   }
@@ -176267,9 +176267,9 @@ function v43(options, buf, offset2) {
   rnds[6] = rnds[6] & 15 | 64;
   rnds[8] = rnds[8] & 63 | 128;
   if (buf) {
-    offset2 = offset2 || 0;
+    offset = offset || 0;
     for (let i = 0; i < 16; ++i) {
-      buf[offset2 + i] = rnds[i];
+      buf[offset + i] = rnds[i];
     }
     return buf;
   }
@@ -180619,18 +180619,18 @@ var require_resumable_upload = __commonJS({
        *
        * @param limit The maximum amount to return from the buffer.
        */
-      *pullFromChunkBuffer(limit2) {
-        while (limit2) {
+      *pullFromChunkBuffer(limit) {
+        while (limit) {
           const buf = this.writeBuffers.shift();
           if (!buf)
             break;
           let bufToYield = buf;
-          if (buf.byteLength > limit2) {
-            bufToYield = buf.subarray(0, limit2);
-            this.writeBuffers.unshift(buf.subarray(limit2));
-            limit2 = 0;
+          if (buf.byteLength > limit) {
+            bufToYield = buf.subarray(0, limit);
+            this.writeBuffers.unshift(buf.subarray(limit));
+            limit = 0;
           } else {
-            limit2 -= buf.byteLength;
+            limit -= buf.byteLength;
           }
           yield bufToYield;
           this.emit("readFromChunkBuffer");
@@ -180674,10 +180674,10 @@ var require_resumable_upload = __commonJS({
        *
        * @param limit The most amount of data this iterator should return. `Infinity` by default.
        */
-      async *upstreamIterator(limit2 = Infinity) {
-        while (limit2 && await this.waitForNextChunk()) {
-          for (const chunk of this.pullFromChunkBuffer(limit2)) {
-            limit2 -= chunk.byteLength;
+      async *upstreamIterator(limit = Infinity) {
+        while (limit && await this.waitForNextChunk()) {
+          for (const chunk of this.pullFromChunkBuffer(limit)) {
+            limit -= chunk.byteLength;
             yield chunk;
           }
         }
@@ -187024,14 +187024,14 @@ var require_bucket = __commonJS({
         (async () => {
           try {
             let promises = [];
-            const limit2 = (0, p_limit_1.default)(MAX_PARALLEL_LIMIT);
+            const limit = (0, p_limit_1.default)(MAX_PARALLEL_LIMIT);
             const filesStream = this.getFilesStream(query12);
             for await (const curFile of filesStream) {
               if (promises.length >= MAX_QUEUE_SIZE) {
                 await Promise.all(promises);
                 promises = [];
               }
-              promises.push(limit2(() => deleteFile(curFile)).catch((e) => {
+              promises.push(limit(() => deleteFile(curFile)).catch((e) => {
                 filesStream.destroy();
                 throw e;
               }));
@@ -188947,9 +188947,9 @@ var require_bucket = __commonJS({
           }
         };
         this.getFiles(options).then(([files]) => {
-          const limit2 = (0, p_limit_1.default)(MAX_PARALLEL_LIMIT);
+          const limit = (0, p_limit_1.default)(MAX_PARALLEL_LIMIT);
           const promises = files.map((file) => {
-            return limit2(() => processFile(file));
+            return limit(() => processFile(file));
           });
           return Promise.all(promises);
         }).then(() => callback(errors.length > 0 ? errors : null, updatedFiles), (err) => callback(err, updatedFiles));
@@ -192263,7 +192263,7 @@ var require_transfer_manager = __commonJS({
             }
           };
         }
-        const limit2 = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_UPLOAD_LIMIT);
+        const limit = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_UPLOAD_LIMIT);
         const promises = [];
         let allPaths = [];
         if (!Array.isArray(filePathsOrDirectory)) {
@@ -192286,7 +192286,7 @@ var require_transfer_manager = __commonJS({
           if (options.prefix) {
             passThroughOptionsCopy.destination = path.posix.join(...options.prefix.split(path.sep), passThroughOptionsCopy.destination);
           }
-          promises.push(limit2(() => this.bucket.upload(filePath, passThroughOptionsCopy)));
+          promises.push(limit(() => this.bucket.upload(filePath, passThroughOptionsCopy)));
         }
         return Promise.all(promises);
       }
@@ -192337,7 +192337,7 @@ var require_transfer_manager = __commonJS({
        *
        */
       async downloadManyFiles(filesOrFolder, options = {}) {
-        const limit2 = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_DOWNLOAD_LIMIT);
+        const limit = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_DOWNLOAD_LIMIT);
         const promises = [];
         let files = [];
         if (!Array.isArray(filesOrFolder)) {
@@ -192369,7 +192369,7 @@ var require_transfer_manager = __commonJS({
           if (options.skipIfExists && (0, fs_1.existsSync)(passThroughOptionsCopy.destination || "")) {
             continue;
           }
-          promises.push(limit2(async () => {
+          promises.push(limit(async () => {
             const destination = passThroughOptionsCopy.destination;
             if (destination && destination.endsWith(path.sep)) {
               await fs_1.promises.mkdir(destination, { recursive: true });
@@ -192417,14 +192417,14 @@ var require_transfer_manager = __commonJS({
        */
       async downloadFileInChunks(fileOrName, options = {}) {
         let chunkSize = options.chunkSizeBytes || DOWNLOAD_IN_CHUNKS_DEFAULT_CHUNK_SIZE;
-        let limit2 = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_CHUNKED_DOWNLOAD_LIMIT);
+        let limit = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_CHUNKED_DOWNLOAD_LIMIT);
         const noReturnData = Boolean(options.noReturnData);
         const promises = [];
         const file = typeof fileOrName === "string" ? this.bucket.file(fileOrName) : fileOrName;
         const fileInfo = await file.get();
         const size = parseInt(fileInfo[0].metadata.size.toString());
         if (size < DOWNLOAD_IN_CHUNKS_FILE_SIZE_THRESHOLD) {
-          limit2 = (0, p_limit_1.default)(1);
+          limit = (0, p_limit_1.default)(1);
           chunkSize = size;
         }
         let start = 0;
@@ -192434,7 +192434,7 @@ var require_transfer_manager = __commonJS({
           const chunkStart = start;
           let chunkEnd = start + chunkSize - 1;
           chunkEnd = chunkEnd > size ? size : chunkEnd;
-          promises.push(limit2(async () => {
+          promises.push(limit(async () => {
             const resp = await file.download({
               start: chunkStart,
               end: chunkEnd,
@@ -192511,7 +192511,7 @@ var require_transfer_manager = __commonJS({
        */
       async uploadFileInChunks(filePath, options = {}, generator = defaultMultiPartGenerator) {
         const chunkSize = options.chunkSizeBytes || UPLOAD_IN_CHUNKS_DEFAULT_CHUNK_SIZE;
-        const limit2 = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_CHUNKED_UPLOAD_LIMIT);
+        const limit = (0, p_limit_1.default)(options.concurrencyLimit || DEFAULT_PARALLEL_CHUNKED_UPLOAD_LIMIT);
         const maxQueueSize = options.maxQueueSize || options.concurrencyLimit || DEFAULT_PARALLEL_CHUNKED_UPLOAD_LIMIT;
         const fileName = options.uploadName || path.basename(filePath);
         const mpuHelper = generator(this.bucket, fileName, options.uploadId, options.partsMap);
@@ -192531,7 +192531,7 @@ var require_transfer_manager = __commonJS({
               await Promise.all(promises);
               promises = [];
             }
-            promises.push(limit2(() => mpuHelper.uploadPart(partNumber++, curChunk, options.validation)));
+            promises.push(limit(() => mpuHelper.uploadPart(partNumber++, curChunk, options.validation)));
           }
           await Promise.all(promises);
           return await mpuHelper.completeUpload();
@@ -199264,10 +199264,10 @@ var require_query4 = __commonJS({
        * });
        * ```
        */
-      limit(limit2) {
-        (0, validate_1.validateInteger)("limit", limit2);
+      limit(limit) {
+        (0, validate_1.validateInteger)("limit", limit);
         const options = this._queryOptions.with({
-          limit: limit2,
+          limit,
           limitType: types_1.LimitType.First
         });
         return new _Query(this._firestore, options);
@@ -199295,9 +199295,9 @@ var require_query4 = __commonJS({
        * });
        * ```
        */
-      limitToLast(limit2) {
-        (0, validate_1.validateInteger)("limitToLast", limit2);
-        const options = this._queryOptions.with({ limit: limit2, limitType: types_1.LimitType.Last });
+      limitToLast(limit) {
+        (0, validate_1.validateInteger)("limitToLast", limit);
+        const options = this._queryOptions.with({ limit, limitType: types_1.LimitType.Last });
         return new _Query(this._firestore, options);
       }
       /**
@@ -199321,9 +199321,9 @@ var require_query4 = __commonJS({
        * });
        * ```
        */
-      offset(offset2) {
-        (0, validate_1.validateInteger)("offset", offset2);
-        const options = this._queryOptions.with({ offset: offset2 });
+      offset(offset) {
+        (0, validate_1.validateInteger)("offset", offset);
+        const options = this._queryOptions.with({ offset });
         return new _Query(this._firestore, options);
       }
       /**
@@ -200067,7 +200067,7 @@ var require_query_options = __commonJS({
     var types_1 = require_types4();
     var helpers_1 = require_helpers3();
     var QueryOptions = class _QueryOptions {
-      constructor(parentPath, collectionId, converter, allDescendants, filters, fieldOrders, startAt, endAt, limit2, limitType, offset2, projection, kindless = false, requireConsistency = true) {
+      constructor(parentPath, collectionId, converter, allDescendants, filters, fieldOrders, startAt, endAt, limit, limitType, offset, projection, kindless = false, requireConsistency = true) {
         this.parentPath = parentPath;
         this.collectionId = collectionId;
         this.converter = converter;
@@ -200076,9 +200076,9 @@ var require_query_options = __commonJS({
         this.fieldOrders = fieldOrders;
         this.startAt = startAt;
         this.endAt = endAt;
-        this.limit = limit2;
+        this.limit = limit;
         this.limitType = limitType;
-        this.offset = offset2;
+        this.offset = offset;
         this.projection = projection;
         this.kindless = kindless;
         this.requireConsistency = requireConsistency;
@@ -219160,22 +219160,22 @@ var require_farmhash_modern = __commonJS({
       let len = arg.length;
       let ptr = malloc(len, 1) >>> 0;
       const mem = getUint8Memory0();
-      let offset2 = 0;
-      for (; offset2 < len; offset2++) {
-        const code = arg.charCodeAt(offset2);
+      let offset = 0;
+      for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
         if (code > 127) break;
-        mem[ptr + offset2] = code;
+        mem[ptr + offset] = code;
       }
-      if (offset2 !== len) {
-        if (offset2 !== 0) {
-          arg = arg.slice(offset2);
+      if (offset !== len) {
+        if (offset !== 0) {
+          arg = arg.slice(offset);
         }
-        ptr = realloc(ptr, len, len = offset2 + arg.length * 3, 1) >>> 0;
-        const view = getUint8Memory0().subarray(ptr + offset2, ptr + len);
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8Memory0().subarray(ptr + offset, ptr + len);
         const ret = encodeString(arg, view);
-        offset2 += ret.written;
+        offset += ret.written;
       }
-      WASM_VECTOR_LEN = offset2;
+      WASM_VECTOR_LEN = offset;
       return ptr;
     }
     var cachedInt32Memory0 = null;
@@ -225704,15 +225704,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select12("staff", { id: staffId });
+    const { select: select14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select14("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors2 = await select12("vendors", { id: vendorId });
+    const vendors2 = await select14("vendors", { id: vendorId });
     if (vendors2.length > 0 && vendors2[0].latitude && vendors2[0].longitude) {
       return {
         latitude: parseFloat(vendors2[0].latitude),
@@ -225727,8 +225727,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select12("staff", { id: staffId });
+    const { select: select14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select14("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -231242,20 +231242,20 @@ var ListVendorsHandler = class extends BaseHandler {
   async handle(context3) {
     try {
       const status = context3.event.queryStringParameters?.status;
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
       let vendors2;
       if (status) {
         vendors2 = await select("vendors", { status }, {
-          limit: limit2,
-          offset: offset2,
+          limit,
+          offset,
           orderBy: "created_at",
           orderDirection: "DESC"
         });
       } else {
         vendors2 = await select("vendors", {}, {
-          limit: limit2,
-          offset: offset2,
+          limit,
+          offset,
           orderBy: "created_at",
           orderDirection: "DESC"
         });
@@ -232069,26 +232069,26 @@ var UniversalSearchHandler = class extends BaseHandler {
     const searchQuery = context3.event.queryStringParameters?.q || "";
     const category = context3.event.queryStringParameters?.category;
     const location2 = context3.event.queryStringParameters?.location;
-    const limit2 = parseInt(context3.event.queryStringParameters?.limit || "20", 10);
+    const limit = parseInt(context3.event.queryStringParameters?.limit || "20", 10);
     if (!searchQuery && !category) {
       return this.error("Search query or category is required", 400);
     }
     if (openSearchClient && process.env.ENABLE_OPENSEARCH === "true") {
       try {
         console.log("\u{1F50D} Using OpenSearch for search query:", searchQuery);
-        return await this.searchWithOpenSearch(searchQuery, category, location2, limit2);
+        return await this.searchWithOpenSearch(searchQuery, category, location2, limit);
       } catch (error) {
         console.warn("\u26A0\uFE0F  OpenSearch failed, falling back to SQL:", error);
       }
     } else {
       console.log("\u{1F50D} Using SQL fallback for search query:", searchQuery);
     }
-    return await this.searchWithSQL(searchQuery, category, location2, limit2);
+    return await this.searchWithSQL(searchQuery, category, location2, limit);
   }
   /**
    * Search using OpenSearch (primary method)
    */
-  async searchWithOpenSearch(searchQuery, category, location2, limit2) {
+  async searchWithOpenSearch(searchQuery, category, location2, limit) {
     const searchBody = {
       query: {
         bool: {
@@ -232096,7 +232096,7 @@ var UniversalSearchHandler = class extends BaseHandler {
           filter: []
         }
       },
-      size: limit2
+      size: limit
     };
     if (searchQuery) {
       searchBody.query.bool.must.push({
@@ -232159,7 +232159,7 @@ var UniversalSearchHandler = class extends BaseHandler {
   /**
    * Search using SQL (fallback method)
    */
-  async searchWithSQL(searchQuery, category, location2, limit2) {
+  async searchWithSQL(searchQuery, category, location2, limit) {
     let vendorsQuery = `
       SELECT v.*, 
              (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
@@ -232190,7 +232190,7 @@ var UniversalSearchHandler = class extends BaseHandler {
       paramIndex++;
     }
     vendorsQuery += ` ORDER BY avg_rating DESC NULLS LAST, completed_bookings DESC LIMIT $${paramIndex}`;
-    params.push(limit2);
+    params.push(limit);
     const { rows: vendors2 } = await query(vendorsQuery, params);
     let servicesQuery = `
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
@@ -232217,7 +232217,7 @@ var UniversalSearchHandler = class extends BaseHandler {
       serviceParamIndex++;
     }
     servicesQuery += ` LIMIT $${serviceParamIndex}`;
-    serviceParams.push(limit2);
+    serviceParams.push(limit);
     const { rows: services } = await query(servicesQuery, serviceParams);
     return this.success({
       query: searchQuery,
@@ -232561,8 +232561,8 @@ var DebitWalletHandler = class extends BaseHandler {
 var GetWalletTransactionsHandler = class extends BaseHandler {
   async handle(context3) {
     const customerId = context3.event.pathParameters?.customerId;
-    const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50");
-    const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0");
+    const limit = parseInt(context3.event.queryStringParameters?.limit || "50");
+    const offset = parseInt(context3.event.queryStringParameters?.offset || "0");
     if (!customerId) {
       return this.error("Customer ID is required", 400);
     }
@@ -232581,7 +232581,7 @@ var GetWalletTransactionsHandler = class extends BaseHandler {
            WHERE customer_id = $1
            ORDER BY created_at DESC
            LIMIT $2 OFFSET $3`,
-          [customerId, Math.min(limit2, 100), offset2]
+          [customerId, Math.min(limit, 100), offset]
         );
       } else if (hasWalletId) {
         const wallet = await query(
@@ -232592,8 +232592,8 @@ var GetWalletTransactionsHandler = class extends BaseHandler {
           return this.success({
             transactions: [],
             count: 0,
-            limit: limit2,
-            offset: offset2
+            limit,
+            offset
           });
         }
         const walletId = wallet.rows[0].id;
@@ -232602,14 +232602,14 @@ var GetWalletTransactionsHandler = class extends BaseHandler {
            WHERE wallet_id = $1
            ORDER BY created_at DESC
            LIMIT $2 OFFSET $3`,
-          [walletId, Math.min(limit2, 100), offset2]
+          [walletId, Math.min(limit, 100), offset]
         );
       } else {
         return this.success({
           transactions: [],
           count: 0,
-          limit: limit2,
-          offset: offset2,
+          limit,
+          offset,
           message: "Wallet transactions table schema not recognized"
         });
       }
@@ -232626,8 +232626,8 @@ var GetWalletTransactionsHandler = class extends BaseHandler {
       return this.success({
         transactions,
         count: transactions.length,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     } catch (error) {
       if (error.message?.includes("does not exist") || error.message?.includes("relation")) {
@@ -232635,8 +232635,8 @@ var GetWalletTransactionsHandler = class extends BaseHandler {
         return this.success({
           transactions: [],
           count: 0,
-          limit: limit2,
-          offset: offset2,
+          limit,
+          offset,
           message: "Wallet transactions table not found. Please run migration 012_wallet_tables.sql"
         });
       }
@@ -232773,8 +232773,8 @@ function registerSpecializedServicesEndpoints(app2) {
     try {
       const city = c.req.query("city");
       const petType = c.req.query("petType");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let mealPlanQuery = `
         SELECT mp.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
         FROM meal_plans mp
@@ -232791,7 +232791,7 @@ function registerSpecializedServicesEndpoints(app2) {
         paramIndex++;
       }
       mealPlanQuery += ` ORDER BY v.rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const mealPlans = await query(mealPlanQuery, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -232808,8 +232808,8 @@ function registerSpecializedServicesEndpoints(app2) {
       const city = c.req.query("city");
       const skillLevel = c.req.query("skillLevel");
       const category = c.req.query("category");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let programQuery = `
         SELECT tp.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
         FROM training_programs tp
@@ -232836,7 +232836,7 @@ function registerSpecializedServicesEndpoints(app2) {
         paramIndex++;
       }
       programQuery += ` ORDER BY v.rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const programs = await query(programQuery, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -232853,8 +232853,8 @@ function registerSpecializedServicesEndpoints(app2) {
       const destination = c.req.query("destination");
       const maxDays = c.req.query("maxDays");
       const maxPrice = c.req.query("maxPrice");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let packageQuery = `
         SELECT hp.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
         FROM holiday_packages hp
@@ -232881,7 +232881,7 @@ function registerSpecializedServicesEndpoints(app2) {
         paramIndex++;
       }
       packageQuery += ` ORDER BY hp.next_departure ASC NULLS LAST, v.rating DESC NULLS LAST LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const packages = await query(packageQuery, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -232899,8 +232899,8 @@ function registerSpecializedServicesEndpoints(app2) {
       const petType = c.req.query("petType");
       const breed = c.req.query("breed");
       const gender = c.req.query("gender");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let petQuery = `
         SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
         FROM pets p
@@ -232932,7 +232932,7 @@ function registerSpecializedServicesEndpoints(app2) {
         paramIndex++;
       }
       petQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const pets = await query(petQuery, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -232950,8 +232950,8 @@ function registerSpecializedServicesEndpoints(app2) {
       const roomType = c.req.query("roomType");
       const checkInDate = c.req.query("checkInDate");
       const checkOutDate = c.req.query("checkOutDate");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let roomQuery = `
         SELECT br.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
         FROM boarding_rooms br
@@ -232973,7 +232973,7 @@ function registerSpecializedServicesEndpoints(app2) {
         paramIndex++;
       }
       roomQuery += ` ORDER BY v.rating DESC NULLS LAST, br.price_per_night ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const rooms = await query(roomQuery, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -233313,8 +233313,8 @@ function registerSpecializedServicesEndpoints(app2) {
     try {
       const vendorId = c.req.query("vendorId");
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       if (!vendorId) {
         return c.json({ error: "vendorId is required" }, 400);
       }
@@ -233339,7 +233339,7 @@ function registerSpecializedServicesEndpoints(app2) {
         paramIndex++;
       }
       ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const orders = await query(ordersQuery, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -233362,6 +233362,171 @@ function registerSpecializedServicesEndpoints(app2) {
       return c.json({ success: true, plans: mealPlans, mealPlans, total: mealPlans.length });
     } catch (error) {
       console.error("Error fetching meal plans:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/:vendorId/meal-products", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      let products = [];
+      try {
+        const productsResult = await query(
+          `SELECT * FROM products 
+           WHERE vendor_id = $1 AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
+           ORDER BY created_at DESC`,
+          [vendorId]
+        );
+        products = productsResult.rows || [];
+      } catch {
+        const mealPlans = await select("meal_plans", { vendor_id: vendorId });
+        products = mealPlans.map((mp) => ({
+          id: mp.id,
+          name: mp.name,
+          description: mp.description,
+          price: mp.price,
+          category: "meal_plan",
+          ...mp
+        }));
+      }
+      return c.json({ success: true, products, total: products.length });
+    } catch (error) {
+      console.error("Error fetching meal products:", error);
+      return c.json({ success: true, products: [], total: 0 });
+    }
+  });
+  app2.post("/vendor/:vendorId/meal-products", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const data = await c.req.json();
+      try {
+        const product = await insert("products", {
+          vendor_id: vendorId,
+          name: data.name,
+          description: data.description,
+          price: data.price,
+          category: "meal_plan",
+          sku: `MP-${Date.now()}`,
+          stock_quantity: data.stockQuantity || 100,
+          is_active: true,
+          metadata: JSON.stringify({
+            ingredients: data.ingredients,
+            nutritionalValue: data.nutritionalValue,
+            preparationMethod: data.preparationMethod,
+            preparationLeadTime: data.preparationLeadTime,
+            feedingGuidelines: data.feedingGuidelines,
+            storageInstructions: data.storageInstructions,
+            shelfLife: data.shelfLife,
+            packSize: data.packSize,
+            dietType: data.dietType,
+            suitableFor: data.suitableFor,
+            petTypes: data.petTypes
+          })
+        });
+        return c.json({ success: true, product: product[0] });
+      } catch {
+        const mealPlan = await insert("meal_plans", {
+          vendor_id: vendorId,
+          name: data.name,
+          description: data.description,
+          price: data.price,
+          pet_types: data.petTypes || ["Dog", "Cat"],
+          duration_days: data.durationDays || 7,
+          meals_per_day: data.mealsPerDay || 2,
+          is_active: true
+        });
+        return c.json({ success: true, product: mealPlan[0] });
+      }
+    } catch (error) {
+      console.error("Error creating meal product:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
+    try {
+      const { vendorId, productId } = c.req.param();
+      const data = await c.req.json();
+      await query(
+        `UPDATE products SET 
+          name = COALESCE($1, name),
+          description = COALESCE($2, description),
+          price = COALESCE($3, price),
+          metadata = COALESCE($4, metadata),
+          updated_at = NOW()
+         WHERE id = $5 AND vendor_id = $6`,
+        [
+          data.name,
+          data.description,
+          data.price,
+          JSON.stringify(data.metadata || {}),
+          productId,
+          vendorId
+        ]
+      );
+      return c.json({ success: true, message: "Product updated" });
+    } catch (error) {
+      console.error("Error updating meal product:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.delete("/vendor/:vendorId/meal-products/:productId", async (c) => {
+    try {
+      const { vendorId, productId } = c.req.param();
+      await query(
+        `DELETE FROM products WHERE id = $1 AND vendor_id = $2`,
+        [productId, vendorId]
+      );
+      return c.json({ success: true, message: "Product deleted" });
+    } catch (error) {
+      console.error("Error deleting meal product:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/:vendorId/meal-orders", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const status = c.req.query("status");
+      let ordersQuery = `
+        SELECT 
+          o.*,
+          c.full_name as customer_name,
+          c.phone as customer_phone
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.vendor_id = $1
+          AND (o.order_type = 'meal_plan_delivery' OR o.order_type = 'nutrition_delivery' OR o.order_type = 'food_delivery')
+      `;
+      const params = [vendorId];
+      if (status) {
+        ordersQuery += ` AND o.status = $2`;
+        params.push(status);
+      }
+      ordersQuery += ` ORDER BY o.created_at DESC LIMIT 100`;
+      const orders = await query(ordersQuery, params);
+      const ordersWithItems = await Promise.all(orders.rows.map(async (order) => {
+        try {
+          const items = await query(`SELECT * FROM order_items WHERE order_id = $1`, [order.id]);
+          return { ...order, items: items.rows };
+        } catch {
+          return { ...order, items: [] };
+        }
+      }));
+      return c.json({ success: true, orders: ordersWithItems, total: ordersWithItems.length });
+    } catch (error) {
+      console.error("Error fetching meal orders:", error);
+      return c.json({ success: true, orders: [], total: 0 });
+    }
+  });
+  app2.put("/vendor/:vendorId/meal-orders/:orderId/status", async (c) => {
+    try {
+      const { vendorId, orderId } = c.req.param();
+      const { status } = await c.req.json();
+      await query(
+        `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND vendor_id = $3`,
+        [status, orderId, vendorId]
+      );
+      return c.json({ success: true, message: "Order status updated" });
+    } catch (error) {
+      console.error("Error updating meal order status:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -234860,8 +235025,8 @@ function registerServiceDiscoveryEndpoints(app2) {
       const latitude = c.req.query("latitude");
       const longitude = c.req.query("longitude");
       const serviceStyle = c.req.query("serviceStyle");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
@@ -234894,7 +235059,7 @@ function registerServiceDiscoveryEndpoints(app2) {
         paramIndex++;
       }
       vendorQuery += ` ORDER BY v.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       paramIndex += 2;
       const vendorResults = await query(vendorQuery, params);
       let vendors2 = vendorResults.rows;
@@ -234954,7 +235119,7 @@ function registerServiceDiscoveryEndpoints(app2) {
             AND (r.id::text = $1 OR r.name = $2)
           LIMIT $3
         `;
-        const staffResults = await query(staffQuery, [roleId, roleId, limit2]);
+        const staffResults = await query(staffQuery, [roleId, roleId, limit]);
         staff = staffResults.rows.map((s) => ({
           ...s,
           id: s.id,
@@ -234968,8 +235133,8 @@ function registerServiceDiscoveryEndpoints(app2) {
         vendors: enrichedVendors,
         staff: staff.length > 0 ? staff : void 0,
         total: enrichedVendors.length,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     } catch (error) {
       console.error("Error in /customer/vendors/search:", error);
@@ -234984,7 +235149,7 @@ function registerServiceDiscoveryEndpoints(app2) {
   app2.get("/customer/autocomplete", async (c) => {
     try {
       const q = c.req.query("q") || "";
-      const limit2 = parseInt(c.req.query("limit") || "10", 10);
+      const limit = parseInt(c.req.query("limit") || "10", 10);
       if (!q || q.length < 2) {
         return c.json({ success: true, suggestions: [] });
       }
@@ -234993,27 +235158,27 @@ function registerServiceDiscoveryEndpoints(app2) {
          FROM vendors
          WHERE business_name ILIKE $1 AND status = 'approved' AND is_active = true
          LIMIT $2`,
-        [`%${q}%`, limit2]
+        [`%${q}%`, limit]
       );
       const services = await query(
         `SELECT DISTINCT name, 'service' as type, id
          FROM services
          WHERE name ILIKE $1 AND is_active = true
          LIMIT $2`,
-        [`%${q}%`, limit2]
+        [`%${q}%`, limit]
       );
       const problems = await query(
         `SELECT DISTINCT problem_name as name, 'problem' as type, id
          FROM problem_grid
          WHERE problem_name ILIKE $1
          LIMIT $2`,
-        [`%${q}%`, limit2]
+        [`%${q}%`, limit]
       );
       const suggestions = [
         ...vendors2.rows.map((v) => ({ text: v.name, type: v.type, id: v.id })),
         ...services.rows.map((s) => ({ text: s.name, type: s.type, id: s.id })),
         ...problems.rows.map((p) => ({ text: p.name, type: p.type, id: p.id }))
-      ].slice(0, limit2);
+      ].slice(0, limit);
       return c.json({ success: true, suggestions });
     } catch (error) {
       console.error("Error in autocomplete:", error);
@@ -235467,8 +235632,8 @@ function registerReviewEndpoints(app2) {
       const customerId = c.req.query("customerId");
       const bookingId = c.req.query("bookingId");
       const isApproved = c.req.query("isApproved");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let reviewQuery = `
         SELECT r.*, 
                c.full_name as customer_name,
@@ -235517,7 +235682,7 @@ function registerReviewEndpoints(app2) {
         reviewQuery += ` AND r.is_approved = true`;
       }
       reviewQuery += ` ORDER BY r.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const reviews = await query(reviewQuery, params);
       let avgRating = 0;
       if (reviews.rows.length > 0) {
@@ -235658,8 +235823,8 @@ function registerNotificationEndpoints(app2) {
       const userId = c.req.query("userId");
       const userType = c.req.query("userType") || "customer";
       const isRead = c.req.query("isRead");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       if (!userId) {
         return c.json({ error: "userId is required" }, 400);
       }
@@ -235683,7 +235848,7 @@ function registerNotificationEndpoints(app2) {
         paramIndex++;
       }
       notificationQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const notifications = await query(notificationQuery, params);
       const unreadCount = await query(
         "SELECT COUNT(*) as count FROM notifications WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false",
@@ -235840,7 +236005,7 @@ ${message2}`,
   app2.get("/customer/notifications", async (c) => {
     try {
       const phone = c.req.query("phone");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
       if (!phone) {
         return c.json({ error: "phone is required" }, 400);
       }
@@ -235854,7 +236019,7 @@ ${message2}`,
          WHERE recipient_id = $1 AND recipient_type = 'customer'
          ORDER BY created_at DESC
          LIMIT $2`,
-        [customerId, limit2]
+        [customerId, limit]
       );
       return c.json({
         success: true,
@@ -236229,8 +236394,8 @@ function registerBehaviorJournalEndpoints(app2) {
       const petId = c.req.query("petId");
       const customerId = c.req.query("customerId");
       const phone = c.req.query("phone");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       if (!petId && !customerId && !phone) {
         return c.json({
           success: true,
@@ -236306,7 +236471,7 @@ function registerBehaviorJournalEndpoints(app2) {
         paramIdx++;
       }
       rawQuery += ` ORDER BY created_at DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
-      queryParams.push(limit2, offset2);
+      queryParams.push(limit, offset);
       let journalEntries = [];
       try {
         const journalResult = await query(rawQuery, queryParams);
@@ -237129,8 +237294,8 @@ function registerCustomerBookingHistoryEndpoints(app2) {
     try {
       let { customerId } = c.req.param();
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
       if (!isUUID) {
         const customers = await select("customers", { phone: customerId });
@@ -237165,7 +237330,7 @@ function registerCustomerBookingHistoryEndpoints(app2) {
         paramIndex++;
       }
       bookingQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const bookings = await query(bookingQuery, params);
       const statsQuery = await query(
         `SELECT 
@@ -237560,7 +237725,7 @@ function registerPrescriptionEndpoints(app2) {
       const { prescriptionId } = c.req.param();
       const { actorId, actorRole, actorName } = await c.req.json();
       try {
-        const { insert: insert7, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { insert: insert8, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         await query12(`
           CREATE TABLE IF NOT EXISTS prescription_downloads (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -237575,7 +237740,7 @@ function registerPrescriptionEndpoints(app2) {
           )
         `).catch(() => {
         });
-        await insert7("prescription_downloads", {
+        await insert8("prescription_downloads", {
           prescription_id: prescriptionId,
           downloaded_by: actorId,
           downloaded_by_role: actorRole,
@@ -237831,8 +237996,8 @@ function registerEcommerceEndpoints(app2) {
       const vendorId = c.req.query("vendorId");
       const category = c.req.query("category");
       const search = c.req.query("search");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let productQuery = `
         SELECT p.*, v.business_name as vendor_name
         FROM products p
@@ -237864,7 +238029,7 @@ function registerEcommerceEndpoints(app2) {
         paramIndex++;
       }
       productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       let products;
       try {
         products = await query(productQuery, params);
@@ -237895,8 +238060,8 @@ function registerEcommerceEndpoints(app2) {
       const vendorId = c.req.query("vendorId");
       const category = c.req.query("category");
       const search = c.req.query("search");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let productQuery = `
         SELECT p.*, v.business_name as vendor_name
         FROM products p
@@ -237921,7 +238086,7 @@ function registerEcommerceEndpoints(app2) {
         paramIndex++;
       }
       productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       let products;
       try {
         products = await query(productQuery, params);
@@ -237945,6 +238110,142 @@ function registerEcommerceEndpoints(app2) {
     } catch (error) {
       console.error("Error fetching ecommerce products:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/ecommerce/orders", async (c) => {
+    try {
+      const orderData = await c.req.json();
+      const customerPhone = orderData.customer_phone || orderData.customerPhone;
+      const items = orderData.items || [];
+      const shippingAddress = orderData.shipping_address || orderData.shippingAddress || {};
+      const paymentMethod = orderData.payment_method || orderData.paymentMethod || "cod";
+      const couponCode = orderData.coupon_code || orderData.couponCode;
+      if (!customerPhone || !items || items.length === 0) {
+        return c.json({ error: "customer_phone and items are required" }, 400);
+      }
+      let customerId = null;
+      try {
+        const customers = await query(
+          "SELECT id FROM customers WHERE phone = $1",
+          [customerPhone]
+        );
+        if (customers.rows.length > 0) {
+          customerId = customers.rows[0].id;
+        } else {
+          const newCustomerId = crypto.randomUUID();
+          const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
+          await insert("customers", {
+            id: newCustomerId,
+            name: customerName,
+            full_name: customerName,
+            phone: customerPhone,
+            is_active: true,
+            status: "new",
+            created_at: (/* @__PURE__ */ new Date()).toISOString(),
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          });
+          customerId = newCustomerId;
+          console.log("Created new customer:", customerId);
+        }
+      } catch (e) {
+        console.log("Could not find/create customer by phone:", e.message);
+        try {
+          const newCustomerId = crypto.randomUUID();
+          await insert("customers", {
+            id: newCustomerId,
+            name: shippingAddress.name || `Customer ${customerPhone.slice(-4)}`,
+            full_name: shippingAddress.name || `Customer ${customerPhone.slice(-4)}`,
+            phone: customerPhone,
+            is_active: true,
+            status: "new"
+          });
+          customerId = newCustomerId;
+        } catch (e2) {
+          console.log("Failed to create customer:", e2.message);
+        }
+      }
+      let subtotal = 0;
+      const orderItems = [];
+      let firstVendorId = null;
+      for (const item of items) {
+        const productId = item.product_id || item.productId;
+        const quantity = item.quantity || 1;
+        try {
+          const products = await query(
+            "SELECT id, name, price, vendor_id FROM products WHERE id = $1",
+            [productId]
+          );
+          if (products.rows.length > 0) {
+            const product = products.rows[0];
+            const itemTotal = parseFloat(product.price) * quantity;
+            subtotal += itemTotal;
+            if (!firstVendorId && product.vendor_id) {
+              firstVendorId = product.vendor_id;
+            }
+            orderItems.push({
+              product_id: productId,
+              product_name: product.name,
+              quantity,
+              unit_price: parseFloat(product.price),
+              total: itemTotal
+            });
+          }
+        } catch (e) {
+          console.error("Error fetching product:", e);
+        }
+      }
+      const orderId = crypto.randomUUID();
+      const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
+      const shippingAmount = subtotal > 499 ? 0 : 49;
+      const taxAmount = subtotal * 0.18;
+      const totalAmount = subtotal + shippingAmount;
+      const order = {
+        id: orderId,
+        order_number: orderNumber,
+        customer_id: customerId,
+        vendor_id: firstVendorId,
+        order_status: "pending",
+        payment_status: "pending",
+        payment_method: paymentMethod,
+        subtotal,
+        shipping_amount: shippingAmount,
+        tax_amount: taxAmount,
+        discount_amount: 0,
+        total_amount: totalAmount,
+        shipping_address: shippingAddress.line1 || "",
+        shipping_city: shippingAddress.city || "",
+        shipping_state: shippingAddress.state || "",
+        shipping_pincode: shippingAddress.pincode || "",
+        shipping_phone: customerPhone,
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      try {
+        await insert("orders", order);
+      } catch (e) {
+        if (e.message?.includes('relation "orders" does not exist') || e.code === "42P01") {
+          console.log("Orders table not found, returning mock order");
+        } else {
+          throw e;
+        }
+      }
+      return c.json({
+        success: true,
+        order: {
+          id: orderId,
+          order_number: orderNumber,
+          status: "pending",
+          total: totalAmount,
+          items: orderItems,
+          shipping_address: shippingAddress,
+          payment_method: paymentMethod,
+          created_at: order.created_at
+        },
+        message: "Order placed successfully!"
+      });
+    } catch (error) {
+      console.error("Error creating ecommerce order:", error);
+      return c.json({ error: error.message || "Failed to create order" }, 500);
     }
   });
   app2.get("/products/:productId", async (c) => {
@@ -238353,8 +238654,8 @@ function registerEcommerceEndpoints(app2) {
   app2.get("/admin/ecommerce/orders", async (c) => {
     try {
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let ordersQuery = `
         SELECT 
           o.*,
@@ -238374,7 +238675,7 @@ function registerEcommerceEndpoints(app2) {
         paramIndex++;
       }
       ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const orders = await query(ordersQuery, params);
       return c.json({
         success: true,
@@ -238389,8 +238690,8 @@ function registerEcommerceEndpoints(app2) {
   app2.get("/admin/ecommerce/products", async (c) => {
     try {
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let productsQuery = `
         SELECT 
           p.*,
@@ -238410,7 +238711,7 @@ function registerEcommerceEndpoints(app2) {
         paramIndex++;
       }
       productsQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const products = await query(productsQuery, params);
       return c.json({
         success: true,
@@ -238476,8 +238777,8 @@ function registerEcommerceEndpoints(app2) {
   app2.get("/admin/ecommerce/services", async (c) => {
     try {
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let servicesQuery = `
         SELECT 
           s.*,
@@ -238504,7 +238805,7 @@ function registerEcommerceEndpoints(app2) {
         paramIndex++;
       }
       servicesQuery += ` ORDER BY s.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const services = await query(servicesQuery, params);
       return c.json({
         success: true,
@@ -239149,14 +239450,14 @@ function registerLoyaltyEndpoints(app2) {
   app2.get("/loyalty/transactions/:customerId", async (c) => {
     try {
       const { customerId } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       const transactions = await query(
         `SELECT * FROM loyalty_transactions
          WHERE customer_id = $1
          ORDER BY created_at DESC
          LIMIT $2 OFFSET $3`,
-        [customerId, limit2, offset2]
+        [customerId, limit, offset]
       );
       return c.json({
         success: true,
@@ -239346,8 +239647,8 @@ function registerLoyaltyEndpoints(app2) {
   app2.get("/admin/loyalty/transactions", async (c) => {
     const startTime = Date.now();
     try {
-      const limit2 = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
-      const offset2 = Math.max(parseInt(c.req.query("offset") || "0", 10), 0);
+      const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+      const offset = Math.max(parseInt(c.req.query("offset") || "0", 10), 0);
       const queryPromise = query(
         `SELECT 
           lt.*,
@@ -239356,7 +239657,7 @@ function registerLoyaltyEndpoints(app2) {
          LEFT JOIN customers c ON lt.customer_id = c.id
          ORDER BY lt.created_at DESC
          LIMIT $1 OFFSET $2`,
-        [limit2, offset2]
+        [limit, offset]
       );
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
@@ -240285,8 +240586,8 @@ var GetVendorProductsHandler = class extends BaseHandler {
       const search = context3.event.queryStringParameters?.search;
       const category = context3.event.queryStringParameters?.category;
       const status = context3.event.queryStringParameters?.status;
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -240338,7 +240639,7 @@ var GetVendorProductsHandler = class extends BaseHandler {
         productQuery += ` AND p.is_active = false`;
       }
       productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       let products;
       let total = 0;
       try {
@@ -240382,8 +240683,8 @@ var GetVendorProductsHandler = class extends BaseHandler {
       return this.success({
         products: products.rows,
         total,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     } catch (error) {
       console.error("Error fetching vendor products:", error);
@@ -240552,8 +240853,8 @@ function registerVendorProductsEndpoints(app2) {
       const search = c.req.query("search") || "";
       const category = c.req.query("category") || "";
       const status = c.req.query("status") || "";
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let productQuery = `
         SELECT p.*, 
                ec.name as category_name
@@ -240579,7 +240880,7 @@ function registerVendorProductsEndpoints(app2) {
         productQuery += ` AND p.is_active = false`;
       }
       productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       let products;
       let total = 0;
       try {
@@ -240603,8 +240904,8 @@ function registerVendorProductsEndpoints(app2) {
         products: products?.rows || [],
         count: products?.rows?.length || 0,
         total,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       }, 200);
     } catch (error) {
       console.error("Error in vendor products endpoint:", error);
@@ -240681,8 +240982,8 @@ var GetVendorOrdersHandler = class extends BaseHandler {
       const status = context3.event.queryStringParameters?.status;
       const dateFilter = context3.event.queryStringParameters?.dateFilter || "all";
       const search = context3.event.queryStringParameters?.search;
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -240731,36 +241032,57 @@ var GetVendorOrdersHandler = class extends BaseHandler {
         ORDER BY o.created_at DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `;
-      params.push(limit2, offset2);
-      let orders;
+      params.push(limit, offset);
+      let orders = { rows: [] };
       try {
         orders = await query(ordersQuery, params);
       } catch (error) {
-        if (error.message?.includes("invalid input syntax for type uuid")) {
+        if (error.message?.includes("invalid input syntax for type uuid") || error.message?.includes('relation "orders" does not exist') || error.code === "42P01") {
           return this.success({
             orders: [],
             total: 0,
-            limit: limit2,
-            offset: offset2
+            limit,
+            offset
           });
         }
         throw error;
       }
+      if (!orders || !orders.rows || !Array.isArray(orders.rows)) {
+        orders = { rows: [] };
+      }
       const ordersWithItems = await Promise.all(
-        orders.rows.map(async (order) => {
-          const items = await query(
-            `SELECT 
-               oi.*,
-               p.name as product_name,
-               p.images
-             FROM order_items oi
-             LEFT JOIN products p ON oi.product_id = p.id
-             WHERE oi.order_id = $1`,
-            [order.id]
-          );
+        (orders.rows || []).map(async (order) => {
+          let items = [];
+          if (order.items) {
+            try {
+              items = typeof order.items === "string" ? JSON.parse(order.items) : order.items;
+            } catch (e) {
+              items = [];
+            }
+          }
+          if (items.length === 0) {
+            try {
+              const itemsResult = await query(
+                `SELECT 
+                   oi.*,
+                   p.name as product_name,
+                   p.images
+                 FROM order_items oi
+                 LEFT JOIN products p ON oi.product_id = p.id
+                 WHERE oi.order_id = $1`,
+                [order.id]
+              );
+              items = itemsResult.rows || [];
+            } catch (e) {
+              console.log("order_items query failed:", e.message);
+              items = [];
+            }
+          }
           return {
             ...order,
-            items: items.rows
+            status: order.order_status,
+            // Map order_status to status for frontend compatibility
+            items
           };
         })
       );
@@ -240787,17 +241109,15 @@ var GetVendorOrdersHandler = class extends BaseHandler {
       return this.success({
         orders: ordersWithItems || [],
         total: total || 0,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     } catch (error) {
       console.error("Error fetching vendor orders:", error);
-      if (error.message?.includes("invalid input syntax for type uuid")) {
+      if (error.message?.includes("invalid input syntax for type uuid") || error.message?.includes("relation") || error.message?.includes("does not exist") || error.message?.includes("object is not iterable") || error.code === "42P01" || error.code === "42703") {
         return this.success({
           orders: [],
-          total: 0,
-          limit,
-          offset
+          total: 0
         });
       }
       return this.error(error.message || "Failed to fetch orders", 500);
@@ -240905,54 +241225,210 @@ function registerVendorOrdersEndpoints(app2) {
   const getStatsHandler = new GetVendorOrderStatsHandler();
   app2.get("/vendor/:vendorId/orders", async (c) => {
     try {
+      const queryEntries = c.req.queries();
+      const queryParams = {};
+      if (queryEntries && typeof queryEntries === "object") {
+        for (const [key, value] of Object.entries(queryEntries)) {
+          if (Array.isArray(value) && value.length > 0) {
+            queryParams[key] = value[0];
+          } else if (typeof value === "string") {
+            queryParams[key] = value;
+          }
+        }
+      }
       const response = await getOrdersHandler.handle({
         event: {
           pathParameters: c.req.param(),
-          queryStringParameters: Object.fromEntries(c.req.query())
+          queryStringParameters: queryParams
         }
       });
       return c.json(JSON.parse(response.body), response.statusCode);
     } catch (error) {
       console.error("Error in vendor orders endpoint:", error);
-      const vendorId = c.req.param("vendorId");
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          orders: [],
-          total: 0,
-          limit: parseInt(c.req.query("limit") || "50", 10),
-          offset: parseInt(c.req.query("offset") || "0", 10)
-        }, 200);
-      }
-      return c.json({ error: error.message || "Internal Server Error" }, 500);
+      return c.json({
+        orders: [],
+        total: 0,
+        limit: 50,
+        offset: 0
+      }, 200);
     }
   });
   app2.get("/vendor/:vendorId/orders/stats", async (c) => {
     try {
+      const queryEntries = c.req.queries();
+      const queryParams = {};
+      if (queryEntries && typeof queryEntries === "object") {
+        for (const [key, value] of Object.entries(queryEntries)) {
+          if (Array.isArray(value) && value.length > 0) {
+            queryParams[key] = value[0];
+          } else if (typeof value === "string") {
+            queryParams[key] = value;
+          }
+        }
+      }
       const response = await getStatsHandler.handle({
         event: {
           pathParameters: c.req.param(),
-          queryStringParameters: Object.fromEntries(c.req.query())
+          queryStringParameters: queryParams
         }
       });
       return c.json(JSON.parse(response.body), response.statusCode);
     } catch (error) {
       console.error("Error in vendor orders stats endpoint:", error);
-      const vendorId = c.req.param("vendorId");
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          stats: {
-            total: 0,
-            pending: 0,
-            confirmed: 0,
-            processing: 0,
-            shipped: 0,
-            delivered: 0,
-            cancelled: 0,
-            total_revenue: 0
-          }
-        }, 200);
+      return c.json({
+        stats: {
+          total: 0,
+          pending: 0,
+          confirmed: 0,
+          processing: 0,
+          shipped: 0,
+          delivered: 0,
+          cancelled: 0,
+          total_revenue: 0
+        }
+      }, 200);
+    }
+  });
+  app2.put("/vendor/:vendorId/orders/:orderId/status", async (c) => {
+    try {
+      const { vendorId, orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { status, tracking_number, delivery_partner, notes } = body2;
+      if (!status) {
+        return c.json({ error: "Status is required" }, 400);
       }
-      return c.json({ error: error.message || "Internal Server Error" }, 500);
+      const validStatuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"];
+      if (!validStatuses.includes(status)) {
+        return c.json({ error: "Invalid status" }, 400);
+      }
+      const existingOrder = await query(
+        "SELECT order_status FROM orders WHERE id = $1 AND vendor_id = $2",
+        [orderId, vendorId]
+      );
+      if (existingOrder.rows.length === 0) {
+        return c.json({ error: "Order not found" }, 404);
+      }
+      const currentStatus = existingOrder.rows[0].order_status;
+      const allowedTransitions = {
+        "pending": ["confirmed", "cancelled"],
+        "confirmed": ["processing", "cancelled"],
+        "processing": ["shipped", "cancelled"],
+        "shipped": ["delivered", "returned"],
+        "delivered": ["returned"],
+        "cancelled": [],
+        "returned": []
+      };
+      if (!allowedTransitions[currentStatus]?.includes(status)) {
+        return c.json({
+          error: `Cannot transition from '${currentStatus}' to '${status}'. Allowed: ${allowedTransitions[currentStatus]?.join(", ") || "none"}`
+        }, 400);
+      }
+      const updates = ["order_status = $1", "updated_at = NOW()"];
+      const params = [status, orderId, vendorId];
+      let paramIndex = 4;
+      if (status === "shipped") {
+        if (!tracking_number) {
+          return c.json({ error: "Tracking number is required when marking as shipped" }, 400);
+        }
+        updates.push(`tracking_number = $${paramIndex}`);
+        params.splice(paramIndex - 1, 0, tracking_number);
+        paramIndex++;
+        updates.push("shipped_at = NOW()");
+        if (delivery_partner) {
+          updates.push(`delivery_partner = $${paramIndex}`);
+          params.splice(paramIndex - 1, 0, delivery_partner);
+          paramIndex++;
+        }
+      }
+      if (status === "delivered") {
+        updates.push("delivered_at = NOW()");
+        updates.push("delivery_status = $4");
+        params.splice(3, 0, "completed");
+      }
+      if (status === "cancelled") {
+        updates.push("cancelled_at = NOW()");
+      }
+      const updateQuery = `UPDATE orders SET ${updates.join(", ")} WHERE id = $2 AND vendor_id = $3`;
+      await query(updateQuery, params);
+      return c.json({
+        success: true,
+        message: `Order status updated to ${status}`,
+        order_id: orderId,
+        status
+      });
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      return c.json({ error: error.message || "Failed to update order status" }, 500);
+    }
+  });
+  app2.put("/vendor/:vendorId/orders/:orderId", async (c) => {
+    try {
+      const { vendorId, orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { status, tracking_number, delivery_partner, notes } = body2;
+      if (!status) {
+        return c.json({ error: "Status is required" }, 400);
+      }
+      const validStatuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "returned"];
+      if (!validStatuses.includes(status)) {
+        return c.json({ error: "Invalid status" }, 400);
+      }
+      const existingOrder = await query(
+        "SELECT order_status FROM orders WHERE id = $1 AND vendor_id = $2",
+        [orderId, vendorId]
+      );
+      if (existingOrder.rows.length === 0) {
+        return c.json({ error: "Order not found" }, 404);
+      }
+      const currentStatus = existingOrder.rows[0].order_status;
+      const allowedTransitions = {
+        "pending": ["confirmed", "cancelled"],
+        "confirmed": ["processing", "cancelled"],
+        "processing": ["shipped", "cancelled"],
+        "shipped": ["delivered", "returned"],
+        "delivered": ["returned"],
+        "cancelled": [],
+        "returned": []
+      };
+      if (!allowedTransitions[currentStatus]?.includes(status)) {
+        return c.json({
+          error: `Cannot transition from '${currentStatus}' to '${status}'. Allowed: ${allowedTransitions[currentStatus]?.join(", ") || "none"}`
+        }, 400);
+      }
+      const updateFields = {
+        order_status: status,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (status === "shipped" && tracking_number) {
+        updateFields.tracking_number = tracking_number;
+        updateFields.shipped_at = (/* @__PURE__ */ new Date()).toISOString();
+        if (delivery_partner) {
+          updateFields.delivery_partner = delivery_partner;
+        }
+      }
+      if (status === "delivered") {
+        updateFields.delivered_at = (/* @__PURE__ */ new Date()).toISOString();
+        updateFields.delivery_status = "completed";
+      }
+      if (status === "cancelled") {
+        updateFields.cancelled_at = (/* @__PURE__ */ new Date()).toISOString();
+      }
+      const setClauses = Object.keys(updateFields).map((key, idx) => `${key} = $${idx + 1}`);
+      const values = Object.values(updateFields);
+      values.push(orderId, vendorId);
+      await query(
+        `UPDATE orders SET ${setClauses.join(", ")} WHERE id = $${values.length - 1} AND vendor_id = $${values.length}`,
+        values
+      );
+      return c.json({
+        success: true,
+        message: `Order status updated to ${status}`,
+        order_id: orderId,
+        status
+      });
+    } catch (error) {
+      console.error("Error updating order:", error);
+      return c.json({ error: error.message || "Failed to update order" }, 500);
     }
   });
 }
@@ -240988,7 +241464,7 @@ var roleMappings = {
 function registerServiceCatalogEndpoints(app2) {
   app2.get("/services", async (c) => {
     try {
-      const { category, vendor_id, limit: limit2 = "50" } = c.req.query();
+      const { category, vendor_id, limit = "50" } = c.req.query();
       let queryText = `
         SELECT s.*, v.business_name as vendor_name, v.category as vendor_category
         FROM services s
@@ -241008,7 +241484,7 @@ function registerServiceCatalogEndpoints(app2) {
         paramIndex++;
       }
       queryText += ` ORDER BY s.created_at DESC LIMIT $${paramIndex}`;
-      params.push(parseInt(limit2));
+      params.push(parseInt(limit));
       const result = await query(queryText, params);
       return c.json({
         success: true,
@@ -241764,8 +242240,8 @@ function registerSettlementEndpoints(app2) {
     try {
       const status = c.req.query("status");
       const period = c.req.query("period");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let queryStr = `
         SELECT 
           s.*,
@@ -241787,7 +242263,7 @@ function registerSettlementEndpoints(app2) {
         queryStr += ` AND s.created_at >= NOW() - INTERVAL '${days} days'`;
       }
       queryStr += ` ORDER BY s.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const settlements = await query(queryStr, params).catch(() => ({ rows: [] }));
       const safeSettlements = (settlements.rows || []).map((s) => ({
         id: String(s.id || ""),
@@ -244334,8 +244810,8 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
     try {
       const phone = c.req.query("phone");
       const type = c.req.query("type");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       if (!phone) {
         return c.json({ error: "phone parameter is required" }, 400);
       }
@@ -244355,7 +244831,7 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
         paramIndex++;
       }
       transactionQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const transactions = await query(transactionQuery, params);
       return c.json({
         success: true,
@@ -244370,7 +244846,7 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
   app2.get("/customer/notifications/:phone", async (c) => {
     try {
       const { phone } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
       const customerId = await resolveCustomerIdFromPhone(phone);
       if (!customerId) {
         return c.json({ error: "Customer not found" }, 404);
@@ -244380,7 +244856,7 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
          WHERE recipient_id = $1 AND recipient_type = 'customer'
          ORDER BY created_at DESC
          LIMIT $2`,
-        [customerId, limit2]
+        [customerId, limit]
       );
       const unreadCount = await query(
         `SELECT COUNT(*) as count FROM notifications
@@ -244824,6 +245300,1032 @@ function registerTrainingProgressEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+}
+
+// src/endpoints/package-booking.ts
+init_rds_connection();
+function registerPackageBookingEndpoints(app2) {
+  app2.get("/customer/:customerId/packages/active", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const vendorId = c.req.query("vendorId");
+      const serviceType = c.req.query("serviceType");
+      let packageQuery = `
+        SELECT 
+          pp.*,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          v.city as vendor_city,
+          (pp.total_sessions - pp.remaining_sessions) as sessions_used,
+          CASE 
+            WHEN pp.expires_at IS NOT NULL AND pp.expires_at < NOW() THEN 'expired'
+            WHEN pp.remaining_sessions <= 0 AND pp.unlimited_usage = false THEN 'exhausted'
+            ELSE pp.status
+          END as computed_status
+        FROM package_purchases pp
+        LEFT JOIN vendors v ON pp.vendor_id = v.id
+        WHERE pp.customer_id = $1
+        AND pp.status = 'active'
+        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
+        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+      `;
+      const params = [customerId];
+      let paramIndex = 2;
+      if (vendorId) {
+        packageQuery += ` AND pp.vendor_id = $${paramIndex}`;
+        params.push(vendorId);
+        paramIndex++;
+      }
+      if (serviceType) {
+        packageQuery += ` AND pp.package_type = $${paramIndex}`;
+        params.push(serviceType);
+        paramIndex++;
+      }
+      packageQuery += ` ORDER BY pp.expires_at ASC NULLS LAST, pp.created_at DESC`;
+      const result = await query(packageQuery, params);
+      const packagesWithSessions = await Promise.all(
+        result.rows.map(async (pkg) => {
+          const sessionsResult = await query(`
+            SELECT * FROM package_scheduled_sessions
+            WHERE package_purchase_id = $1
+            ORDER BY session_number ASC
+          `, [pkg.id]);
+          return {
+            ...pkg,
+            scheduledSessions: sessionsResult.rows,
+            nextSession: sessionsResult.rows.find((s) => s.status === "pending" || s.status === "scheduled")
+          };
+        })
+      );
+      return c.json({
+        success: true,
+        packages: packagesWithSessions,
+        total: packagesWithSessions.length,
+        hasActivePackages: packagesWithSessions.length > 0
+      });
+    } catch (error) {
+      console.error("Error fetching active packages:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/packages/check-for-booking", async (c) => {
+    try {
+      const customerId = c.req.query("customerId");
+      const vendorId = c.req.query("vendorId");
+      const serviceType = c.req.query("serviceType");
+      if (!customerId || !vendorId) {
+        return c.json({
+          hasActivePackage: false,
+          message: "customerId and vendorId required"
+        });
+      }
+      const result = await query(`
+        SELECT 
+          pp.*,
+          v.business_name as vendor_name,
+          pp.total_sessions - pp.remaining_sessions as sessions_used
+        FROM package_purchases pp
+        LEFT JOIN vendors v ON pp.vendor_id = v.id
+        WHERE pp.customer_id = $1
+        AND pp.vendor_id = $2
+        AND pp.status = 'active'
+        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
+        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+        ORDER BY pp.expires_at ASC NULLS LAST
+        LIMIT 1
+      `, [customerId, vendorId]);
+      if (result.rows.length === 0) {
+        return c.json({
+          hasActivePackage: false,
+          package: null
+        });
+      }
+      const pkg = result.rows[0];
+      return c.json({
+        hasActivePackage: true,
+        package: {
+          id: pkg.id,
+          packageName: pkg.package_name,
+          vendorName: pkg.vendor_name,
+          totalSessions: pkg.total_sessions,
+          remainingSessions: pkg.remaining_sessions,
+          sessionsUsed: pkg.sessions_used,
+          expiresAt: pkg.expires_at,
+          isUnlimited: pkg.unlimited_usage,
+          packageType: pkg.package_type
+        }
+      });
+    } catch (error) {
+      console.error("Error checking packages for booking:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/bookings/create-from-package", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const {
+        packagePurchaseId,
+        customerId,
+        vendorId,
+        petId,
+        serviceId,
+        scheduledDate,
+        scheduledTime,
+        serviceType = "at_center",
+        notes,
+        address
+      } = body2;
+      if (!packagePurchaseId || !customerId || !vendorId) {
+        return c.json({
+          error: "packagePurchaseId, customerId, and vendorId are required"
+        }, 400);
+      }
+      const packageResult = await query(`
+        SELECT * FROM package_purchases
+        WHERE id = $1 AND customer_id = $2
+        AND status = 'active'
+        AND (expires_at IS NULL OR expires_at > NOW())
+        AND (remaining_sessions > 0 OR unlimited_usage = true)
+      `, [packagePurchaseId, customerId]);
+      if (packageResult.rows.length === 0) {
+        return c.json({
+          error: "Package not found, expired, or has no remaining sessions"
+        }, 400);
+      }
+      const pkg = packageResult.rows[0];
+      const sessionsUsed = pkg.total_sessions - pkg.remaining_sessions;
+      const nextSessionNumber = sessionsUsed + 1;
+      const conflictCheck = await query(`
+        SELECT id FROM bookings
+        WHERE vendor_id = $1
+        AND booking_date = $2
+        AND booking_time = $3
+        AND status NOT IN ('cancelled', 'rejected')
+      `, [vendorId, scheduledDate, scheduledTime]);
+      if (conflictCheck.rows.length > 0) {
+        return c.json({
+          error: "This time slot is already booked",
+          code: "SLOT_CONFLICT"
+        }, 409);
+      }
+      const bookingResult = await query(`
+        INSERT INTO bookings (
+          customer_id, vendor_id, pet_id, service_id,
+          booking_date, booking_time, service_type,
+          notes, address,
+          package_purchase_id, is_package_session, package_session_number,
+          status, payment_status, total_amount
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, $6, $7,
+          $8, $9,
+          $10, true, $11,
+          'confirmed', 'completed', 0
+        )
+        RETURNING *
+      `, [
+        customerId,
+        vendorId,
+        petId,
+        serviceId,
+        scheduledDate,
+        scheduledTime,
+        serviceType,
+        notes,
+        address ? JSON.stringify(address) : null,
+        packagePurchaseId,
+        nextSessionNumber
+      ]);
+      const booking = bookingResult.rows[0];
+      if (!pkg.unlimited_usage) {
+        await update(
+          "package_purchases",
+          { id: packagePurchaseId },
+          {
+            remaining_sessions: pkg.remaining_sessions - 1,
+            updated_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        );
+      }
+      await insert("package_usage_log", {
+        package_purchase_id: packagePurchaseId,
+        booking_id: booking.id,
+        session_number: nextSessionNumber,
+        action: "session_used",
+        sessions_before: pkg.remaining_sessions,
+        sessions_after: pkg.unlimited_usage ? pkg.remaining_sessions : pkg.remaining_sessions - 1,
+        created_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await query(`
+        INSERT INTO package_scheduled_sessions (
+          package_purchase_id, session_number, scheduled_date, scheduled_time,
+          booking_id, status
+        ) VALUES ($1, $2, $3, $4, $5, 'scheduled')
+        ON CONFLICT (package_purchase_id, session_number) 
+        DO UPDATE SET 
+          scheduled_date = EXCLUDED.scheduled_date,
+          scheduled_time = EXCLUDED.scheduled_time,
+          booking_id = EXCLUDED.booking_id,
+          status = 'scheduled',
+          updated_at = NOW()
+      `, [packagePurchaseId, nextSessionNumber, scheduledDate, scheduledTime, booking.id]);
+      await query(`
+        INSERT INTO customer_provider_history (
+          customer_id, vendor_id, service_type, total_bookings,
+          last_booking_id, last_booking_date
+        ) VALUES ($1, $2, $3, 1, $4, NOW())
+        ON CONFLICT (customer_id, vendor_id, service_type)
+        DO UPDATE SET
+          total_bookings = customer_provider_history.total_bookings + 1,
+          last_booking_id = EXCLUDED.last_booking_id,
+          last_booking_date = NOW(),
+          updated_at = NOW()
+      `, [customerId, vendorId, pkg.package_type || "general", booking.id]);
+      return c.json({
+        success: true,
+        booking: {
+          id: booking.id,
+          bookingDate: booking.booking_date,
+          bookingTime: booking.booking_time,
+          status: booking.status,
+          isPackageSession: true,
+          sessionNumber: nextSessionNumber,
+          remainingSessions: pkg.unlimited_usage ? "unlimited" : pkg.remaining_sessions - 1
+        },
+        package: {
+          id: packagePurchaseId,
+          remainingSessions: pkg.unlimited_usage ? "unlimited" : pkg.remaining_sessions - 1,
+          totalSessions: pkg.total_sessions
+        },
+        message: `Booking created using package session ${nextSessionNumber}/${pkg.total_sessions}`
+      });
+    } catch (error) {
+      console.error("Error creating booking from package:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/packages/post-trial-offers", async (c) => {
+    try {
+      const vendorId = c.req.query("vendorId");
+      const serviceType = c.req.query("serviceType");
+      const bookingId = c.req.query("bookingId");
+      if (!vendorId) {
+        return c.json({ error: "vendorId required" }, 400);
+      }
+      const packagesResult = await query(`
+        SELECT 
+          sp.*,
+          v.business_name as vendor_name,
+          v.rating as vendor_rating
+        FROM service_packages sp
+        LEFT JOIN vendors v ON sp.vendor_id = v.id
+        WHERE sp.vendor_id = $1
+        AND sp.is_active = true
+        ORDER BY sp.total_sessions ASC, sp.price ASC
+      `, [vendorId]);
+      let trialBooking = null;
+      if (bookingId) {
+        const bookingResult = await query(`
+          SELECT b.*, s.name as service_name, v.business_name as vendor_name
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN vendors v ON b.vendor_id = v.id
+          WHERE b.id = $1
+        `, [bookingId]);
+        trialBooking = bookingResult.rows[0] || null;
+      }
+      const packagesWithSavings = packagesResult.rows.map((pkg) => {
+        const regularPrice = (trialBooking?.total_amount || pkg.price / pkg.total_sessions) * pkg.total_sessions;
+        const savings = regularPrice - pkg.price;
+        const savingsPercent = Math.round(savings / regularPrice * 100);
+        return {
+          ...pkg,
+          pricePerSession: Math.round(pkg.price / pkg.total_sessions),
+          regularPrice,
+          savings: savings > 0 ? savings : 0,
+          savingsPercent: savingsPercent > 0 ? savingsPercent : 0,
+          isRecommended: pkg.total_sessions >= 5 && pkg.total_sessions <= 10
+        };
+      });
+      return c.json({
+        success: true,
+        packages: packagesWithSavings,
+        trialBooking,
+        vendorName: packagesResult.rows[0]?.vendor_name,
+        message: packagesWithSavings.length > 0 ? "Save with a package!" : "No packages available from this vendor"
+      });
+    } catch (error) {
+      console.error("Error fetching post-trial offers:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/packages/convert-from-trial", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const {
+        trialBookingId,
+        packageId,
+        // service_packages.id
+        customerId,
+        preferSameProvider = true,
+        paymentMethodId,
+        scheduleAllSessions = false,
+        sessionSchedule = []
+        // Array of {sessionNumber, date, time}
+      } = body2;
+      if (!packageId || !customerId) {
+        return c.json({ error: "packageId and customerId required" }, 400);
+      }
+      const packageResult = await query(`
+        SELECT sp.*, v.business_name as vendor_name
+        FROM service_packages sp
+        LEFT JOIN vendors v ON sp.vendor_id = v.id
+        WHERE sp.id = $1 AND sp.is_active = true
+      `, [packageId]);
+      if (packageResult.rows.length === 0) {
+        return c.json({ error: "Package not found or inactive" }, 404);
+      }
+      const pkg = packageResult.rows[0];
+      let trialBooking = null;
+      let staffId = null;
+      if (trialBookingId) {
+        const bookingResult = await query(`
+          SELECT * FROM bookings WHERE id = $1
+        `, [trialBookingId]);
+        trialBooking = bookingResult.rows[0];
+        staffId = trialBooking?.staff_id;
+      }
+      const expiresAt = /* @__PURE__ */ new Date();
+      if (pkg.validity_days) {
+        expiresAt.setDate(expiresAt.getDate() + pkg.validity_days);
+      } else if (pkg.validity_months) {
+        expiresAt.setMonth(expiresAt.getMonth() + pkg.validity_months);
+      } else {
+        expiresAt.setMonth(expiresAt.getMonth() + 3);
+      }
+      const purchaseId = `pur_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const purchaseResult = await query(`
+        INSERT INTO package_purchases (
+          purchase_id, package_id, customer_id, vendor_id,
+          package_name, package_type, package_price,
+          total_sessions, remaining_sessions, unlimited_usage,
+          amount, payment_status, status,
+          preferred_vendor_id, preferred_staff_id, auto_assign_same_provider,
+          expires_at, activated_at
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, $6, $7,
+          $8, $8, $9,
+          $7, 'completed', 'active',
+          $10, $11, $12,
+          $13, NOW()
+        )
+        RETURNING *
+      `, [
+        purchaseId,
+        packageId,
+        customerId,
+        pkg.vendor_id,
+        pkg.name,
+        pkg.service_type || "general",
+        pkg.price,
+        pkg.total_sessions,
+        pkg.unlimited_usage || false,
+        preferSameProvider ? pkg.vendor_id : null,
+        preferSameProvider ? staffId : null,
+        preferSameProvider,
+        expiresAt.toISOString()
+      ]);
+      const purchase = purchaseResult.rows[0];
+      if (trialBookingId) {
+        await update(
+          "bookings",
+          { id: trialBookingId },
+          { converted_to_package_id: purchase.id }
+        );
+      }
+      const sessionsToCreate = [];
+      for (let i = 1; i <= pkg.total_sessions; i++) {
+        const schedule = sessionSchedule.find((s) => s.sessionNumber === i);
+        sessionsToCreate.push({
+          package_purchase_id: purchase.id,
+          session_number: i,
+          scheduled_date: schedule?.date || null,
+          scheduled_time: schedule?.time || null,
+          status: schedule ? "scheduled" : "pending"
+        });
+      }
+      for (const session of sessionsToCreate) {
+        await insert("package_scheduled_sessions", session);
+      }
+      return c.json({
+        success: true,
+        purchase: {
+          id: purchase.id,
+          purchaseId: purchase.purchase_id,
+          packageName: purchase.package_name,
+          totalSessions: purchase.total_sessions,
+          remainingSessions: purchase.remaining_sessions,
+          expiresAt: purchase.expires_at,
+          vendorName: pkg.vendor_name,
+          preferSameProvider: purchase.auto_assign_same_provider
+        },
+        sessionsScheduled: sessionSchedule.length,
+        message: `Package purchased! ${pkg.total_sessions} sessions available.`
+      });
+    } catch (error) {
+      console.error("Error converting trial to package:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/packages/:packagePurchaseId/schedule-sessions", async (c) => {
+    try {
+      const { packagePurchaseId } = c.req.param();
+      const body2 = await c.req.json();
+      const { sessions } = body2;
+      if (!sessions || !Array.isArray(sessions)) {
+        return c.json({ error: "sessions array required" }, 400);
+      }
+      const packageResult = await query(`
+        SELECT * FROM package_purchases WHERE id = $1
+      `, [packagePurchaseId]);
+      if (packageResult.rows.length === 0) {
+        return c.json({ error: "Package not found" }, 404);
+      }
+      const pkg = packageResult.rows[0];
+      const scheduledSessions = [];
+      for (const session of sessions) {
+        const { sessionNumber, date, time } = session;
+        if (sessionNumber > pkg.total_sessions) {
+          continue;
+        }
+        const result = await query(`
+          INSERT INTO package_scheduled_sessions (
+            package_purchase_id, session_number, scheduled_date, scheduled_time, status
+          ) VALUES ($1, $2, $3, $4, 'scheduled')
+          ON CONFLICT (package_purchase_id, session_number)
+          DO UPDATE SET
+            scheduled_date = EXCLUDED.scheduled_date,
+            scheduled_time = EXCLUDED.scheduled_time,
+            status = 'scheduled',
+            updated_at = NOW()
+          RETURNING *
+        `, [packagePurchaseId, sessionNumber, date, time]);
+        scheduledSessions.push(result.rows[0]);
+      }
+      return c.json({
+        success: true,
+        scheduledSessions,
+        totalScheduled: scheduledSessions.length,
+        message: `${scheduledSessions.length} sessions scheduled`
+      });
+    } catch (error) {
+      console.error("Error scheduling sessions:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/packages/:packagePurchaseId/sessions", async (c) => {
+    try {
+      const { packagePurchaseId } = c.req.param();
+      const result = await query(`
+        SELECT 
+          pss.*,
+          b.status as booking_status,
+          b.booking_date,
+          b.booking_time,
+          b.completed_at
+        FROM package_scheduled_sessions pss
+        LEFT JOIN bookings b ON pss.booking_id = b.id
+        WHERE pss.package_purchase_id = $1
+        ORDER BY pss.session_number ASC
+      `, [packagePurchaseId]);
+      const packageResult = await query(`
+        SELECT pp.*, v.business_name as vendor_name
+        FROM package_purchases pp
+        LEFT JOIN vendors v ON pp.vendor_id = v.id
+        WHERE pp.id = $1
+      `, [packagePurchaseId]);
+      const pkg = packageResult.rows[0];
+      const sessions = result.rows;
+      const completedCount = sessions.filter((s) => s.status === "completed").length;
+      const scheduledCount = sessions.filter((s) => s.status === "scheduled").length;
+      const pendingCount = sessions.filter((s) => s.status === "pending").length;
+      return c.json({
+        success: true,
+        package: pkg,
+        sessions,
+        summary: {
+          total: pkg?.total_sessions || sessions.length,
+          completed: completedCount,
+          scheduled: scheduledCount,
+          pending: pendingCount,
+          remaining: pkg?.remaining_sessions || pendingCount,
+          progressPercent: Math.round(completedCount / (pkg?.total_sessions || 1) * 100)
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching package sessions:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/customer/:customerId/previous-providers", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const serviceType = c.req.query("serviceType");
+      let providerQuery = `
+        SELECT 
+          cph.*,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          v.address,
+          v.city,
+          v.rating as vendor_rating,
+          v.profile_image_url,
+          (
+            SELECT COUNT(*) FROM reviews r 
+            WHERE r.vendor_id = v.id AND r.is_approved = true
+          ) as review_count
+        FROM customer_provider_history cph
+        LEFT JOIN vendors v ON cph.vendor_id = v.id
+        WHERE cph.customer_id = $1
+        AND v.is_active = true
+      `;
+      const params = [customerId];
+      if (serviceType) {
+        providerQuery += ` AND cph.service_type = $2`;
+        params.push(serviceType);
+      }
+      providerQuery += ` ORDER BY cph.last_booking_date DESC LIMIT 10`;
+      const result = await query(providerQuery, params);
+      const providersWithPackages = await Promise.all(
+        result.rows.map(async (provider) => {
+          const packageResult = await query(`
+            SELECT id, package_name, remaining_sessions, expires_at
+            FROM package_purchases
+            WHERE customer_id = $1 AND vendor_id = $2
+            AND status = 'active'
+            AND (expires_at IS NULL OR expires_at > NOW())
+            AND (remaining_sessions > 0 OR unlimited_usage = true)
+            LIMIT 1
+          `, [customerId, provider.vendor_id]);
+          return {
+            ...provider,
+            hasActivePackage: packageResult.rows.length > 0,
+            activePackage: packageResult.rows[0] || null
+          };
+        })
+      );
+      return c.json({
+        success: true,
+        providers: providersWithPackages,
+        total: providersWithPackages.length
+      });
+    } catch (error) {
+      console.error("Error fetching previous providers:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/:vendorId/package-customers", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const result = await query(`
+        SELECT 
+          pp.*,
+          c.name as customer_name,
+          c.phone as customer_phone,
+          c.email as customer_email,
+          c.profile_image_url as customer_image,
+          (pp.total_sessions - pp.remaining_sessions) as sessions_used,
+          (
+            SELECT json_agg(json_build_object(
+              'id', pss.id,
+              'sessionNumber', pss.session_number,
+              'scheduledDate', pss.scheduled_date,
+              'scheduledTime', pss.scheduled_time,
+              'status', pss.status
+            ) ORDER BY pss.session_number)
+            FROM package_scheduled_sessions pss
+            WHERE pss.package_purchase_id = pp.id
+            AND pss.status IN ('pending', 'scheduled')
+          ) as upcoming_sessions
+        FROM package_purchases pp
+        LEFT JOIN customers c ON pp.customer_id = c.id
+        WHERE pp.vendor_id = $1
+        AND pp.status = 'active'
+        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
+        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+        ORDER BY pp.expires_at ASC NULLS LAST
+      `, [vendorId]);
+      return c.json({
+        success: true,
+        customers: result.rows,
+        total: result.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching package customers:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  console.log("\u2705 Package booking endpoints registered");
+}
+
+// src/endpoints/walker-gps.ts
+init_rds_connection();
+function registerWalkerGPSEndpoints(app2) {
+  app2.post("/walker/:walkerId/start-session", async (c) => {
+    try {
+      const { walkerId } = c.req.param();
+      const body2 = await c.req.json();
+      const { bookingId, startLat, startLng } = body2;
+      if (!bookingId || !startLat || !startLng) {
+        return c.json({ error: "bookingId, startLat, and startLng required" }, 400);
+      }
+      const bookingResult = await query(`
+        SELECT b.*, c.id as customer_id, p.id as pet_id
+        FROM bookings b
+        LEFT JOIN customers c ON b.customer_id = c.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        WHERE b.id = $1 AND b.vendor_id = $2
+        AND b.status IN ('confirmed', 'in_progress')
+      `, [bookingId, walkerId]);
+      if (bookingResult.rows.length === 0) {
+        return c.json({ error: "Booking not found or not assigned to this walker" }, 404);
+      }
+      const booking = bookingResult.rows[0];
+      const liveSession = await query(`
+        INSERT INTO walker_live_sessions (
+          booking_id, walker_id, customer_id,
+          current_lat, current_lng, is_active, started_at
+        ) VALUES ($1, $2, $3, $4, $5, true, NOW())
+        ON CONFLICT (booking_id) DO UPDATE SET
+          current_lat = EXCLUDED.current_lat,
+          current_lng = EXCLUDED.current_lng,
+          is_active = true,
+          started_at = NOW(),
+          last_updated = NOW()
+        RETURNING *
+      `, [bookingId, walkerId, booking.customer_id, startLat, startLng]);
+      const walkRoute = await query(`
+        INSERT INTO walk_routes (
+          booking_id, walker_id, customer_id, pet_id,
+          start_location, waypoints, started_at
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, '[]'::jsonb, NOW()
+        )
+        ON CONFLICT (booking_id) DO UPDATE SET
+          start_location = EXCLUDED.start_location,
+          waypoints = '[]'::jsonb,
+          started_at = NOW()
+        RETURNING id
+      `, [
+        bookingId,
+        walkerId,
+        booking.customer_id,
+        booking.pet_id,
+        JSON.stringify({ lat: startLat, lng: startLng, timestamp: (/* @__PURE__ */ new Date()).toISOString() })
+      ]);
+      await update("bookings", { id: bookingId }, { status: "in_progress" });
+      return c.json({
+        success: true,
+        session: liveSession.rows[0],
+        walkRouteId: walkRoute.rows[0]?.id,
+        message: "Walking session started. GPS tracking active."
+      });
+    } catch (error) {
+      console.error("Error starting walker session:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/walker/:walkerId/gps-update", async (c) => {
+    try {
+      const { walkerId } = c.req.param();
+      const body2 = await c.req.json();
+      const {
+        bookingId,
+        lat,
+        lng,
+        heading,
+        speed,
+        accuracy,
+        batteryLevel
+      } = body2;
+      if (!bookingId || lat === void 0 || lng === void 0) {
+        return c.json({ error: "bookingId, lat, and lng required" }, 400);
+      }
+      const liveUpdate = await query(`
+        UPDATE walker_live_sessions SET
+          current_lat = $1,
+          current_lng = $2,
+          heading = $3,
+          speed_kmh = $4,
+          accuracy_meters = $5,
+          battery_level = $6,
+          last_updated = NOW()
+        WHERE booking_id = $7 AND walker_id = $8 AND is_active = true
+        RETURNING *
+      `, [lat, lng, heading, speed, accuracy, batteryLevel, bookingId, walkerId]);
+      if (liveUpdate.rows.length === 0) {
+        return c.json({ error: "No active session found" }, 404);
+      }
+      const waypoint = {
+        lat,
+        lng,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        speed,
+        heading
+      };
+      await query(`
+        UPDATE walk_routes SET
+          waypoints = waypoints || $1::jsonb,
+          total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
+        WHERE booking_id = $2
+      `, [JSON.stringify([waypoint]), bookingId]);
+      return c.json({
+        success: true,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    } catch (error) {
+      console.error("Error updating GPS:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/walker/:walkerId/end-session", async (c) => {
+    try {
+      const { walkerId } = c.req.param();
+      const body2 = await c.req.json();
+      const {
+        bookingId,
+        endLat,
+        endLng,
+        notes,
+        pottyBreaks = 0,
+        weatherConditions
+      } = body2;
+      if (!bookingId) {
+        return c.json({ error: "bookingId required" }, 400);
+      }
+      await query(`
+        UPDATE walker_live_sessions SET
+          is_active = false,
+          current_lat = $1,
+          current_lng = $2,
+          last_updated = NOW()
+        WHERE booking_id = $3 AND walker_id = $4
+      `, [endLat, endLng, bookingId, walkerId]);
+      const routeUpdate = await query(`
+        UPDATE walk_routes SET
+          end_location = $1,
+          ended_at = NOW(),
+          total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER,
+          notes = $2,
+          potty_breaks = $3,
+          weather_conditions = $4
+        WHERE booking_id = $5
+        RETURNING *
+      `, [
+        JSON.stringify({ lat: endLat, lng: endLng, timestamp: (/* @__PURE__ */ new Date()).toISOString() }),
+        notes,
+        pottyBreaks,
+        weatherConditions,
+        bookingId
+      ]);
+      const route = routeUpdate.rows[0];
+      let totalDistance = 0;
+      if (route?.waypoints && route.waypoints.length > 1) {
+        for (let i = 1; i < route.waypoints.length; i++) {
+          const prev = route.waypoints[i - 1];
+          const curr = route.waypoints[i];
+          totalDistance += calculateDistance4(prev.lat, prev.lng, curr.lat, curr.lng);
+        }
+      }
+      await query(`
+        UPDATE walk_routes SET
+          total_distance_meters = $1,
+          average_speed_kmh = CASE 
+            WHEN total_duration_seconds > 0 
+            THEN ($1::decimal / 1000) / (total_duration_seconds::decimal / 3600)
+            ELSE 0
+          END
+        WHERE booking_id = $2
+      `, [Math.round(totalDistance), bookingId]);
+      return c.json({
+        success: true,
+        route: {
+          id: route?.id,
+          distanceMeters: Math.round(totalDistance),
+          distanceKm: (totalDistance / 1e3).toFixed(2),
+          durationSeconds: route?.total_duration_seconds,
+          durationMinutes: Math.round((route?.total_duration_seconds || 0) / 60),
+          pottyBreaks,
+          waypointCount: route?.waypoints?.length || 0
+        },
+        message: "Walking session ended. Route saved."
+      });
+    } catch (error) {
+      console.error("Error ending walker session:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/walker/:walkerId/active-session", async (c) => {
+    try {
+      const { walkerId } = c.req.param();
+      const result = await query(`
+        SELECT 
+          wls.*,
+          b.booking_date,
+          b.booking_time,
+          b.notes as booking_notes,
+          c.name as customer_name,
+          c.phone as customer_phone,
+          p.name as pet_name,
+          p.breed as pet_breed,
+          wr.waypoints,
+          wr.total_distance_meters,
+          wr.total_duration_seconds,
+          wr.started_at as walk_started_at
+        FROM walker_live_sessions wls
+        LEFT JOIN bookings b ON wls.booking_id = b.id
+        LEFT JOIN customers c ON wls.customer_id = c.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN walk_routes wr ON wr.booking_id = wls.booking_id
+        WHERE wls.walker_id = $1 AND wls.is_active = true
+        ORDER BY wls.started_at DESC
+        LIMIT 1
+      `, [walkerId]);
+      if (result.rows.length === 0) {
+        return c.json({
+          success: true,
+          hasActiveSession: false,
+          session: null
+        });
+      }
+      const session = result.rows[0];
+      return c.json({
+        success: true,
+        hasActiveSession: true,
+        session: {
+          ...session,
+          currentPosition: {
+            lat: parseFloat(session.current_lat),
+            lng: parseFloat(session.current_lng)
+          },
+          stats: {
+            distanceMeters: session.total_distance_meters || 0,
+            durationSeconds: session.total_duration_seconds || 0,
+            waypointCount: session.waypoints?.length || 0
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching active session:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/customer/:bookingId/track-walk", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const result = await query(`
+        SELECT 
+          wls.current_lat,
+          wls.current_lng,
+          wls.heading,
+          wls.speed_kmh,
+          wls.last_updated,
+          wls.is_active,
+          wls.started_at,
+          wr.waypoints,
+          wr.total_distance_meters,
+          wr.total_duration_seconds,
+          wr.photos,
+          v.business_name as walker_name,
+          v.phone as walker_phone,
+          v.profile_image_url as walker_image,
+          p.name as pet_name,
+          b.notes as special_instructions
+        FROM walker_live_sessions wls
+        LEFT JOIN walk_routes wr ON wr.booking_id = wls.booking_id
+        LEFT JOIN vendors v ON wls.walker_id = v.id
+        LEFT JOIN bookings b ON wls.booking_id = b.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        WHERE wls.booking_id = $1
+      `, [bookingId]);
+      if (result.rows.length === 0) {
+        return c.json({
+          success: true,
+          isActive: false,
+          message: "Walk has not started yet or has ended"
+        });
+      }
+      const data = result.rows[0];
+      const startTime = new Date(data.started_at);
+      const currentDuration = Math.floor((Date.now() - startTime.getTime()) / 1e3);
+      return c.json({
+        success: true,
+        isActive: data.is_active,
+        walker: {
+          name: data.walker_name,
+          phone: data.walker_phone,
+          image: data.walker_image
+        },
+        petName: data.pet_name,
+        currentPosition: {
+          lat: parseFloat(data.current_lat),
+          lng: parseFloat(data.current_lng),
+          heading: data.heading,
+          speed: data.speed_kmh,
+          lastUpdated: data.last_updated
+        },
+        route: data.waypoints || [],
+        stats: {
+          distanceMeters: data.total_distance_meters || 0,
+          distanceKm: ((data.total_distance_meters || 0) / 1e3).toFixed(2),
+          durationSeconds: currentDuration,
+          durationMinutes: Math.round(currentDuration / 60)
+        },
+        photos: data.photos || [],
+        startedAt: data.started_at
+      });
+    } catch (error) {
+      console.error("Error tracking walk:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/walker/:walkerId/add-photo", async (c) => {
+    try {
+      const { walkerId } = c.req.param();
+      const body2 = await c.req.json();
+      const { bookingId, photoUrl, caption, lat, lng } = body2;
+      if (!bookingId || !photoUrl) {
+        return c.json({ error: "bookingId and photoUrl required" }, 400);
+      }
+      const photo = {
+        url: photoUrl,
+        caption: caption || "",
+        lat,
+        lng,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      await query(`
+        UPDATE walk_routes SET
+          photos = photos || $1::jsonb
+        WHERE booking_id = $2 AND walker_id = $3
+      `, [JSON.stringify([photo]), bookingId, walkerId]);
+      return c.json({
+        success: true,
+        photo,
+        message: "Photo added to walk"
+      });
+    } catch (error) {
+      console.error("Error adding walk photo:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/walk-routes/:bookingId", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const result = await query(`
+        SELECT 
+          wr.*,
+          v.business_name as walker_name,
+          c.name as customer_name,
+          p.name as pet_name,
+          p.breed as pet_breed
+        FROM walk_routes wr
+        LEFT JOIN vendors v ON wr.walker_id = v.id
+        LEFT JOIN customers c ON wr.customer_id = c.id
+        LEFT JOIN pets p ON wr.pet_id = p.id
+        WHERE wr.booking_id = $1
+      `, [bookingId]);
+      if (result.rows.length === 0) {
+        return c.json({ error: "Walk route not found" }, 404);
+      }
+      const route = result.rows[0];
+      return c.json({
+        success: true,
+        route: {
+          ...route,
+          distanceKm: ((route.total_distance_meters || 0) / 1e3).toFixed(2),
+          durationMinutes: Math.round((route.total_duration_seconds || 0) / 60)
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching walk route:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  console.log("\u2705 Walker GPS endpoints registered");
+}
+function calculateDistance4(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const dLat = toRad2(lat2 - lat1);
+  const dLon = toRad2(lon2 - lon1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad2(lat1)) * Math.cos(toRad2(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+function toRad2(deg) {
+  return deg * (Math.PI / 180);
 }
 
 // src/endpoints/promotions.ts
@@ -248823,7 +250325,7 @@ function registerOrderManagementEndpoints(app2) {
         const payments = await select("payments", { order_id: orderId, payment_status: "completed" });
         if (payments.length > 0) {
           const payment = payments[0];
-          const { insert: insert7, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+          const { insert: insert8, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
           await query12(
             `INSERT INTO refunds (
               payment_id,
@@ -248891,9 +250393,9 @@ function registerOrderManagementEndpoints(app2) {
       if (updates.totalAmount !== void 0) updateData.total_amount = updates.totalAmount;
       if (updates.items && Array.isArray(updates.items)) {
         await query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
-        const { insert: insert7 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { insert: insert8 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         for (const item of updates.items) {
-          await insert7("order_items", {
+          await insert8("order_items", {
             order_id: orderId,
             product_id: item.productId || null,
             service_id: item.serviceId || null,
@@ -249361,7 +250863,7 @@ function registerSmsNotificationEndpoints(app2) {
   });
   app2.get("/sms/history", async (c) => {
     try {
-      const { userId, limit: limit2 = 50, offset: offset2 = 0 } = c.req.query();
+      const { userId, limit = 50, offset = 0 } = c.req.query();
       let queryText = `SELECT * FROM notifications WHERE notification_type = 'sms'`;
       const params = [];
       let paramIndex = 1;
@@ -249371,7 +250873,7 @@ function registerSmsNotificationEndpoints(app2) {
         paramIndex++;
       }
       queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(parseInt(limit2, 10), parseInt(offset2, 10));
+      params.push(parseInt(limit, 10), parseInt(offset, 10));
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -251959,7 +253461,7 @@ function registerNotificationSystemEndpoints(app2) {
   app2.get("/notifications/:userId", async (c) => {
     try {
       const { userId } = c.req.param();
-      const { userType = "customer", unreadOnly = false, limit: limit2 = 50, offset: offset2 = 0 } = c.req.query();
+      const { userType = "customer", unreadOnly = false, limit = 50, offset = 0 } = c.req.query();
       let queryText = `SELECT * FROM notifications 
                        WHERE user_id = $1 AND user_type = $2`;
       const params = [userId, userType];
@@ -251968,7 +253470,7 @@ function registerNotificationSystemEndpoints(app2) {
         queryText += ` AND is_read = false`;
       }
       queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(parseInt(limit2, 10), parseInt(offset2, 10));
+      params.push(parseInt(limit, 10), parseInt(offset, 10));
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
       return c.json({
         success: true,
@@ -253901,8 +255403,8 @@ var GetVendorSettlementsHandler = class extends BaseHandler {
   async handle(context3) {
     const vendorId = context3.event.pathParameters?.vendorId;
     const status = context3.event.queryStringParameters?.status;
-    const limit2 = parseInt(context3.event.queryStringParameters?.limit || "20");
-    const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0");
+    const limit = parseInt(context3.event.queryStringParameters?.limit || "20");
+    const offset = parseInt(context3.event.queryStringParameters?.offset || "0");
     if (!vendorId) {
       return this.error("Vendor ID required", 400);
     }
@@ -253910,8 +255412,8 @@ var GetVendorSettlementsHandler = class extends BaseHandler {
       return this.success({
         settlements: [],
         total: 0,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     }
     let whereClause = "vendor_id = $1";
@@ -253927,7 +255429,7 @@ var GetVendorSettlementsHandler = class extends BaseHandler {
         SELECT * FROM vendor_settlements
         WHERE ${whereClause}
         ORDER BY created_at DESC
-        LIMIT ${limit2} OFFSET ${offset2}
+        LIMIT ${limit} OFFSET ${offset}
       `, params);
       totalResult = await query(`
         SELECT COUNT(*) as count FROM vendor_settlements
@@ -253938,8 +255440,8 @@ var GetVendorSettlementsHandler = class extends BaseHandler {
         return this.success({
           settlements: [],
           total: 0,
-          limit: limit2,
-          offset: offset2
+          limit,
+          offset
         });
       }
       throw error;
@@ -256054,8 +257556,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.get("/admin/pets/all", async (c) => {
     try {
-      const limit2 = parseInt(c.req.query("limit") || "100", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "100", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       const species = c.req.query("species");
       let queryStr = `
         SELECT 
@@ -256074,7 +257576,7 @@ function registerAdminAdvancedEndpoints(app2) {
         paramIndex++;
       }
       queryStr += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const pets = await query(queryStr, params);
       return c.json({
         success: true,
@@ -257612,8 +259114,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.get("/admin/logistics/orders", async (c) => {
     try {
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let queryStr = `
         SELECT 
           o.*,
@@ -257636,7 +259138,7 @@ function registerAdminAdvancedEndpoints(app2) {
         paramIndex++;
       }
       queryStr += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const orders = await query(queryStr, params).catch(() => ({ rows: [] }));
       const safeOrders = (orders.rows || []).map((o) => ({
         id: String(o.id || ""),
@@ -258175,8 +259677,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.get("/admin/refunds", async (c) => {
     try {
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let queryStr = `
         SELECT 
           r.*,
@@ -258198,7 +259700,7 @@ function registerAdminAdvancedEndpoints(app2) {
         paramIndex++;
       }
       queryStr += ` ORDER BY r.requested_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const refunds = await query(queryStr, params);
       const safeRefunds = (refunds.rows || []).map((r) => ({
         id: String(r.id || ""),
@@ -258377,8 +259879,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.get("/admin/reports/generated", async (c) => {
     try {
-      const limit2 = parseInt(c.req.query("limit") || "10", 10);
-      const reports = await query("SELECT * FROM generated_reports ORDER BY id DESC LIMIT $1", [limit2]).catch(async () => {
+      const limit = parseInt(c.req.query("limit") || "10", 10);
+      const reports = await query("SELECT * FROM generated_reports ORDER BY id DESC LIMIT $1", [limit]).catch(async () => {
         return { rows: [] };
       });
       return c.json({ success: true, reports: reports.rows });
@@ -259044,8 +260546,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.get("/admin/governance/audit-log", async (c) => {
     try {
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const logs = await query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1", [limit2]);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const logs = await query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1", [limit]);
       return c.json({ success: true, logs: logs.rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
@@ -259492,7 +260994,7 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.get("/admin/vendors/activities", async (c) => {
     try {
       const filter = c.req.query("filter") || "all";
-      const limit2 = parseInt(c.req.query("limit") || "50");
+      const limit = parseInt(c.req.query("limit") || "50");
       let activitiesQuery = `
         SELECT 
           'booking' as activity_type,
@@ -259536,7 +261038,7 @@ function registerAdminAdvancedEndpoints(app2) {
         }
       }
       activitiesQuery += ` ORDER BY timestamp DESC LIMIT $1`;
-      const activities = await query(activitiesQuery, [limit2]).catch(() => ({ rows: [] }));
+      const activities = await query(activitiesQuery, [limit]).catch(() => ({ rows: [] }));
       const formatted = activities.rows.map((r) => ({
         id: r.activity_id,
         vendorId: r.vendor_id,
@@ -261153,8 +262655,8 @@ var GetCustomerOrdersHandler = class extends BaseHandler {
         return this.error("Customer ID is required", 401);
       }
       const status = context3.event.queryStringParameters?.status;
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
       let ordersQuery = `
         SELECT 
           o.id,
@@ -261187,7 +262689,7 @@ var GetCustomerOrdersHandler = class extends BaseHandler {
         paramIndex++;
       }
       ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const orders = await query(ordersQuery, params);
       const orderIds = orders.rows.map((o) => o.id);
       let itemsQuery = `
@@ -261229,8 +262731,8 @@ var GetCustomerOrdersHandler = class extends BaseHandler {
         orders: ordersWithItems,
         stats: statsQuery.rows[0],
         pagination: {
-          limit: limit2,
-          offset: offset2,
+          limit,
+          offset,
           total: orders.rows.length
         }
       });
@@ -262050,7 +263552,7 @@ var GetProductPerformanceHandler = class extends BaseHandler {
         return this.error("Vendor ID is required", 401);
       }
       const period = context3.event.queryStringParameters?.period || "month";
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "10", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "10", 10);
       let dateFilter = "";
       if (period === "today") {
         dateFilter = `AND DATE(o.created_at) = CURRENT_DATE`;
@@ -262079,7 +263581,7 @@ var GetProductPerformanceHandler = class extends BaseHandler {
         GROUP BY p.id, p.name, p.price, p.images
         ORDER BY units_sold DESC
         LIMIT $2
-      `, [vendorId, limit2]);
+      `, [vendorId, limit]);
       const productByCategory = await query(`
         SELECT 
           COALESCE(ec.name, p.category) as category,
@@ -262888,7 +264390,7 @@ function registerPetResortEndpoints(app2) {
       const latitude = c.req.query("latitude");
       const longitude = c.req.query("longitude");
       const minRating = c.req.query("minRating");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
       let resortsQuery = `
         SELECT 
           v.*,
@@ -262926,7 +264428,7 @@ function registerPetResortEndpoints(app2) {
         ORDER BY avg_rating DESC, total_bookings DESC
         LIMIT $${paramIndex}
       `;
-      params.push(limit2);
+      params.push(limit);
       const resortsResult = await query(resortsQuery, params);
       const resorts = resortsResult.rows.map((resort) => {
         const resortData = {
@@ -262944,7 +264446,7 @@ function registerPetResortEndpoints(app2) {
           distance: null
         };
         if (latitude && longitude && resort.latitude && resort.longitude) {
-          resortData.distance = calculateDistance4(
+          resortData.distance = calculateDistance5(
             parseFloat(latitude),
             parseFloat(longitude),
             parseFloat(resort.latitude),
@@ -263013,7 +264515,7 @@ function createApiGatewayEvent29(req) {
 function createLambdaContext29() {
   return {};
 }
-function calculateDistance4(lat1, lon1, lat2, lon2) {
+function calculateDistance5(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -263031,8 +264533,8 @@ var GetHolidayPackagesHandler = class extends BaseHandler {
       const vendorId = context3.event.queryStringParameters?.vendorId;
       const destination = context3.event.queryStringParameters?.destination;
       const duration = context3.event.queryStringParameters?.duration;
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
       let packagesQuery = `
         SELECT 
           hp.*,
@@ -263052,8 +264554,8 @@ var GetHolidayPackagesHandler = class extends BaseHandler {
           return this.success({
             packages: [],
             pagination: {
-              limit: limit2,
-              offset: offset2,
+              limit,
+              offset,
               total: 0
             }
           });
@@ -263071,13 +264573,13 @@ var GetHolidayPackagesHandler = class extends BaseHandler {
       }
       packagesQuery += ` GROUP BY hp.id, v.business_name, v.city, v.rating`;
       packagesQuery += ` ORDER BY hp.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const packages = await query(packagesQuery, params);
       return this.success({
         packages: packages.rows,
         pagination: {
-          limit: limit2,
-          offset: offset2,
+          limit,
+          offset,
           total: packages.rows.length
         }
       });
@@ -265319,8 +266821,8 @@ function registerCommunityEndpoints(app2) {
   app2.get("/community/posts", async (c) => {
     try {
       const customerId = c.req.query("customerId");
-      const limit2 = parseInt(c.req.query("limit") || "20", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "20", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       const posts = await query(
         `SELECT 
           p.*,
@@ -265333,7 +266835,7 @@ function registerCommunityEndpoints(app2) {
          LEFT JOIN customers c ON p.customer_id = c.id
          ORDER BY p.created_at DESC
          LIMIT $2 OFFSET $3`,
-        [customerId || null, limit2, offset2]
+        [customerId || null, limit, offset]
       );
       return c.json({
         success: true,
@@ -265436,7 +266938,7 @@ function registerCommunityEndpoints(app2) {
   app2.get("/community/posts/:postId/comments", async (c) => {
     try {
       const { postId } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
       const comments = await query(
         `SELECT 
           c.*,
@@ -265447,7 +266949,7 @@ function registerCommunityEndpoints(app2) {
          WHERE c.post_id = $1
          ORDER BY c.created_at ASC
          LIMIT $2`,
-        [postId, limit2]
+        [postId, limit]
       );
       return c.json({
         success: true,
@@ -265632,7 +267134,7 @@ Happy pet caring! \u{1F43E}`
   app2.get("/customer/:customerId/referral/history", async (c) => {
     try {
       const { customerId } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
       const history = await query(
         `SELECT 
           r.*,
@@ -265653,7 +267155,7 @@ Happy pet caring! \u{1F43E}`
          WHERE r.referrer_id = $1
          ORDER BY r.created_at DESC
          LIMIT $2`,
-        [customerId, limit2]
+        [customerId, limit]
       );
       return c.json({
         success: true,
@@ -265775,8 +267277,8 @@ function registerRewardsEndpoints(app2) {
   app2.get("/customer/:customerId/rewards/history", async (c) => {
     try {
       const { customerId } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let historyRows = [];
       try {
         const history = await query(
@@ -265791,7 +267293,7 @@ function registerRewardsEndpoints(app2) {
            WHERE customer_id = $1
            ORDER BY created_at DESC
            LIMIT $2 OFFSET $3`,
-          [customerId, limit2, offset2]
+          [customerId, limit, offset]
         );
         historyRows = history.rows;
       } catch (dbError) {
@@ -265940,8 +267442,8 @@ var GetSellersHandler = class extends BaseHandler {
   async handle(context3) {
     try {
       const status = context3.event.queryStringParameters?.status || "pending";
-      const limit2 = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset2 = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
       const sellersQuery = `
         SELECT 
           v.*,
@@ -265962,7 +267464,7 @@ var GetSellersHandler = class extends BaseHandler {
       if (status !== "all") {
         params.push(status);
       }
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const sellers = await query(sellersQuery, params);
       const countQuery = `
         SELECT COUNT(*) as total
@@ -265981,8 +267483,8 @@ var GetSellersHandler = class extends BaseHandler {
       return this.success({
         sellers: sellers.rows,
         total,
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     } catch (error) {
       console.error("Error fetching sellers:", error);
@@ -266781,9 +268283,9 @@ function registerSupportCrmEndpoints(app2) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select14 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select12("platform_settings", {
+        const settings = await select14("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -266794,16 +268296,16 @@ function registerSupportCrmEndpoints(app2) {
             await publishToSNS2("platform-notifications", {
               type: "support_ticket",
               ticket_id: ticket[0].id,
-              priority: body.priority || "medium",
-              subject: body.subject,
-              message: body.message,
-              customer_id: body.customer_id,
-              vendor_id: body.vendor_id,
+              priority: priority || "medium",
+              subject,
+              message: message2,
+              customer_id: customerId,
+              vendor_id: null,
               phone: supportPhone,
               email: supportEmail
             }, {
               messageType: "Transactional",
-              priority: body.priority || "medium"
+              priority: priority || "medium"
             });
             console.log(`\u2705 Support ticket notification sent to support team`);
           }
@@ -266827,8 +268329,8 @@ function registerSupportCrmEndpoints(app2) {
       const customerPhone = c.req.query("customerPhone");
       const agentId = c.req.query("agentId");
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let ticketsQuery = `SELECT * FROM support_tickets WHERE 1=1`;
       const params = [];
       let paramIndex = 1;
@@ -266852,7 +268354,7 @@ function registerSupportCrmEndpoints(app2) {
         paramIndex++;
       }
       ticketsQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const tickets = await query(ticketsQuery, params);
       return c.json({
         success: true,
@@ -267044,8 +268546,8 @@ function registerSupportCrmEndpoints(app2) {
     try {
       const status = c.req.query("status");
       const priority = c.req.query("priority");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       let queryStr = `
         SELECT 
           t.*,
@@ -267071,7 +268573,7 @@ function registerSupportCrmEndpoints(app2) {
         paramIndex++;
       }
       queryStr += ` ORDER BY t.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const tickets = await query(queryStr, params);
       const safeTickets = (tickets.rows || []).map((t) => ({
         id: String(t.id || ""),
@@ -267314,6 +268816,237 @@ function registerSupportCrmEndpoints(app2) {
     } catch (error) {
       console.error("Error auto-routing tickets:", error);
       return c.json({ error: error.message || "Failed to auto-route tickets" }, 500);
+    }
+  });
+  app2.post("/support/chat-handoff", async (c) => {
+    try {
+      const {
+        bookingId,
+        customerId,
+        customerPhone,
+        vendorId,
+        reason,
+        chatHistory,
+        // Last few messages for context
+        userType = "customer"
+      } = await c.req.json();
+      if (!bookingId) {
+        return c.json({ error: "bookingId is required for chat handoff" }, 400);
+      }
+      console.log(`\u{1F4DE} [SUPPORT-HANDOFF] Creating support ticket from chat for booking: ${bookingId}`);
+      const bookingResult = await select("bookings", { id: bookingId });
+      if (bookingResult.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookingResult[0];
+      const [customer, vendor, pet, service, reviews, prescriptions, chatMessages] = await Promise.all([
+        // Customer details
+        booking.customer_id ? select("customers", { id: booking.customer_id }).catch(() => []) : Promise.resolve([]),
+        // Vendor details
+        booking.vendor_id ? select("vendors", { id: booking.vendor_id }).catch(() => []) : Promise.resolve([]),
+        // Pet details
+        booking.pet_id ? select("pets", { id: booking.pet_id }).catch(() => []) : Promise.resolve([]),
+        // Service details
+        booking.service_id ? select("services", { id: booking.service_id }).catch(() => []) : Promise.resolve([]),
+        // Reviews for this booking
+        query(
+          `SELECT * FROM reviews WHERE booking_id = $1`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+        // Prescriptions
+        query(
+          `SELECT * FROM prescriptions WHERE booking_id = $1 AND is_active = true`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+        // Chat messages (last 20 for context)
+        query(
+          `SELECT * FROM chat_messages 
+           WHERE booking_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT 20`,
+          [bookingId]
+        ).catch(() => ({ rows: [] }))
+      ]);
+      const crmContext = {
+        booking: {
+          id: booking.id,
+          status: booking.status,
+          bookingDate: booking.booking_date,
+          bookingTime: booking.booking_time,
+          serviceStyle: booking.service_style,
+          totalAmount: booking.total_amount,
+          paymentStatus: booking.payment_status,
+          notes: booking.notes,
+          specialInstructions: booking.special_instructions,
+          completedAt: booking.completed_at,
+          cancelledAt: booking.cancelled_at,
+          cancellationReason: booking.cancellation_reason,
+          createdAt: booking.created_at
+        },
+        customer: customer[0] ? {
+          id: customer[0].id,
+          name: customer[0].full_name,
+          phone: customer[0].phone,
+          email: customer[0].email,
+          address: customer[0].address
+        } : null,
+        vendor: vendor[0] ? {
+          id: vendor[0].id,
+          businessName: vendor[0].business_name,
+          fullName: vendor[0].full_name,
+          phone: vendor[0].phone,
+          email: vendor[0].email,
+          vendorType: vendor[0].vendor_type
+        } : null,
+        pet: pet[0] ? {
+          id: pet[0].id,
+          name: pet[0].name,
+          species: pet[0].species,
+          breed: pet[0].breed,
+          age: pet[0].age,
+          weight: pet[0].weight
+        } : null,
+        service: service[0] ? {
+          id: service[0].id,
+          name: service[0].name,
+          category: service[0].category,
+          price: service[0].price
+        } : null,
+        review: reviews.rows[0] ? {
+          rating: reviews.rows[0].rating,
+          comment: reviews.rows[0].comment,
+          createdAt: reviews.rows[0].created_at
+        } : null,
+        prescriptions: prescriptions.rows.map((p) => ({
+          id: p.id,
+          diagnosis: p.diagnosis,
+          medications: p.medications,
+          notes: p.notes
+        })),
+        recentChatHistory: chatMessages.rows.reverse().map((m) => ({
+          sender: m.sender_type,
+          message: m.message,
+          time: m.created_at
+        }))
+      };
+      const ticket = await insert("support_tickets", {
+        customer_id: booking.customer_id || customerId || null,
+        customer_phone: customerPhone || customer[0]?.phone || null,
+        vendor_id: booking.vendor_id || vendorId || null,
+        booking_id: bookingId,
+        subject: `Post-Booking Support: ${service[0]?.name || "Service"} - ${customer[0]?.full_name || "Customer"}`,
+        message: reason || "Customer requested support after booking chat ended",
+        source: "chat_handoff",
+        priority: "medium",
+        category: "post_booking_support",
+        status: "open",
+        metadata: crmContext,
+        created_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      console.log(`\u2705 [SUPPORT-HANDOFF] Support ticket created: ${ticket[0].id}`);
+      try {
+        const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
+        await publishToSNS2("platform-notifications", {
+          type: "chat_handoff",
+          ticket_id: ticket[0].id,
+          booking_id: bookingId,
+          customer_name: customer[0]?.full_name || "Customer",
+          vendor_name: vendor[0]?.business_name || "Vendor",
+          priority: "medium"
+        }).catch(() => {
+        });
+      } catch (e) {
+      }
+      return c.json({
+        success: true,
+        ticket: {
+          id: ticket[0].id,
+          status: "open",
+          subject: ticket[0].subject
+        },
+        message: "Support ticket created successfully. Our team will assist you shortly."
+      });
+    } catch (error) {
+      console.error("Error creating chat handoff ticket:", error);
+      return c.json({ error: error.message || "Failed to create support ticket" }, 500);
+    }
+  });
+  app2.get("/support/ticket/:ticketId/context", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+      const tickets = await select("support_tickets", { id: ticketId });
+      if (tickets.length === 0) {
+        return c.json({ error: "Ticket not found" }, 404);
+      }
+      const ticket = tickets[0];
+      if (ticket.metadata && Object.keys(ticket.metadata).length > 0) {
+        return c.json({
+          success: true,
+          ticket: {
+            id: ticket.id,
+            status: ticket.status,
+            subject: ticket.subject,
+            message: ticket.message,
+            source: ticket.source,
+            priority: ticket.priority,
+            createdAt: ticket.created_at,
+            assignedAgentId: ticket.assigned_agent_id
+          },
+          context: ticket.metadata
+        });
+      }
+      const context3 = {};
+      if (ticket.booking_id) {
+        const bookings = await select("bookings", { id: ticket.booking_id });
+        if (bookings.length > 0) {
+          context3.booking = bookings[0];
+        }
+      }
+      if (ticket.customer_id) {
+        const customers = await select("customers", { id: ticket.customer_id });
+        if (customers.length > 0) {
+          context3.customer = {
+            id: customers[0].id,
+            name: customers[0].full_name,
+            phone: customers[0].phone,
+            email: customers[0].email
+          };
+        }
+      }
+      if (ticket.vendor_id) {
+        const vendors2 = await select("vendors", { id: ticket.vendor_id });
+        if (vendors2.length > 0) {
+          context3.vendor = {
+            id: vendors2[0].id,
+            businessName: vendors2[0].business_name,
+            phone: vendors2[0].phone
+          };
+        }
+      }
+      const responses = await query(
+        `SELECT * FROM support_ticket_responses 
+         WHERE ticket_id = $1 
+         ORDER BY created_at ASC`,
+        [ticketId]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        ticket: {
+          id: ticket.id,
+          status: ticket.status,
+          subject: ticket.subject,
+          message: ticket.message,
+          source: ticket.source,
+          priority: ticket.priority,
+          createdAt: ticket.created_at,
+          assignedAgentId: ticket.assigned_agent_id
+        },
+        context: context3,
+        responses: responses.rows
+      });
+    } catch (error) {
+      console.error("Error fetching ticket context:", error);
+      return c.json({ error: error.message || "Failed to fetch ticket context" }, 500);
     }
   });
 }
@@ -268685,8 +270418,8 @@ var GetTransactionsHandler = class extends BaseHandler {
   async handle(context3) {
     try {
       const params = context3.event.queryStringParameters || {};
-      const limit2 = parseInt(params.limit || "50", 10);
-      const offset2 = parseInt(params.offset || "0", 10);
+      const limit = parseInt(params.limit || "50", 10);
+      const offset = parseInt(params.offset || "0", 10);
       let transactions, total;
       try {
         transactions = await query(`
@@ -268703,7 +270436,7 @@ var GetTransactionsHandler = class extends BaseHandler {
           LEFT JOIN customers c ON c.id = t.customer_id
           ORDER BY t.created_at DESC
           LIMIT $1 OFFSET $2
-        `, [limit2, offset2]);
+        `, [limit, offset]);
         total = await query(`SELECT COUNT(*) as count FROM transactions`);
       } catch {
         const bookingTransactions = await query(`
@@ -268721,7 +270454,7 @@ var GetTransactionsHandler = class extends BaseHandler {
           WHERE b.payment_status = 'paid'
           ORDER BY b.created_at DESC
           LIMIT $1 OFFSET $2
-        `, [limit2, offset2]).catch(() => ({ rows: [] }));
+        `, [limit, offset]).catch(() => ({ rows: [] }));
         transactions = bookingTransactions;
         total = await query(`SELECT COUNT(*) as count FROM bookings WHERE payment_status = 'paid'`).catch(() => ({ rows: [{ count: "0" }] }));
       }
@@ -268741,8 +270474,8 @@ var GetTransactionsHandler = class extends BaseHandler {
         success: true,
         transactions: formattedTransactions,
         total: parseInt(total?.rows[0]?.count || "0", 10),
-        limit: limit2,
-        offset: offset2
+        limit,
+        offset
       });
     } catch (error) {
       console.error("Error fetching transactions:", error);
@@ -268833,29 +270566,29 @@ var GetUsersHandler = class extends BaseHandler {
     try {
       const params = context3.event.queryStringParameters || {};
       const role = params.role;
-      const limit2 = parseInt(params.limit || "50", 10);
-      const offset2 = parseInt(params.offset || "0", 10);
+      const limit = parseInt(params.limit || "50", 10);
+      const offset = parseInt(params.offset || "0", 10);
       let users;
       if (role === "admin") {
         users = await query(`
           SELECT * FROM admins
           ORDER BY created_at DESC
           LIMIT $1 OFFSET $2
-        `, [limit2, offset2]);
+        `, [limit, offset]);
       } else if (role === "vendor") {
         users = await query(`
           SELECT id, email, business_name as name, phone, status, created_at
           FROM vendors
           ORDER BY created_at DESC
           LIMIT $1 OFFSET $2
-        `, [limit2, offset2]);
+        `, [limit, offset]);
       } else {
         users = await query(`
           SELECT id, email, name, phone, created_at
           FROM customers
           ORDER BY created_at DESC
           LIMIT $1 OFFSET $2
-        `, [limit2, offset2]);
+        `, [limit, offset]);
       }
       return this.success({ success: true, users: users.rows });
     } catch (error) {
@@ -269132,8 +270865,8 @@ function registerAdminComprehensiveEndpoints(app2) {
     try {
       const params = c.req.query();
       const status = params.status;
-      const limit2 = parseInt(params.limit || "50", 10);
-      const offset2 = parseInt(params.offset || "0", 10);
+      const limit = parseInt(params.limit || "50", 10);
+      const offset = parseInt(params.offset || "0", 10);
       let queryText = "SELECT * FROM settlements WHERE 1=1";
       const queryParams = [];
       let paramIndex = 1;
@@ -269143,7 +270876,7 @@ function registerAdminComprehensiveEndpoints(app2) {
         paramIndex++;
       }
       queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      queryParams.push(limit2, offset2);
+      queryParams.push(limit, offset);
       const settlements = await query(queryText, queryParams);
       const total = await query("SELECT COUNT(*) as count FROM settlements" + (status && status !== "all" ? ` WHERE settlement_status = '${status}'` : "")).catch(() => ({ rows: [{ count: "0" }] }));
       return c.json({
@@ -269703,7 +271436,7 @@ function registerProblemGridEndpoints(app2) {
           // Default relevance
         };
         if (latitude && longitude && service.latitude && service.longitude) {
-          serviceData.distance = calculateDistance5(
+          serviceData.distance = calculateDistance6(
             parseFloat(latitude),
             parseFloat(longitude),
             parseFloat(service.latitude),
@@ -269818,7 +271551,7 @@ function registerProblemGridEndpoints(app2) {
             distance: null
           };
           if (latitude && longitude && vendor.latitude && vendor.longitude) {
-            vendorData.distance = calculateDistance5(
+            vendorData.distance = calculateDistance6(
               parseFloat(latitude),
               parseFloat(longitude),
               parseFloat(vendor.latitude),
@@ -269846,7 +271579,7 @@ function registerProblemGridEndpoints(app2) {
   });
   app2.get("/customer/problems/trending", async (c) => {
     try {
-      const limit2 = parseInt(c.req.query("limit") || "10", 10);
+      const limit = parseInt(c.req.query("limit") || "10", 10);
       const trendingResult = await query(
         `SELECT 
           pgm.problem_id,
@@ -269863,7 +271596,7 @@ function registerProblemGridEndpoints(app2) {
         GROUP BY pgm.problem_id, pgm.problem_name, pgm.problem_display_name
         ORDER BY booking_count DESC, vendor_count DESC
         LIMIT $1`,
-        [limit2]
+        [limit]
       );
       const trending = trendingResult.rows.map((row) => row.problem_id);
       return c.json({
@@ -269977,7 +271710,7 @@ function getProblemCategory(problemId) {
   }
   return "veterinary";
 }
-function calculateDistance5(lat1, lon1, lat2, lon2) {
+function calculateDistance6(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -269992,8 +271725,8 @@ function registerVendorDashboardMissingEndpoints(app2) {
   app2.get("/vendor/notifications/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "10", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "10", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       console.log(`\u{1F514} [NOTIFICATIONS] Fetching notifications for vendor: ${vendorId}`);
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({
@@ -270008,7 +271741,7 @@ function registerVendorDashboardMissingEndpoints(app2) {
          WHERE recipient_id = $1 AND recipient_type = 'vendor'
          ORDER BY created_at DESC
          LIMIT $2 OFFSET $3`,
-        [vendorId, limit2, offset2]
+        [vendorId, limit, offset]
       ).catch(() => ({ rows: [] }));
       const unreadResult = await query(
         `SELECT COUNT(*) as count FROM notifications 
@@ -270034,8 +271767,8 @@ function registerVendorDashboardMissingEndpoints(app2) {
   app2.get("/vendor/:vendorId/notifications", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const limit2 = parseInt(c.req.query("limit") || "10", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "10", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       console.log(`\u{1F514} [NOTIFICATIONS] Fetching notifications (alt route) for vendor: ${vendorId}`);
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({
@@ -270050,7 +271783,7 @@ function registerVendorDashboardMissingEndpoints(app2) {
          WHERE recipient_id = $1 AND recipient_type = 'vendor'
          ORDER BY created_at DESC
          LIMIT $2 OFFSET $3`,
-        [vendorId, limit2, offset2]
+        [vendorId, limit, offset]
       ).catch(() => ({ rows: [] }));
       const unreadResult = await query(
         `SELECT COUNT(*) as count FROM notifications 
@@ -270958,8 +272691,8 @@ function registerVendorSupportEndpoints(app2) {
       const vendorId = c.req.query("vendorId");
       const status = c.req.query("status");
       const category = c.req.query("category");
-      const limit2 = parseInt(c.req.query("limit") || "50", 10);
-      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
       if (!vendorId) {
         return c.json({
           success: false,
@@ -270992,7 +272725,7 @@ function registerVendorSupportEndpoints(app2) {
         ORDER BY st.created_at DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `;
-      params.push(limit2, offset2);
+      params.push(limit, offset);
       const result = await query(queryStr, params);
       let countQuery = "SELECT COUNT(*) FROM support_tickets WHERE vendor_id = $1";
       const countParams = [vendorId];
@@ -271014,9 +272747,9 @@ function registerVendorSupportEndpoints(app2) {
         tickets: result.rows || [],
         pagination: {
           total,
-          limit: limit2,
-          offset: offset2,
-          hasMore: offset2 + limit2 < total
+          limit,
+          offset,
+          hasMore: offset + limit < total
         }
       });
     } catch (error) {
@@ -271239,7 +272972,7 @@ var DEFAULT_PHARMACY_RADIUS_KM = 20;
 var ORDER_TIMEOUT_MINUTES = 5;
 var BASE_DELIVERY_FEE = 30;
 var PER_KM_RATE = 10;
-function calculateDistance6(lat1, lon1, lat2, lon2) {
+function calculateDistance7(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -271306,7 +273039,7 @@ function registerPharmacyOrderEndpoints(app2) {
       const nearbyPharmacies = pharmaciesResult.rows.filter((pharmacy) => {
         if (!pharmacy.latitude || !pharmacy.longitude) return true;
         if (!customerLat || !customerLon) return true;
-        const distance = calculateDistance6(
+        const distance = calculateDistance7(
           customerLat,
           customerLon,
           pharmacy.latitude,
@@ -271314,7 +273047,7 @@ function registerPharmacyOrderEndpoints(app2) {
         );
         return distance <= DEFAULT_PHARMACY_RADIUS_KM;
       }).map((pharmacy) => {
-        const distance = customerLat && customerLon && pharmacy.latitude && pharmacy.longitude ? calculateDistance6(customerLat, customerLon, pharmacy.latitude, pharmacy.longitude) : 5;
+        const distance = customerLat && customerLon && pharmacy.latitude && pharmacy.longitude ? calculateDistance7(customerLat, customerLon, pharmacy.latitude, pharmacy.longitude) : 5;
         return {
           ...pharmacy,
           distance: Math.round(distance * 10) / 10,
@@ -271728,7 +273461,7 @@ function registerPharmacyOrderEndpoints(app2) {
     try {
       const { pharmacyId } = c.req.param();
       const status = c.req.query("status");
-      const limit2 = parseInt(c.req.query("limit") || "50");
+      const limit = parseInt(c.req.query("limit") || "50");
       let ordersQuery = `
         SELECT 
           o.*,
@@ -271748,7 +273481,7 @@ function registerPharmacyOrderEndpoints(app2) {
         params.push(status);
       }
       ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${params.length + 1}`;
-      params.push(limit2);
+      params.push(limit);
       const orders = await query(ordersQuery, params);
       const ordersWithItems = await Promise.all(orders.rows.map(async (order) => {
         const items = await query(`SELECT * FROM order_items WHERE order_id = $1`, [order.id]);
@@ -271890,6 +273623,8 @@ registerFileUploadEndpoints(app);
 registerSubscriptionEndpoints(app);
 registerInsuranceEndpoints(app);
 registerTrainingProgressEndpoints(app);
+registerPackageBookingEndpoints(app);
+registerWalkerGPSEndpoints(app);
 registerPromotionEndpoints(app);
 registerEventEndpoints(app);
 registerHealthEndpoints(app);

@@ -856,6 +856,227 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   });
 
   // ============================================
+  // NUTRITIONIST: MEAL PRODUCTS & ORDERS
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/meal-products
+   * Get meal products for a nutritionist vendor
+   */
+  app.get("/vendor/:vendorId/meal-products", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Try products table first, then meal_plans as fallback
+      let products: any[] = [];
+      
+      try {
+        const productsResult = await query(
+          `SELECT * FROM products 
+           WHERE vendor_id = $1 AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
+           ORDER BY created_at DESC`,
+          [vendorId]
+        );
+        products = productsResult.rows || [];
+      } catch {
+        // Fallback to meal_plans table
+        const mealPlans = await select('meal_plans', { vendor_id: vendorId });
+        products = mealPlans.map((mp: any) => ({
+          id: mp.id,
+          name: mp.name,
+          description: mp.description,
+          price: mp.price,
+          category: 'meal_plan',
+          ...mp,
+        }));
+      }
+      
+      return c.json({ success: true, products, total: products.length });
+    } catch (error: any) {
+      console.error('Error fetching meal products:', error);
+      return c.json({ success: true, products: [], total: 0 });
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/meal-products
+   * Create a meal product for a nutritionist vendor
+   */
+  app.post("/vendor/:vendorId/meal-products", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const data = await c.req.json();
+      
+      // Try to insert into products table
+      try {
+        const product = await insert('products', {
+          vendor_id: vendorId,
+          name: data.name,
+          description: data.description,
+          price: data.price,
+          category: 'meal_plan',
+          sku: `MP-${Date.now()}`,
+          stock_quantity: data.stockQuantity || 100,
+          is_active: true,
+          metadata: JSON.stringify({
+            ingredients: data.ingredients,
+            nutritionalValue: data.nutritionalValue,
+            preparationMethod: data.preparationMethod,
+            preparationLeadTime: data.preparationLeadTime,
+            feedingGuidelines: data.feedingGuidelines,
+            storageInstructions: data.storageInstructions,
+            shelfLife: data.shelfLife,
+            packSize: data.packSize,
+            dietType: data.dietType,
+            suitableFor: data.suitableFor,
+            petTypes: data.petTypes,
+          }),
+        });
+        return c.json({ success: true, product: product[0] });
+      } catch {
+        // Fallback to meal_plans table
+        const mealPlan = await insert('meal_plans', {
+          vendor_id: vendorId,
+          name: data.name,
+          description: data.description,
+          price: data.price,
+          pet_types: data.petTypes || ['Dog', 'Cat'],
+          duration_days: data.durationDays || 7,
+          meals_per_day: data.mealsPerDay || 2,
+          is_active: true,
+        });
+        return c.json({ success: true, product: mealPlan[0] });
+      }
+    } catch (error: any) {
+      console.error('Error creating meal product:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/meal-products/:productId
+   * Update a meal product
+   */
+  app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
+    try {
+      const { vendorId, productId } = c.req.param();
+      const data = await c.req.json();
+      
+      await query(
+        `UPDATE products SET 
+          name = COALESCE($1, name),
+          description = COALESCE($2, description),
+          price = COALESCE($3, price),
+          metadata = COALESCE($4, metadata),
+          updated_at = NOW()
+         WHERE id = $5 AND vendor_id = $6`,
+        [
+          data.name,
+          data.description,
+          data.price,
+          JSON.stringify(data.metadata || {}),
+          productId,
+          vendorId,
+        ]
+      );
+      
+      return c.json({ success: true, message: 'Product updated' });
+    } catch (error: any) {
+      console.error('Error updating meal product:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/meal-products/:productId
+   * Delete a meal product
+   */
+  app.delete("/vendor/:vendorId/meal-products/:productId", async (c) => {
+    try {
+      const { vendorId, productId } = c.req.param();
+      
+      await query(
+        `DELETE FROM products WHERE id = $1 AND vendor_id = $2`,
+        [productId, vendorId]
+      );
+      
+      return c.json({ success: true, message: 'Product deleted' });
+    } catch (error: any) {
+      console.error('Error deleting meal product:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/meal-orders
+   * Get meal/nutrition delivery orders for a vendor
+   */
+  app.get("/vendor/:vendorId/meal-orders", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const status = c.req.query('status');
+      
+      let ordersQuery = `
+        SELECT 
+          o.*,
+          c.full_name as customer_name,
+          c.phone as customer_phone
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.vendor_id = $1
+          AND (o.order_type = 'meal_plan_delivery' OR o.order_type = 'nutrition_delivery' OR o.order_type = 'food_delivery')
+      `;
+      
+      const params: any[] = [vendorId];
+      
+      if (status) {
+        ordersQuery += ` AND o.status = $2`;
+        params.push(status);
+      }
+      
+      ordersQuery += ` ORDER BY o.created_at DESC LIMIT 100`;
+      
+      const orders = await query(ordersQuery, params);
+      
+      // Get order items for each order
+      const ordersWithItems = await Promise.all(orders.rows.map(async (order: any) => {
+        try {
+          const items = await query(`SELECT * FROM order_items WHERE order_id = $1`, [order.id]);
+          return { ...order, items: items.rows };
+        } catch {
+          return { ...order, items: [] };
+        }
+      }));
+      
+      return c.json({ success: true, orders: ordersWithItems, total: ordersWithItems.length });
+    } catch (error: any) {
+      console.error('Error fetching meal orders:', error);
+      return c.json({ success: true, orders: [], total: 0 });
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/meal-orders/:orderId/status
+   * Update meal order status
+   */
+  app.put("/vendor/:vendorId/meal-orders/:orderId/status", async (c) => {
+    try {
+      const { vendorId, orderId } = c.req.param();
+      const { status } = await c.req.json();
+      
+      await query(
+        `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND vendor_id = $3`,
+        [status, orderId, vendorId]
+      );
+      
+      return c.json({ success: true, message: 'Order status updated' });
+    } catch (error: any) {
+      console.error('Error updating meal order status:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
   // CAFE: TABLE & PAX CONFIGURATION
   // ============================================
 
