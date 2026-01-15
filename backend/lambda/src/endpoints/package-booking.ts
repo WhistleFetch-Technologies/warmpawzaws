@@ -98,83 +98,9 @@ export function registerPackageBookingEndpoints(app: Hono) {
   });
 
   /**
-   * GET /packages/check-for-booking
-   * Check if customer has applicable package before creating a booking
-   * Accepts either customerId (UUID) or phone (string) to identify customer
+   * Note: GET /packages/check-for-booking is now in packages.ts
+   * to avoid route conflicts with /packages/:packageId
    */
-  app.get("/packages/check-for-booking", async (c) => {
-    try {
-      let customerId = c.req.query('customerId');
-      const phone = c.req.query('phone');
-      const vendorId = c.req.query('vendorId');
-      const serviceType = c.req.query('serviceType');
-
-      // Resolve phone to customerId if phone provided
-      if (phone && !customerId) {
-        const cleanPhone = phone.replace(/[^0-9]/g, '');
-        if (cleanPhone && cleanPhone.length >= 10) {
-          const customers = await query(
-            'SELECT id FROM customers WHERE phone = $1 LIMIT 1',
-            [cleanPhone]
-          );
-          if (customers.rows.length > 0) {
-            customerId = customers.rows[0].id;
-          }
-        }
-      }
-
-      if (!customerId || !vendorId) {
-        return c.json({ 
-          hasActivePackage: false,
-          message: 'customerId (or phone) and vendorId required'
-        });
-      }
-
-      // Check for active packages with this vendor
-      const result = await query(`
-        SELECT 
-          pp.*,
-          v.business_name as vendor_name,
-          pp.total_sessions - pp.remaining_sessions as sessions_used
-        FROM package_purchases pp
-        LEFT JOIN vendors v ON pp.vendor_id = v.id
-        WHERE pp.customer_id = $1
-        AND pp.vendor_id = $2
-        AND pp.status = 'active'
-        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
-        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
-        ORDER BY pp.expires_at ASC NULLS LAST
-        LIMIT 1
-      `, [customerId, vendorId]);
-
-      if (result.rows.length === 0) {
-        return c.json({
-          hasActivePackage: false,
-          package: null
-        });
-      }
-
-      const pkg = result.rows[0];
-
-      return c.json({
-        hasActivePackage: true,
-        package: {
-          id: pkg.id,
-          packageName: pkg.package_name,
-          vendorName: pkg.vendor_name,
-          totalSessions: pkg.total_sessions,
-          remainingSessions: pkg.remaining_sessions,
-          sessionsUsed: pkg.sessions_used,
-          expiresAt: pkg.expires_at,
-          isUnlimited: pkg.unlimited_usage,
-          packageType: pkg.package_type
-        }
-      });
-    } catch (error: any) {
-      console.error('Error checking packages for booking:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
 
   /**
    * POST /bookings/create-from-package

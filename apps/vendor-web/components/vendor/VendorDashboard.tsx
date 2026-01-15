@@ -610,15 +610,17 @@ export function VendorDashboard({
               )}
               
               {/* Prescription Builder */}
-              {onNavigateToPrescription && capabilities.prescription && (
-                <button
-                  onClick={onNavigateToPrescription}
-                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
-                >
-                  <FileText className="w-6 h-6 text-blue-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Rx</span>
-                </button>
-              )}
+              <CapabilityGate capability="prescription">
+                {onNavigateToPrescription && (
+                  <button
+                    onClick={onNavigateToPrescription}
+                    className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                  >
+                    <FileText className="w-6 h-6 text-blue-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Rx</span>
+                  </button>
+                )}
+              </CapabilityGate>
               
               {/* Progress Tracking */}
               {onNavigateToProgressTracking && capabilities.progress_tracking && (
