@@ -41,20 +41,23 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
           
           if (notifications.length > 0) {
             const latestNotification = notifications[0];
+            // Support both 'id' (from database) and 'notificationId' (legacy) property names
+            const latestId = latestNotification.id || latestNotification.notificationId;
+            const isRead = latestNotification.is_read || latestNotification.read || latestNotification.isRead;
             
-            console.log(`🔔 [VENDOR-NOTIFICATION-SERVICE] Latest: ${latestNotification.notificationId}, Last: ${lastNotificationIdRef.current}`);
+            console.log(`🔔 [VENDOR-NOTIFICATION-SERVICE] Latest: ${latestId}, Last: ${lastNotificationIdRef.current}`);
             
             // Skip initial load to avoid showing old notifications
             if (isInitialLoadRef.current) {
-              lastNotificationIdRef.current = latestNotification.notificationId;
+              lastNotificationIdRef.current = latestId;
               isInitialLoadRef.current = false;
               console.log(`🔔 [VENDOR-NOTIFICATION-SERVICE] Initial load complete, will track future notifications`);
               return;
             }
             
             // Check if there's a new notification
-            if (latestNotification.notificationId !== lastNotificationIdRef.current && !latestNotification.read) {
-              lastNotificationIdRef.current = latestNotification.notificationId;
+            if (latestId !== lastNotificationIdRef.current && !isRead) {
+              lastNotificationIdRef.current = latestId;
               
               console.log(`🎉 [VENDOR-NOTIFICATION-SERVICE] NEW NOTIFICATION DETECTED!`, latestNotification);
               

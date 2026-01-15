@@ -111,7 +111,18 @@ export default function ShopPage() {
         apiClient.get<any>('/ecommerce/categories'),
       ]);
       
-      setProducts((productsRes as any)?.products || []);
+      // Map API response to Product interface (stock_quantity -> stock)
+      const productsData = ((productsRes as any)?.products || []).map((p: any) => ({
+        ...p,
+        stock: p.stock_quantity || p.stock || 0,
+        price: parseFloat(p.price) || 0,
+        original_price: p.original_price ? parseFloat(p.original_price) : undefined,
+        rating: p.rating || 4.5,
+        review_count: p.review_count || 0,
+        images: p.images || [],
+        emoji: p.emoji || '🐾',
+      }));
+      setProducts(productsData);
       setCategories((categoriesRes as any)?.categories || []);
     } catch (err: any) {
       console.error('Error loading shop:', err);

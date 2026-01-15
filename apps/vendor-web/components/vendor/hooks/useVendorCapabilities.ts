@@ -72,9 +72,11 @@ function capabilitiesToMap(capabilities: string[]): Record<string, boolean> {
     'facility_management': ['facility', 'facility_management', 'facilityManagement'],
   };
   
-  capabilities.forEach(cap => {
+  // ✅ FIX: Filter out null/undefined capabilities before processing
+  capabilities.filter(Boolean).forEach(cap => {
+    if (!cap) return; // Extra safety check
     // Normalize capability names (handle both snake_case and camelCase)
-    const normalized = cap.toLowerCase().replace(/-/g, '_');
+    const normalized = (cap || '').toLowerCase().replace(/-/g, '_');
     map[normalized] = true;
     
     // Also add camelCase version

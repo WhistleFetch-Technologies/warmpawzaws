@@ -404,8 +404,10 @@ export function VendorServiceCatalogView({
     }
 
     // ✅ FIX: Normalize role names for comparison (lowercase, handle variations)
-    const normalizedRoleName = roleName.toLowerCase();
-    const normalizedApplicableRoles = applicableRoles.map(r => r.toLowerCase());
+    const normalizedRoleName = (roleName || '').toLowerCase();
+    const normalizedApplicableRoles = applicableRoles
+      .filter(r => r != null) // Filter out null/undefined values
+      .map(r => (r || '').toLowerCase());
     
     // Check direct match
     if (normalizedApplicableRoles.includes(normalizedRoleName)) {

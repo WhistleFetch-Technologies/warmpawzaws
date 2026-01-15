@@ -476,6 +476,140 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/bookings/:bookingId/details
+   * Get detailed booking information for appointment modal
+   */
+  app.get("/vendor/bookings/:bookingId/details", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+
+      console.log(`📋 [VENDOR-BOOKINGS] Fetching booking details for: ${bookingId}`);
+
+      // Validate UUID format
+      if (!isValidUUID(bookingId)) {
+        return c.json({ error: 'Invalid booking ID format' }, 400);
+      }
+
+      // Get booking
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Fetch related data in parallel
+      const [customer, service, pet, vendor, prescriptions, activities] = await Promise.all([
+        // Customer info
+        booking.customer_id
+          ? select('customers', { id: booking.customer_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Service info
+        booking.service_id
+          ? select('services', { id: booking.service_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Pet info
+        booking.pet_id
+          ? select('pets', { id: booking.pet_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Vendor info
+        booking.vendor_id
+          ? select('vendors', { id: booking.vendor_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Prescriptions
+        query(
+          `SELECT * FROM prescriptions 
+           WHERE booking_id = $1 AND is_active = true
+           ORDER BY created_at DESC`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+        // Activities/history
+        query(
+          `SELECT * FROM booking_activities 
+           WHERE booking_id = $1
+           ORDER BY created_at DESC`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+      ]);
+
+      // Build enriched booking response
+      const enrichedBooking = {
+        id: booking.id,
+        bookingId: booking.id,
+        status: booking.status,
+        bookingDate: booking.booking_date,
+        bookingTime: booking.booking_time,
+        duration: booking.duration || 30,
+        totalAmount: parseFloat(booking.total_amount || '0'),
+        serviceStyle: booking.service_style || 'at_clinic',
+        notes: booking.notes,
+        specialInstructions: booking.special_instructions,
+        paymentStatus: booking.payment_status || 'pending',
+        
+        // Customer details
+        customerId: booking.customer_id,
+        customerName: customer.length > 0 ? customer[0].full_name : 'Unknown Customer',
+        customerPhone: customer.length > 0 ? customer[0].phone : null,
+        customerEmail: customer.length > 0 ? customer[0].email : null,
+        customerAddress: customer.length > 0 ? customer[0].address : null,
+        
+        // Pet details
+        petId: booking.pet_id,
+        petName: pet.length > 0 ? pet[0].name : booking.pet_name || 'Unknown Pet',
+        petType: pet.length > 0 ? pet[0].species : booking.pet_type,
+        petBreed: pet.length > 0 ? pet[0].breed : null,
+        petAge: pet.length > 0 ? pet[0].age : null,
+        petWeight: pet.length > 0 ? pet[0].weight : null,
+        
+        // Service details
+        serviceId: booking.service_id,
+        serviceName: service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service',
+        serviceCategory: service.length > 0 ? service[0].category : null,
+        serviceDescription: service.length > 0 ? service[0].description : null,
+        
+        // Vendor details
+        vendorId: booking.vendor_id,
+        vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,
+        vendorPhone: vendor.length > 0 ? vendor[0].phone : null,
+        
+        // OTP and session tracking
+        otpCode: booking.otp_code,
+        otpVerifiedAt: booking.otp_verified_at,
+        sessionStartedAt: booking.session_started_at,
+        sessionEndedAt: booking.session_ended_at,
+        completedAt: booking.completed_at,
+        cancelledAt: booking.cancelled_at,
+        
+        // Timestamps
+        createdAt: booking.created_at,
+        updatedAt: booking.updated_at,
+      };
+
+      return c.json({
+        success: true,
+        booking: enrichedBooking,
+        activities: activities.rows.map((a: any) => ({
+          id: a.id,
+          type: a.activity_type,
+          description: a.description,
+          performedBy: a.performed_by,
+          createdAt: a.created_at,
+        })),
+        prescriptions: prescriptions.rows.map((p: any) => ({
+          id: p.id,
+          notes: p.notes,
+          medications: p.medications,
+          uploadedAt: p.created_at,
+          file: p.file_url,
+        })),
+      });
+    } catch (error: any) {
+      console.error('❌ [VENDOR-BOOKINGS] Error fetching booking details:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/:vendorId/bookings/today
    * Get today's bookings for a vendor
    */

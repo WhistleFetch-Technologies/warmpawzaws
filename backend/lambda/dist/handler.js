@@ -1089,16 +1089,16 @@ var require_misc = __commonJS({
     var worldwide = require_worldwide();
     function uuid4() {
       const gbl = worldwide.GLOBAL_OBJ;
-      const crypto18 = gbl.crypto || gbl.msCrypto;
+      const crypto19 = gbl.crypto || gbl.msCrypto;
       let getRandomByte = () => Math.random() * 16;
       try {
-        if (crypto18 && crypto18.randomUUID) {
-          return crypto18.randomUUID().replace(/-/g, "");
+        if (crypto19 && crypto19.randomUUID) {
+          return crypto19.randomUUID().replace(/-/g, "");
         }
-        if (crypto18 && crypto18.getRandomValues) {
+        if (crypto19 && crypto19.getRandomValues) {
           getRandomByte = () => {
             const typedArray = new Uint8Array(1);
-            crypto18.getRandomValues(typedArray);
+            crypto19.getRandomValues(typedArray);
             return typedArray[0];
           };
         }
@@ -42147,7 +42147,7 @@ var require_sso_credentials = __commonJS({
   "node_modules/aws-sdk/lib/credentials/sso_credentials.js"() {
     var AWS = require_core();
     var path = require("path");
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var iniLoader = AWS.util.iniLoader;
     AWS.SsoCredentials = AWS.util.inherit(AWS.Credentials, {
       /**
@@ -42273,7 +42273,7 @@ var require_sso_credentials = __commonJS({
         }
         try {
           var EXPIRE_WINDOW_MS = 15 * 60 * 1e3;
-          var hasher = crypto18.createHash("sha1");
+          var hasher = crypto19.createHash("sha1");
           var fileName = hasher.update(profile.sso_start_url).digest("hex") + ".json";
           var cachePath = path.join(
             iniLoader.getHomeDir(),
@@ -42594,7 +42594,7 @@ var require_token_provider_chain = __commonJS({
 var require_sso_token_provider = __commonJS({
   "node_modules/aws-sdk/lib/token/sso_token_provider.js"() {
     var AWS = require_core();
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var fs = require("fs");
     var path = require("path");
     var iniLoader = AWS.util.iniLoader;
@@ -42684,7 +42684,7 @@ var require_sso_token_provider = __commonJS({
             { code: "SSOTokenProviderFailure" }
           );
         }
-        var hasher = crypto18.createHash("sha1");
+        var hasher = crypto19.createHash("sha1");
         var fileName = hasher.update(ssoSessionName).digest("hex") + ".json";
         var cachePath = path.join(iniLoader.getHomeDir(), ".aws", "sso", "cache", fileName);
         var tokenFromCache = JSON.parse(fs.readFileSync(cachePath));
@@ -75720,22 +75720,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.NodeCrypto = void 0;
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto18.createHash("sha256").update(str).digest("base64");
+        return crypto19.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto18.randomBytes(count).toString("base64");
+        return crypto19.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto18.createVerify("RSA-SHA256");
+        const verifier = crypto19.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto18.createSign("RSA-SHA256");
+        const signer = crypto19.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -75753,7 +75753,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto18.createHash("sha256").update(str).digest("hex");
+        return crypto19.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -75765,7 +75765,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto18.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto19.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports2.NodeCrypto = NodeCrypto;
@@ -76543,10 +76543,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto18 = (0, crypto_1.createCrypto)();
-        const randomString = crypto18.randomBytesBase64(96);
+        const crypto19 = (0, crypto_1.createCrypto)();
+        const randomString = crypto19.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto18.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto19.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -76990,7 +76990,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto18 = (0, crypto_1.createCrypto)();
+        const crypto19 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -77003,7 +77003,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto18.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto19.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -77014,7 +77014,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto18.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto19.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -77031,7 +77031,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto18.verify(cert, signed, signature);
+        const verified = await crypto19.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -77399,14 +77399,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports2, module2) {
     var Buffer5 = require_safe_buffer().Buffer;
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto18.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto19.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -77496,17 +77496,17 @@ var require_jwa = __commonJS({
       return function sign3(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto18.createHmac("sha" + bits, secret);
+        var hmac = crypto19.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual3 = "timingSafeEqual" in crypto18 ? function timingSafeEqual4(a, b) {
+    var timingSafeEqual3 = "timingSafeEqual" in crypto19 ? function timingSafeEqual4(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto18.timingSafeEqual(a, b);
+      return crypto19.timingSafeEqual(a, b);
     } : function timingSafeEqual4(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -77523,7 +77523,7 @@ var require_jwa = __commonJS({
       return function sign3(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto18.createSign("RSA-SHA" + bits);
+        var signer = crypto19.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -77533,7 +77533,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto18.createVerify("RSA-SHA" + bits);
+        var verifier = crypto19.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -77542,11 +77542,11 @@ var require_jwa = __commonJS({
       return function sign3(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto18.createSign("RSA-SHA" + bits);
+        var signer = crypto19.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto18.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto18.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto19.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto19.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -77556,12 +77556,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto18.createVerify("RSA-SHA" + bits);
+        var verifier = crypto19.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto18.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto18.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto19.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto19.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -79719,14 +79719,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports2.AwsRequestSigner = AwsRequestSigner;
-    async function sign3(crypto18, key, msg) {
-      return await crypto18.signWithHmacSha256(key, msg);
+    async function sign3(crypto19, key, msg) {
+      return await crypto19.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto18, key, dateStamp, region, serviceName) {
-      const kDate = await sign3(crypto18, `AWS4${key}`, dateStamp);
-      const kRegion = await sign3(crypto18, kDate, region);
-      const kService = await sign3(crypto18, kRegion, serviceName);
-      const kSigning = await sign3(crypto18, kService, "aws4_request");
+    async function getSigningKey(crypto19, key, dateStamp, region, serviceName) {
+      const kDate = await sign3(crypto19, `AWS4${key}`, dateStamp);
+      const kRegion = await sign3(crypto19, kDate, region);
+      const kService = await sign3(crypto19, kRegion, serviceName);
+      const kSigning = await sign3(crypto19, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -81311,24 +81311,24 @@ var require_googleauth = __commonJS({
           const signed = await client2.sign(data);
           return signed.signedBlob;
         }
-        const crypto18 = (0, crypto_1.createCrypto)();
+        const crypto19 = (0, crypto_1.createCrypto)();
         if (client2 instanceof jwtclient_1.JWT && client2.key) {
-          const sign3 = await crypto18.sign(client2.key, data);
+          const sign3 = await crypto19.sign(client2.key, data);
           return sign3;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto18, creds.client_email, data, endpoint);
+        return this.signBlob(crypto19, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto18, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto19, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto18.encodeBase64StringUtf8(data)
+            payload: crypto19.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -81745,7 +81745,7 @@ var require_src10 = __commonJS({
 var require_object_hash = __commonJS({
   "node_modules/object-hash/index.js"(exports2, module2) {
     "use strict";
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     exports2 = module2.exports = objectHash;
     function objectHash(object, options) {
       options = applyDefaults(object, options);
@@ -81763,7 +81763,7 @@ var require_object_hash = __commonJS({
     exports2.keysMD5 = function(object) {
       return objectHash(object, { algorithm: "md5", encoding: "hex", excludeValues: true });
     };
-    var hashes = crypto18.getHashes ? crypto18.getHashes().slice() : ["sha1", "md5"];
+    var hashes = crypto19.getHashes ? crypto19.getHashes().slice() : ["sha1", "md5"];
     hashes.push("passthrough");
     var encodings = ["buffer", "hex", "binary", "base64"];
     function applyDefaults(object, sourceOptions) {
@@ -81809,7 +81809,7 @@ var require_object_hash = __commonJS({
     function hash(object, options) {
       var hashingStream;
       if (options.algorithm !== "passthrough") {
-        hashingStream = crypto18.createHash(options.algorithm);
+        hashingStream = crypto19.createHash(options.algorithm);
       } else {
         hashingStream = new PassThrough();
       }
@@ -103783,7 +103783,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports2, module2) {
     "use strict";
-    var crypto18 = require_utils9();
+    var crypto19 = require_utils9();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function startSession(mechanisms, stream2) {
       const candidates = ["SCRAM-SHA-256"];
@@ -103795,7 +103795,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream2.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto18.randomBytes(18).toString("base64");
+      const clientNonce = crypto19.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream2 ? "y" : "n";
       return {
         mechanism,
@@ -103830,20 +103830,20 @@ var require_sasl = __commonJS({
         const peerCert = stream2.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto18.hashByName(hashName, peerCert);
+        const certHash = await crypto19.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto18.deriveKey(password, saltBytes, sv.iteration);
-      const clientKey = await crypto18.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto18.sha256(clientKey);
-      const clientSignature = await crypto18.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto19.deriveKey(password, saltBytes, sv.iteration);
+      const clientKey = await crypto19.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto19.sha256(clientKey);
+      const clientSignature = await crypto19.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto18.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto18.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto19.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto19.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -105979,7 +105979,7 @@ var require_client3 = __commonJS({
     var Query2 = require_query2();
     var defaults2 = require_defaults2();
     var Connection2 = require_connection();
-    var crypto18 = require_utils9();
+    var crypto19 = require_utils9();
     var Client3 = class extends EventEmitter {
       constructor(config) {
         super();
@@ -106174,7 +106174,7 @@ var require_client3 = __commonJS({
       _handleAuthMD5Password(msg) {
         this._checkPgPass(async () => {
           try {
-            const hashedPassword = await crypto18.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto19.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e) {
             this.emit("error", e);
@@ -112082,9 +112082,9 @@ function generateTemporaryPassword() {
   return password;
 }
 function generatePermanentPassword(phone) {
-  const crypto18 = require("crypto");
+  const crypto19 = require("crypto");
   const secret = process.env.COGNITO_PASSWORD_SECRET || "warmpawz-default-secret-change-me";
-  const hmac = crypto18.createHmac("sha256", secret).update(phone).digest("hex");
+  const hmac = crypto19.createHmac("sha256", secret).update(phone).digest("hex");
   return `Wp${hmac.substring(0, 12)}!@`;
 }
 async function verifyCognitoToken3(token) {
@@ -131214,12 +131214,12 @@ var require_pem = __commonJS({
       var candidate = -1;
       for (var i = 0; i < rval.length; ++i, ++length) {
         if (length > 65 && candidate !== -1) {
-          var insert6 = rval[candidate];
-          if (insert6 === ",") {
+          var insert7 = rval[candidate];
+          if (insert7 === ",") {
             ++candidate;
             rval = rval.substr(0, candidate) + "\r\n " + rval.substr(candidate);
           } else {
-            rval = rval.substr(0, candidate) + "\r\n" + insert6 + rval.substr(candidate + 1);
+            rval = rval.substr(0, candidate) + "\r\n" + insert7 + rval.substr(candidate + 1);
           }
           length = i - candidate - 1;
           candidate = -1;
@@ -131482,36 +131482,36 @@ var require_pbkdf2 = __commonJS({
     require_md();
     require_util10();
     var pkcs5 = forge.pkcs5 = forge.pkcs5 || {};
-    var crypto18;
+    var crypto19;
     if (forge.util.isNodejs && !forge.options.usePureJavaScript) {
-      crypto18 = require("crypto");
+      crypto19 = require("crypto");
     }
     module2.exports = forge.pbkdf2 = pkcs5.pbkdf2 = function(p, s, c, dkLen, md, callback) {
       if (typeof md === "function") {
         callback = md;
         md = null;
       }
-      if (forge.util.isNodejs && !forge.options.usePureJavaScript && crypto18.pbkdf2 && (md === null || typeof md !== "object") && (crypto18.pbkdf2Sync.length > 4 || (!md || md === "sha1"))) {
+      if (forge.util.isNodejs && !forge.options.usePureJavaScript && crypto19.pbkdf2 && (md === null || typeof md !== "object") && (crypto19.pbkdf2Sync.length > 4 || (!md || md === "sha1"))) {
         if (typeof md !== "string") {
           md = "sha1";
         }
         p = Buffer.from(p, "binary");
         s = Buffer.from(s, "binary");
         if (!callback) {
-          if (crypto18.pbkdf2Sync.length === 4) {
-            return crypto18.pbkdf2Sync(p, s, c, dkLen).toString("binary");
+          if (crypto19.pbkdf2Sync.length === 4) {
+            return crypto19.pbkdf2Sync(p, s, c, dkLen).toString("binary");
           }
-          return crypto18.pbkdf2Sync(p, s, c, dkLen, md).toString("binary");
+          return crypto19.pbkdf2Sync(p, s, c, dkLen, md).toString("binary");
         }
-        if (crypto18.pbkdf2Sync.length === 4) {
-          return crypto18.pbkdf2(p, s, c, dkLen, function(err2, key) {
+        if (crypto19.pbkdf2Sync.length === 4) {
+          return crypto19.pbkdf2(p, s, c, dkLen, function(err2, key) {
             if (err2) {
               return callback(err2);
             }
             callback(null, key.toString("binary"));
           });
         }
-        return crypto18.pbkdf2(p, s, c, dkLen, md, function(err2, key) {
+        return crypto19.pbkdf2(p, s, c, dkLen, md, function(err2, key) {
           if (err2) {
             return callback(err2);
           }
@@ -149426,8 +149426,8 @@ var require_crypto_signer = __commonJS({
        * @inheritDoc
        */
       sign(buffer) {
-        const crypto18 = require("crypto");
-        const sign3 = crypto18.createSign("RSA-SHA256");
+        const crypto19 = require("crypto");
+        const sign3 = crypto19.createSign("RSA-SHA256");
         sign3.update(buffer);
         return Promise.resolve(sign3.sign(this.credential.privateKey));
       }
@@ -150163,9 +150163,9 @@ var require_webcrypto = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.isCryptoKey = void 0;
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var util3 = require("util");
-    var webcrypto3 = crypto18.webcrypto;
+    var webcrypto3 = crypto19.webcrypto;
     exports2.default = webcrypto3;
     exports2.isCryptoKey = util3.types.isCryptoKey ? (key) => util3.types.isCryptoKey(key) : (key) => false;
   }
@@ -152816,22 +152816,22 @@ var require_sign2 = __commonJS({
   "node_modules/jwks-rsa/node_modules/jose/dist/node/cjs/runtime/sign.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var util_1 = require("util");
     var dsa_digest_js_1 = require_dsa_digest();
     var hmac_digest_js_1 = require_hmac_digest();
     var node_key_js_1 = require_node_key();
     var get_sign_verify_key_js_1 = require_get_sign_verify_key();
     var oneShotSign2;
-    if (crypto18.sign.length > 3) {
-      oneShotSign2 = (0, util_1.promisify)(crypto18.sign);
+    if (crypto19.sign.length > 3) {
+      oneShotSign2 = (0, util_1.promisify)(crypto19.sign);
     } else {
-      oneShotSign2 = crypto18.sign;
+      oneShotSign2 = crypto19.sign;
     }
     var sign3 = async (alg, key, data) => {
       const keyObject = (0, get_sign_verify_key_js_1.default)(alg, key, "sign");
       if (alg.startsWith("HS")) {
-        const hmac = crypto18.createHmac((0, hmac_digest_js_1.default)(alg), keyObject);
+        const hmac = crypto19.createHmac((0, hmac_digest_js_1.default)(alg), keyObject);
         hmac.update(data);
         return hmac.digest();
       }
@@ -152846,7 +152846,7 @@ var require_verify2 = __commonJS({
   "node_modules/jwks-rsa/node_modules/jose/dist/node/cjs/runtime/verify.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    var crypto18 = require("crypto");
+    var crypto19 = require("crypto");
     var util_1 = require("util");
     var dsa_digest_js_1 = require_dsa_digest();
     var node_key_js_1 = require_node_key();
@@ -152854,10 +152854,10 @@ var require_verify2 = __commonJS({
     var get_sign_verify_key_js_1 = require_get_sign_verify_key();
     var flags_js_1 = require_flags();
     var oneShotVerify2;
-    if (crypto18.verify.length > 4 && flags_js_1.oneShotCallback) {
-      oneShotVerify2 = (0, util_1.promisify)(crypto18.verify);
+    if (crypto19.verify.length > 4 && flags_js_1.oneShotCallback) {
+      oneShotVerify2 = (0, util_1.promisify)(crypto19.verify);
     } else {
-      oneShotVerify2 = crypto18.verify;
+      oneShotVerify2 = crypto19.verify;
     }
     var verify3 = async (alg, key, signature, data) => {
       const keyObject = (0, get_sign_verify_key_js_1.default)(alg, key, "verify");
@@ -152865,7 +152865,7 @@ var require_verify2 = __commonJS({
         const expected = await (0, sign_js_1.default)(alg, keyObject, data);
         const actual = signature;
         try {
-          return crypto18.timingSafeEqual(actual, expected);
+          return crypto19.timingSafeEqual(actual, expected);
         } catch {
           return false;
         }
@@ -154920,7 +154920,7 @@ var require_yallist = __commonJS({
         walker = walker.prev;
       }
       for (var i = 0; i < nodes.length; i++) {
-        walker = insert6(this, walker, nodes[i]);
+        walker = insert7(this, walker, nodes[i]);
       }
       return ret;
     };
@@ -154936,7 +154936,7 @@ var require_yallist = __commonJS({
       this.tail = head;
       return this;
     };
-    function insert6(self2, node, value) {
+    function insert7(self2, node, value) {
       var inserted = node === self2.head ? new Node3(value, null, node, self2) : new Node3(value, node, node.next, self2);
       if (inserted.next === null) {
         self2.tail = inserted;
@@ -163219,7 +163219,7 @@ var require_index_standalone = __commonJS({
     var Buffer$1 = safeBuffer.exports.Buffer;
     var Base$2 = base;
     var Draft75$1 = draft75;
-    var crypto18 = require$$1__default$1["default"];
+    var crypto19 = require$$1__default$1["default"];
     var util$6 = require$$2__default["default"];
     var numberFromKey = function(key2) {
       return parseInt((key2.match(/[0-9]/g) || []).join(""), 10);
@@ -163267,7 +163267,7 @@ var require_index_standalone = __commonJS({
       },
       _handshakeSignature: function() {
         if (this._body.length < this.BODY_SIZE) return null;
-        var md54 = crypto18.createHash("md5"), buffer = Buffer$1.allocUnsafe(8 + this.BODY_SIZE);
+        var md54 = crypto19.createHash("md5"), buffer = Buffer$1.allocUnsafe(8 + this.BODY_SIZE);
         buffer.writeUInt32BE(this._keyValues[0], 0);
         buffer.writeUInt32BE(this._keyValues[1], 4);
         Buffer$1.from(this._body).copy(buffer, 8, 0, this.BODY_SIZE);
@@ -181166,7 +181166,7 @@ var require_signer = __commonJS({
     })();
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.SigningError = exports2.URLSigner = exports2.PATH_STYLED_HOST = exports2.SignerExceptionMessages = void 0;
-    var crypto18 = __importStar2(require("crypto"));
+    var crypto19 = __importStar2(require("crypto"));
     var url = __importStar2(require("url"));
     var storage_js_1 = require_storage();
     var util_js_1 = require_util11();
@@ -181303,7 +181303,7 @@ var require_signer = __commonJS({
           };
           const canonicalQueryParams = this.getCanonicalQueryParams(queryParams);
           const canonicalRequest = this.getCanonicalRequest(config.method, this.getResourcePath(!!config.cname, config.bucket, config.file), canonicalQueryParams, extensionHeadersString, signedHeaders, contentSha256);
-          const hash = crypto18.createHash("sha256").update(canonicalRequest).digest("hex");
+          const hash = crypto19.createHash("sha256").update(canonicalRequest).digest("hex");
           const blobToSign = [
             "GOOG4-RSA-SHA256",
             dateISO,
@@ -182008,7 +182008,7 @@ var require_file = __commonJS({
     exports2.File = exports2.FileExceptionMessages = exports2.RequestError = exports2.STORAGE_POST_POLICY_BASE_URL = exports2.ActionToHTTPMethod = void 0;
     var index_js_1 = require_nodejs_common();
     var promisify_1 = require_src18();
-    var crypto18 = __importStar2(require("crypto"));
+    var crypto19 = __importStar2(require("crypto"));
     var fs = __importStar2(require("fs"));
     var mime_1 = __importDefault2(require_mime());
     var resumableUpload = __importStar2(require_resumable_upload());
@@ -183601,7 +183601,7 @@ var require_file = __commonJS({
       setEncryptionKey(encryptionKey) {
         this.encryptionKey = encryptionKey;
         this.encryptionKeyBase64 = Buffer.from(encryptionKey).toString("base64");
-        this.encryptionKeyHash = crypto18.createHash("sha256").update(this.encryptionKeyBase64, "base64").digest("base64");
+        this.encryptionKeyHash = crypto19.createHash("sha256").update(this.encryptionKeyBase64, "base64").digest("base64");
         this.encryptionKeyInterceptor = {
           request: (reqOpts) => {
             reqOpts.headers = reqOpts.headers || {};
@@ -227394,14 +227394,14 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
       return false;
     }
     try {
-      const crypto18 = require("crypto");
+      const crypto19 = require("crypto");
       const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
       if (!webhookSecret) {
         console.error("[SECURITY] RAZORPAY_WEBHOOK_SECRET not configured");
         return false;
       }
-      const expectedSignature = crypto18.createHmac("sha256", webhookSecret).update(body2).digest("hex");
-      return crypto18.timingSafeEqual(
+      const expectedSignature = crypto19.createHmac("sha256", webhookSecret).update(body2).digest("hex");
+      return crypto19.timingSafeEqual(
         Buffer.from(signature),
         Buffer.from(expectedSignature)
       );
@@ -228549,7 +228549,27 @@ var GetCapabilitiesHandler = class extends BaseHandler {
       { id: "events", name: "Events", category: "Specialized Services", description: "Event management" },
       { id: "memorial", name: "Memorial", category: "Specialized Services", description: "Memorial services" },
       { id: "claims_management", name: "Claims Management", category: "Specialized Services", description: "Insurance claims management" },
-      { id: "policy_management", name: "Policy Management", category: "Specialized Services", description: "Insurance policy management" }
+      { id: "policy_management", name: "Policy Management", category: "Specialized Services", description: "Insurance policy management" },
+      // ============================================================================
+      // VERIFICATION & COMPLIANCE (Required for ALL vendors)
+      // ============================================================================
+      { id: "bank_verification", name: "Bank Verification", category: "Verification & Compliance", description: "Bank account verification via Razorpay Marketplace API" },
+      { id: "location_verification", name: "Location Verification", category: "Verification & Compliance", description: "Google location/address verification for vendor profile" },
+      { id: "address_verification", name: "Address Verification", category: "Verification & Compliance", description: "Verify vendor address using Google Maps API" },
+      { id: "live_location", name: "Live Location", category: "Operations", description: "Real-time location tracking for home/mobile services" },
+      { id: "kyc_verification", name: "KYC Verification", category: "Verification & Compliance", description: "Know Your Customer verification for vendors" },
+      // ============================================================================
+      // PHARMACY & DELIVERY SPECIFIC
+      // ============================================================================
+      { id: "order_dispatch", name: "Order Dispatch", category: "Pharmacy", description: "Receive and dispatch orders from nearby customers (Uber-like)" },
+      { id: "availability_check", name: "Availability Check", category: "Pharmacy", description: "Confirm medicine/product availability before accepting order" },
+      { id: "invoice_generation", name: "Invoice Generation", category: "Finance & Payments", description: "Generate proforma and final invoices" },
+      { id: "delivery_partner", name: "Delivery Partner", category: "Delivery", description: "Integration with delivery partners for order fulfillment" },
+      { id: "eta_tracking", name: "ETA Tracking", category: "Delivery", description: "Real-time ETA calculation and tracking" },
+      { id: "cod_payment", name: "COD Payment", category: "Finance & Payments", description: "Accept Cash on Delivery payments" },
+      { id: "online_payment", name: "Online Payment", category: "Finance & Payments", description: "Accept online payments via Razorpay" },
+      { id: "order_broadcast", name: "Order Broadcast", category: "Pharmacy", description: "Receive order broadcasts from nearby customers" },
+      { id: "radius_service", name: "Radius Service", category: "Operations", description: "Define service radius for order acceptance" }
     ];
     return this.success({
       success: true,
@@ -234466,6 +234486,14 @@ function registerStaffEndpoints(app2) {
 
 // src/endpoints/service-discovery.ts
 init_rds_connection();
+
+// src/types/entities.ts
+var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUUID(id) {
+  return typeof id === "string" && UUID_REGEX.test(id);
+}
+
+// src/endpoints/service-discovery.ts
 function calculateDistance3(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -235164,6 +235192,267 @@ function registerServiceDiscoveryEndpoints(app2) {
     } catch (error) {
       console.error("Error fetching vendor facility:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/customer/facility/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ error: "Valid vendor ID is required" }, 400);
+      }
+      const vendorResult = await query(
+        `SELECT v.*, r.name as role_name, r.display_name as role_display_name,
+                r.config as role_config
+         FROM vendors v
+         LEFT JOIN roles r ON v.role_id = r.id
+         WHERE v.id = $1`,
+        [vendorId]
+      );
+      if (vendorResult.rows.length === 0) {
+        return c.json({ error: "Vendor not found", success: false }, 404);
+      }
+      const vendor = vendorResult.rows[0];
+      const ratingResult = await query(
+        `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
+         FROM reviews WHERE vendor_id = $1`,
+        [vendorId]
+      );
+      const reviewsResult = await query(
+        `SELECT r.*, c.full_name as customer_name
+         FROM reviews r
+         LEFT JOIN customers c ON r.customer_id = c.id
+         WHERE r.vendor_id = $1
+         ORDER BY r.created_at DESC LIMIT 5`,
+        [vendorId]
+      );
+      const staffResult = await query(
+        `SELECT id, name, role, experience_years, is_active
+         FROM staff WHERE vendor_id = $1 AND is_active = true`,
+        [vendorId]
+      );
+      return c.json({
+        success: true,
+        vendor: {
+          id: vendor.id,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name,
+          phone: vendor.phone,
+          email: vendor.email,
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          pincode: vendor.pincode,
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          description: vendor.description,
+          logoUrl: vendor.logo_url,
+          coverImageUrl: vendor.cover_image_url,
+          role: vendor.role_name,
+          roleDisplayName: vendor.role_display_name
+        },
+        facility: {
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          pincode: vendor.pincode,
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          photos: [],
+          // TODO: Add facility photos
+          amenities: vendor.amenities || [],
+          operatingHours: vendor.operating_hours
+        },
+        rating: {
+          average: parseFloat(ratingResult.rows[0]?.avg_rating || "0").toFixed(1),
+          count: parseInt(ratingResult.rows[0]?.review_count || "0", 10)
+        },
+        recentReviews: reviewsResult.rows.map((r) => ({
+          id: r.id,
+          customerName: r.customer_name || "Anonymous",
+          rating: r.rating,
+          comment: r.comment,
+          date: r.created_at
+        })),
+        staff: staffResult.rows.map((s) => ({
+          id: s.id,
+          name: s.name,
+          role: s.role,
+          experienceYears: s.experience_years
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching facility:", error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
+  app2.get("/customer/clinic/:vendorId/services", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const serviceStyle = c.req.query("style") || c.req.query("serviceStyle");
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ error: "Valid vendor ID is required", success: false }, 400);
+      }
+      let servicesQuery = `
+        SELECT 
+          vs.id,
+          vs.service_id,
+          vs.service_name,
+          vs.service_style,
+          vs.price,
+          vs.duration_minutes as duration,
+          vs.custom_description as description,
+          vs.is_enabled,
+          vs.publish_status,
+          vs.category as category_name,
+          vs.sub_category as sub_category_name,
+          vs.is_custom_service as is_package,
+          vs.metadata as package_details,
+          s.name as base_service_name,
+          s.description as base_description
+        FROM vendor_services vs
+        LEFT JOIN services s ON vs.service_id = s.id
+        WHERE vs.vendor_id = $1 
+          AND vs.is_enabled = true 
+          AND vs.publish_status = 'published'
+      `;
+      const params = [vendorId];
+      if (serviceStyle) {
+        servicesQuery += ` AND vs.service_style = $2`;
+        params.push(serviceStyle);
+      }
+      servicesQuery += ` ORDER BY vs.category, vs.service_name`;
+      const servicesResult = await query(servicesQuery, params);
+      const services = servicesResult.rows.map((s) => ({
+        id: s.id,
+        serviceId: s.service_id,
+        serviceName: s.service_name || s.base_service_name,
+        description: s.description || s.base_description || "",
+        price: parseFloat(s.price || 0),
+        duration: s.duration || 30,
+        serviceStyle: s.service_style,
+        categoryName: s.category_name || s.category,
+        subCategoryName: s.sub_category_name || s.sub_category,
+        isPackage: s.is_package,
+        packageDetails: s.package_details,
+        isEnabled: s.is_enabled,
+        publishStatus: s.publish_status
+      }));
+      const groupedServices = {
+        at_center: services.filter((s) => s.serviceStyle === "at_center"),
+        at_home: services.filter((s) => s.serviceStyle === "at_home"),
+        tele: services.filter((s) => s.serviceStyle === "tele")
+      };
+      return c.json({
+        success: true,
+        services,
+        grouped: groupedServices,
+        total: services.length
+      });
+    } catch (error) {
+      console.error("Error fetching clinic services:", error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
+  app2.get("/customer/services/by-style", async (c) => {
+    try {
+      const serviceStyle = c.req.query("style");
+      const category = c.req.query("category");
+      const latitude = c.req.query("latitude");
+      const longitude = c.req.query("longitude");
+      const radius = parseInt(c.req.query("radius") || "50", 10);
+      if (!serviceStyle) {
+        return c.json({ error: "Service style is required (tele, at_home, at_center)", success: false }, 400);
+      }
+      let vendorsQuery = `
+        SELECT DISTINCT ON (v.id)
+          v.id as vendor_id,
+          v.business_name,
+          v.owner_name,
+          v.phone,
+          v.address,
+          v.city,
+          v.latitude,
+          v.longitude,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
+          (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+        WHERE v.status = 'approved' 
+          AND v.is_active = true
+          AND vs.service_style = $1
+          AND vs.is_enabled = true
+          AND vs.publish_status = 'published'
+      `;
+      const params = [serviceStyle];
+      let paramIndex = 2;
+      if (category) {
+        const categoryRoles = {
+          "vet": ["veterinarian", "vet_clinic"],
+          "grooming": ["groomer", "grooming_salon", "pet_groomer"],
+          "training": ["trainer", "pet_trainer"]
+        };
+        const roles = categoryRoles[category.toLowerCase()];
+        if (roles) {
+          vendorsQuery += ` AND r.name = ANY($${paramIndex})`;
+          params.push(roles);
+          paramIndex++;
+        }
+      }
+      vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
+      const vendorsResult = await query(vendorsQuery, params);
+      const vendorsWithServices = await Promise.all(
+        vendorsResult.rows.map(async (vendor) => {
+          const servicesResult = await query(
+            `SELECT 
+              vs.id,
+              vs.service_id,
+              vs.service_name,
+              vs.price,
+              vs.duration_minutes as duration,
+              vs.custom_description as description,
+              vs.category as category_name
+             FROM vendor_services vs
+             WHERE vs.vendor_id = $1 
+               AND vs.service_style = $2
+               AND vs.is_enabled = true
+               AND vs.publish_status = 'published'
+             ORDER BY vs.price ASC`,
+            [vendor.vendor_id, serviceStyle]
+          );
+          return {
+            vendorId: vendor.vendor_id,
+            vendorName: vendor.business_name || vendor.owner_name,
+            phone: vendor.phone,
+            address: vendor.address,
+            city: vendor.city,
+            role: vendor.role_display_name || vendor.role_name,
+            rating: parseFloat(vendor.avg_rating || "0").toFixed(1),
+            reviewCount: parseInt(vendor.review_count || "0", 10),
+            services: servicesResult.rows.map((s) => ({
+              id: s.id,
+              serviceId: s.service_id,
+              name: s.service_name,
+              price: parseFloat(s.price || 0),
+              duration: s.duration || 30,
+              description: s.description,
+              category: s.category_name
+            }))
+          };
+        })
+      );
+      const filteredVendors = vendorsWithServices.filter((v) => v.services.length > 0);
+      return c.json({
+        success: true,
+        style: serviceStyle,
+        vendors: filteredVendors,
+        total: filteredVendors.length
+      });
+    } catch (error) {
+      console.error("Error fetching services by style:", error);
+      return c.json({ error: error.message, success: false }, 500);
     }
   });
 }
@@ -237271,7 +237560,7 @@ function registerPrescriptionEndpoints(app2) {
       const { prescriptionId } = c.req.param();
       const { actorId, actorRole, actorName } = await c.req.json();
       try {
-        const { insert: insert6, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { insert: insert7, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         await query12(`
           CREATE TABLE IF NOT EXISTS prescription_downloads (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -237286,7 +237575,7 @@ function registerPrescriptionEndpoints(app2) {
           )
         `).catch(() => {
         });
-        await insert6("prescription_downloads", {
+        await insert7("prescription_downloads", {
           prescription_id: prescriptionId,
           downloaded_by: actorId,
           downloaded_by_role: actorRole,
@@ -237612,7 +237901,7 @@ function registerEcommerceEndpoints(app2) {
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE p.is_active = true AND p.status = 'active'
+        WHERE p.is_active = true
       `;
       const params = [];
       let paramIndex = 1;
@@ -237682,15 +237971,28 @@ function registerEcommerceEndpoints(app2) {
   });
   app2.get("/ecommerce/categories", async (c) => {
     try {
-      const categories = await query(
-        `SELECT * FROM ecommerce_categories
-         WHERE is_active = true
-         ORDER BY display_order ASC, name ASC`
-      );
+      let categories;
+      try {
+        categories = await query(
+          `SELECT * FROM ecommerce_categories
+           WHERE is_active = true
+           ORDER BY display_order ASC, name ASC`
+        );
+      } catch (dbError) {
+        if (dbError.message?.includes('relation "ecommerce_categories" does not exist') || dbError.code === "42P01") {
+          return c.json({
+            success: true,
+            categories: [],
+            total: 0,
+            message: "Categories table not initialized. Please seed categories via admin panel."
+          });
+        }
+        throw dbError;
+      }
       return c.json({
         success: true,
-        categories: categories.rows,
-        total: categories.rows.length
+        categories: categories?.rows || [],
+        total: categories?.rows?.length || 0
       });
     } catch (error) {
       console.error("Error fetching e-commerce categories:", error);
@@ -240107,14 +240409,9 @@ var CreateVendorProductHandler = class extends BaseHandler {
         name: body2.name,
         description: body2.description || null,
         category_id: body2.category_id || null,
-        category: body2.category || null,
         price: parseFloat(body2.price),
-        stock: parseInt(body2.stock || body2.stock_quantity || "0", 10),
         stock_quantity: parseInt(body2.stock || body2.stock_quantity || "0", 10),
         sku: body2.sku || null,
-        hsn_code: body2.hsn_code || null,
-        gst_rate: body2.gst_rate ? parseFloat(body2.gst_rate) : null,
-        images: body2.images || [],
         is_active: body2.is_active !== false
       };
       const newProduct = await insert("products", productData);
@@ -240244,59 +240541,133 @@ function registerVendorProductsEndpoints(app2) {
   const deleteProductHandler = new DeleteVendorProductHandler();
   app2.get("/vendor/:vendorId/products", async (c) => {
     try {
-      const response = await getProductsHandler.handle({
-        event: {
-          pathParameters: c.req.param(),
-          queryStringParameters: Object.fromEntries(c.req.query())
-        }
-      });
-      return c.json(JSON.parse(response.body), response.statusCode);
-    } catch (error) {
-      console.error("Error in vendor products endpoint:", error);
       const vendorId = c.req.param("vendorId");
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (!vendorId || vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({
           products: [],
           total: 0,
           count: 0
         }, 200);
       }
+      const search = c.req.query("search") || "";
+      const category = c.req.query("category") || "";
+      const status = c.req.query("status") || "";
+      const limit2 = parseInt(c.req.query("limit") || "50", 10);
+      const offset2 = parseInt(c.req.query("offset") || "0", 10);
+      let productQuery = `
+        SELECT p.*, 
+               ec.name as category_name
+        FROM products p
+        LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
+        WHERE p.vendor_id = $1
+      `;
+      const params = [vendorId];
+      let paramIndex = 2;
+      if (search) {
+        productQuery += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
+      if (category) {
+        productQuery += ` AND (p.category_id::text = $${paramIndex} OR p.category = $${paramIndex})`;
+        params.push(category);
+        paramIndex++;
+      }
+      if (status === "active") {
+        productQuery += ` AND p.is_active = true`;
+      } else if (status === "inactive") {
+        productQuery += ` AND p.is_active = false`;
+      }
+      productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit2, offset2);
+      let products;
+      let total = 0;
+      try {
+        products = await query(productQuery, params);
+        let countQuery = `SELECT COUNT(*) as total FROM products p WHERE p.vendor_id = $1`;
+        const countParams = [vendorId];
+        const countResult = await query(countQuery, countParams);
+        total = parseInt(countResult.rows?.[0]?.total || "0", 10);
+      } catch (dbError) {
+        console.error("Database error in vendor products:", dbError);
+        if (dbError.message?.includes("relation") || dbError.message?.includes("column") || dbError.code === "42P01" || dbError.code === "42703") {
+          return c.json({
+            products: [],
+            total: 0,
+            count: 0
+          }, 200);
+        }
+        throw dbError;
+      }
+      return c.json({
+        products: products?.rows || [],
+        count: products?.rows?.length || 0,
+        total,
+        limit: limit2,
+        offset: offset2
+      }, 200);
+    } catch (error) {
+      console.error("Error in vendor products endpoint:", error);
       return c.json({ error: error.message || "Internal Server Error" }, 500);
     }
   });
   app2.post("/vendor/:vendorId/products", async (c) => {
-    const response = await createProductHandler.handle({
-      event: {
-        pathParameters: c.req.param(),
-        body: await c.req.json()
-      }
-    });
-    return c.json(response.body, response.statusCode);
+    try {
+      const body2 = await c.req.json();
+      const response = await createProductHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          body: JSON.stringify(body2)
+          // Pass as string for parseBody to work
+        }
+      });
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error) {
+      console.error("Error creating product:", error);
+      return c.json({ error: error.message || "Failed to create product" }, 500);
+    }
   });
   app2.get("/vendor/:vendorId/products/:productId", async (c) => {
-    const response = await getProductHandler.handle({
-      event: {
-        pathParameters: c.req.param()
-      }
-    });
-    return c.json(response.body, response.statusCode);
+    try {
+      const response = await getProductHandler.handle({
+        event: {
+          pathParameters: c.req.param()
+        }
+      });
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error) {
+      console.error("Error getting product:", error);
+      return c.json({ error: error.message || "Failed to get product" }, 500);
+    }
   });
   app2.put("/vendor/:vendorId/products/:productId", async (c) => {
-    const response = await updateProductHandler.handle({
-      event: {
-        pathParameters: c.req.param(),
-        body: await c.req.json()
-      }
-    });
-    return c.json(response.body, response.statusCode);
+    try {
+      const body2 = await c.req.json();
+      const response = await updateProductHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          body: JSON.stringify(body2)
+          // Pass as string for parseBody to work
+        }
+      });
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error) {
+      console.error("Error updating product:", error);
+      return c.json({ error: error.message || "Failed to update product" }, 500);
+    }
   });
   app2.delete("/vendor/:vendorId/products/:productId", async (c) => {
-    const response = await deleteProductHandler.handle({
-      event: {
-        pathParameters: c.req.param()
-      }
-    });
-    return c.json(response.body, response.statusCode);
+    try {
+      const response = await deleteProductHandler.handle({
+        event: {
+          pathParameters: c.req.param()
+        }
+      });
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error) {
+      console.error("Error deleting product:", error);
+      return c.json({ error: error.message || "Failed to delete product" }, 500);
+    }
   });
 }
 
@@ -248452,7 +248823,7 @@ function registerOrderManagementEndpoints(app2) {
         const payments = await select("payments", { order_id: orderId, payment_status: "completed" });
         if (payments.length > 0) {
           const payment = payments[0];
-          const { insert: insert6, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+          const { insert: insert7, query: query12 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
           await query12(
             `INSERT INTO refunds (
               payment_id,
@@ -248520,9 +248891,9 @@ function registerOrderManagementEndpoints(app2) {
       if (updates.totalAmount !== void 0) updateData.total_amount = updates.totalAmount;
       if (updates.items && Array.isArray(updates.items)) {
         await query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
-        const { insert: insert6 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { insert: insert7 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         for (const item of updates.items) {
-          await insert6("order_items", {
+          await insert7("order_items", {
             order_id: orderId,
             product_id: item.productId || null,
             service_id: item.serviceId || null,
@@ -250707,6 +251078,110 @@ function registerVendorBookingsEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error completing booking:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/bookings/:bookingId/details", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching booking details for: ${bookingId}`);
+      if (!isValidUUID(bookingId)) {
+        return c.json({ error: "Invalid booking ID format" }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      const [customer, service, pet, vendor, prescriptions, activities] = await Promise.all([
+        // Customer info
+        booking.customer_id ? select("customers", { id: booking.customer_id }).catch(() => []) : Promise.resolve([]),
+        // Service info
+        booking.service_id ? select("services", { id: booking.service_id }).catch(() => []) : Promise.resolve([]),
+        // Pet info
+        booking.pet_id ? select("pets", { id: booking.pet_id }).catch(() => []) : Promise.resolve([]),
+        // Vendor info
+        booking.vendor_id ? select("vendors", { id: booking.vendor_id }).catch(() => []) : Promise.resolve([]),
+        // Prescriptions
+        query(
+          `SELECT * FROM prescriptions 
+           WHERE booking_id = $1 AND is_active = true
+           ORDER BY created_at DESC`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+        // Activities/history
+        query(
+          `SELECT * FROM booking_activities 
+           WHERE booking_id = $1
+           ORDER BY created_at DESC`,
+          [bookingId]
+        ).catch(() => ({ rows: [] }))
+      ]);
+      const enrichedBooking = {
+        id: booking.id,
+        bookingId: booking.id,
+        status: booking.status,
+        bookingDate: booking.booking_date,
+        bookingTime: booking.booking_time,
+        duration: booking.duration || 30,
+        totalAmount: parseFloat(booking.total_amount || "0"),
+        serviceStyle: booking.service_style || "at_clinic",
+        notes: booking.notes,
+        specialInstructions: booking.special_instructions,
+        paymentStatus: booking.payment_status || "pending",
+        // Customer details
+        customerId: booking.customer_id,
+        customerName: customer.length > 0 ? customer[0].full_name : "Unknown Customer",
+        customerPhone: customer.length > 0 ? customer[0].phone : null,
+        customerEmail: customer.length > 0 ? customer[0].email : null,
+        customerAddress: customer.length > 0 ? customer[0].address : null,
+        // Pet details
+        petId: booking.pet_id,
+        petName: pet.length > 0 ? pet[0].name : booking.pet_name || "Unknown Pet",
+        petType: pet.length > 0 ? pet[0].species : booking.pet_type,
+        petBreed: pet.length > 0 ? pet[0].breed : null,
+        petAge: pet.length > 0 ? pet[0].age : null,
+        petWeight: pet.length > 0 ? pet[0].weight : null,
+        // Service details
+        serviceId: booking.service_id,
+        serviceName: service.length > 0 ? service[0].name : booking.service_name || "Unknown Service",
+        serviceCategory: service.length > 0 ? service[0].category : null,
+        serviceDescription: service.length > 0 ? service[0].description : null,
+        // Vendor details
+        vendorId: booking.vendor_id,
+        vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,
+        vendorPhone: vendor.length > 0 ? vendor[0].phone : null,
+        // OTP and session tracking
+        otpCode: booking.otp_code,
+        otpVerifiedAt: booking.otp_verified_at,
+        sessionStartedAt: booking.session_started_at,
+        sessionEndedAt: booking.session_ended_at,
+        completedAt: booking.completed_at,
+        cancelledAt: booking.cancelled_at,
+        // Timestamps
+        createdAt: booking.created_at,
+        updatedAt: booking.updated_at
+      };
+      return c.json({
+        success: true,
+        booking: enrichedBooking,
+        activities: activities.rows.map((a) => ({
+          id: a.id,
+          type: a.activity_type,
+          description: a.description,
+          performedBy: a.performed_by,
+          createdAt: a.created_at
+        })),
+        prescriptions: prescriptions.rows.map((p) => ({
+          id: p.id,
+          notes: p.notes,
+          medications: p.medications,
+          uploadedAt: p.created_at,
+          file: p.file_url
+        }))
+      });
+    } catch (error) {
+      console.error("\u274C [VENDOR-BOOKINGS] Error fetching booking details:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -258773,6 +259248,54 @@ function registerAdminAdvancedEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.post("/admin/seed/ecommerce-categories", async (c) => {
+    try {
+      const categories = [
+        { name: "Pet Food", description: "Dog food, cat food, and treats", display_order: 1 },
+        { name: "Pet Accessories", description: "Collars, leashes, bowls, and more", display_order: 2 },
+        { name: "Pet Toys", description: "Interactive toys, chew toys, and plush toys", display_order: 3 },
+        { name: "Pet Grooming", description: "Shampoos, brushes, and grooming tools", display_order: 4 },
+        { name: "Pet Health", description: "Supplements, vitamins, and health products", display_order: 5 },
+        { name: "Pet Beds & Furniture", description: "Beds, crates, and pet furniture", display_order: 6 },
+        { name: "Pet Clothing", description: "Jackets, sweaters, and costumes", display_order: 7 },
+        { name: "Pet Travel", description: "Carriers, car seats, and travel accessories", display_order: 8 },
+        { name: "Pet Pharmacy", description: "Medications and prescription items", display_order: 9 },
+        { name: "Pet Training", description: "Training aids, clickers, and pads", display_order: 10 }
+      ];
+      let inserted = 0;
+      let skipped = 0;
+      for (const cat of categories) {
+        try {
+          const existing = await query(
+            "SELECT id FROM ecommerce_categories WHERE name = $1",
+            [cat.name]
+          );
+          if (existing.rows.length === 0) {
+            await query(
+              `INSERT INTO ecommerce_categories (name, description, display_order, is_active)
+               VALUES ($1, $2, $3, true)`,
+              [cat.name, cat.description, cat.display_order]
+            );
+            inserted++;
+          } else {
+            skipped++;
+          }
+        } catch (err) {
+          console.error(`Error inserting category ${cat.name}:`, err);
+        }
+      }
+      return c.json({
+        success: true,
+        message: `E-commerce categories seeded: ${inserted} inserted, ${skipped} skipped (already exist)`,
+        inserted,
+        skipped,
+        total: categories.length
+      });
+    } catch (error) {
+      console.error("Error seeding e-commerce categories:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app2.post("/admin/fix-vendor-categories", async (c) => {
     try {
       return c.json({
@@ -259354,20 +259877,45 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/fix/apply-role-capability-mappings", async (c) => {
     try {
+      const UNIVERSAL_CAPS = [
+        "dashboard",
+        "profile",
+        "chat",
+        "schedule",
+        "bookings",
+        "earnings",
+        "settlements",
+        "bank_account",
+        "notifications",
+        // VERIFICATION - Required for ALL vendors
+        "bank_verification",
+        // Razorpay Marketplace API verification
+        "location_verification",
+        // Google Maps address verification
+        "address_verification",
+        // Verify vendor address
+        "kyc_verification"
+        // KYC compliance
+      ];
+      const HOME_SERVICE_CAPS = [
+        "gps_tracking",
+        // Real-time GPS tracking
+        "live_location",
+        // Share live location with customers
+        "photo_updates"
+        // Share photos during service
+      ];
+      const CENTER_CAPS = [
+        "facility_management",
+        // Manage center/clinic
+        "staff_management"
+        // Manage employees
+      ];
       const ROLE_CAPABILITY_MAPPINGS = {
-        // ===== HOME GROOMER (Solo, no center) =====
+        // ===== HOME GROOMER (Solo, mobile, no center) =====
         "groomers": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "gps_tracking",
-          // Home service tracking
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           "gallery",
           "portfolio",
           "custom_services",
@@ -259375,41 +259923,23 @@ function registerAdminAdvancedEndpoints(app2) {
           "services"
           // NO facility_management, NO staff_management
         ],
-        // ===== CENTER GROOMER (With salon/center) =====
+        // ===== PET SALON / CENTER GROOMER (With salon/center) =====
         "pet_groomer": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
-          // Center operations
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "gallery",
           "portfolio",
           "custom_services",
           "package_management",
-          "pricing"
+          "pricing",
+          "services"
         ],
-        // ===== WALKER (Home only, solo) =====
+        // ===== WALKER (Home only, solo, mobile) =====
         "pet_walker": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "gps_tracking",
-          "photo_updates",
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           "walking",
-          // Home/mobile service
+          // Specialized walking feature
           "custom_services",
           "package_management",
           "pricing"
@@ -259417,36 +259947,20 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== SITTER (Home only) =====
         "pet_sitter": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
+          ...UNIVERSAL_CAPS,
           "photo_updates",
           // Share updates during sitting
+          "gps_tracking",
+          // For pickup/drop
           "custom_services",
           "package_management",
           "pricing"
           // NO facility_management, NO staff_management
         ],
-        // ===== TRAINER (Center with home/tele options) =====
+        // ===== TRAINER (HOME + TELE only, no center) =====
         "pet_trainer": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
-          // Center operations
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           "training_programs",
           "progress_tracking",
           "custom_services",
@@ -259455,21 +259969,13 @@ function registerAdminAdvancedEndpoints(app2) {
           "tele",
           "video_calling"
           // Remote training
+          // NO facility_management, NO staff_management (home-based)
         ],
-        // ===== VETERINARIAN (Clinic with home/tele) =====
+        // ===== VETERINARIAN (HOME + TELE only, individual practice) =====
         "veterinarian": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
-          // Clinic operations
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          // For home visits
           "prescriptions",
           "medical_records",
           "diagnostics",
@@ -259482,21 +259988,13 @@ function registerAdminAdvancedEndpoints(app2) {
           "tele",
           "video_calling"
           // Tele-consultation
+          // NO facility_management, NO staff_management (individual, not clinic)
         ],
-        // ===== VETERINARY CLINIC (Multi-doctor clinic) =====
+        // ===== VETERINARY CLINIC (CENTER + TELE, multi-doctor facility) =====
         "veterinary_clinic": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
-          // Clinic operations
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
+          // Has facility and staff
           "prescriptions",
           "medical_records",
           "diagnostics",
@@ -259515,16 +260013,8 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== TAXI (Mobile, solo) =====
         "pet_taxi": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "gps_tracking",
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           "distance_pricing",
           "emergency",
           "custom_services",
@@ -259533,32 +260023,17 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== AMBULANCE (Mobile emergency) =====
         "pet_ambulance": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "gps_tracking",
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           "emergency",
-          "emergency_protocols"
+          "emergency_protocols",
+          "ambulance"
           // NO facility_management, NO staff_management
         ],
         // ===== RELOCATION (Mobile) =====
         "pet_relocation": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "gps_tracking",
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
           "distance_pricing",
           "custom_services",
           "pricing"
@@ -259566,18 +260041,8 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== BOARDING (Center only) =====
         "pet_boarding": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
-          // Center operations
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "rooms",
           "room_management",
           "cctv_access",
@@ -259587,19 +260052,10 @@ function registerAdminAdvancedEndpoints(app2) {
           "custom_services",
           "package_management"
         ],
-        // ===== RESORT (Premium boarding) =====
+        // ===== RESORT (Premium boarding center) =====
         "pet_resort": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "rooms",
           "room_management",
           "cctv_access",
@@ -259613,17 +260069,8 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== PET CAFE (Center only) =====
         "pet_cafe": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "menu",
           "cafe_tables",
           "table_management",
@@ -259634,38 +260081,45 @@ function registerAdminAdvancedEndpoints(app2) {
           "custom_services",
           "package_management"
         ],
-        // ===== NUTRITIONIST (Tele/Home, solo) =====
+        // ===== NUTRITIONIST (Tele consultation + Food preparation & delivery) =====
+        // Dual model: 1) Consulting via tele/video  2) Prepare and deliver pet food
         "nutritionist": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
+          ...UNIVERSAL_CAPS,
           "meal_plans",
           "diet_charts",
           "progress_tracking",
+          // Consulting & planning
           "custom_services",
           "package_management",
           "pricing",
           "tele",
-          "video_calling"
-          // NO facility_management, NO staff_management
+          "video_calling",
+          // Remote consultations
+          // Food preparation & delivery capabilities
+          "catalog",
+          // List meal plans/food items on customer app
+          "inventory",
+          // Manage food stock/ingredients
+          "orders",
+          // Receive food orders from customers
+          "delivery",
+          // Deliver prepared food/meals
+          // Delivery & Payment
+          "delivery_partner",
+          // Integration with delivery partners
+          "eta_tracking",
+          // Real-time ETA
+          "invoice_generation",
+          // Generate invoices
+          "cod_payment",
+          // Cash on delivery
+          "online_payment"
+          // Online payment
+          // NO facility_management, NO staff_management (solo operation)
         ],
         // ===== BEHAVIORIST (Tele/Home, solo) =====
         "pet_behaviorist": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
+          ...UNIVERSAL_CAPS,
           "progress_tracking",
           "custom_services",
           "package_management",
@@ -259674,37 +260128,22 @@ function registerAdminAdvancedEndpoints(app2) {
           "video_calling"
           // NO facility_management, NO staff_management
         ],
-        // ===== PHOTOGRAPHER (Can have studio) =====
+        // ===== PHOTOGRAPHER (Can have studio or mobile) =====
         "pet_photographer": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
-          // Studio
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
+          // Studio operations
           "gallery",
           "portfolio",
           "custom_services",
           "package_management",
           "pricing"
         ],
-        // ===== EVENT ORGANIZER (Mobile) =====
+        // ===== EVENT ORGANIZER (Mobile events) =====
         "pet_event_organizer": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          // Mobile event coverage
           "events",
           "gallery",
           "portfolio",
@@ -259713,15 +260152,22 @@ function registerAdminAdvancedEndpoints(app2) {
           "pricing"
           // NO facility_management (mobile events)
         ],
+        // ===== EVENT ORGANIZER (Alternate name) =====
+        "event_organizer": [
+          ...UNIVERSAL_CAPS,
+          ...HOME_SERVICE_CAPS,
+          // Mobile event coverage
+          "events",
+          "gallery",
+          "portfolio",
+          "custom_services",
+          "package_management",
+          "pricing"
+        ],
         // ===== SHELTER (Center, NGO) =====
         "pet_shelter": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "notifications",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "adoption",
           "donation",
           "events",
@@ -259730,17 +260176,8 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== SUNSET SERVICES (Center/Home) =====
         "pet_sunset_services": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "memorial",
           "counseling",
           "custom_services",
@@ -259748,15 +260185,7 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== BREEDER (Center) =====
         "pet_breeder": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "bookings",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "notifications",
+          ...UNIVERSAL_CAPS,
           "facility_management",
           // Breeding facility
           "catalog",
@@ -259766,16 +260195,8 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== INSURANCE (Center, online) =====
         "insurance": [
-          "dashboard",
-          "profile",
-          "chat",
-          "schedule",
-          "notifications",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "insurance_plans",
           "policy_management",
           "claims_management",
@@ -259784,15 +260205,8 @@ function registerAdminAdvancedEndpoints(app2) {
         ],
         // ===== PET STORE (Seller - uses Seller Hub) =====
         "pet_products_store": [
-          "dashboard",
-          "profile",
-          "chat",
-          "notifications",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
           "catalog",
           "inventory",
           "orders",
@@ -259803,17 +260217,11 @@ function registerAdminAdvancedEndpoints(app2) {
           "analytics"
           // NO bookings (uses orders)
         ],
-        // ===== PET PHARMACY (Healthcare + Retail) =====
+        // ===== PET PHARMACY (Healthcare + Retail + Uber-like order dispatch) =====
         "pet_pharmacy": [
-          "dashboard",
-          "profile",
-          "chat",
-          "notifications",
-          "earnings",
-          "settlements",
-          "bank_account",
-          "facility_management",
-          "staff_management",
+          ...UNIVERSAL_CAPS,
+          ...CENTER_CAPS,
+          // Core pharmacy capabilities
           "catalog",
           "inventory",
           "orders",
@@ -259821,7 +260229,28 @@ function registerAdminAdvancedEndpoints(app2) {
           "prescriptions",
           "prescription_verification",
           "controlled_substances",
-          "expiry_management"
+          "expiry_management",
+          // Order dispatch (Uber-like flow)
+          "order_dispatch",
+          // Receive orders from nearby customers
+          "order_broadcast",
+          // Get order broadcasts within radius
+          "availability_check",
+          // Confirm medicine availability
+          "radius_service",
+          // Define service radius (e.g., 20km)
+          // Invoice & Payment
+          "invoice_generation",
+          // Generate proforma invoices
+          "cod_payment",
+          // Cash on delivery
+          "online_payment",
+          // Razorpay online payment
+          // Delivery tracking
+          "delivery_partner",
+          // Delivery partner integration
+          "eta_tracking"
+          // Real-time ETA calculation
           // NO bookings (uses orders)
         ]
       };
@@ -259896,6 +260325,8 @@ function registerAdminAdvancedEndpoints(app2) {
         "distance_pricing",
         "facility_management",
         "custom_services",
+        "live_location",
+        // Real-time location for home services
         // Media
         "photo_updates",
         "gallery",
@@ -259911,7 +260342,22 @@ function registerAdminAdvancedEndpoints(app2) {
         "analytics",
         "export",
         "integrations",
-        "package_management"
+        "package_management",
+        // Verification & Compliance (Required for ALL vendors)
+        "bank_verification",
+        "location_verification",
+        "address_verification",
+        "kyc_verification",
+        // Pharmacy & Delivery specific
+        "order_dispatch",
+        "order_broadcast",
+        "availability_check",
+        "radius_service",
+        "invoice_generation",
+        "cod_payment",
+        "online_payment",
+        "delivery_partner",
+        "eta_tracking"
       ]);
       const validCapIds = VALID_CAP_IDS;
       const results = [];
@@ -259966,6 +260412,67 @@ function registerAdminAdvancedEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error applying role capability mappings:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app2.post("/admin/fix/create-pharmacy-tables", async (c) => {
+    try {
+      const results = [];
+      await query(`
+        CREATE TABLE IF NOT EXISTS pharmacy_order_broadcasts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_id UUID,
+          pharmacy_id UUID,
+          status VARCHAR(20) DEFAULT 'pending',
+          broadcast_time TIMESTAMP DEFAULT NOW(),
+          response_time TIMESTAMP,
+          rejection_reason TEXT,
+          distance_km DECIMAL(5,2),
+          delivery_fee DECIMAL(10,2),
+          eta_minutes INTEGER,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      results.push("Created pharmacy_order_broadcasts table");
+      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_order_id ON pharmacy_order_broadcasts(order_id)`).catch(() => {
+      });
+      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_pharmacy_id ON pharmacy_order_broadcasts(pharmacy_id)`).catch(() => {
+      });
+      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_status ON pharmacy_order_broadcasts(status)`).catch(() => {
+      });
+      results.push("Created indexes");
+      const orderColumns = [
+        { name: "prescription_id", type: "UUID" },
+        { name: "pharmacy_response_deadline", type: "TIMESTAMP" },
+        { name: "invoice_data", type: "JSONB" },
+        { name: "delivery_partner", type: "VARCHAR(50)" },
+        { name: "delivery_partner_id", type: "VARCHAR(100)" },
+        { name: "delivery_eta", type: "TIMESTAMP" },
+        { name: "delivery_otp", type: "VARCHAR(6)" },
+        { name: "status", type: "VARCHAR(50) DEFAULT 'pending'" },
+        { name: "order_number", type: "VARCHAR(50)" },
+        { name: "payment_status", type: "VARCHAR(50) DEFAULT 'pending'" },
+        { name: "payment_method", type: "VARCHAR(50)" },
+        { name: "total_amount", type: "DECIMAL(10,2)" },
+        { name: "discount_amount", type: "DECIMAL(10,2) DEFAULT 0" },
+        { name: "final_amount", type: "DECIMAL(10,2)" },
+        { name: "delivery_status", type: "VARCHAR(50)" },
+        { name: "tracking_number", type: "VARCHAR(100)" },
+        { name: "delivery_address", type: "JSONB" }
+      ];
+      for (const col of orderColumns) {
+        await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`).catch(() => {
+        });
+      }
+      results.push("Added pharmacy columns to orders table");
+      return c.json({
+        success: true,
+        message: "Pharmacy tables and columns created",
+        results
+      });
+    } catch (error) {
+      console.error("Error creating pharmacy tables:", error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -270725,6 +271232,567 @@ function registerVendorSupportEndpoints(app2) {
   });
 }
 
+// src/endpoints/pharmacy-orders.ts
+init_rds_connection();
+var import_crypto18 = __toESM(require("crypto"));
+var DEFAULT_PHARMACY_RADIUS_KM = 20;
+var ORDER_TIMEOUT_MINUTES = 5;
+var BASE_DELIVERY_FEE = 30;
+var PER_KM_RATE = 10;
+function calculateDistance6(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+function calculateDeliveryFee(distanceKm) {
+  return Math.round(BASE_DELIVERY_FEE + distanceKm * PER_KM_RATE);
+}
+function calculateETA(distanceKm) {
+  const avgSpeedKmh = 20;
+  const prepTimeMinutes = 10;
+  const baseMinutes = Math.round(distanceKm / avgSpeedKmh * 60) + prepTimeMinutes;
+  return {
+    minutes: baseMinutes,
+    rangeMin: baseMinutes - 5,
+    rangeMax: baseMinutes + 10
+  };
+}
+function generateOrderNumber() {
+  const date = /* @__PURE__ */ new Date();
+  const year2 = date.getFullYear();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `PH-${year2}-${random}`;
+}
+function registerPharmacyOrderEndpoints(app2) {
+  app2.post("/pharmacy/orders/from-prescription", async (c) => {
+    try {
+      const body2 = await c.req.json();
+      const { prescriptionId, customerId, customerLocation, deliveryAddress } = body2;
+      if (!prescriptionId || !customerId) {
+        return c.json({ error: "prescriptionId and customerId are required" }, 400);
+      }
+      const prescriptions = await query(
+        `SELECT p.*, b.vendor_id as vet_vendor_id, v.business_name as vet_name
+         FROM prescriptions p
+         LEFT JOIN bookings b ON p.booking_id = b.id
+         LEFT JOIN vendors v ON b.vendor_id = v.id
+         WHERE p.id = $1 OR p.booking_id = $1`,
+        [prescriptionId]
+      );
+      if (prescriptions.rows.length === 0) {
+        return c.json({ error: "Prescription not found" }, 404);
+      }
+      const prescription = prescriptions.rows[0];
+      let customerLat = customerLocation?.latitude;
+      let customerLon = customerLocation?.longitude;
+      if (!customerLat || !customerLon) {
+        const customer = await select("customers", { id: customerId });
+        if (customer.length > 0 && customer[0].latitude && customer[0].longitude) {
+          customerLat = customer[0].latitude;
+          customerLon = customer[0].longitude;
+        }
+      }
+      const pharmaciesResult = await query(`
+        SELECT v.*, r.name as role_name
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        WHERE r.name = 'pet_pharmacy'
+          AND v.status = 'approved'
+          AND v.is_active = true
+      `);
+      const nearbyPharmacies = pharmaciesResult.rows.filter((pharmacy) => {
+        if (!pharmacy.latitude || !pharmacy.longitude) return true;
+        if (!customerLat || !customerLon) return true;
+        const distance = calculateDistance6(
+          customerLat,
+          customerLon,
+          pharmacy.latitude,
+          pharmacy.longitude
+        );
+        return distance <= DEFAULT_PHARMACY_RADIUS_KM;
+      }).map((pharmacy) => {
+        const distance = customerLat && customerLon && pharmacy.latitude && pharmacy.longitude ? calculateDistance6(customerLat, customerLon, pharmacy.latitude, pharmacy.longitude) : 5;
+        return {
+          ...pharmacy,
+          distance: Math.round(distance * 10) / 10,
+          deliveryFee: calculateDeliveryFee(distance),
+          eta: calculateETA(distance)
+        };
+      }).sort((a, b) => a.distance - b.distance);
+      if (nearbyPharmacies.length === 0) {
+        return c.json({
+          error: "No pharmacies available in your area",
+          suggestion: "Try again later or expand your search area"
+        }, 404);
+      }
+      const orderNumber = generateOrderNumber();
+      const responseDeadline = new Date(Date.now() + ORDER_TIMEOUT_MINUTES * 60 * 1e3);
+      const orderResult = await query(`
+        INSERT INTO orders (
+          id, order_number, customer_id, status, payment_status,
+          created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        RETURNING *
+      `, [
+        import_crypto18.default.randomUUID(),
+        orderNumber,
+        customerId,
+        "broadcast",
+        // New status for Uber-like flow
+        "pending"
+      ]);
+      const order = orderResult.rows[0];
+      const medications = prescriptions.rows.map((p) => ({
+        name: p.medication_name,
+        dosage: p.dosage,
+        frequency: p.frequency,
+        duration: p.duration,
+        instructions: p.instructions
+      }));
+      for (const med of medications) {
+        await query(`
+          INSERT INTO order_items (id, order_id, product_name, quantity, created_at)
+          VALUES ($1, $2, $3, $4, NOW())
+        `, [import_crypto18.default.randomUUID(), order.id, med.name, 1]);
+      }
+      for (const pharmacy of nearbyPharmacies) {
+        await query(`
+          INSERT INTO pharmacy_order_broadcasts (
+            id, order_id, pharmacy_id, status, broadcast_time, 
+            distance_km, delivery_fee, eta_minutes, created_at
+          ) VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, NOW())
+        `, [
+          import_crypto18.default.randomUUID(),
+          order.id,
+          pharmacy.id,
+          "pending",
+          pharmacy.distance,
+          pharmacy.deliveryFee,
+          pharmacy.eta.minutes
+        ]);
+      }
+      return c.json({
+        success: true,
+        order: {
+          id: order.id,
+          orderNumber: order.order_number,
+          status: "broadcast",
+          prescription: {
+            id: prescription.id,
+            vetName: prescription.vet_name,
+            medications
+          }
+        },
+        broadcastedTo: nearbyPharmacies.length,
+        pharmacies: nearbyPharmacies.map((p) => ({
+          id: p.id,
+          name: p.business_name,
+          distance: p.distance,
+          deliveryFee: p.deliveryFee,
+          eta: p.eta
+        })),
+        responseDeadline: responseDeadline.toISOString(),
+        message: `Order broadcast to ${nearbyPharmacies.length} nearby pharmacies`
+      });
+    } catch (error) {
+      console.error("Error creating pharmacy order:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/pharmacy/orders/incoming/:pharmacyId", async (c) => {
+    try {
+      const { pharmacyId } = c.req.param();
+      const broadcasts = await query(`
+        SELECT 
+          pob.*,
+          o.order_number,
+          o.customer_id,
+          o.created_at as order_created_at,
+          c.full_name as customer_name,
+          c.phone as customer_phone
+        FROM pharmacy_order_broadcasts pob
+        INNER JOIN orders o ON pob.order_id = o.id
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE pob.pharmacy_id = $1
+          AND pob.status = 'pending'
+          AND o.status = 'broadcast'
+        ORDER BY pob.broadcast_time DESC
+      `, [pharmacyId]);
+      const ordersWithItems = await Promise.all(broadcasts.rows.map(async (broadcast) => {
+        const items = await query(`
+          SELECT * FROM order_items WHERE order_id = $1
+        `, [broadcast.order_id]);
+        const prescriptions = await query(`
+          SELECT p.*, v.business_name as vet_name
+          FROM prescriptions p
+          LEFT JOIN bookings b ON p.booking_id = b.id
+          LEFT JOIN vendors v ON b.vendor_id = v.id
+          WHERE p.booking_id IN (
+            SELECT id FROM bookings WHERE customer_id = $1 
+            ORDER BY created_at DESC LIMIT 1
+          )
+        `, [broadcast.customer_id]);
+        return {
+          ...broadcast,
+          items: items.rows,
+          prescription: prescriptions.rows[0] || null,
+          expiresIn: Math.max(0, Math.round((new Date(broadcast.broadcast_time).getTime() + ORDER_TIMEOUT_MINUTES * 60 * 1e3 - Date.now()) / 1e3))
+        };
+      }));
+      return c.json({
+        success: true,
+        incomingOrders: ordersWithItems,
+        count: ordersWithItems.length
+      });
+    } catch (error) {
+      console.error("Error fetching incoming orders:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/pharmacy/orders/:orderId/accept", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { pharmacyId, availableItems, unavailableItems, alternatives } = body2;
+      if (!pharmacyId) {
+        return c.json({ error: "pharmacyId is required" }, 400);
+      }
+      await query(`
+        UPDATE pharmacy_order_broadcasts 
+        SET status = 'accepted', response_time = NOW()
+        WHERE order_id = $1 AND pharmacy_id = $2
+      `, [orderId, pharmacyId]);
+      await query(`
+        UPDATE pharmacy_order_broadcasts 
+        SET status = 'auto_rejected', response_time = NOW()
+        WHERE order_id = $1 AND pharmacy_id != $2 AND status = 'pending'
+      `, [orderId, pharmacyId]);
+      await query(`
+        UPDATE orders 
+        SET vendor_id = $1, status = 'confirmed', updated_at = NOW()
+        WHERE id = $2
+      `, [pharmacyId, orderId]);
+      const pharmacy = await select("vendors", { id: pharmacyId });
+      const broadcast = await query(`
+        SELECT * FROM pharmacy_order_broadcasts 
+        WHERE order_id = $1 AND pharmacy_id = $2
+      `, [orderId, pharmacyId]);
+      return c.json({
+        success: true,
+        message: "Order accepted successfully",
+        order: {
+          id: orderId,
+          status: "confirmed",
+          pharmacy: {
+            id: pharmacyId,
+            name: pharmacy[0]?.business_name,
+            phone: pharmacy[0]?.phone
+          },
+          deliveryFee: broadcast.rows[0]?.delivery_fee,
+          eta: broadcast.rows[0]?.eta_minutes,
+          availableItems,
+          unavailableItems,
+          alternatives
+        },
+        nextStep: "generate_invoice"
+      });
+    } catch (error) {
+      console.error("Error accepting order:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/pharmacy/orders/:orderId/reject", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { pharmacyId, reason } = body2;
+      if (!pharmacyId) {
+        return c.json({ error: "pharmacyId is required" }, 400);
+      }
+      await query(`
+        UPDATE pharmacy_order_broadcasts 
+        SET status = 'rejected', response_time = NOW(), rejection_reason = $3
+        WHERE order_id = $1 AND pharmacy_id = $2
+      `, [orderId, pharmacyId, reason || "Items unavailable"]);
+      const pendingBroadcasts = await query(`
+        SELECT COUNT(*) as count FROM pharmacy_order_broadcasts 
+        WHERE order_id = $1 AND status = 'pending'
+      `, [orderId]);
+      if (parseInt(pendingBroadcasts.rows[0].count) === 0) {
+        await query(`
+          UPDATE orders SET status = 'no_pharmacy_available', updated_at = NOW()
+          WHERE id = $1
+        `, [orderId]);
+      }
+      return c.json({
+        success: true,
+        message: "Order rejected",
+        remainingPharmacies: parseInt(pendingBroadcasts.rows[0].count)
+      });
+    } catch (error) {
+      console.error("Error rejecting order:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/pharmacy/orders/:orderId/invoice", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { items, deliveryFee, taxRate = 5 } = body2;
+      if (!items || items.length === 0) {
+        return c.json({ error: "items are required" }, 400);
+      }
+      const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const taxAmount = Math.round(subtotal * taxRate / 100);
+      const total = subtotal + taxAmount + (deliveryFee || 0);
+      const invoiceData = {
+        items,
+        subtotal,
+        taxRate,
+        taxAmount,
+        deliveryFee: deliveryFee || 0,
+        total,
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      await query(`
+        UPDATE orders 
+        SET 
+          total_amount = $2,
+          discount_amount = 0,
+          final_amount = $2,
+          status = 'invoice_generated',
+          updated_at = NOW()
+        WHERE id = $1
+      `, [orderId, total]);
+      return c.json({
+        success: true,
+        invoice: {
+          orderId,
+          ...invoiceData
+        },
+        message: "Invoice generated and sent to customer",
+        nextStep: "await_payment"
+      });
+    } catch (error) {
+      console.error("Error generating invoice:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/pharmacy/orders/:orderId/payment", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { paymentMethod, paymentId } = body2;
+      if (!paymentMethod) {
+        return c.json({ error: "paymentMethod is required (online or cod)" }, 400);
+      }
+      const newStatus = paymentMethod === "cod" ? "pending" : "paid";
+      const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
+      await query(`
+        UPDATE orders 
+        SET 
+          payment_method = $2,
+          payment_status = $3,
+          status = 'payment_confirmed',
+          updated_at = NOW()
+        WHERE id = $1
+      `, [orderId, paymentMethod, newStatus]);
+      return c.json({
+        success: true,
+        payment: {
+          method: paymentMethod,
+          status: newStatus
+        },
+        deliveryOtp,
+        message: paymentMethod === "cod" ? "Order confirmed! Pay on delivery" : "Payment successful! Order confirmed",
+        nextStep: "prepare_order"
+      });
+    } catch (error) {
+      console.error("Error processing payment:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/pharmacy/orders/:orderId/dispatch", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { deliveryPartner, deliveryPartnerId, deliveryPartnerName, deliveryPartnerPhone } = body2;
+      const broadcast = await query(`
+        SELECT * FROM pharmacy_order_broadcasts 
+        WHERE order_id = $1 AND status = 'accepted'
+      `, [orderId]);
+      const etaMinutes = broadcast.rows[0]?.eta_minutes || 30;
+      const etaTime = new Date(Date.now() + etaMinutes * 60 * 1e3);
+      await query(`
+        UPDATE orders 
+        SET 
+          status = 'dispatched',
+          delivery_status = 'out_for_delivery',
+          updated_at = NOW()
+        WHERE id = $1
+      `, [orderId]);
+      return c.json({
+        success: true,
+        dispatch: {
+          orderId,
+          status: "dispatched",
+          deliveryPartner: deliveryPartner || "Own Fleet",
+          deliveryPartnerId,
+          deliveryPartnerName,
+          deliveryPartnerPhone,
+          eta: {
+            minutes: etaMinutes,
+            time: etaTime.toISOString()
+          }
+        },
+        message: "Order dispatched for delivery"
+      });
+    } catch (error) {
+      console.error("Error dispatching order:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/pharmacy/orders/:orderId/track", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const order = await query(`
+        SELECT 
+          o.*,
+          v.business_name as pharmacy_name,
+          v.phone as pharmacy_phone,
+          v.address as pharmacy_address,
+          v.latitude as pharmacy_lat,
+          v.longitude as pharmacy_lon,
+          c.full_name as customer_name,
+          c.phone as customer_phone
+        FROM orders o
+        LEFT JOIN vendors v ON o.vendor_id = v.id
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = $1
+      `, [orderId]);
+      if (order.rows.length === 0) {
+        return c.json({ error: "Order not found" }, 404);
+      }
+      const orderData = order.rows[0];
+      const timeline = [
+        { status: "order_placed", label: "Order Placed", completed: true, time: orderData.created_at },
+        { status: "pharmacy_confirmed", label: "Pharmacy Confirmed", completed: ["confirmed", "invoice_generated", "payment_confirmed", "preparing", "dispatched", "delivered"].includes(orderData.status), time: null },
+        { status: "invoice_generated", label: "Invoice Generated", completed: ["invoice_generated", "payment_confirmed", "preparing", "dispatched", "delivered"].includes(orderData.status), time: null },
+        { status: "payment_confirmed", label: "Payment Confirmed", completed: ["payment_confirmed", "preparing", "dispatched", "delivered"].includes(orderData.status), time: null },
+        { status: "preparing", label: "Preparing Order", completed: ["preparing", "dispatched", "delivered"].includes(orderData.status), time: null },
+        { status: "dispatched", label: "Out for Delivery", completed: ["dispatched", "delivered"].includes(orderData.status), time: null },
+        { status: "delivered", label: "Delivered", completed: orderData.status === "delivered", time: null }
+      ];
+      return c.json({
+        success: true,
+        order: {
+          id: orderData.id,
+          orderNumber: orderData.order_number,
+          status: orderData.status,
+          deliveryStatus: orderData.delivery_status,
+          paymentStatus: orderData.payment_status,
+          paymentMethod: orderData.payment_method,
+          totalAmount: orderData.total_amount,
+          pharmacy: {
+            name: orderData.pharmacy_name,
+            phone: orderData.pharmacy_phone,
+            address: orderData.pharmacy_address,
+            location: {
+              lat: orderData.pharmacy_lat,
+              lon: orderData.pharmacy_lon
+            }
+          },
+          customer: {
+            name: orderData.customer_name,
+            phone: orderData.customer_phone
+          },
+          deliveryAddress: orderData.delivery_address
+        },
+        timeline,
+        liveTracking: {
+          available: orderData.status === "dispatched",
+          // In production, get from delivery partner API
+          currentLocation: null,
+          etaMinutes: null
+        }
+      });
+    } catch (error) {
+      console.error("Error tracking order:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/pharmacy/:pharmacyId/orders", async (c) => {
+    try {
+      const { pharmacyId } = c.req.param();
+      const status = c.req.query("status");
+      const limit2 = parseInt(c.req.query("limit") || "50");
+      let ordersQuery = `
+        SELECT 
+          o.*,
+          c.full_name as customer_name,
+          c.phone as customer_phone,
+          pob.distance_km,
+          pob.delivery_fee,
+          pob.eta_minutes
+        FROM orders o
+        INNER JOIN pharmacy_order_broadcasts pob ON o.id = pob.order_id
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.vendor_id = $1
+      `;
+      const params = [pharmacyId];
+      if (status) {
+        ordersQuery += ` AND o.status = $2`;
+        params.push(status);
+      }
+      ordersQuery += ` ORDER BY o.created_at DESC LIMIT $${params.length + 1}`;
+      params.push(limit2);
+      const orders = await query(ordersQuery, params);
+      const ordersWithItems = await Promise.all(orders.rows.map(async (order) => {
+        const items = await query(`SELECT * FROM order_items WHERE order_id = $1`, [order.id]);
+        return {
+          ...order,
+          items: items.rows
+        };
+      }));
+      return c.json({
+        success: true,
+        orders: ordersWithItems,
+        count: ordersWithItems.length
+      });
+    } catch (error) {
+      console.error("Error fetching pharmacy orders:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/pharmacy/orders/:orderId/complete", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body2 = await c.req.json();
+      const { otp, signature } = body2;
+      await query(`
+        UPDATE orders 
+        SET 
+          status = 'delivered',
+          delivery_status = 'delivered',
+          payment_status = 'paid',
+          updated_at = NOW()
+        WHERE id = $1
+      `, [orderId]);
+      return c.json({
+        success: true,
+        message: "Order delivered successfully",
+        order: { id: orderId, status: "delivered" }
+      });
+    } catch (error) {
+      console.error("Error completing order:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
 // src/handler/index.ts
 var app = new Hono2();
 var allowedOrigins = [
@@ -270804,6 +271872,7 @@ registerReviewEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerCustomerBookingHistoryEndpoints(app);
 registerPrescriptionEndpoints(app);
+registerPharmacyOrderEndpoints(app);
 registerMedicalRecordsEndpoints(app);
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);

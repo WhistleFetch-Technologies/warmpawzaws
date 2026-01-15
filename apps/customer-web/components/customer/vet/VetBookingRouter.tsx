@@ -52,12 +52,39 @@ export function VetBookingRouter({
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [vendorServices, setVendorServices] = useState<any[]>([]);
+  const [selectedVendorService, setSelectedVendorService] = useState<any>(null);
 
-  const serviceOptions = [
+  // Default service type options (used when no specific services loaded)
+  const defaultServiceTypeOptions = [
     { id: 'tele', name: 'Tele Consultation', icon: Video, price: 299, duration: 15, desc: 'Video call with vet', color: 'blue' },
     { id: 'at_home', name: 'Home Visit', icon: Home, price: 599, duration: 30, desc: 'Vet comes to you', color: 'green' },
     { id: 'at_center', name: 'Clinic Visit', icon: Building2, price: 399, duration: 20, desc: 'Visit the clinic', color: 'purple' },
   ];
+
+  // Get actual services for current style, or fall back to defaults
+  const getServicesForStyle = (style: string) => {
+    const styleServices = vendorServices.filter(s => s.serviceStyle === style || s.service_style === style);
+    if (styleServices.length > 0) {
+      return styleServices.map(s => ({
+        id: s.id || s.serviceId,
+        serviceId: s.serviceId || s.service_id,
+        name: s.serviceName || s.service_name || s.name,
+        price: s.price || 0,
+        duration: s.duration || 30,
+        desc: s.description || '',
+        serviceStyle: style,
+        icon: style === 'tele' ? Video : style === 'at_home' ? Home : Building2,
+        color: style === 'tele' ? 'blue' : style === 'at_home' ? 'green' : 'purple',
+      }));
+    }
+    return [];
+  };
+
+  // Use actual services or fallback to service type selection
+  const serviceOptions = vendorServices.length > 0 
+    ? getServicesForStyle(selectedServiceType) 
+    : defaultServiceTypeOptions;
 
   const generateDates = () => {
     const dates = [];
@@ -89,28 +116,57 @@ export function VetBookingRouter({
 
   useEffect(() => {
     loadCustomerData();
-  }, [phone]);
+    if (doctorId) {
+      loadVendorServices();
+    }
+  }, [phone, doctorId]);
+
+  const loadVendorServices = async () => {
+    if (!doctorId) return;
+    
+    try {
+      setLoading(true);
+      // Load actual vendor services
+      const servicesResponse = await apiClient.get(`/customer/clinic/${doctorId}/services`) as any;
+      if (servicesResponse.success && servicesResponse.services) {
+        setVendorServices(servicesResponse.services);
+        console.log('Loaded vendor services:', servicesResponse.services.length);
+      }
+    } catch (error) {
+      console.error('Error loading vendor services:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadCustomerData = async () => {
     try {
-      // Load pets
+      // Load pets from API
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
-      if (petsResponse.pets) {
-        setPets(petsResponse.pets);
+      if (petsResponse.pets && petsResponse.pets.length > 0) {
+        setPets(petsResponse.pets.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          species: p.species || p.type,
+          breed: p.breed,
+        })));
       }
       
-      // Mock addresses for now
-      setAddresses([
-        { id: '1', label: 'Home', address: '123 Main Street', city: 'Mumbai', pincode: '400001' },
-        { id: '2', label: 'Office', address: '456 Business Park', city: 'Mumbai', pincode: '400051' },
-      ]);
+      // Load customer addresses from API
+      try {
+        const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+        if (addressResponse.addresses && addressResponse.addresses.length > 0) {
+          setAddresses(addressResponse.addresses);
+        }
+      } catch (addrErr) {
+        // If no addresses saved, leave empty - user can enter manually
+        setAddresses([]);
+      }
     } catch (error) {
       console.error('Error loading customer data:', error);
-      // Use mock data
-      setPets([
-        { id: '1', name: 'Bruno', species: 'dog', breed: 'Labrador' },
-        { id: '2', name: 'Max', species: 'dog', breed: 'German Shepherd' },
-      ]);
+      // Don't use mock data - show empty state instead
+      setPets([]);
+      setAddresses([]);
     }
   };
 

@@ -185,20 +185,15 @@ class CreateVendorProductHandler extends BaseHandler {
         return this.error('Vendor not found', 404);
       }
 
-      // Prepare product data
+      // Prepare product data - only use columns that exist in DB
       const productData: any = {
         vendor_id: vendorId,
         name: body.name,
         description: body.description || null,
         category_id: body.category_id || null,
-        category: body.category || null,
         price: parseFloat(body.price),
-        stock: parseInt(body.stock || body.stock_quantity || '0', 10),
         stock_quantity: parseInt(body.stock || body.stock_quantity || '0', 10),
         sku: body.sku || null,
-        hsn_code: body.hsn_code || null,
-        gst_rate: body.gst_rate ? parseFloat(body.gst_rate) : null,
-        images: body.images || [],
         is_active: body.is_active !== false,
       };
 
@@ -377,64 +372,155 @@ export function registerVendorProductsEndpoints(app: Hono) {
 
   app.get('/vendor/:vendorId/products', async (c) => {
     try {
-      const response = await getProductsHandler.handle({
-        event: {
-          pathParameters: c.req.param(),
-          queryStringParameters: Object.fromEntries(c.req.query()),
-        } as any,
-      } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
-    } catch (error: any) {
-      console.error('Error in vendor products endpoint:', error);
-      // Handle test IDs gracefully
       const vendorId = c.req.param('vendorId');
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      
+      // Handle test IDs or invalid UUIDs gracefully
+      if (!vendorId || vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({
           products: [],
           total: 0,
           count: 0,
         }, 200);
       }
+
+      // Get query parameters
+      const search = c.req.query('search') || '';
+      const category = c.req.query('category') || '';
+      const status = c.req.query('status') || '';
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // Build query with proper error handling
+      let productQuery = `
+        SELECT p.*, 
+               ec.name as category_name
+        FROM products p
+        LEFT JOIN ecommerce_categories ec ON p.category_id = ec.id
+        WHERE p.vendor_id = $1
+      `;
+
+      const params: any[] = [vendorId];
+      let paramIndex = 2;
+
+      if (search) {
+        productQuery += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      if (category) {
+        productQuery += ` AND (p.category_id::text = $${paramIndex} OR p.category = $${paramIndex})`;
+        params.push(category);
+        paramIndex++;
+      }
+
+      if (status === 'active') {
+        productQuery += ` AND p.is_active = true`;
+      } else if (status === 'inactive') {
+        productQuery += ` AND p.is_active = false`;
+      }
+
+      productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      let products;
+      let total = 0;
+      
+      try {
+        products = await query(productQuery, params);
+
+        // Get total count
+        let countQuery = `SELECT COUNT(*) as total FROM products p WHERE p.vendor_id = $1`;
+        const countParams: any[] = [vendorId];
+        const countResult = await query(countQuery, countParams);
+        total = parseInt(countResult.rows?.[0]?.total || '0', 10);
+      } catch (dbError: any) {
+        console.error('Database error in vendor products:', dbError);
+        // Handle table/column not existing errors
+        if (dbError.message?.includes('relation') || 
+            dbError.message?.includes('column') ||
+            dbError.code === '42P01' || 
+            dbError.code === '42703') {
+          return c.json({
+            products: [],
+            total: 0,
+            count: 0,
+          }, 200);
+        }
+        throw dbError;
+      }
+
+      return c.json({
+        products: products?.rows || [],
+        count: products?.rows?.length || 0,
+        total,
+        limit,
+        offset,
+      }, 200);
+    } catch (error: any) {
+      console.error('Error in vendor products endpoint:', error);
       return c.json({ error: error.message || 'Internal Server Error' }, 500);
     }
   });
 
   app.post('/vendor/:vendorId/products', async (c) => {
-    const response = await createProductHandler.handle({
-      event: {
-        pathParameters: c.req.param(),
-        body: await c.req.json(),
-      } as any,
-    } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    try {
+      const body = await c.req.json();
+      const response = await createProductHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          body: JSON.stringify(body), // Pass as string for parseBody to work
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error: any) {
+      console.error('Error creating product:', error);
+      return c.json({ error: error.message || 'Failed to create product' }, 500);
+    }
   });
 
   app.get('/vendor/:vendorId/products/:productId', async (c) => {
-    const response = await getProductHandler.handle({
-      event: {
-        pathParameters: c.req.param(),
-      } as any,
-    } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    try {
+      const response = await getProductHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error: any) {
+      console.error('Error getting product:', error);
+      return c.json({ error: error.message || 'Failed to get product' }, 500);
+    }
   });
 
   app.put('/vendor/:vendorId/products/:productId', async (c) => {
-    const response = await updateProductHandler.handle({
-      event: {
-        pathParameters: c.req.param(),
-        body: await c.req.json(),
-      } as any,
-    } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    try {
+      const body = await c.req.json();
+      const response = await updateProductHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+          body: JSON.stringify(body), // Pass as string for parseBody to work
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error: any) {
+      console.error('Error updating product:', error);
+      return c.json({ error: error.message || 'Failed to update product' }, 500);
+    }
   });
 
   app.delete('/vendor/:vendorId/products/:productId', async (c) => {
-    const response = await deleteProductHandler.handle({
-      event: {
-        pathParameters: c.req.param(),
-      } as any,
-    } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    try {
+      const response = await deleteProductHandler.handle({
+        event: {
+          pathParameters: c.req.param(),
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode);
+    } catch (error: any) {
+      console.error('Error deleting product:', error);
+      return c.json({ error: error.message || 'Failed to delete product' }, 500);
+    }
   });
 }
 

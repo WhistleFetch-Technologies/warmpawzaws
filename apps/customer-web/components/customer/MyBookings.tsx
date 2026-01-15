@@ -87,14 +87,50 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ bookings?: any[] } | any[]>(`/customer/${phone}/bookings`);
+      const result = await apiClient.get<any>(`/customer/${phone}/bookings`);
+      
+      let rawBookings: any[] = [];
       if (Array.isArray(result)) {
-        setBookings(result);
+        rawBookings = result;
       } else {
-        setBookings(result.bookings || []);
+        rawBookings = result.bookings || result.data?.bookings || [];
       }
+      
+      // Map API response to Booking interface
+      const mappedBookings: Booking[] = rawBookings.map((b: any) => ({
+        bookingId: b.id || b.bookingId,
+        serviceType: b.service_type || b.serviceType || 'at_center',
+        serviceName: b.service_name || b.serviceName || b.service?.name || 'Consultation',
+        vendorId: b.vendor_id || b.vendorId,
+        vendorName: b.vendor_name || b.vendorName || b.vendor?.business_name || b.vendor?.businessName || 'Unknown Vendor',
+        staffId: b.staff_id || b.staffId,
+        staffName: b.staff_name || b.staffName,
+        petId: b.pet_id || b.petId || '',
+        petName: b.pet_name || b.petName || 'N/A',
+        customerPhone: b.customer_phone || b.customerPhone || phone,
+        serviceStyle: b.service_style || b.serviceStyle || b.service_type || 'at_center',
+        bookingDate: b.booking_date || b.bookingDate || b.scheduled_date,
+        bookingTime: b.booking_time || b.bookingTime || b.scheduled_time || '',
+        duration: b.duration || 30,
+        price: parseFloat(b.total_amount || b.totalAmount || b.price || 0),
+        status: b.status || 'pending',
+        completionOTP: b.completion_otp || b.completionOTP,
+        isPackage: b.is_package || b.isPackage || false,
+        packageDetails: b.package_details || b.packageDetails,
+        occurrences: b.occurrences,
+        createdAt: b.created_at || b.createdAt,
+        specialInstructions: b.notes || b.special_instructions,
+        requiresStartOTP: b.requires_start_otp,
+        startOTP: b.start_otp,
+        startTime: b.start_time,
+        endTime: b.end_time,
+        actualDuration: b.actual_duration,
+      }));
+      
+      setBookings(mappedBookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
+      setBookings([]);
     } finally {
       setLoading(false);
     }

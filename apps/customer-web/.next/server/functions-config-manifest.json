@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/booking/[serviceId]":{},"/auth":{},"/orders/[id]/tracking":{},"/tracking/[bookingId]":{},"/video/[bookingId]":{}}}
+{"version":1,"functions":{"/booking/[serviceId]":{},"/orders/[id]/tracking":{},"/auth":{},"/tracking/[bookingId]":{},"/video/[bookingId]":{}}}

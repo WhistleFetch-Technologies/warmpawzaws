@@ -892,5 +892,318 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /customer/facility/:vendorId
+   * Customer-facing endpoint to get vendor/clinic facility details
+   */
+  app.get("/customer/facility/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ error: 'Valid vendor ID is required' }, 400);
+      }
+
+      // Get vendor details
+      const vendorResult = await query(
+        `SELECT v.*, r.name as role_name, r.display_name as role_display_name,
+                r.config as role_config
+         FROM vendors v
+         LEFT JOIN roles r ON v.role_id = r.id
+         WHERE v.id = $1`,
+        [vendorId]
+      );
+
+      if (vendorResult.rows.length === 0) {
+        return c.json({ error: 'Vendor not found', success: false }, 404);
+      }
+
+      const vendor = vendorResult.rows[0];
+
+      // Get rating
+      const ratingResult = await query(
+        `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
+         FROM reviews WHERE vendor_id = $1`,
+        [vendorId]
+      );
+
+      // Get recent reviews
+      const reviewsResult = await query(
+        `SELECT r.*, c.full_name as customer_name
+         FROM reviews r
+         LEFT JOIN customers c ON r.customer_id = c.id
+         WHERE r.vendor_id = $1
+         ORDER BY r.created_at DESC LIMIT 5`,
+        [vendorId]
+      );
+
+      // Get staff
+      const staffResult = await query(
+        `SELECT id, name, role, experience_years, is_active
+         FROM staff WHERE vendor_id = $1 AND is_active = true`,
+        [vendorId]
+      );
+
+      return c.json({
+        success: true,
+        vendor: {
+          id: vendor.id,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name,
+          phone: vendor.phone,
+          email: vendor.email,
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          pincode: vendor.pincode,
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          description: vendor.description,
+          logoUrl: vendor.logo_url,
+          coverImageUrl: vendor.cover_image_url,
+          role: vendor.role_name,
+          roleDisplayName: vendor.role_display_name,
+        },
+        facility: {
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          pincode: vendor.pincode,
+          latitude: vendor.latitude,
+          longitude: vendor.longitude,
+          photos: [], // TODO: Add facility photos
+          amenities: vendor.amenities || [],
+          operatingHours: vendor.operating_hours,
+        },
+        rating: {
+          average: parseFloat(ratingResult.rows[0]?.avg_rating || '0').toFixed(1),
+          count: parseInt(ratingResult.rows[0]?.review_count || '0', 10),
+        },
+        recentReviews: reviewsResult.rows.map(r => ({
+          id: r.id,
+          customerName: r.customer_name || 'Anonymous',
+          rating: r.rating,
+          comment: r.comment,
+          date: r.created_at,
+        })),
+        staff: staffResult.rows.map(s => ({
+          id: s.id,
+          name: s.name,
+          role: s.role,
+          experienceYears: s.experience_years,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching facility:', error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/clinic/:vendorId/services
+   * Get services for a specific clinic/vendor
+   */
+  app.get("/customer/clinic/:vendorId/services", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const serviceStyle = c.req.query('style') || c.req.query('serviceStyle');
+      
+      if (!vendorId || !isValidUUID(vendorId)) {
+        return c.json({ error: 'Valid vendor ID is required', success: false }, 400);
+      }
+
+      // Get vendor services from vendor_services table
+      let servicesQuery = `
+        SELECT 
+          vs.id,
+          vs.service_id,
+          vs.service_name,
+          vs.service_style,
+          vs.price,
+          vs.duration_minutes as duration,
+          vs.custom_description as description,
+          vs.is_enabled,
+          vs.publish_status,
+          vs.category as category_name,
+          vs.sub_category as sub_category_name,
+          vs.is_custom_service as is_package,
+          vs.metadata as package_details,
+          s.name as base_service_name,
+          s.description as base_description
+        FROM vendor_services vs
+        LEFT JOIN services s ON vs.service_id = s.id
+        WHERE vs.vendor_id = $1 
+          AND vs.is_enabled = true 
+          AND vs.publish_status = 'published'
+      `;
+      
+      const params: any[] = [vendorId];
+      
+      if (serviceStyle) {
+        servicesQuery += ` AND vs.service_style = $2`;
+        params.push(serviceStyle);
+      }
+      
+      servicesQuery += ` ORDER BY vs.category, vs.service_name`;
+
+      const servicesResult = await query(servicesQuery, params);
+
+      const services = servicesResult.rows.map(s => ({
+        id: s.id,
+        serviceId: s.service_id,
+        serviceName: s.service_name || s.base_service_name,
+        description: s.description || s.base_description || '',
+        price: parseFloat(s.price || 0),
+        duration: s.duration || 30,
+        serviceStyle: s.service_style,
+        categoryName: s.category_name || s.category,
+        subCategoryName: s.sub_category_name || s.sub_category,
+        isPackage: s.is_package,
+        packageDetails: s.package_details,
+        isEnabled: s.is_enabled,
+        publishStatus: s.publish_status,
+      }));
+
+      // Group by service style
+      const groupedServices = {
+        at_center: services.filter(s => s.serviceStyle === 'at_center'),
+        at_home: services.filter(s => s.serviceStyle === 'at_home'),
+        tele: services.filter(s => s.serviceStyle === 'tele'),
+      };
+
+      return c.json({
+        success: true,
+        services,
+        grouped: groupedServices,
+        total: services.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching clinic services:', error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/services/by-style
+   * Get available services filtered by style (tele, at_home, at_center)
+   * This is for home/tele service discovery - lists actual configured services
+   */
+  app.get("/customer/services/by-style", async (c) => {
+    try {
+      const serviceStyle = c.req.query('style');
+      const category = c.req.query('category');
+      const latitude = c.req.query('latitude');
+      const longitude = c.req.query('longitude');
+      const radius = parseInt(c.req.query('radius') || '50', 10); // km
+      
+      if (!serviceStyle) {
+        return c.json({ error: 'Service style is required (tele, at_home, at_center)', success: false }, 400);
+      }
+
+      // Get vendors with services in this style
+      let vendorsQuery = `
+        SELECT DISTINCT ON (v.id)
+          v.id as vendor_id,
+          v.business_name,
+          v.owner_name,
+          v.phone,
+          v.address,
+          v.city,
+          v.latitude,
+          v.longitude,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
+          (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+        WHERE v.status = 'approved' 
+          AND v.is_active = true
+          AND vs.service_style = $1
+          AND vs.is_enabled = true
+          AND vs.publish_status = 'published'
+      `;
+      
+      const params: any[] = [serviceStyle];
+      let paramIndex = 2;
+
+      // Filter by category/role
+      if (category) {
+        const categoryRoles: Record<string, string[]> = {
+          'vet': ['veterinarian', 'vet_clinic'],
+          'grooming': ['groomer', 'grooming_salon', 'pet_groomer'],
+          'training': ['trainer', 'pet_trainer'],
+        };
+        const roles = categoryRoles[category.toLowerCase()];
+        if (roles) {
+          vendorsQuery += ` AND r.name = ANY($${paramIndex})`;
+          params.push(roles);
+          paramIndex++;
+        }
+      }
+
+      vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
+
+      const vendorsResult = await query(vendorsQuery, params);
+
+      // For each vendor, get their services in this style
+      const vendorsWithServices = await Promise.all(
+        vendorsResult.rows.map(async (vendor) => {
+          const servicesResult = await query(
+            `SELECT 
+              vs.id,
+              vs.service_id,
+              vs.service_name,
+              vs.price,
+              vs.duration_minutes as duration,
+              vs.custom_description as description,
+              vs.category as category_name
+             FROM vendor_services vs
+             WHERE vs.vendor_id = $1 
+               AND vs.service_style = $2
+               AND vs.is_enabled = true
+               AND vs.publish_status = 'published'
+             ORDER BY vs.price ASC`,
+            [vendor.vendor_id, serviceStyle]
+          );
+
+          return {
+            vendorId: vendor.vendor_id,
+            vendorName: vendor.business_name || vendor.owner_name,
+            phone: vendor.phone,
+            address: vendor.address,
+            city: vendor.city,
+            role: vendor.role_display_name || vendor.role_name,
+            rating: parseFloat(vendor.avg_rating || '0').toFixed(1),
+            reviewCount: parseInt(vendor.review_count || '0', 10),
+            services: servicesResult.rows.map(s => ({
+              id: s.id,
+              serviceId: s.service_id,
+              name: s.service_name,
+              price: parseFloat(s.price || 0),
+              duration: s.duration || 30,
+              description: s.description,
+              category: s.category_name,
+            })),
+          };
+        })
+      );
+
+      // Filter vendors with at least one service
+      const filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
+
+      return c.json({
+        success: true,
+        style: serviceStyle,
+        vendors: filteredVendors,
+        total: filteredVendors.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching services by style:', error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
 }
 

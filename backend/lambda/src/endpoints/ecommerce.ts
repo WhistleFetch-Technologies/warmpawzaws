@@ -124,7 +124,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE p.is_active = true AND p.status = 'active'
+        WHERE p.is_active = true
       `;
 
       const params: any[] = [];
@@ -218,16 +218,31 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/ecommerce/categories", async (c) => {
     try {
-      const categories = await query(
-        `SELECT * FROM ecommerce_categories
-         WHERE is_active = true
-         ORDER BY display_order ASC, name ASC`
-      );
+      let categories;
+      try {
+        categories = await query(
+          `SELECT * FROM ecommerce_categories
+           WHERE is_active = true
+           ORDER BY display_order ASC, name ASC`
+        );
+      } catch (dbError: any) {
+        // Handle table not existing
+        if (dbError.message?.includes('relation "ecommerce_categories" does not exist') ||
+            dbError.code === '42P01') {
+          return c.json({
+            success: true,
+            categories: [],
+            total: 0,
+            message: 'Categories table not initialized. Please seed categories via admin panel.',
+          });
+        }
+        throw dbError;
+      }
 
       return c.json({
         success: true,
-        categories: categories.rows,
-        total: categories.rows.length,
+        categories: categories?.rows || [],
+        total: categories?.rows?.length || 0,
       });
     } catch (error: any) {
       console.error('Error fetching e-commerce categories:', error);
