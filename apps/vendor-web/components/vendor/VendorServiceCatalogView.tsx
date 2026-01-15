@@ -835,7 +835,7 @@ export function VendorServiceCatalogView({
                                   
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <h5 className="font-medium text-gray-900">{service.serviceName}</h5>
+                                      <h5 className="font-medium text-gray-900">{service.serviceName || service.service_name || service.name || 'Unnamed Service'}</h5>
                                       {added && (
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                           <Check className="w-3 h-3 mr-1" />
@@ -850,12 +850,13 @@ export function VendorServiceCatalogView({
 
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                        ₹{service.basePrice}
+                                        ₹{Number(service.basePrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                       
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                                         {service.serviceStyle === 'at_home' ? 'At Home' : 
-                                         service.serviceStyle === 'at_center' ? 'At Center' : 'Tele'}
+                                         service.serviceStyle === 'at_center' ? 'At Center' : 
+                                         service.serviceStyle === 'tele' ? 'Tele Consultation' : 'Tele'}
                                       </span>
 
                                       {service.duration && (
