@@ -1282,17 +1282,17 @@ export function VendorLandingPage({
 
       // 7. Pet Products Store / Retailer - Redirect to Seller Hub (E-Commerce Dashboard)
       // Check role by name OR by UUID (pet_products_store UUID = 5056756d-3b05-457a-9725-3f922800b520)
-      const roleId = vendorData?.roleId || (vendorData as any)?.role_id || (vendorData as any)?.selected_role_id;
+      const vendorRoleId = vendorData?.roleId || (vendorData as any)?.role_id || (vendorData as any)?.selected_role_id;
       const roleName = (vendorData as any)?.roleName || (vendorData as any)?.role_name || '';
       const PET_PRODUCTS_STORE_UUID = '5056756d-3b05-457a-9725-3f922800b520';
       const PET_PHARMACY_UUID = ''; // Add if known
-      const isRetailVendor = roleId === 'pet_products_store' || roleId === 'product_seller' || 
-                             roleId === 'pet_pharmacy' || roleId === PET_PRODUCTS_STORE_UUID ||
+      const isRetailVendor = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' || 
+                             vendorRoleId === 'pet_pharmacy' || vendorRoleId === PET_PRODUCTS_STORE_UUID ||
                              roleName === 'pet_products_store' || roleName === 'Pet Store / Retailer' ||
-                             roleId?.includes('retail') || roleId?.includes('store') ||
+                             vendorRoleId?.includes('retail') || vendorRoleId?.includes('store') ||
                              (vendorData as any)?.vendor_type === 'seller';
       if (isRetailVendor) {
-        console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', roleId, 'RoleName:', roleName);
+        console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', vendorRoleId, 'RoleName:', roleName);
         router.push('/seller');
         return (
           <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">

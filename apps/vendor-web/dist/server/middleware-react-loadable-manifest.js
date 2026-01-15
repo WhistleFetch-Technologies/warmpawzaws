@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{\"components/vendor/VendorServiceCatalogView.tsx -> @/lib/service-catalogs\":{\"id\":\"components/vendor/VendorServiceCatalogView.tsx -> @/lib/service-catalogs\",\"files\":[\"static/chunks/_app-pages-browser_lib_service-catalogs_ts.js\"]}}"
+self.__REACT_LOADABLE_MANIFEST="{\"components/vendor/VendorServiceCatalogView.tsx -> @/lib/service-catalogs\":{\"id\":\"components/vendor/VendorServiceCatalogView.tsx -> @/lib/service-catalogs\",\"files\":[]}}"
