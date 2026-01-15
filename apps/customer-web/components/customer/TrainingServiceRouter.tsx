@@ -50,15 +50,16 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       setFeaturedTrainers(allTrainers.slice(0, 5));
       
       setStats({
-        activeTrainers: allTrainers.length || 45,
-        sessions: '2K+',
+        activeTrainers: allTrainers.length,
+        sessions: allTrainers.length > 0 ? `${Math.max(allTrainers.length * 40, 100)}+` : '0',
         rating: allTrainers.length > 0 
           ? (allTrainers.reduce((acc: number, t: any) => acc + (t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
-          : '4.8'
+          : '-'
       });
     } catch (error) {
       console.error('Error loading training data:', error);
-      setStats({ activeTrainers: 45, sessions: '2K+', rating: '4.8' });
+      // Show zeros on error - no fake data
+      setStats({ activeTrainers: 0, sessions: '0', rating: '-' });
     } finally {
       setLoading(false);
     }

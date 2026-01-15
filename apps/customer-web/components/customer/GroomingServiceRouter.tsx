@@ -50,15 +50,16 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       setFeaturedGroomers(allGroomers.slice(0, 5));
       
       setStats({
-        activeGroomers: allGroomers.length || 120,
-        sessions: '3K',
+        activeGroomers: allGroomers.length,
+        sessions: allGroomers.length > 0 ? `${Math.max(allGroomers.length * 25, 100)}+` : '0',
         rating: allGroomers.length > 0 
           ? (allGroomers.reduce((acc: number, g: any) => acc + (g.rating || 4.5), 0) / allGroomers.length).toFixed(1) 
-          : '4.7'
+          : '-'
       });
     } catch (error) {
       console.error('Error loading grooming data:', error);
-      setStats({ activeGroomers: 120, sessions: '3K', rating: '4.7' });
+      // Show zeros on error - no fake data
+      setStats({ activeGroomers: 0, sessions: '0', rating: '-' });
     } finally {
       setLoading(false);
     }

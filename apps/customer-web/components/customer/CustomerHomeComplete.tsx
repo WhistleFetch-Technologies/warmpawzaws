@@ -81,6 +81,12 @@ export function CustomerHomeComplete({
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
   const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
   
+  // Dynamic service data from API (replacing hardcoded mock data)
+  const [groomingServices, setGroomingServices] = useState<any[]>([]);
+  const [vetServicesData, setVetServicesData] = useState<any[]>([]);
+  const [hotDeals, setHotDeals] = useState<any[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  
   // Define quickServices constant (moved before useEffect)
   const quickServices = [
     // PRIMARY SERVICES
@@ -112,7 +118,67 @@ export function CustomerHomeComplete({
 
   useEffect(() => {
     loadUserData();
+    loadServicesFromAPI();
   }, [phone, refreshKey]); // Add refreshKey to dependencies
+
+  // Load real services from API
+  const loadServicesFromAPI = async () => {
+    try {
+      setServicesLoading(true);
+      
+      // Fetch grooming services
+      const groomingResp = await apiClient.get<any>('/customer/discover-services?category=grooming').catch(() => null);
+      if (groomingResp?.services || groomingResp?.vendors) {
+        const services = groomingResp.services || groomingResp.vendors || [];
+        const mappedGrooming = services.slice(0, 3).map((s: any) => ({
+          id: s.id || s.vendorServiceId,
+          title: s.serviceName || s.name || 'Grooming Service',
+          price: `₹${s.price || s.basePrice || 999}`,
+          rating: s.rating || 4.8,
+          icon: s.serviceStyle === 'at_home' ? '🏠' : s.serviceStyle === 'at_center' ? '✂️' : '💆',
+          description: s.description || 'Professional grooming service',
+          serviceStyle: s.serviceStyle,
+          vendorId: s.vendorId
+        }));
+        if (mappedGrooming.length > 0) setGroomingServices(mappedGrooming);
+      }
+      
+      // Fetch vet services
+      const vetResp = await apiClient.get<any>('/customer/discover-services?category=vet&roleId=veterinarian').catch(() => null);
+      if (vetResp?.services || vetResp?.vendors) {
+        const services = vetResp.services || vetResp.vendors || [];
+        const mappedVet = services.slice(0, 3).map((s: any) => ({
+          id: s.id || s.vendorServiceId,
+          title: s.serviceName || s.name || 'Vet Service',
+          price: `₹${s.price || s.basePrice || 499}`,
+          icon: s.serviceStyle === 'at_home' ? '🏠' : s.serviceStyle === 'tele' ? '📱' : '🏥',
+          description: s.description || 'Veterinary service',
+          type: s.serviceStyle === 'at_home' ? 'visit' : s.serviceStyle === 'tele' ? 'video' : 'clinic',
+          vendorId: s.vendorId
+        }));
+        if (mappedVet.length > 0) setVetServicesData(mappedVet);
+      }
+      
+      // Fetch products/deals
+      const productsResp = await apiClient.get<any>('/products?featured=true&limit=3').catch(() => null);
+      if (productsResp?.products && productsResp.products.length > 0) {
+        const mappedDeals = productsResp.products.map((p: any) => ({
+          id: p.id,
+          title: p.name || 'Pet Product',
+          price: `₹${p.salePrice || p.price || 999}`,
+          originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
+          discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
+          image: p.emoji || '🛒',
+          rating: p.rating || 4.5
+        }));
+        setHotDeals(mappedDeals);
+      }
+    } catch (error) {
+      console.error('Error loading services:', error);
+    } finally {
+      setServicesLoading(false);
+    }
+  };
 
   // Load dashboard config - but ALWAYS show all services by default
   // Dashboard config is only used for BLOCKING specific services (coming_soon phase),
@@ -369,80 +435,29 @@ export function CustomerHomeComplete({
   ];
 
 
-  const groomingServices = [
-    { 
-      title: 'At Home Grooming', 
-      price: '₹999', 
-      rating: 4.8, 
-      icon: '🏠',
-      description: 'Professional grooming at your doorstep'
-    },
-    { 
-      title: 'Salon Appointment', 
-      price: '₹799', 
-      rating: 4.9, 
-      icon: '✂️',
-      description: 'Premium salon experience'
-    },
-    { 
-      title: 'Spa Package', 
-      price: '₹1499', 
-      rating: 5.0, 
-      icon: '💆',
-      description: 'Complete spa & wellness'
-    },
+  // Fallback defaults if API returns no data
+  const defaultGroomingServices = [
+    { title: 'At Home Grooming', price: '₹999', rating: 4.8, icon: '🏠', description: 'Professional grooming at your doorstep' },
+    { title: 'Salon Appointment', price: '₹799', rating: 4.9, icon: '✂️', description: 'Premium salon experience' },
+    { title: 'Spa Package', price: '₹1499', rating: 5.0, icon: '💆', description: 'Complete spa & wellness' },
   ];
 
-  const vetServices = [
-    { 
-      title: 'Vet at Home', 
-      price: '₹599', 
-      icon: '🏠',
-      description: 'Doctor visits you',
-      type: 'visit'
-    },
-    { 
-      title: 'Tele Consulting', 
-      price: '₹299', 
-      icon: '📱',
-      description: 'Video consultation',
-      type: 'video'
-    },
-    { 
-      title: 'Clinic Appointment', 
-      price: '₹399', 
-      icon: '🏥',
-      description: 'Visit nearby clinic',
-      type: 'clinic'
-    },
+  const defaultVetServices = [
+    { title: 'Vet at Home', price: '₹599', icon: '🏠', description: 'Doctor visits you', type: 'visit' },
+    { title: 'Tele Consulting', price: '₹299', icon: '📱', description: 'Video consultation', type: 'video' },
+    { title: 'Clinic Appointment', price: '₹399', icon: '🏥', description: 'Visit nearby clinic', type: 'clinic' },
   ];
 
-  const hotDeals = [
-    {
-      title: 'Royal Canin Dog Food',
-      price: '₹2,499',
-      originalPrice: '₹3,499',
-      discount: '30% OFF',
-      image: '🍖',
-      rating: 4.7
-    },
-    {
-      title: 'Pet Carrier Bag',
-      price: '₹1,299',
-      originalPrice: '₹2,199',
-      discount: '40% OFF',
-      image: '🎒',
-      rating: 4.5
-    },
-    {
-      title: 'GPS Collar Tracker',
-      price: '₹3,999',
-      originalPrice: '₹5,999',
-      discount: '35% OFF',
-      image: '📍',
-      rating: 4.9
-    },
+  const defaultHotDeals = [
+    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', image: '🍖', rating: 4.7 },
+    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', image: '🎒', rating: 4.5 },
+    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', image: '📍', rating: 4.9 },
   ];
+
+  // Use API data or fallback to defaults
+  const displayGroomingServices = groomingServices.length > 0 ? groomingServices : defaultGroomingServices;
+  const displayVetServices = vetServicesData.length > 0 ? vetServicesData : defaultVetServices;
+  const displayHotDeals = hotDeals.length > 0 ? hotDeals : defaultHotDeals;
 
   const articles = [
     {
@@ -787,7 +802,7 @@ export function CustomerHomeComplete({
             </button>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {groomingServices.map((service, index) => (
+            {displayGroomingServices.map((service, index) => (
               <div 
                 key={index} 
                 className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
@@ -875,13 +890,15 @@ export function CustomerHomeComplete({
             </button>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {hotDeals.map((deal, index) => (
+            {displayHotDeals.map((deal, index) => (
               <div key={index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="h-32 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center text-5xl relative">
                   {deal.image}
-                  <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
-                    {deal.discount}
-                  </div>
+                  {deal.discount && (
+                    <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                      {deal.discount}
+                    </div>
+                  )}
                 </div>
                 <div className="p-3">
                   <h3 className="text-sm font-semibold text-gray-800 mb-1 line-clamp-2">{deal.title}</h3>
