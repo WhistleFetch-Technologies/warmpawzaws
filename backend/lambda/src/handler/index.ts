@@ -19,7 +19,7 @@ import { initializeErrorTracking, captureException, setUserContext, getErrorTrac
 import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
 import { registerVendorOnboardingFixes } from '../endpoints/vendor-onboarding-fixes';
-import { registerBookingEndpointsEnhanced } from '../endpoints/bookings-enhanced';
+import { registerBookingEndpointsEnhanced, registerBookingOTPEndpoint } from '../endpoints/bookings-enhanced';
 import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced';
 import { registerCustomerEndpointsEnhanced } from '../endpoints/customer-enhanced';
 
@@ -283,6 +283,7 @@ registerBookingDetailsEnhancedEndpoints(app);
 registerRazorpaySettlementEndpoints(app);
 registerRefundPolicyEngineEndpoints(app);
 registerBookingEndpointsEnhanced(app); // Moved here to test route order (after refund-policy which works)
+registerBookingOTPEndpoint(app); // Booking OTP generation for home/center services
 registerAdminGovernanceEnhancedEndpoints(app);
 registerAdminAdvancedEndpoints(app);
 registerVendorSetupEndpoints(app);
@@ -587,20 +588,23 @@ export const handler = async (
     }
     
     // Handle request with Hono
-    const response = await app.fetch(request, {
-      // Pass original event in fetch context for endpoints to access
-      // @ts-ignore - Hono supports passing data through fetch options
-      event: event,
-    }).finally(() => {
+    let response: Response;
+    try {
+      response = await app.fetch(request, {
+        // Pass original event in fetch context for endpoints to access
+        // @ts-ignore - Hono supports passing data through fetch options
+        event: event,
+      });
+    } finally {
       // Clean up global event after request
       delete (global as any).__currentEvent;
       delete (global as any).__parsedBodyForBookings;
-    });
+    }
 
     // Convert Response to API Gateway format
     const responseBody = await response.text();
     const responseHeaders: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
+    response.headers.forEach((value: string, key: string) => {
       responseHeaders[key] = value;
     });
 

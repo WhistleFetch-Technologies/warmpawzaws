@@ -472,7 +472,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
           body: JSON.stringify(body), // Pass as string for parseBody to work
         } as any,
       } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 500);
     } catch (error: any) {
       console.error('Error creating product:', error);
       return c.json({ error: error.message || 'Failed to create product' }, 500);
@@ -486,7 +486,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
           pathParameters: c.req.param(),
         } as any,
       } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 404 | 500);
     } catch (error: any) {
       console.error('Error getting product:', error);
       return c.json({ error: error.message || 'Failed to get product' }, 500);
@@ -502,7 +502,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
           body: JSON.stringify(body), // Pass as string for parseBody to work
         } as any,
       } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 404 | 500);
     } catch (error: any) {
       console.error('Error updating product:', error);
       return c.json({ error: error.message || 'Failed to update product' }, 500);
@@ -516,7 +516,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
           pathParameters: c.req.param(),
         } as any,
       } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 404 | 500);
     } catch (error: any) {
       console.error('Error deleting product:', error);
       return c.json({ error: error.message || 'Failed to delete product' }, 500);

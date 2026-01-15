@@ -283,7 +283,7 @@ export function registerLogisticsEndpoints(app: Hono) {
       });
 
       const result = await response.json();
-      return c.json(result, response.status);
+      return c.json(result, response.status as 200 | 400 | 500);
     } catch (error: any) {
       console.error('Error creating logistics order:', error);
       return c.json({ error: error.message }, 500);

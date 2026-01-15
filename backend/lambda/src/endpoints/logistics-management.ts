@@ -457,13 +457,21 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
   const updateLogisticsRuleHandler = new UpdateLogisticsRuleHandler();
   const deleteLogisticsRuleHandler = new DeleteLogisticsRuleHandler();
 
+  // Helper to safely extract body and statusCode from handler result
+  const parseHandlerResult = (result: any) => {
+    const body = result.body ? JSON.parse(result.body) : result;
+    const statusCode = result.statusCode || 200;
+    return { body, statusCode };
+  };
+
   // Logistics Partners CRUD
   app.get('/admin/logistics-partners', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await getLogisticsPartnersHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.get('/admin/logistics-partners/:id', async (c) => {
@@ -471,7 +479,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await getLogisticsPartnerHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.post('/admin/logistics-partners', async (c) => {
@@ -479,7 +488,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.body = JSON.stringify(await c.req.json());
     const context = createLambdaContext();
     const result = await createLogisticsPartnerHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.put('/admin/logistics-partners/:id', async (c) => {
@@ -488,7 +498,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.body = JSON.stringify(await c.req.json());
     const context = createLambdaContext();
     const result = await updateLogisticsPartnerHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.delete('/admin/logistics-partners/:id', async (c) => {
@@ -496,7 +507,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await deleteLogisticsPartnerHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 404 | 500);
   });
 
   // Logistics Rules CRUD
@@ -505,7 +517,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await getLogisticsRulesHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.get('/admin/logistics-rules/:id', async (c) => {
@@ -513,7 +526,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await getLogisticsRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.post('/admin/logistics-rules', async (c) => {
@@ -521,7 +535,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.body = JSON.stringify(await c.req.json());
     const context = createLambdaContext();
     const result = await createLogisticsRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.put('/admin/logistics-rules/:id', async (c) => {
@@ -530,7 +545,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.body = JSON.stringify(await c.req.json());
     const context = createLambdaContext();
     const result = await updateLogisticsRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.delete('/admin/logistics-rules/:id', async (c) => {
@@ -538,7 +554,8 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await deleteLogisticsRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 404 | 500);
   });
 }
 

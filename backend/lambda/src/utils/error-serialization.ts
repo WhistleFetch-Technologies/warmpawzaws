@@ -42,14 +42,19 @@ export function getErrorMessage(error: unknown): string {
 }
 
 /**
+ * Valid HTTP status codes for error responses
+ */
+export type ErrorStatusCode = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 502 | 503 | 504;
+
+/**
  * Create a safe error response object
  * Always returns a valid JSON-serializable object
  */
 export function createSafeErrorResponse(
   error: unknown,
   defaultMessage: string = 'Internal server error',
-  statusCode: number = 500
-): { success: false; error: string; statusCode: number } {
+  statusCode: ErrorStatusCode = 500
+): { success: false; error: string; statusCode: ErrorStatusCode } {
   const message = getErrorMessage(error);
   return {
     success: false,

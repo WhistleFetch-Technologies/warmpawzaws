@@ -276,16 +276,19 @@ export function registerVendorSupportEndpoints(app: Hono) {
         }, 404);
       }
 
-      // Create message
-      const response = await insert('support_ticket_responses', {
+      // Create message - use only columns that exist in the table
+      // Note: responder_type must be 'agent', 'customer', or 'system' per DB constraint
+      // Vendors use 'customer' type as they are customers of the support system
+      const messageData: any = {
         ticket_id: ticketId,
         responder_id: vendorId,
-        responder_type: 'vendor',
+        responder_type: 'customer', // vendors are treated as customers in support context
         message,
-        attachments: attachments ? JSON.stringify(attachments) : null,
         is_internal: false,
         created_at: new Date().toISOString(),
-      });
+      };
+
+      const response = await insert('support_ticket_responses', messageData);
 
       // Update ticket timestamp
       await update('support_tickets',

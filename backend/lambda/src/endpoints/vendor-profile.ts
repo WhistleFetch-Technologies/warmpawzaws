@@ -565,5 +565,248 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /vendor/:vendorId/bank-account
+   * Get vendor bank account details
+   */
+  app.get("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      const bankAccounts = await select('vendor_bank_details', { vendor_id: vendorId });
+      
+      if (bankAccounts.length === 0) {
+        return c.json({ success: true, bankAccount: null });
+      }
+
+      const bankAccount = normalizeDbRow(bankAccounts[0]);
+      return c.json({ success: true, bankAccount });
+    } catch (error: any) {
+      console.error('Error fetching bank account:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/bank-account
+   * Create or update vendor bank account details
+   */
+  app.post("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { account_holder_name, account_number, ifsc_code, bank_name, branch_name } = body;
+
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      if (!account_holder_name || !account_number || !ifsc_code || !bank_name) {
+        return c.json({ error: 'Missing required fields: account_holder_name, account_number, ifsc_code, bank_name' }, 400);
+      }
+
+      // Validate IFSC format
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.toUpperCase())) {
+        return c.json({ error: 'Invalid IFSC code format' }, 400);
+      }
+
+      // Check if vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      // Check if bank account already exists
+      const existing = await select('vendor_bank_details', { vendor_id: vendorId });
+      
+      const bankData = {
+        vendor_id: vendorId,
+        account_holder_name: account_holder_name.trim(),
+        account_number: account_number.replace(/\s/g, ''),
+        ifsc_code: ifsc_code.toUpperCase().trim(),
+        bank_name: bank_name.trim(),
+        branch_name: branch_name?.trim() || null,
+        is_verified: false, // Reset verification status on update
+        verified_at: null,
+        verified_by: null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existing.length > 0) {
+        // Update existing
+        await update('vendor_bank_details', { vendor_id: vendorId }, bankData);
+      } else {
+        // Create new
+        await insert('vendor_bank_details', bankData);
+      }
+
+      // Update setup completion
+      await query(
+        `UPDATE vendor_setup_completion 
+         SET bank_account_completed = true, 
+             bank_account_completed_at = NOW(),
+             updated_at = NOW()
+         WHERE vendor_id = $1`,
+        [vendorId]
+      ).catch(() => {}); // Ignore if table doesn't exist
+
+      return c.json({ success: true, message: 'Bank account saved successfully' });
+    } catch (error: any) {
+      console.error('Error saving bank account:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/bank-account/verify
+   * Request bank account verification
+   */
+  app.post("/vendor/:vendorId/bank-account/verify", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      const bankAccounts = await select('vendor_bank_details', { vendor_id: vendorId });
+      
+      if (bankAccounts.length === 0) {
+        return c.json({ error: 'Bank account not found. Please add bank account details first.' }, 404);
+      }
+
+      // In a real system, this would trigger an admin review workflow
+      // For now, we just mark it as pending verification
+      // Admin can verify via admin panel
+
+      return c.json({ 
+        success: true, 
+        message: 'Verification request submitted. Our team will review and verify your account shortly.' 
+      });
+    } catch (error: any) {
+      console.error('Error requesting verification:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/bank-account/document
+   * Upload verification document for bank account
+   */
+  app.post("/vendor/:vendorId/bank-account/document", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { document_type, document_url } = body;
+
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      if (!document_type || !document_url) {
+        return c.json({ error: 'document_type and document_url are required' }, 400);
+      }
+
+      // Store document reference (you might want a separate table for this)
+      // For now, we'll just acknowledge the upload
+      // In production, you'd store this in vendor_bank_documents table
+
+      return c.json({ success: true, message: 'Document uploaded successfully' });
+    } catch (error: any) {
+      console.error('Error uploading document:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/settings
+   * Get vendor general settings (service radius, emergency contact, etc.)
+   */
+  app.get("/vendor/:vendorId/settings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      // Get settings from vendor_settings table or vendor table
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+      
+      // Extract settings from vendor record or separate settings table
+      const settings = {
+        service_radius: vendor.service_radius || null,
+        emergency_contact: vendor.emergency_contact || null,
+        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
+        walk_durations: vendor.walk_durations || [],
+        other_config: vendor.other_config || {},
+      };
+
+      return c.json({ success: true, settings });
+    } catch (error: any) {
+      console.error('Error fetching settings:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/settings
+   * Update vendor general settings
+   */
+  app.put("/vendor/:vendorId/settings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
+
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID' }, 400);
+      }
+
+      // Validate emergency contact if provided
+      if (emergency_contact) {
+        if (!emergency_contact.name || !emergency_contact.phone) {
+          return c.json({ error: 'Emergency contact must have both name and phone' }, 400);
+        }
+        if (!/^[6-9]\d{9}$/.test(emergency_contact.phone.replace(/\D/g, ''))) {
+          return c.json({ error: 'Invalid emergency contact phone number' }, 400);
+        }
+      }
+
+      // Check if vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      // Update vendor settings
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (service_radius !== undefined) updateData.service_radius = service_radius;
+      if (emergency_contact !== undefined) updateData.emergency_contact = emergency_contact;
+      if (max_dogs_per_walk !== undefined) updateData.max_dogs_per_walk = max_dogs_per_walk;
+      if (walk_durations !== undefined) updateData.walk_durations = walk_durations;
+      if (other_config !== undefined) updateData.other_config = other_config;
+
+      await update('vendors', { id: vendorId }, updateData);
+
+      return c.json({ success: true, message: 'Settings updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating settings:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

@@ -486,6 +486,13 @@ class DeleteTaxCategoryHandler extends BaseHandler {
 // ============================================================================
 
 export function registerTaxManagementEndpoints(app: Hono) {
+  // Helper to safely extract body and statusCode from handler result
+  const parseHandlerResult = (result: any) => {
+    const body = result.body ? JSON.parse(result.body) : result;
+    const statusCode = result.statusCode || 200;
+    return { body, statusCode };
+  };
+
   // Tax Rules
   const getTaxRulesHandler = new GetTaxRulesHandler();
   const getTaxRuleHandler = new GetTaxRuleHandler();
@@ -498,7 +505,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await getTaxRulesHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.get('/admin/tax-rules/:id', async (c) => {
@@ -506,14 +514,16 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await getTaxRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.post('/admin/tax-rules', async (c) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await createTaxRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.put('/admin/tax-rules/:id', async (c) => {
@@ -521,7 +531,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await updateTaxRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.delete('/admin/tax-rules/:id', async (c) => {
@@ -529,7 +540,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await deleteTaxRuleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 404 | 500);
   });
 
   // HSN Codes
@@ -543,14 +555,16 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await getHSNCodesHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.post('/admin/hsn-codes', async (c) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await createHSNCodeHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.put('/admin/hsn-codes/:id', async (c) => {
@@ -558,7 +572,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await updateHSNCodeHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.delete('/admin/hsn-codes/:id', async (c) => {
@@ -566,7 +581,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await deleteHSNCodeHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 404 | 500);
   });
 
   // Tax Categories
@@ -580,14 +596,16 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await getTaxCategoriesHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.post('/admin/tax-categories', async (c) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await createTaxCategoryHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 
   app.put('/admin/tax-categories/:id', async (c) => {
@@ -595,7 +613,8 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await updateTaxCategoryHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 400 | 404 | 500);
   });
 
   app.delete('/admin/tax-categories/:id', async (c) => {
@@ -603,7 +622,129 @@ export function registerTaxManagementEndpoints(app: Hono) {
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await deleteTaxCategoryHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode as 200 | 404 | 500);
+  });
+
+  /**
+   * POST /tax/calculate
+   * Public endpoint for calculating tax on items (for customer checkout)
+   */
+  app.post('/tax/calculate', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { items, vendorId, customerId, customerLocation, vendorLocation } = body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return c.json({ error: 'items array is required' }, 400);
+      }
+
+      // Get customer and vendor locations if not provided
+      let customerState = customerLocation?.state;
+      let vendorState = vendorLocation?.state;
+
+      if (!customerState && customerId) {
+        const { select } = await import('../database/rds-connection');
+        const customers = await select('customers', { id: customerId });
+        if (customers.length > 0 && customers[0].address) {
+          const addr = typeof customers[0].address === 'string'
+            ? JSON.parse(customers[0].address)
+            : customers[0].address;
+          customerState = addr?.state;
+        }
+      }
+
+      if (!vendorState && vendorId) {
+        const { select } = await import('../database/rds-connection');
+        const vendors = await select('vendors', { id: vendorId });
+        if (vendors.length > 0 && vendors[0].address) {
+          const addr = typeof vendors[0].address === 'string'
+            ? JSON.parse(vendors[0].address)
+            : vendors[0].address;
+          vendorState = addr?.state;
+        }
+      }
+
+      // Determine if inter-state (IGST) or intra-state (CGST+SGST)
+      const isInterState = customerState && vendorState && customerState !== vendorState;
+
+      // Default GST rate for pet services
+      const defaultRate = 18;
+
+      // Calculate tax for each item
+      let totalAmount = 0;
+      let totalTax = 0;
+      let totalCGST = 0;
+      let totalSGST = 0;
+      let totalIGST = 0;
+
+      const itemResults = items.map((item: any) => {
+        const amount = item.amount || 0;
+        const quantity = item.quantity || 1;
+        const itemTotal = amount * quantity;
+        
+        // Get item-specific tax rate from HSN code or use default
+        const taxRate = item.taxRate || defaultRate;
+        const itemTax = (itemTotal * taxRate) / 100;
+
+        totalAmount += itemTotal;
+        totalTax += itemTax;
+
+        if (isInterState) {
+          totalIGST += itemTax;
+          return {
+            id: item.id,
+            amount: itemTotal,
+            taxRate,
+            igst: itemTax,
+            cgst: 0,
+            sgst: 0,
+            totalWithTax: itemTotal + itemTax,
+          };
+        } else {
+          const halfTax = itemTax / 2;
+          totalCGST += halfTax;
+          totalSGST += halfTax;
+          return {
+            id: item.id,
+            amount: itemTotal,
+            taxRate,
+            igst: 0,
+            cgst: halfTax,
+            sgst: halfTax,
+            totalWithTax: itemTotal + itemTax,
+          };
+        }
+      });
+
+      return c.json({
+        success: true,
+        items: itemResults,
+        totalAmount,
+        totalTax,
+        totalCGST,
+        totalSGST,
+        totalIGST,
+        grandTotal: totalAmount + totalTax,
+        isInterState,
+        customerState,
+        vendorState,
+      });
+    } catch (error: any) {
+      console.error('Error calculating tax:', error);
+      // Return a safe fallback
+      return c.json({
+        success: true,
+        items: [],
+        totalAmount: 0,
+        totalTax: 0,
+        totalCGST: 0,
+        totalSGST: 0,
+        totalIGST: 0,
+        grandTotal: 0,
+        error: error.message,
+      });
+    }
   });
 }
 

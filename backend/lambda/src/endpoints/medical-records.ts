@@ -293,15 +293,15 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           entityType: 'medical_record',
           entityId: recordId,
           action: 'update',
-          oldValues: { previous_record: existingRecord },
-          newValues: { updated_fields: Object.keys(body) },
+          oldValues: { previous_record: existing[0] },
+          newValues: { updated_fields: ['title', 'description', 'attachments', 'updatedBy'].filter(k => ({ title, description, attachments, updatedBy } as any)[k] !== undefined) },
           actorType: updatedBy?.startsWith('vendor_') ? 'vendor' : 'customer',
           actorId: updatedBy,
-          requestId: context.event.requestContext?.requestId,
+          requestId: c.req.header('x-request-id') || crypto.randomUUID(),
         });
-      } catch (error: any) {
+      } catch (auditError: any) {
         // Audit logging is optional, don't fail if it doesn't work
-        console.warn('Failed to create audit log entry:', error);
+        console.warn('Failed to create audit log entry:', auditError);
       }
 
       return c.json({

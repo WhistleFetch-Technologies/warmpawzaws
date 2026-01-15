@@ -773,10 +773,12 @@ export function registerVendorAnalyticsEndpoints(app: Hono) {
     try {
       const event = createApiGatewayEvent(c.req);
       event.pathParameters = { vendorId: c.req.param('vendorId') };
-      event.queryStringParameters = Object.fromEntries(c.req.query());
+      event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
       const context = createLambdaContext();
       const result = await salesHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const body = (result as any).body ? JSON.parse((result as any).body) : result;
+      const statusCode = (result as any).statusCode || 200;
+      return c.json(body, statusCode as 200 | 400 | 500);
     } catch (error: any) {
       console.error('Error in sales analytics endpoint:', error);
       // Handle test IDs gracefully
@@ -804,10 +806,12 @@ export function registerVendorAnalyticsEndpoints(app: Hono) {
   app.get('/vendor/:vendorId/analytics/products', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
-    event.queryStringParameters = Object.fromEntries(c.req.query());
+    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await productHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const body = (result as any).body ? JSON.parse((result as any).body) : result;
+    const statusCode = (result as any).statusCode || 200;
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 }
 

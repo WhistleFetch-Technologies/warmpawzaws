@@ -58,9 +58,11 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       customerId, 
       vendorId,
       idempotencyKey,
-      useWallet = false,
-      walletAmount = 0
     } = validationResult.data;
+    
+    // Extract wallet fields from raw body (not in schema yet)
+    const useWallet = (body as any).useWallet ?? false;
+    const walletAmount = (body as any).walletAmount ?? 0;
 
     // Check idempotency key first
     if (idempotencyKey) {
@@ -92,8 +94,8 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       let gstRuleId = null;
 
       // Get customer and vendor locations for tax calculation
-      let customerLocation = null;
-      let vendorLocation = null;
+      let customerLocation: { state: string; city?: string; pincode?: string } | undefined = undefined;
+      let vendorLocation: { state: string; city?: string } | undefined = undefined;
 
       if (booking.customer_id) {
         const customers = await select('customers', { id: booking.customer_id });
@@ -101,11 +103,13 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           const addr = typeof customers[0].address === 'string'
             ? JSON.parse(customers[0].address)
             : customers[0].address;
-          customerLocation = {
-            state: addr?.state,
-            city: addr?.city,
-            pincode: addr?.pincode,
-          };
+          if (addr?.state) {
+            customerLocation = {
+              state: addr.state,
+              city: addr.city,
+              pincode: addr.pincode,
+            };
+          }
         }
       }
 
@@ -115,10 +119,12 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           const addr = typeof vendors[0].address === 'string'
             ? JSON.parse(vendors[0].address)
             : vendors[0].address;
-          vendorLocation = {
-            state: addr?.state,
-            city: addr?.city,
-          };
+          if (addr?.state) {
+            vendorLocation = {
+              state: addr.state,
+              city: addr.city,
+            };
+          }
         }
       }
 

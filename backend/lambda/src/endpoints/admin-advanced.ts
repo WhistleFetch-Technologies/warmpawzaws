@@ -18,7 +18,8 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert, deleteRows } from '../database/rds-connection';
-import { getErrorMessage, createSafeErrorResponse } from '../utils/error-serialization';
+import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../utils/error-serialization';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -982,7 +983,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating role:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create role', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -998,7 +999,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error updating role:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to update role', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1586,7 +1587,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating category:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create category', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1614,7 +1615,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error updating category:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to update category', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1635,7 +1636,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error deleting category:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to delete category', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1702,7 +1703,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating product:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create product', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1733,7 +1734,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error updating product:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to update product', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1875,7 +1876,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating service:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create service', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1916,7 +1917,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error updating service:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to update service', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -1946,7 +1947,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error deleting service:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to delete service', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2045,7 +2046,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, tags: tags.rows.map(r => r.tag) });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2059,7 +2060,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, data: data.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2074,7 +2075,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, data: data.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2115,7 +2116,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating pricing rule:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create pricing rule', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2143,7 +2144,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error updating pricing rule:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to update pricing rule', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2164,7 +2165,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error deleting pricing rule:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to delete pricing rule', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2261,7 +2262,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error in bulk edit:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to perform bulk edit', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2272,7 +2273,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, settlements: settlements.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2282,7 +2283,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, schedule: schedule.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2306,7 +2307,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error fetching settlement rules:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to fetch settlement rules', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2389,13 +2390,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         } catch (fallbackError: unknown) {
           console.error('Error in fallback settlement rule creation:', fallbackError);
           const errorResponse = createSafeErrorResponse(fallbackError, 'Failed to create settlement rule', 500);
-          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
         }
       }
     } catch (error: unknown) {
       console.error('Error creating settlement rule:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create settlement rule', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2480,13 +2481,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         } catch (fallbackError: unknown) {
           console.error('Error in fallback settlement rule update:', fallbackError);
           const errorResponse = createSafeErrorResponse(fallbackError, 'Failed to update settlement rule', 500);
-          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
         }
       }
     } catch (error: unknown) {
       console.error('Error updating settlement rule:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to update settlement rule', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2500,9 +2501,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
 
       try {
-        const deleted = await deleteRows('settlement_rules', { id: ruleId });
+        const deletedCount = await deleteRows('settlement_rules', { id: ruleId });
 
-        if (deleted.length === 0) {
+        if (deletedCount === 0) {
           return c.json({ success: false, error: 'Settlement rule not found' }, 404);
         }
 
@@ -2542,13 +2543,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         } catch (fallbackError: unknown) {
           console.error('Error in fallback settlement rule deletion:', fallbackError);
           const errorResponse = createSafeErrorResponse(fallbackError, 'Failed to delete settlement rule', 500);
-          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+          return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
         }
       }
     } catch (error: unknown) {
       console.error('Error deleting settlement rule:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to delete settlement rule', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2559,7 +2560,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error fetching cancellation policies:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to fetch cancellation policies', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2643,7 +2644,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, disputes: disputes.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2653,7 +2654,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, transactions: transactions.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2663,7 +2664,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, payments: payments.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2673,7 +2674,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, codes: codes.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2746,7 +2747,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, categories: categories.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2808,7 +2809,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, changes: changes.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -2818,7 +2819,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Settlements processed' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3097,7 +3098,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, stats: stats.rows[0] || { total_shipments: 0, delivered: 0, in_transit: 0 } });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3174,7 +3175,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, stats: stats.rows[0] });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3258,7 +3259,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, templates: templates.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3268,7 +3269,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, activity: activity.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3287,7 +3288,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3303,7 +3304,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, stats: stats.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3343,7 +3344,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, analytics: analytics.rows[0] });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3377,7 +3378,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, ...gatewayData });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3491,7 +3492,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, rules: rules.rows[0] || rules.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3578,7 +3579,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, settlements: settlements.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3588,7 +3589,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, tiers: tiers.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3597,7 +3598,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Default tiers seeded' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3607,7 +3608,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, payouts: payouts.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3623,7 +3624,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, stats: stats.rows[0] });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3633,7 +3634,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, flags: flags.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3643,7 +3644,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, settings: settings.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3653,7 +3654,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, policies: policies.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3663,7 +3664,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, categories: categories.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3674,7 +3675,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, profile: profile.rows[0] || {} });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3684,7 +3685,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, promotions: promotions.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3694,7 +3695,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, activity: activity.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3704,7 +3705,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, alerts: alerts.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3713,7 +3714,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Export functionality' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3722,7 +3723,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Import functionality' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3732,7 +3733,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, history: history.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3931,7 +3932,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, regions: regions.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3941,7 +3942,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, notices: notices.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3957,7 +3958,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, reports: reports.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3966,7 +3967,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Report generation started' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3981,7 +3982,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, reports: reports.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -3990,7 +3991,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Report saved' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4006,7 +4007,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, reports: reports.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4016,7 +4017,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, templates: templates.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4433,7 +4434,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, settings: settings.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4689,7 +4690,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, integrations: integrations.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4699,7 +4700,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, integrations: aws.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4709,7 +4710,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, integrations: maps.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4719,7 +4720,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, integrations: razorpay.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4729,7 +4730,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, integrations: shiprocket.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4739,7 +4740,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, design: design.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4750,7 +4751,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, logs: logs.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4760,7 +4761,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'All vendors approved' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4770,7 +4771,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'All approved vendors activated', activated: result.rows.length, vendors: result.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4801,7 +4802,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Vendor identity created', identity: result.rows[0] });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 
@@ -4811,7 +4812,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Vendor services published' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
-      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
 

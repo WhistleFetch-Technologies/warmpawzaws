@@ -172,6 +172,16 @@ export function registerPetEndpoints(app: Hono) {
         return c.json({ error: 'customerId, name, and petType are required' }, 400);
       }
 
+      // ✅ PLATFORM RESTRICTION: Only allow Dog and Cat
+      const allowedPetTypes = ['Dog', 'Cat', 'dog', 'cat'];
+      const petTypeToValidate = petType || petData.type || petData.species;
+      if (!allowedPetTypes.includes(petTypeToValidate)) {
+        return c.json({ 
+          error: 'Invalid pet type. Platform currently supports Dogs and Cats only.',
+          allowedTypes: ['Dog', 'Cat']
+        }, 400);
+      }
+
       // Schema uses: species, age_years, age_months, weight_kg, profile_photo_url
       // Convert age to years/months if needed
       let age_years = null;
@@ -239,7 +249,18 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       if (petData.species || petData.petType || petData.type) {
-        updateData.species = petData.species || petData.petType || petData.type;
+        const newSpecies = petData.species || petData.petType || petData.type;
+        
+        // ✅ PLATFORM RESTRICTION: Only allow Dog and Cat
+        const allowedPetTypes = ['Dog', 'Cat', 'dog', 'cat'];
+        if (!allowedPetTypes.includes(newSpecies)) {
+          return c.json({ 
+            error: 'Invalid pet type. Platform currently supports Dogs and Cats only.',
+            allowedTypes: ['Dog', 'Cat']
+          }, 400);
+        }
+        
+        updateData.species = newSpecies;
       }
 
       // Remove undefined values

@@ -297,7 +297,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const profileData = validationResult.data;
       
       // Get phone from body (required for POST endpoint)
-      const phone = body.phone || profileData.phone;
+      // Note: phone is not part of the validated schema, it comes from body directly
+      const phone = body.phone || (body.profile as any)?.phone;
       if (!phone) {
         return c.json({ error: 'Phone number is required' }, 400);
       }
@@ -387,15 +388,15 @@ export function registerCustomerProfileEndpoints(app: Hono) {
 
       const updated = await update('customers', { id: customerId }, updateData);
 
-      if (Object.keys(completionUpdates).length > 0) {
+      if (Object.keys(completionUpdates).length > 0 && customerId) {
         try {
-          await updateProfileCompletion(customerId, completionUpdates);
+          await updateProfileCompletion(customerId as string, completionUpdates);
           
           const customers = await select('customers', { id: customerId });
           const customer = customers[0];
           
           if (customer.onboarding_status === 'PHONE_VERIFIED' && completionUpdates.basic_info) {
-            await updateCustomerOnboardingStatus(customerId, 'PROFILE_PENDING', 'profile');
+            await updateCustomerOnboardingStatus(customerId as string, 'PROFILE_PENDING', 'profile');
           }
         } catch (stateError) {
           console.error('Error updating customer state:', stateError);

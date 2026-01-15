@@ -993,7 +993,10 @@ export function registerRegionEndpoints(app: Hono) {
    */
   app.post("/admin/regions/init-:templateId", async (c) => {
     try {
-      const { templateId } = c.req.param();
+      const templateId = c.req.param('templateId');
+      if (!templateId) {
+        return c.json({ error: 'Template ID is required' }, 400);
+      }
 
       const template = REGION_TEMPLATES[templateId.toLowerCase()];
       if (!template) {

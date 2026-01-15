@@ -214,7 +214,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         SELECT DISTINCT
           vs.id as service_id,
           vs.service_name as name,
-          vs.description,
+          vs.service_name as description,
           vs.price,
           vs.duration_minutes as duration,
           vs.vendor_id,
@@ -234,11 +234,10 @@ export function registerProblemGridEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Match by subcategory in service name/description or vendor specializations
+      // Match by subcategory in service name or vendor specializations
       if (subCategoryIds.length > 0) {
         servicesQuery += ` AND (
           vs.service_name ILIKE ANY($${paramIndex}::text[]) OR
-          vs.description ILIKE ANY($${paramIndex}::text[]) OR
           vs.vendor_id IN (
             SELECT vendor_id 
             FROM vendor_specializations 
@@ -258,8 +257,8 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.description, vs.price, vs.duration_minutes, 
-                 vs.vendor_id, v.business_name, v.city, v.state
+        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, 
+                 vs.vendor_id, v.business_name, v.city, v.state, vs.created_at
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
@@ -475,7 +474,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               if (staff.specialization) {
                 // Parse specialization if it's JSON or comma-separated
                 const specs = typeof staff.specialization === 'string' 
-                  ? (staff.specialization.includes(',') ? staff.specialization.split(',').map(s => s.trim()) : [staff.specialization])
+                  ? (staff.specialization.includes(',') ? staff.specialization.split(',').map((s: string) => s.trim()) : [staff.specialization])
                   : Array.isArray(staff.specialization) ? staff.specialization : [];
                 
                 staffSpecsResult.rows = specs.map((spec: string) => ({

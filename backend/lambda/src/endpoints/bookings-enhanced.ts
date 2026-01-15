@@ -620,7 +620,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
       }
 
-      // Get refund rules
+      // Get refund rules from database
       const rulesResult = await query(
         `SELECT * FROM booking_cancellation_rules
          WHERE (vendor_id = $1 OR vendor_id IS NULL)
@@ -635,39 +635,95 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       const partialRefundHours = rule?.partial_refund_before_hours || 24;
       const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
       const cutoffHours = rule?.cancellation_cutoff_hours || 12;
+      
+      // Parse cancellation windows from admin-configured policy (stored as JSONB)
+      let cancellationWindows: Array<{
+        hoursBefore: number;
+        refundPercentage: number;
+        cancellationFee: number;
+        penaltyPercentage: number;
+      }> = [];
+      
+      if (rule?.cancellation_windows) {
+        try {
+          cancellationWindows = typeof rule.cancellation_windows === 'string' 
+            ? JSON.parse(rule.cancellation_windows) 
+            : rule.cancellation_windows;
+        } catch (e) {
+          console.warn('[RefundPreview] Error parsing cancellation_windows:', e);
+        }
+      }
 
-      // Calculate refund percentage
+      // Calculate refund percentage and fees using admin-configured windows
       let refundPercentage = 0;
       let cancellationFee = 0;
-      if (hoursUntilBooking >= fullRefundHours) {
-        refundPercentage = 100;
-      } else if (hoursUntilBooking >= partialRefundHours) {
-        refundPercentage = partialRefundPercentage;
-      } else if (hoursUntilBooking >= cutoffHours) {
-        refundPercentage = partialRefundPercentage;
+      let penaltyPercentage = 0;
+      
+      // First, try to find matching window from admin-configured cancellation windows
+      if (cancellationWindows.length > 0) {
+        // Sort windows by hoursBefore descending to find the most applicable window
+        const sortedWindows = [...cancellationWindows].sort((a, b) => b.hoursBefore - a.hoursBefore);
+        
+        for (const window of sortedWindows) {
+          if (hoursUntilBooking >= window.hoursBefore) {
+            refundPercentage = window.refundPercentage;
+            cancellationFee = window.cancellationFee || 0;
+            penaltyPercentage = window.penaltyPercentage || 0;
+            break;
+          }
+        }
+        
+        // If no window matched (booking is too close), use the lowest window or no refund
+        if (refundPercentage === 0 && hoursUntilBooking > 0) {
+          const lowestWindow = sortedWindows[sortedWindows.length - 1];
+          if (lowestWindow && hoursUntilBooking < lowestWindow.hoursBefore) {
+            refundPercentage = 0;
+            cancellationFee = lowestWindow.cancellationFee || 0;
+            penaltyPercentage = lowestWindow.penaltyPercentage || 0;
+          }
+        }
       } else {
-        refundPercentage = 0;
-        cancellationFee = parseFloat(booking.total_amount || '0') * 0.1; // 10% cancellation fee
+        // Fallback to legacy rule-based calculation if no cancellation windows configured
+        if (hoursUntilBooking >= fullRefundHours) {
+          refundPercentage = 100;
+        } else if (hoursUntilBooking >= partialRefundHours) {
+          refundPercentage = partialRefundPercentage;
+        } else if (hoursUntilBooking >= cutoffHours) {
+          refundPercentage = partialRefundPercentage;
+        } else {
+          refundPercentage = 0;
+          // Apply default 10% cancellation fee when no admin config exists
+          cancellationFee = parseFloat(booking.total_amount || '0') * 0.1;
+        }
       }
 
       const totalAmount = parseFloat(booking.total_amount || '0');
-      const refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100 - cancellationFee);
+      
+      // Calculate penalty amount if penalty percentage is configured
+      const penaltyAmount = penaltyPercentage > 0 ? (totalAmount * penaltyPercentage) / 100 : 0;
+      
+      // Calculate final refund: base refund minus cancellation fee and penalty
+      const baseRefund = (totalAmount * refundPercentage) / 100;
+      const refundAmount = Math.max(0, baseRefund - cancellationFee - penaltyAmount);
 
       return this.success({
         refund: {
-          eligible: refundPercentage > 0,
+          eligible: refundPercentage > 0 || refundAmount > 0,
           refundAmount: Math.round(refundAmount * 100) / 100,
           refundPercentage: Math.round(refundPercentage),
           hoursUntil: Math.round(hoursUntilBooking),
           cancellationFee: Math.round(cancellationFee * 100) / 100,
-          message: refundPercentage > 0
-            ? `₹${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method`
+          penaltyPercentage: Math.round(penaltyPercentage),
+          penaltyAmount: Math.round(penaltyAmount * 100) / 100,
+          message: refundAmount > 0
+            ? `₹${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method${cancellationFee > 0 ? ` (₹${cancellationFee} cancellation fee applied)` : ''}`
             : 'No refund available for this booking',
           policy: {
             fullRefundBeforeHours: fullRefundHours,
             partialRefundBeforeHours: partialRefundHours,
             partialRefundPercentage: partialRefundPercentage,
             cancellationCutoffHours: cutoffHours,
+            configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null,
           },
         },
       }, requestId);
@@ -1281,3 +1337,162 @@ function createLambdaContext(): any {
   };
 }
 
+// ============================================================================
+// BOOKING OTP GENERATION
+// ============================================================================
+
+/**
+ * Generate a 4-digit OTP for service verification
+ */
+function generateBookingOTP(): string {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+/**
+ * POST /bookings/generate-otp
+ * Generate OTP for a booking (for home and center services)
+ */
+export function registerBookingOTPEndpoint(app: Hono) {
+  app.post('/bookings/generate-otp', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { bookingId, serviceStyle, customerId } = body;
+
+      if (!bookingId) {
+        return c.json({ success: false, error: 'Booking ID is required' }, 400);
+      }
+
+      // Skip OTP for tele services
+      if (serviceStyle === 'tele' || serviceStyle === 'online') {
+        return c.json({ 
+          success: true, 
+          otp: null, 
+          message: 'OTP not required for tele consultations' 
+        });
+      }
+
+      // Get the booking
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ success: false, error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Check if OTP already exists
+      if (booking.otp_code) {
+        return c.json({ 
+          success: true, 
+          otp: booking.otp_code,
+          message: 'Existing OTP retrieved',
+          expiresAt: booking.otp_expires_at,
+        });
+      }
+
+      // Generate new OTP
+      const otp = generateBookingOTP();
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24); // OTP valid for 24 hours
+
+      // Update booking with OTP
+      await query(
+        `UPDATE bookings 
+         SET otp_code = $1, 
+             otp_expires_at = $2, 
+             updated_at = NOW() 
+         WHERE id = $3`,
+        [otp, expiresAt.toISOString(), bookingId]
+      );
+
+      // Send OTP via SMS (async, don't wait)
+      if (booking.customer_phone || booking.customer_id) {
+        try {
+          const { sendSMS } = await import('../utils/sms-service');
+          const customerPhone = booking.customer_phone || (customerId ? (await select('customers', { id: customerId }))[0]?.phone : null);
+          
+          if (customerPhone) {
+            sendSMS({
+              to: customerPhone,
+              message: `Your Warmpawz service verification OTP is ${otp}. Share this with your service provider to start the service. Valid for 24 hours.`,
+              type: 'otp',
+            }).catch((err: any) => console.error('SMS send failed:', err));
+          }
+        } catch (e) {
+          console.log('SMS service not available');
+        }
+      }
+
+      console.log(`✅ [BOOKING-OTP] Generated OTP ${otp} for booking ${bookingId}`);
+
+      return c.json({
+        success: true,
+        otp,
+        message: 'OTP generated successfully. Share this with your service provider.',
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error('Error generating booking OTP:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // Verify OTP endpoint (for vendor use)
+  app.post('/bookings/verify-otp', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { bookingId, otp, vendorId } = body;
+
+      if (!bookingId || !otp) {
+        return c.json({ success: false, error: 'Booking ID and OTP are required' }, 400);
+      }
+
+      // Get the booking
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ success: false, error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Verify vendor ownership
+      if (vendorId && booking.vendor_id !== vendorId) {
+        return c.json({ success: false, error: 'Unauthorized' }, 403);
+      }
+
+      // Check OTP
+      const expectedOTP = String(booking.otp_code || '').trim();
+      const providedOTP = String(otp).trim();
+
+      if (expectedOTP !== providedOTP) {
+        return c.json({ success: false, error: 'Invalid OTP' }, 400);
+      }
+
+      // Check expiry
+      if (booking.otp_expires_at && new Date(booking.otp_expires_at) < new Date()) {
+        return c.json({ success: false, error: 'OTP has expired' }, 400);
+      }
+
+      // Mark OTP as verified
+      await query(
+        `UPDATE bookings 
+         SET otp_verified = true, 
+             otp_verified_at = NOW(),
+             status = CASE WHEN status = 'confirmed' THEN 'in_progress' ELSE status END,
+             updated_at = NOW() 
+         WHERE id = $1`,
+        [bookingId]
+      );
+
+      console.log(`✅ [BOOKING-OTP] OTP verified for booking ${bookingId}`);
+
+      return c.json({
+        success: true,
+        verified: true,
+        message: 'OTP verified successfully. Service can now begin.',
+      });
+    } catch (error: any) {
+      console.error('Error verifying booking OTP:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+}

@@ -607,8 +607,7 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         SELECT 
           psp.*,
           ts.skill_name,
-          ts.category,
-          ts.difficulty_level,
+          ts.skill_category,
           p.name as pet_name
         FROM pet_skill_progress psp
         LEFT JOIN training_skills ts ON psp.skill_id = ts.id
@@ -618,22 +617,18 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       `, [petIds]);
 
       const skills = skillsResult.rows.map((skill: any) => {
-        const progressLevel = skill.progress_level || 0;
-        let status: 'not_started' | 'in_progress' | 'mastered' = 'not_started';
-        
-        if (progressLevel >= 100) {
-          status = 'mastered';
-        } else if (progressLevel > 0) {
-          status = 'in_progress';
-        }
+        // Use proficiency_score (0-100) and current_level from schema
+        const progressLevel = skill.proficiency_score || 0;
+        const currentLevel = skill.current_level || 'not_started';
 
         return {
           skillName: skill.skill_name || 'Unknown Skill',
           level: progressLevel,
-          status: status,
+          status: currentLevel,
           petName: skill.pet_name,
-          category: skill.category,
-          lastUpdated: skill.updated_at
+          category: skill.skill_category,
+          lastUpdated: skill.updated_at,
+          sessionsPracticed: skill.sessions_practiced || 0
         };
       });
 

@@ -299,28 +299,32 @@ class GetOrderInvoiceHandler extends BaseHandler {
           const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
           
           // Get customer and vendor locations
-          let customerLocation = null;
-          let vendorLocation = null;
+          let customerLocation: { state: string; city?: string; pincode?: string } | undefined = undefined;
+          let vendorLocation: { state: string; city?: string } | undefined = undefined;
           
           if (order.rows[0].customer_address) {
             const addr = typeof order.rows[0].customer_address === 'string'
               ? JSON.parse(order.rows[0].customer_address)
               : order.rows[0].customer_address;
-            customerLocation = {
-              state: addr?.state,
-              city: addr?.city,
-              pincode: addr?.pincode,
-            };
+            if (addr?.state) {
+              customerLocation = {
+                state: addr.state,
+                city: addr.city,
+                pincode: addr.pincode,
+              };
+            }
           }
 
           if (order.rows[0].vendor_address) {
             const addr = typeof order.rows[0].vendor_address === 'string'
               ? JSON.parse(order.rows[0].vendor_address)
               : order.rows[0].vendor_address;
-            vendorLocation = {
-              state: addr?.state,
-              city: addr?.city,
-            };
+            if (addr?.state) {
+              vendorLocation = {
+                state: addr.state,
+                city: addr.city,
+              };
+            }
           }
 
           // Build tax calculation items

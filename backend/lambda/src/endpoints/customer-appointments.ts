@@ -175,21 +175,19 @@ class RescheduleAppointmentHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      const db = await getDatabase();
-
       // Verify appointment belongs to customer
-      const appointment = await db.query(`
+      const appointmentResult = await query(`
         SELECT a.*, b.customer_id, b.status as booking_status
         FROM appointments a
         INNER JOIN bookings b ON a.booking_id = b.id
         WHERE a.id = $1 AND b.customer_id = $2
       `, [appointmentId, customerId]);
 
-      if (appointment.rows.length === 0) {
+      if (appointmentResult.rows.length === 0) {
         return this.error('Appointment not found', 404);
       }
 
-      if (appointment.rows[0].booking_status !== 'confirmed' && appointment.rows[0].booking_status !== 'scheduled') {
+      if (appointmentResult.rows[0].booking_status !== 'confirmed' && appointmentResult.rows[0].booking_status !== 'scheduled') {
         return this.error('Appointment cannot be rescheduled in current status', 400);
       }
 
@@ -219,8 +217,8 @@ class RescheduleAppointmentHandler extends BaseHandler {
         ) VALUES ($1, 'rescheduled', $2, $3, $4, $5, $6, NOW())
       `, [
         appointmentId,
-        appointment.rows[0].appointment_date,
-        appointment.rows[0].appointment_time,
+        appointmentResult.rows[0].appointment_date,
+        appointmentResult.rows[0].appointment_time,
         appointment_date,
         appointment_time,
         reason

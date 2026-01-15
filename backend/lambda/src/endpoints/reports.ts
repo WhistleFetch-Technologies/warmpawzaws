@@ -479,7 +479,7 @@ export function registerReportEndpoints(app: Hono) {
 
       const { startDate, endDate } = getDateRange(dateRange);
 
-      let data: any[] = [];
+      let data: any = [];
 
       switch (reportType) {
         case 'revenue':

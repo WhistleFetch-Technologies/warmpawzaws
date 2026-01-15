@@ -197,7 +197,7 @@ export function registerVendorDashboardEndpoints(app: Hono) {
    * Get dashboard for authenticated vendor (no ID required)
    */
   app.get('/vendor/dashboard', async (c) => {
-    const vendorId = c.req.header('X-Vendor-Id') || c.get('vendorId') || c.get('userId');
+    const vendorId = c.req.header('X-Vendor-Id') || (c as any).get('vendorId') || (c as any).get('userId');
     
     if (!vendorId) {
       return c.json({ error: 'Vendor authentication required' }, 401);
@@ -207,7 +207,9 @@ export function registerVendorDashboardEndpoints(app: Hono) {
     event.pathParameters = { vendorId };
     const context = createLambdaContext();
     const result = await dashboardHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const body = (result as any).body ? JSON.parse((result as any).body) : result;
+    const statusCode = (result as any).statusCode || 200;
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
   
   /**
@@ -215,7 +217,7 @@ export function registerVendorDashboardEndpoints(app: Hono) {
    * Get services for authenticated vendor
    */
   app.get('/vendor/services', async (c) => {
-    const vendorId = c.req.header('X-Vendor-Id') || c.get('vendorId') || c.get('userId');
+    const vendorId = c.req.header('X-Vendor-Id') || (c as any).get('vendorId') || (c as any).get('userId');
     
     if (!vendorId) {
       return c.json({ error: 'Vendor authentication required' }, 401);
@@ -238,7 +240,7 @@ export function registerVendorDashboardEndpoints(app: Hono) {
    * Get staff for authenticated vendor
    */
   app.get('/vendor/staff', async (c) => {
-    const vendorId = c.req.header('X-Vendor-Id') || c.get('vendorId') || c.get('userId');
+    const vendorId = c.req.header('X-Vendor-Id') || (c as any).get('vendorId') || (c as any).get('userId');
     
     if (!vendorId) {
       return c.json({ error: 'Vendor authentication required' }, 401);

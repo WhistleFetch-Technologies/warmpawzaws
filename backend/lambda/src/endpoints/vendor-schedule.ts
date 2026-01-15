@@ -72,11 +72,13 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       }
 
       // Check vendor exists and is active
+      let vendor: any;
       try {
         const vendors = await select('vendors', { id: vendorId });
         if (vendors.length === 0) {
           return c.json({ error: 'Vendor not found' }, 404);
         }
+        vendor = vendors[0];
       } catch (error: any) {
         // If UUID validation fails, return empty schedule
         if (error.message?.includes('invalid input syntax for type uuid')) {
@@ -88,8 +90,6 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         }
         throw error;
       }
-
-      const vendor = vendors[0];
       if (!vendor.is_active || vendor.status !== 'approved') {
         return c.json({
           success: true,

@@ -544,8 +544,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       const taxCalculationItems = [];
 
       // Get customer and vendor locations for tax calculation
-      let customerLocation = null;
-      let vendorLocation = null;
+      let customerLocation: { state: string; city?: string; pincode?: string } | undefined = undefined;
+      let vendorLocation: { state: string; city?: string } | undefined = undefined;
       
       if (customerId) {
         const customers = await select('customers', { id: customerId });
@@ -553,11 +553,13 @@ export function registerEcommerceEndpoints(app: Hono) {
           const addr = typeof customers[0].address === 'string' 
             ? JSON.parse(customers[0].address) 
             : customers[0].address;
-          customerLocation = {
-            state: addr.state,
-            city: addr.city,
-            pincode: addr.pincode,
-          };
+          if (addr?.state) {
+            customerLocation = {
+              state: addr.state,
+              city: addr.city,
+              pincode: addr.pincode,
+            };
+          }
         }
       }
 
@@ -567,10 +569,12 @@ export function registerEcommerceEndpoints(app: Hono) {
           const addr = typeof vendors[0].address === 'string'
             ? JSON.parse(vendors[0].address)
             : vendors[0].address;
-          vendorLocation = {
-            state: addr.state,
-            city: addr.city,
-          };
+          if (addr?.state) {
+            vendorLocation = {
+              state: addr.state,
+              city: addr.city,
+            };
+          }
         }
       }
 
@@ -587,6 +591,7 @@ export function registerEcommerceEndpoints(app: Hono) {
           quantity: item.quantity,
           price: product.price,
           total: itemTotal,
+          name: product.name || 'Product',
         });
 
         // Add to tax calculation items

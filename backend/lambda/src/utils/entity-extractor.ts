@@ -123,53 +123,53 @@ export async function extractVendorId(c: Context, body?: any): Promise<VendorId 
 export function normalizeDbRow<T extends Record<string, any>>(row: T): T & Record<string, any> {
   if (!row) return row;
   
-  const normalized = { ...row } as T & Record<string, any>;
+  const normalized: Record<string, any> = { ...row };
   
   // Add camelCase versions of common snake_case fields
-  if (row.role_id) normalized.roleId = row.role_id;
-  if (row.vendor_id) normalized.vendorId = row.vendor_id;
-  if (row.service_id) normalized.serviceId = row.service_id;
-  if (row.customer_id) normalized.customerId = row.customer_id;
-  if (row.booking_id) normalized.bookingId = row.booking_id;
-  if (row.payment_id) normalized.paymentId = row.payment_id;
-  if (row.staff_id) normalized.staffId = row.staff_id;
-  if (row.pet_id) normalized.petId = row.pet_id;
-  if (row.catalog_id) normalized.catalogId = row.catalog_id;
-  if (row.vendor_service_id) normalized.vendorServiceId = row.vendor_service_id;
-  if (row.identity_id) normalized.identityId = row.identity_id;
+  if (row.role_id) normalized['roleId'] = row.role_id;
+  if (row.vendor_id) normalized['vendorId'] = row.vendor_id;
+  if (row.service_id) normalized['serviceId'] = row.service_id;
+  if (row.customer_id) normalized['customerId'] = row.customer_id;
+  if (row.booking_id) normalized['bookingId'] = row.booking_id;
+  if (row.payment_id) normalized['paymentId'] = row.payment_id;
+  if (row.staff_id) normalized['staffId'] = row.staff_id;
+  if (row.pet_id) normalized['petId'] = row.pet_id;
+  if (row.catalog_id) normalized['catalogId'] = row.catalog_id;
+  if (row.vendor_service_id) normalized['vendorServiceId'] = row.vendor_service_id;
+  if (row.identity_id) normalized['identityId'] = row.identity_id;
   
   // Common fields
-  if (row.business_name) normalized.businessName = row.business_name;
-  if (row.owner_name) normalized.ownerName = row.owner_name;
-  if (row.display_name) normalized.displayName = row.display_name;
-  if (row.service_name) normalized.serviceName = row.service_name;
-  if (row.service_style) normalized.serviceStyle = row.service_style;
-  if (row.service_type) normalized.serviceType = row.service_type;
-  if (row.booking_date) normalized.bookingDate = row.booking_date;
-  if (row.booking_time) normalized.bookingTime = row.booking_time;
-  if (row.base_price) normalized.basePrice = row.base_price;
-  if (row.total_amount) normalized.totalAmount = row.total_amount;
-  if (row.tax_amount) normalized.taxAmount = row.tax_amount;
-  if (row.payment_status) normalized.paymentStatus = row.payment_status;
-  if (row.is_active !== undefined) normalized.isActive = row.is_active;
-  if (row.is_enabled !== undefined) normalized.isEnabled = row.is_enabled;
-  if (row.is_published !== undefined) normalized.isPublished = row.is_published;
-  if (row.created_at) normalized.createdAt = row.created_at;
-  if (row.updated_at) normalized.updatedAt = row.updated_at;
+  if (row.business_name) normalized['businessName'] = row.business_name;
+  if (row.owner_name) normalized['ownerName'] = row.owner_name;
+  if (row.display_name) normalized['displayName'] = row.display_name;
+  if (row.service_name) normalized['serviceName'] = row.service_name;
+  if (row.service_style) normalized['serviceStyle'] = row.service_style;
+  if (row.service_type) normalized['serviceType'] = row.service_type;
+  if (row.booking_date) normalized['bookingDate'] = row.booking_date;
+  if (row.booking_time) normalized['bookingTime'] = row.booking_time;
+  if (row.base_price) normalized['basePrice'] = row.base_price;
+  if (row.total_amount) normalized['totalAmount'] = row.total_amount;
+  if (row.tax_amount) normalized['taxAmount'] = row.tax_amount;
+  if (row.payment_status) normalized['paymentStatus'] = row.payment_status;
+  if (row.is_active !== undefined) normalized['isActive'] = row.is_active;
+  if (row.is_enabled !== undefined) normalized['isEnabled'] = row.is_enabled;
+  if (row.is_published !== undefined) normalized['isPublished'] = row.is_published;
+  if (row.created_at) normalized['createdAt'] = row.created_at;
+  if (row.updated_at) normalized['updatedAt'] = row.updated_at;
   
   // Also handle ID field
   if (row.id) {
     // Infer the type based on other fields present
     if (row.role_id === undefined && row.name && row.display_name) {
-      normalized.roleId = row.id;
+      normalized['roleId'] = row.id;
     } else if (row.vendor_id === undefined && (row.business_name || row.vendor_type)) {
-      normalized.vendorId = row.id;
+      normalized['vendorId'] = row.id;
     } else if (row.booking_date) {
-      normalized.bookingId = row.id;
+      normalized['bookingId'] = row.id;
     }
   }
   
-  return normalized;
+  return normalized as T & Record<string, any>;
 }
 
 /**
@@ -190,7 +190,7 @@ export function standardizeApiResponse<T extends Record<string, any>>(data: T): 
   if (!data || typeof data !== 'object') return data;
   
   if (Array.isArray(data)) {
-    return data.map(standardizeApiResponse) as T;
+    return data.map(standardizeApiResponse) as unknown as T;
   }
   
   const result: Record<string, any> = {};

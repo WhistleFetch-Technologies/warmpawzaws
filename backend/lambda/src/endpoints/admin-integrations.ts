@@ -377,7 +377,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
             // Test API key by making a simple geocoding request
             const testUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=test&key=${apiKey}`;
             const response = await fetch(testUrl);
-            const data = await response.json();
+            const data = await response.json() as { status?: string };
 
             if (data.status === 'REQUEST_DENIED') {
               return c.json({
@@ -392,7 +392,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               connected: true,
               details: {
                 apiKeyConfigured: true,
-                status: data.status,
+                status: data.status || 'OK',
               },
             });
           } catch (error: any) {

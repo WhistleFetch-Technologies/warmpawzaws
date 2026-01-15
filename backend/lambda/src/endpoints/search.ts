@@ -219,8 +219,7 @@ class UniversalSearchHandler extends BaseHandler {
 
     if (searchQuery) {
       servicesQuery += ` AND (
-        vs.service_name ILIKE $${serviceParamIndex} OR
-        vs.description ILIKE $${serviceParamIndex}
+        vs.service_name ILIKE $${serviceParamIndex}
       )`;
       serviceParams.push(`%${searchQuery}%`);
       serviceParamIndex++;
@@ -252,7 +251,7 @@ class UniversalSearchHandler extends BaseHandler {
       services: services.map(s => ({
         id: s.id,
         serviceName: s.service_name,
-        description: s.description,
+        description: s.service_description || s.description_text || s.service_name,
         price: s.price,
         vendorId: s.vendor_id,
         vendorName: s.business_name,

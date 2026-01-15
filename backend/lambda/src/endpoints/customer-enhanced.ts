@@ -565,6 +565,14 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       for (const pet of pets) {
         try {
+          // ✅ PLATFORM RESTRICTION: Only allow Dog and Cat
+          const petSpecies = (pet.type || pet.species || 'dog').toLowerCase();
+          const allowedSpecies = ['dog', 'cat'];
+          if (!allowedSpecies.includes(petSpecies)) {
+            console.warn(`Rejected pet type: ${petSpecies}. Only Dog and Cat allowed.`);
+            continue; // Skip this pet, don't save it
+          }
+          
           // Check if pet already exists
           const existingPets = await select('pets', { customer_id: customer.id, name: pet.name });
           
@@ -578,7 +586,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           const petData: Record<string, any> = {
             customer_id: customer.id,
             name: pet.name,
-            species: (pet.type || pet.species || 'dog').toLowerCase(),
+            species: petSpecies,
             breed: pet.breed || null,
             age_years: pet.age ? parseInt(pet.age) : null,
             gender: validGender,
@@ -670,6 +678,146 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error saving questionnaire:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/payment-methods
+   * Get saved payment methods for faster checkout
+   */
+  app.get('/customer/payment-methods', async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      const customerId = c.req.query('customerId');
+
+      if (!phone && !customerId) {
+        return c.json({ error: 'phone or customerId is required' }, 400);
+      }
+
+      let customer: any = null;
+      if (customerId) {
+        const customers = await select('customers', { id: customerId });
+        customer = customers[0];
+      } else if (phone) {
+        const customers = await select('customers', { phone });
+        customer = customers[0];
+      }
+
+      if (!customer) {
+        return c.json({ methods: [] });
+      }
+
+      // Get saved payment methods from customer_payment_methods table
+      const methodsResult = await query(
+        `SELECT * FROM customer_payment_methods 
+         WHERE customer_id = $1 AND is_active = true 
+         ORDER BY is_default DESC, created_at DESC`,
+        [customer.id]
+      ).catch(() => ({ rows: [] }));
+
+      const methods = Array.isArray(methodsResult) 
+        ? methodsResult 
+        : methodsResult.rows || [];
+
+      return c.json({
+        success: true,
+        methods: methods.map((m: any) => ({
+          id: m.id,
+          type: m.payment_type || 'card',
+          last4: m.card_last4,
+          brand: m.card_brand,
+          upiId: m.upi_id,
+          bankName: m.bank_name,
+          isDefault: m.is_default,
+          expiryMonth: m.card_expiry_month,
+          expiryYear: m.card_expiry_year,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching payment methods:', error);
+      return c.json({ methods: [] }); // Return empty array on error
+    }
+  });
+
+  /**
+   * POST /customer/payment-methods
+   * Save a new payment method for faster checkout
+   */
+  app.post('/customer/payment-methods', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { phone, customerId, type, razorpayToken, last4, brand, upiId, bankName, isDefault } = body;
+
+      if (!phone && !customerId) {
+        return c.json({ error: 'phone or customerId is required' }, 400);
+      }
+
+      let customer: any = null;
+      if (customerId) {
+        const customers = await select('customers', { id: customerId });
+        customer = customers[0];
+      } else if (phone) {
+        const customers = await select('customers', { phone });
+        customer = customers[0];
+      }
+
+      if (!customer) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      // If setting as default, unset other defaults
+      if (isDefault) {
+        await query(
+          `UPDATE customer_payment_methods SET is_default = false WHERE customer_id = $1`,
+          [customer.id]
+        ).catch(() => {});
+      }
+
+      // Insert new payment method
+      const inserted = await insert('customer_payment_methods', {
+        customer_id: customer.id,
+        payment_type: type,
+        razorpay_token: razorpayToken,
+        card_last4: last4,
+        card_brand: brand,
+        upi_id: upiId,
+        bank_name: bankName,
+        is_default: isDefault || false,
+        is_active: true,
+      });
+
+      return c.json({
+        success: true,
+        method: inserted[0],
+        message: 'Payment method saved successfully',
+      });
+    } catch (error: any) {
+      console.error('Error saving payment method:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /customer/payment-methods/:methodId
+   * Remove a saved payment method
+   */
+  app.delete('/customer/payment-methods/:methodId', async (c) => {
+    try {
+      const methodId = c.req.param('methodId');
+      
+      // Soft delete by setting is_active = false
+      await query(
+        `UPDATE customer_payment_methods SET is_active = false, updated_at = NOW() WHERE id = $1`,
+        [methodId]
+      );
+
+      return c.json({
+        success: true,
+        message: 'Payment method removed successfully',
+      });
+    } catch (error: any) {
+      console.error('Error removing payment method:', error);
       return c.json({ error: error.message }, 500);
     }
   });

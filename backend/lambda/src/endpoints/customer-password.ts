@@ -16,7 +16,22 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-import * as bcrypt from 'bcryptjs';
+// Note: Password hashing using crypto module (bcryptjs not installed)
+import * as crypto from 'crypto';
+
+// Simple password hashing using PBKDF2 (crypto is built-in)
+const hashPassword = async (password: string): Promise<string> => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+};
+
+const comparePassword = async (password: string, storedHash: string): Promise<boolean> => {
+  const [salt, hash] = storedHash.split(':');
+  if (!salt || !hash) return false;
+  const derivedHash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return hash === derivedHash;
+};
 
 // ============================================================================
 // CHANGE PASSWORD HANDLER

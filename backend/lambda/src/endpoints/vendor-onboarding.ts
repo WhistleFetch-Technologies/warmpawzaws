@@ -6,8 +6,8 @@
 // ============================================================================
 
 import { Hono } from 'hono';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../base-handler';
-import { select, insert, update, query } from '../db';
+import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
+import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -310,10 +310,10 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
       const sectionMeta: Record<string, any> = {
         'business_information': { title: 'Business Information', order: 1 },
         'location_information': { title: 'Location', order: 2 },
-        'banking_information': { title: 'Banking Details', order: 3 },
-        'document_verification': { title: 'Documents', order: 4 },
-        'documents': { title: 'Documents', order: 4 },
-        'additional_information': { title: 'Additional Info', order: 5 },
+        // Note: Banking information moved to vendor dashboard settings
+        'document_verification': { title: 'Documents', order: 3 },
+        'documents': { title: 'Documents', order: 3 },
+        'additional_information': { title: 'Additional Info', order: 4 },
       };
 
       for (const field of activeFields) {
@@ -376,7 +376,7 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
     const normalizedRoleId = (roleId || '').toLowerCase().trim();
     const fields: any[] = [];
 
-    // Walker-specific fields
+    // Walker-specific fields - Only fields actually used in operations
     if (normalizedRoleId === 'walker' || normalizedRoleId === 'pet_walker') {
       fields.push(
         {
@@ -392,83 +392,6 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           isActive: true,
         },
         {
-          id: 'walker_service_radius',
-          name: 'serviceRadius',
-          label: 'Maximum Service Radius (km)',
-          type: 'number',
-          section: 'additional_information',
-          helpText: 'Maximum distance you\'re willing to travel for walks',
-          placeholder: '5',
-          validation: { required: true, min: 1, max: 50 },
-          defaultValue: 5,
-          order: 2,
-          isActive: true,
-        },
-        {
-          id: 'walker_max_dogs',
-          name: 'maxDogsPerWalk',
-          label: 'Maximum Dogs Per Walk',
-          type: 'number',
-          section: 'additional_information',
-          helpText: 'How many dogs can you walk simultaneously?',
-          placeholder: '3',
-          validation: { required: true, min: 1, max: 10 },
-          defaultValue: 3,
-          order: 3,
-          isActive: true,
-        },
-        {
-          id: 'walker_durations',
-          name: 'walkDurations',
-          label: 'Available Walk Durations',
-          type: 'multiselect',
-          section: 'additional_information',
-          helpText: 'Select all walk durations you offer',
-          options: [
-            { value: '15', label: '15 minutes' },
-            { value: '20', label: '20 minutes' },
-            { value: '30', label: '30 minutes' },
-            { value: '45', label: '45 minutes' },
-            { value: '60', label: '60 minutes' },
-          ],
-          validation: { required: true },
-          defaultValue: ['30'],
-          order: 4,
-          isActive: true,
-        },
-        {
-          id: 'walker_experience',
-          name: 'experienceLevel',
-          label: 'Years of Experience',
-          type: 'select',
-          section: 'additional_information',
-          options: [
-            { value: 'less_than_1', label: 'Less than 1 year' },
-            { value: '1_2', label: '1-2 years' },
-            { value: '3_5', label: '3-5 years' },
-            { value: '5_plus', label: '5+ years' },
-          ],
-          validation: { required: true },
-          order: 5,
-          isActive: true,
-        },
-        {
-          id: 'walker_dog_sizes',
-          name: 'dogSizePreferences',
-          label: 'Dog Sizes You Can Handle',
-          type: 'multiselect',
-          section: 'additional_information',
-          options: [
-            { value: 'small', label: 'Small (under 20 lbs)' },
-            { value: 'medium', label: 'Medium (20-50 lbs)' },
-            { value: 'large', label: 'Large (50-100 lbs)' },
-            { value: 'extra_large', label: 'Extra Large (100+ lbs)' },
-          ],
-          validation: { required: true },
-          order: 6,
-          isActive: true,
-        },
-        {
           id: 'walker_background_check',
           name: 'backgroundCheck',
           label: 'Background Check Certificate',
@@ -477,7 +400,7 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           helpText: 'Upload your background check certificate',
           acceptedFileTypes: ['pdf', 'jpg', 'jpeg', 'png'],
           validation: { required: true },
-          order: 10,
+          order: 2,
           isActive: true,
         },
         {
@@ -489,33 +412,16 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           helpText: 'Upload your insurance certificate',
           acceptedFileTypes: ['pdf', 'jpg', 'jpeg', 'png'],
           validation: { required: true },
-          order: 11,
+          order: 3,
           isActive: true,
         },
-        {
-          id: 'walker_emergency_contact',
-          name: 'emergencyContactName',
-          label: 'Emergency Contact Name',
-          type: 'text',
-          section: 'additional_information',
-          validation: { required: true },
-          order: 7,
-          isActive: true,
-        },
-        {
-          id: 'walker_emergency_phone',
-          name: 'emergencyContactPhone',
-          label: 'Emergency Contact Phone',
-          type: 'tel',
-          section: 'additional_information',
-          validation: { required: true },
-          order: 8,
-          isActive: true,
-        }
+        // Note: Emergency contact fields moved to vendor dashboard settings
       );
     }
 
-    // Seller/E-commerce-specific fields
+    // Seller/E-commerce-specific fields - Only fields actually used in operations
+    // Note: Delivery is handled by Warmpawz via Shiprocket/Nimbus Posts, so shipping radius not needed
+    // Note: Return policy simplified - most products don't allow returns, delivery charges handled by platform
     if (normalizedRoleId === 'seller' || normalizedRoleId === 'pet_products_store' || normalizedRoleId === 'ecommerce') {
       fields.push(
         {
@@ -524,6 +430,7 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           label: 'Business Type',
           type: 'select',
           section: 'business_information',
+          helpText: 'Type of business you operate',
           options: [
             { value: 'individual', label: 'Individual seller' },
             { value: 'small_business', label: 'Small business' },
@@ -563,62 +470,22 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           isActive: true,
         },
         {
-          id: 'seller_shipping_options',
-          name: 'shippingOptions',
-          label: 'Shipping Methods Offered',
+          id: 'seller_payment_methods',
+          name: 'paymentMethods',
+          label: 'Payment Methods Accepted',
           type: 'multiselect',
           section: 'business_information',
-          helpText: 'Select all shipping methods you offer (minimum 1 required)',
+          helpText: 'Payment methods you accept (delivery charges handled by platform)',
           options: [
-            { value: 'standard', label: 'Standard shipping' },
-            { value: 'express', label: 'Express shipping' },
-            { value: 'same_day', label: 'Same-day delivery' },
-            { value: 'pickup', label: 'Pickup available' },
+            { value: 'cod', label: 'Cash on delivery' },
+            { value: 'card', label: 'Credit/Debit card' },
+            { value: 'upi', label: 'UPI' },
+            { value: 'netbanking', label: 'Net banking' },
+            { value: 'wallet', label: 'Wallet' },
           ],
           validation: { required: true },
-          defaultValue: ['standard'],
+          defaultValue: ['upi', 'card'],
           order: 4,
-          isActive: true,
-        },
-        {
-          id: 'seller_shipping_radius',
-          name: 'shippingRadius',
-          label: 'Local Delivery Radius (km)',
-          type: 'number',
-          section: 'business_information',
-          helpText: 'Maximum distance for same-day/local delivery (0 = shipping only)',
-          placeholder: '0',
-          validation: { required: true, min: 0, max: 100 },
-          defaultValue: 0,
-          order: 5,
-          isActive: true,
-        },
-        {
-          id: 'seller_inventory_management',
-          name: 'inventoryManagement',
-          label: 'Inventory Management System',
-          type: 'select',
-          section: 'business_information',
-          options: [
-            { value: 'manual', label: 'Manual' },
-            { value: 'automated', label: 'Automated' },
-            { value: 'third_party', label: 'Third-party integration' },
-          ],
-          validation: { required: true },
-          defaultValue: 'manual',
-          order: 6,
-          isActive: true,
-        },
-        {
-          id: 'seller_return_policy',
-          name: 'returnPolicy',
-          label: 'Return Policy',
-          type: 'textarea',
-          section: 'business_information',
-          helpText: 'Describe your return and refund policy (minimum 50 characters)',
-          placeholder: 'e.g., 7-day return policy, items must be unused...',
-          validation: { required: true, minLength: 50 },
-          order: 7,
           isActive: true,
         },
         {
@@ -627,9 +494,9 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           label: 'GST/VAT Registration Number',
           type: 'text',
           section: 'business_information',
-          helpText: 'Your tax registration number for e-commerce',
+          helpText: 'Your tax registration number for e-commerce (if applicable)',
           validation: { required: false },
-          order: 8,
+          order: 5,
           isActive: true,
         },
         {
@@ -641,25 +508,7 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           helpText: 'Upload a sample of your product catalog (PDF or ZIP for multiple images, max 10MB)',
           acceptedFileTypes: ['pdf', 'zip', 'jpg', 'jpeg', 'png'],
           validation: { required: true },
-          order: 10,
-          isActive: true,
-        },
-        {
-          id: 'seller_payment_methods',
-          name: 'paymentMethods',
-          label: 'Payment Methods Accepted',
-          type: 'multiselect',
-          section: 'business_information',
-          options: [
-            { value: 'cod', label: 'Cash on delivery' },
-            { value: 'card', label: 'Credit/Debit card' },
-            { value: 'upi', label: 'UPI' },
-            { value: 'netbanking', label: 'Net banking' },
-            { value: 'wallet', label: 'Wallet' },
-          ],
-          validation: { required: true },
-          defaultValue: ['upi', 'card'],
-          order: 9,
+          order: 6,
           isActive: true,
         }
       );
@@ -1139,28 +988,32 @@ class GoLiveHandler extends BaseHandler {
       try {
         const { queueSearchIndexUpdate } = require('../utils/aws-clients');
         
+        // Get vendor info for name
+        const vendors = await select('vendors', { id: vendor_id });
+        const vendorInfo = vendors[0] || {};
+        
         // Get all vendor services
         const vendorServices = await select('vendor_services', {
-          vendor_id: vendorId,
+          vendor_id: vendor_id,
           is_active: true,
         });
         
         // Queue search index updates for each service
         for (const service of vendorServices) {
           await queueSearchIndexUpdate('service', 'update', service.id, {
-            vendor_id: vendorId,
-            vendor_name: vendor.business_name,
+            vendor_id: vendor_id,
+            vendor_name: vendorInfo.business_name,
             is_active: true,
           });
         }
         
         // Queue vendor index update
-        await queueSearchIndexUpdate('vendor', 'update', vendorId, {
+        await queueSearchIndexUpdate('vendor', 'update', vendor_id, {
           is_active: true,
           status: 'active',
         });
         
-        console.log(`✅ Services synced to search index for vendor ${vendorId}`);
+        console.log(`✅ Services synced to search index for vendor ${vendor_id}`);
       } catch (error: any) {
         console.warn('Failed to sync services to search index:', error);
         // Don't fail the go-live process if sync fails
@@ -1181,28 +1034,93 @@ class GoLiveHandler extends BaseHandler {
 // REGISTER ENDPOINTS
 // ============================================================================
 
+// Helper to create a handler context from Hono context
+function createHandlerContext(c: any): HandlerContext {
+  const requestId = c.req.header('x-request-id') || crypto.randomUUID();
+  return {
+    event: {
+      pathParameters: c.req.param ? Object.fromEntries(Object.entries(c.req.param())) : {},
+      queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
+      body: null, // Will be parsed by handler
+      headers: Object.fromEntries([...c.req.raw.headers.entries()]),
+      requestContext: { requestId } as any,
+    } as any,
+    context: {
+      awsRequestId: requestId,
+      functionName: 'hono-handler',
+      functionVersion: '1.0',
+      invokedFunctionArn: 'arn:aws:lambda:local:000000000000:function:hono-handler',
+      memoryLimitInMB: '512',
+      logGroupName: '/aws/lambda/hono-handler',
+      logStreamName: 'local',
+      getRemainingTimeInMillis: () => 30000,
+      callbackWaitsForEmptyEventLoop: true,
+      done: () => {},
+      fail: () => {},
+      succeed: () => {},
+    } as any,
+    requestId,
+  };
+}
+
+// Helper to convert HandlerResponse to Hono response
+async function toHonoResponse(c: any, handler: BaseHandler, context: HandlerContext): Promise<Response> {
+  // Store body for parseBody
+  try {
+    const rawBody = await c.req.text();
+    if (rawBody) {
+      context.event.body = rawBody;
+    }
+  } catch (e) {
+    // No body
+  }
+  
+  const result = await handler.handle(context);
+  return c.json(JSON.parse(result.body), result.statusCode as 200 | 400 | 404 | 500);
+}
+
 export function registerVendorOnboardingEndpoints(app: Hono) {
   // Phase 1: Auth & Entry
-  app.get('/vendor/onboarding/status', (c) => new GetOnboardingStatusHandler().handle(c));
+  app.get('/vendor/onboarding/status', async (c) => {
+    return toHonoResponse(c, new GetOnboardingStatusHandler(), createHandlerContext(c));
+  });
 
   // Phase 2: Role Selection
-  app.get('/vendor/onboarding/roles', (c) => new GetAvailableRolesHandler().handle(c));
-  app.post('/vendor/onboarding/select-role', (c) => new SelectRoleHandler().handle(c));
+  app.get('/vendor/onboarding/roles', async (c) => {
+    return toHonoResponse(c, new GetAvailableRolesHandler(), createHandlerContext(c));
+  });
+  app.post('/vendor/onboarding/select-role', async (c) => {
+    return toHonoResponse(c, new SelectRoleHandler(), createHandlerContext(c));
+  });
 
   // Phase 3: Vendor Type
-  app.post('/vendor/onboarding/select-vendor-type', (c) => new SelectVendorTypeHandler().handle(c));
+  app.post('/vendor/onboarding/select-vendor-type', async (c) => {
+    return toHonoResponse(c, new SelectVendorTypeHandler(), createHandlerContext(c));
+  });
 
   // Phase 4: Dynamic Form
-  app.get('/vendor/onboarding/form-schema', (c) => new GetOnboardingFormSchemaHandler().handle(c));
-  app.post('/vendor/onboarding/submit-application', (c) => new SubmitApplicationHandler().handle(c));
+  app.get('/vendor/onboarding/form-schema', async (c) => {
+    return toHonoResponse(c, new GetOnboardingFormSchemaHandler(), createHandlerContext(c));
+  });
+  app.post('/vendor/onboarding/submit-application', async (c) => {
+    return toHonoResponse(c, new SubmitApplicationHandler(), createHandlerContext(c));
+  });
 
   // Phase 6: Admin Review
-  app.post('/admin/vendor/onboarding/:applicationId/review', (c) => new AdminReviewApplicationHandler().handle(c));
+  app.post('/admin/vendor/onboarding/:applicationId/review', async (c) => {
+    return toHonoResponse(c, new AdminReviewApplicationHandler(), createHandlerContext(c));
+  });
 
   // Phase 7: Activation
-  app.post('/vendor/onboarding/activate', (c) => new ActivateVendorHandler().handle(c));
+  app.post('/vendor/onboarding/activate', async (c) => {
+    return toHonoResponse(c, new ActivateVendorHandler(), createHandlerContext(c));
+  });
 
   // Phase 8: Post-Activation Setup
-  app.post('/vendor/setup/update-completion', (c) => new UpdateSetupCompletionHandler().handle(c));
-  app.post('/vendor/setup/go-live', (c) => new GoLiveHandler().handle(c));
+  app.post('/vendor/setup/update-completion', async (c) => {
+    return toHonoResponse(c, new UpdateSetupCompletionHandler(), createHandlerContext(c));
+  });
+  app.post('/vendor/setup/go-live', async (c) => {
+    return toHonoResponse(c, new GoLiveHandler(), createHandlerContext(c));
+  });
 }

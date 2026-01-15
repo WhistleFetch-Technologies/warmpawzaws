@@ -1205,5 +1205,106 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       return c.json({ error: error.message, success: false }, 500);
     }
   });
+
+  /**
+   * GET /vendors
+   * List vendors by role (for customer app clinic/groomer listing)
+   * Query params: role, city, status, limit
+   */
+  app.get("/vendors", async (c) => {
+    try {
+      const role = c.req.query('role');
+      const city = c.req.query('city');
+      const status = c.req.query('status') || 'approved';
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+
+      let vendorQuery = `
+        SELECT 
+          v.id,
+          v.business_name,
+          v.owner_name,
+          v.phone,
+          v.address,
+          v.city,
+          v.latitude,
+          v.longitude,
+          v.status,
+          v.role_id,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          COALESCE(
+            (SELECT AVG(rating)::numeric(3,1) FROM reviews WHERE vendor_id = v.id),
+            4.5
+          ) as avg_rating,
+          COALESCE(
+            (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id),
+            0
+          ) as review_count,
+          COALESCE(
+            (SELECT COUNT(*) FROM bookings WHERE vendor_id = v.id AND status = 'completed'),
+            0
+          ) as completed_bookings
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE v.is_active = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      // Filter by status
+      if (status) {
+        vendorQuery += ` AND v.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+
+      // Filter by role name
+      if (role) {
+        vendorQuery += ` AND (r.name = $${paramIndex} OR r.display_name ILIKE $${paramIndex + 1})`;
+        params.push(role, `%${role}%`);
+        paramIndex += 2;
+      }
+
+      // Filter by city
+      if (city) {
+        vendorQuery += ` AND v.city ILIKE $${paramIndex}`;
+        params.push(`%${city}%`);
+        paramIndex++;
+      }
+
+      vendorQuery += ` ORDER BY avg_rating DESC, completed_bookings DESC LIMIT $${paramIndex}`;
+      params.push(limit);
+
+      const result = await query(vendorQuery, params);
+
+      const vendors = result.rows.map((v: any) => ({
+        id: v.id,
+        businessName: v.business_name || v.owner_name,
+        ownerName: v.owner_name,
+        phone: v.phone,
+        address: v.address,
+        city: v.city,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        status: v.status,
+        roleId: v.role_id,
+        roleName: v.role_name,
+        roleDisplayName: v.role_display_name,
+        rating: parseFloat(v.avg_rating || '4.5').toFixed(1),
+        reviewCount: parseInt(v.review_count || '0', 10),
+        completedBookings: parseInt(v.completed_bookings || '0', 10),
+      }));
+
+      return c.json({
+        success: true,
+        vendors: vendors,
+        total: vendors.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendors:', error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
 }
 

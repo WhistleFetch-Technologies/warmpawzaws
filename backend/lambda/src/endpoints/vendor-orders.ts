@@ -348,7 +348,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
           queryStringParameters: queryParams,
         } as any,
       } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 500);
     } catch (error: any) {
       console.error('Error in vendor orders endpoint:', error);
       // Return empty orders for any error
@@ -382,7 +382,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
           queryStringParameters: queryParams,
         } as any,
       } as HandlerContext);
-      return c.json(JSON.parse(response.body), response.statusCode);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 500);
     } catch (error: any) {
       console.error('Error in vendor orders stats endpoint:', error);
       // Return empty stats for any error
