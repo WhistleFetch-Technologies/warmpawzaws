@@ -51,7 +51,14 @@ export function VendorServiceManagementComplete({
     }
   }, [selectedServiceStyle, showCatalogView, showCustomServices, showPackages]);
 
-import { getVendorRoleId, hasVendorRole, isVendorType } from '@/lib/vendor-utils';
+  // ✅ PHASE 3: Role-based conditional field visibility (using utility functions)
+  const vendorRoleId = getVendorRoleId(vendorData);
+  const isCafe = hasVendorRole(vendorData, ['pet_cafe', 'cafe']);
+  const isResort = hasVendorRole(vendorData, ['pet_resort', 'resort']);
+  const isBoarding = hasVendorRole(vendorData, ['pet_boarding', 'boarding']);
+  const isRetail = hasVendorRole(vendorData, ['pet_products_store', 'product_seller', 'retail', 'seller', 'ecommerce']);
+  const isPharmacy = hasVendorRole(vendorData, ['pet_pharmacy', 'pharmacy']);
+  const isHealthcare = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
   const supportsHomeService = !isCafe && !isResort && !isBoarding && !isRetail && !isPharmacy; // Cafe, Resort, Boarding, Retail, Pharmacy don't do home services
 
   const loadRoleConfiguration = async () => {

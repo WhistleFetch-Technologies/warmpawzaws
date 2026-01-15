@@ -39,22 +39,30 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   const loadActiveWalks = async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/active-walks`);
-      if (response?.walks) {
+      if (response?.walks && Array.isArray(response.walks)) {
         setActiveWalks(response.walks);
+      } else {
+        setActiveWalks([]);
       }
-    } catch (error) {
-      console.log('No active walks');
+    } catch (error: any) {
+      // Silently fail - no active walks is not an error
+      console.log('No active walks or error loading:', error?.message);
+      setActiveWalks([]);
     }
   };
 
   const loadActivePackages = async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=walking`);
-      if (response?.packages) {
+      if (response?.packages && Array.isArray(response.packages)) {
         setActivePackages(response.packages);
+      } else {
+        setActivePackages([]);
       }
-    } catch (error) {
-      console.log('No active packages');
+    } catch (error: any) {
+      // Silently fail - no packages is not an error
+      console.log('No active packages or error loading:', error?.message);
+      setActivePackages([]);
     }
   };
 

@@ -200,8 +200,10 @@ export function VetBookingRouter({
         setActivePackage(response.package);
         setShowPackageModal(true);
       }
-    } catch (error) {
-      console.log('No active packages found');
+    } catch (error: any) {
+      // Silently fail - no packages is not an error, just means normal booking flow
+      console.log('No active packages found or error checking packages:', error?.message);
+      // Don't show error toast - this is expected for customers without packages
     }
   };
 
@@ -281,9 +283,12 @@ export function VetBookingRouter({
           const response = await apiClient.post('/package-sessions', sessionData) as any;
           setBookingId(response.session?.id || response.id || 'PS-' + Date.now());
           toast.success('Package session scheduled successfully!');
-        } catch (err) {
+        } catch (err: any) {
           console.error('Error creating package session:', err);
-          setBookingId('PS-' + Date.now());
+          const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create package session';
+          toast.error(errorMessage);
+          setProcessing(false);
+          return; // Don't proceed to confirmation on error
         }
       } else {
         // Regular booking
@@ -305,9 +310,12 @@ export function VetBookingRouter({
         try {
           const response = await apiClient.post('/bookings', bookingData) as any;
           setBookingId(response.booking?.id || 'BK-' + Date.now());
-        } catch (err) {
-          // Mock successful booking for demo
-          setBookingId('BK-' + Date.now());
+        } catch (err: any) {
+          console.error('Error creating booking:', err);
+          const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create booking';
+          toast.error(errorMessage);
+          setProcessing(false);
+          return; // Don't proceed to confirmation on error
         }
       }
       

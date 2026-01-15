@@ -30,6 +30,7 @@ import {
   getMicroCategoriesForRole,
   MicroCategory 
 } from '@/lib/service-micro-categories';
+import { getVendorRoleId } from '@/lib/vendor-utils';
 import {
   Dialog,
   DialogContent,
@@ -154,7 +155,8 @@ export function VendorCustomServiceCreation({
 
   // Load available categories and micro-categories for this vendor role
   useEffect(() => {
-    if (vendorData?.roleId) {
+    const roleId = getVendorRoleId(vendorData);
+    if (roleId) {
       const categories = getAllMicroCategoriesForRole(vendorData.roleId);
       setAvailableCategories(categories);
       console.log('🎨 Loaded AI micro-categories for role:', vendorData.roleId, categories);
