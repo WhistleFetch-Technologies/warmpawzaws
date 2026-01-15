@@ -7,12 +7,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
-declare global {
-  interface Window {
-    google: any;
-    initGoogleMaps: () => void;
-  }
-}
+// Google Maps window globals - using type assertion to avoid conflicts with @types/google.maps
 
 export interface AddressComponents {
   street?: string;
@@ -69,7 +64,8 @@ export function AddressAutocomplete({
     }
 
     // Check if Google Maps is already loaded
-    if (window.google && window.google.maps && window.google.maps.places) {
+    const win = window as any;
+    if (win.google && win.google.maps && win.google.maps.places) {
       setIsLoaded(true);
       setIsLoading(false);
       return;
@@ -79,7 +75,7 @@ export function AddressAutocomplete({
     if (document.querySelector(`script[src*="maps.googleapis.com"]`)) {
       // Wait for script to load
       const checkInterval = setInterval(() => {
-        if (window.google && window.google.maps && window.google.maps.places) {
+        if (win.google && win.google.maps && win.google.maps.places) {
           setIsLoaded(true);
           setIsLoading(false);
           clearInterval(checkInterval);
@@ -118,7 +114,8 @@ export function AddressAutocomplete({
 
     try {
       // Create autocomplete instance
-      const autocomplete = new window.google.maps.places.Autocomplete(
+      const win = window as any;
+      const autocomplete = new win.google.maps.places.Autocomplete(
         inputRef.current,
         {
           types,
@@ -180,7 +177,7 @@ export function AddressAutocomplete({
 
       return () => {
         if (autocompleteRef.current) {
-          window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+          win.google.maps.event.clearInstanceListeners(autocompleteRef.current);
           autocompleteRef.current = null;
         }
       };

@@ -5,6 +5,7 @@
  * Handles all vendor lifecycle states from onboarding to active operations
  */
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
@@ -55,6 +56,7 @@ import { VendorDietCharts } from './VendorDietCharts'; // ✅ NEW: Diet charts
 import { VendorCounseling } from './VendorCounseling'; // ✅ NEW: Counseling services
 import { VendorPolicyManagement } from './VendorPolicyManagement'; // ✅ NEW: Policy management
 import { VendorDistancePricing } from './VendorDistancePricing'; // ✅ NEW: Distance pricing
+import { VendorSupportDashboard } from './VendorSupportDashboard'; // ✅ NEW: Support tickets
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -122,6 +124,7 @@ export function VendorLandingPage({
   onComplete,
   justSubmitted
 }: VendorLandingPageProps) {
+  const router = useRouter();
   const [status, setStatus] = useState<VendorStatus>('new');
   const [loading, setLoading] = useState(true);
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
@@ -135,6 +138,7 @@ export function VendorLandingPage({
   const [showCenterProfile, setShowCenterProfile] = useState(false); // ✅ NEW: Center Profile Manager
   const [showStaffManagement, setShowStaffManagement] = useState(false);
   const [showBusinessHub, setShowBusinessHub] = useState(false); // ✅ NEW
+  const [showSupportDashboard, setShowSupportDashboard] = useState(false); // ✅ NEW: Support tickets
   
   // ✅ NEW: Specialized vendor-specific screens
   const [showVetSpecialized, setShowVetSpecialized] = useState(false); // Vet-specific services
@@ -157,6 +161,7 @@ export function VendorLandingPage({
   const [showEventManagement, setShowEventManagement] = useState(false); // ✅ NEW: Event management
   const [showPatientMonitoring, setShowPatientMonitoring] = useState(false); // ✅ NEW: Patient monitoring
   const [showCafeMenuManagement, setShowCafeMenuManagement] = useState(false); // ✅ NEW: Cafe menu management
+  const [showCafeTables, setShowCafeTables] = useState(false); // ✅ NEW: Cafe tables management
   const [showPrescriptionVerification, setShowPrescriptionVerification] = useState(false); // ✅ NEW: Prescription verification
   const [showDeliveryManagement, setShowDeliveryManagement] = useState(false); // ✅ NEW: Delivery management
   const [showDietCharts, setShowDietCharts] = useState(false); // ✅ NEW: Diet charts
@@ -939,6 +944,11 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Support Tickets Dashboard
+      if (showSupportDashboard) {
+        return <VendorSupportDashboard vendorId={vendorId} />;
+      }
+      
       // ✅ NEW: Vet Specialized Services Manager
       if (showVetSpecialized) {
         return (
@@ -1260,6 +1270,30 @@ export function VendorLandingPage({
           />
         );
       }
+
+      // 7. Pet Products Store / Retailer - Redirect to Seller Hub (E-Commerce Dashboard)
+      // Check role by name OR by UUID (pet_products_store UUID = 5056756d-3b05-457a-9725-3f922800b520)
+      const roleId = vendorData?.roleId || (vendorData as any)?.role_id || (vendorData as any)?.selected_role_id;
+      const roleName = (vendorData as any)?.roleName || (vendorData as any)?.role_name || '';
+      const PET_PRODUCTS_STORE_UUID = '5056756d-3b05-457a-9725-3f922800b520';
+      const PET_PHARMACY_UUID = ''; // Add if known
+      const isRetailVendor = roleId === 'pet_products_store' || roleId === 'product_seller' || 
+                             roleId === 'pet_pharmacy' || roleId === PET_PRODUCTS_STORE_UUID ||
+                             roleName === 'pet_products_store' || roleName === 'Pet Store / Retailer' ||
+                             roleId?.includes('retail') || roleId?.includes('store') ||
+                             (vendorData as any)?.vendor_type === 'seller';
+      if (isRetailVendor) {
+        console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', roleId, 'RoleName:', roleName);
+        router.push('/seller');
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading Seller Hub...</p>
+            </div>
+          </div>
+        );
+      }
       
       // ✅ FIX: Use VendorDashboard (actual Figma UI) instead of VendorDashboardScreen (placeholder)
       // VendorDashboard is the comprehensive 1200+ line component with all capabilities
@@ -1270,7 +1304,17 @@ export function VendorLandingPage({
           vendorId={vendorId}
           
           onNavigateToConsultation={() => setShowConsultation(true)}
-          onNavigateToServiceManagement={() => setShowServiceManagement(true)}
+          onNavigateToServiceManagement={() => {
+            // Check if this is a retail/product vendor
+            const roleId = vendorData?.roleId || (vendorData as any)?.role_id;
+            const isRetail = roleId?.includes('product') || roleId?.includes('retail') || roleId?.includes('pharmacy') || roleId?.includes('store');
+            if (isRetail) {
+              // Navigate to products catalog page for retail vendors
+              router.push('/products');
+            } else {
+              setShowServiceManagement(true);
+            }
+          }}
           onNavigateToBookingManagement={() => setShowBookingManagement(true)}
           onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
           onNavigateToScheduleManagement={() => setShowScheduleManagement(true)}
@@ -1278,6 +1322,7 @@ export function VendorLandingPage({
           onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
           onNavigateToStaffManagement={() => setShowStaffManagement(true)}
           onNavigateToBusinessHub={() => setShowBusinessHub(true)}
+          onNavigateToSupport={() => setShowSupportDashboard(true)}
           onNavigateToLiveTracking={() => setShowLiveTracking(true)}
           onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
           onNavigateToGallery={() => setShowGallery(true)}
@@ -1295,6 +1340,7 @@ export function VendorLandingPage({
           onNavigateToEventManagement={() => setShowEventManagement(true)}
           onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)}
           onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)}
+          onNavigateToCafeTables={() => router.push('/cafe/tables')}
           onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
           onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
           onNavigateToDietCharts={() => setShowDietCharts(true)}

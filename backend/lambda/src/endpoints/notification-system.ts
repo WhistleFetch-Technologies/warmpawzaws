@@ -20,6 +20,8 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export type NotificationType =
   | 'vendor_application_submitted'

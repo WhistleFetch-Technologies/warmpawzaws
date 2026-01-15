@@ -17,6 +17,8 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
+import { normalizeDbRows, buildBookingResponse } from '../utils/entity-extractor';
+import { normalizeBooking, isValidUUID } from '../types/entities';
 
 export function registerCustomerBookingHistoryEndpoints(app: Hono) {
   /**
@@ -25,10 +27,28 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
    */
   app.get("/customer/:customerId/bookings", async (c) => {
     try {
-      const { customerId } = c.req.param();
+      let { customerId } = c.req.param();
       const status = c.req.query('status');
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // Check if customerId is a phone number (not a UUID) - support both formats
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
+      if (!isUUID) {
+        // Treat as phone number - look up customer by phone
+        const customers = await select('customers', { phone: customerId });
+        if (customers.length > 0) {
+          customerId = customers[0].id;
+        } else {
+          // Return empty result if customer not found
+          return c.json({
+            success: true,
+            bookings: [],
+            stats: { total: 0, confirmed: 0, inProgress: 0, completed: 0, cancelled: 0 },
+            total: 0
+          });
+        }
+      }
 
       let bookingQuery = `
         SELECT b.*,

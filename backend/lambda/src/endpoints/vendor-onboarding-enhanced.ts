@@ -35,6 +35,8 @@ import {
   SelectVendorTypeRequestSchema,
   AdminReviewApplicationRequestSchema,
 } from '@warmpawz/api-contracts/vendors';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // PHASE 1: AUTH & ENTRY
@@ -878,6 +880,102 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     const result: any = await reviewHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
+  });
+
+  // Phase 7: Activate Vendor
+  app.post('/vendor/onboarding/activate', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { phone } = body;
+
+      if (!phone) {
+        return c.json({ success: false, error: 'Phone number is required' }, 400);
+      }
+
+      // Get vendor identity
+      const identities = await select('vendor_identity', { phone });
+      if (identities.length === 0) {
+        return c.json({ success: false, error: 'Vendor identity not found' }, 404);
+      }
+
+      const identity = identities[0];
+
+      if (identity.onboarding_status !== 'APPROVED') {
+        return c.json({ success: false, error: 'Vendor must be approved before activation' }, 400);
+      }
+
+      // Check if vendor already exists in vendors table
+      const existingVendors = await select('vendors', { phone });
+      if (existingVendors.length > 0) {
+        const vendor = existingVendors[0];
+        // Update identity to ACTIVATED and vendor to active
+        await update('vendor_identity', { id: identity.id }, {
+          onboarding_status: 'ACTIVATED',
+          updated_at: new Date().toISOString(),
+        });
+        await update('vendors', { id: vendor.id }, {
+          status: 'approved',
+          is_active: true,
+          onboarding_status: 'ACTIVATED',
+          updated_at: new Date().toISOString(),
+        });
+        return c.json({
+          success: true,
+          message: 'Vendor activated successfully',
+          vendor_id: vendor.id,
+          nextStep: '/dashboard',
+        });
+      }
+
+      // Get application
+      if (!identity.application_id) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+
+      const apps = await select('vendor_onboarding_applications', { id: identity.application_id });
+      if (apps.length === 0) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+
+      const application = apps[0];
+      const payload = application.application_payload || {};
+
+      // Create vendor record from application
+      const vendors = await insert('vendors', {
+        phone: identity.phone,
+        email: payload.email || identity.email || '',
+        business_name: payload.businessName || '',
+        owner_name: payload.fullName || payload.ownerName || '',
+        role_id: application.role_id,
+        vendor_type: application.vendor_type,
+        vendor_identity_id: identity.id,
+        onboarding_status: 'ACTIVATED',
+        status: 'approved',
+        is_active: true,
+        address: payload.address || '',
+        city: payload.city || '',
+        state: payload.state || '',
+        pincode: payload.pin || payload.pincode || '',
+      });
+
+      const vendor = vendors[0];
+
+      // Update identity to ACTIVATED
+      await update('vendor_identity', { id: identity.id }, {
+        onboarding_status: 'ACTIVATED',
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Vendor activated successfully',
+        vendor_id: vendor.id,
+        nextStep: '/dashboard',
+      });
+    } catch (error: any) {
+      console.error('Error activating vendor:', error);
+      return c.json({ success: false, error: error.message || 'Failed to activate vendor' }, 500);
+    }
   });
 }
 

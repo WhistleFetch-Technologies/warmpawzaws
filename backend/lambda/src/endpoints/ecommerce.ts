@@ -18,6 +18,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query, upsert } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerEcommerceEndpoints(app: Hono) {
   // ============================================
@@ -79,12 +81,17 @@ export function registerEcommerceEndpoints(app: Hono) {
       try {
         products = await query(productQuery, params);
       } catch (error: any) {
-        // If UUID validation fails, return empty products
-        if (error.message?.includes('invalid input syntax for type uuid')) {
+        // Handle table not existing, column not existing, or invalid UUID
+        if (error.message?.includes('invalid input syntax for type uuid') ||
+            error.message?.includes('relation "products" does not exist') ||
+            error.message?.includes('column') ||
+            error.code === '42P01' || // undefined_table
+            error.code === '42703') { // undefined_column
           return c.json({
             success: true,
             products: [],
             total: 0,
+            message: 'No products available yet'
           });
         }
         throw error;
@@ -97,6 +104,80 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching products:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /ecommerce/products
+   * Public endpoint for customer shop - alias for /products
+   */
+  app.get("/ecommerce/products", async (c) => {
+    try {
+      const vendorId = c.req.query('vendorId');
+      const category = c.req.query('category');
+      const search = c.req.query('search');
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let productQuery = `
+        SELECT p.*, v.business_name as vendor_name
+        FROM products p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        WHERE p.is_active = true AND p.status = 'active'
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (vendorId) {
+        productQuery += ` AND p.vendor_id = $${paramIndex}`;
+        params.push(vendorId);
+        paramIndex++;
+      }
+
+      if (category) {
+        productQuery += ` AND p.category_id = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+
+      if (search) {
+        productQuery += ` AND (p.name ILIKE $${paramIndex} OR p.description ILIKE $${paramIndex})`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      productQuery += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      let products;
+      try {
+        products = await query(productQuery, params);
+      } catch (error: any) {
+        // Handle table not existing, column not existing, or invalid UUID
+        if (error.message?.includes('invalid input syntax for type uuid') ||
+            error.message?.includes('relation "products" does not exist') ||
+            error.message?.includes('column') ||
+            error.code === '42P01' || // undefined_table
+            error.code === '42703') { // undefined_column
+          return c.json({
+            success: true,
+            products: [],
+            total: 0,
+            message: 'No products available yet'
+          });
+        }
+        throw error;
+      }
+
+      return c.json({
+        success: true,
+        products: products?.rows || [],
+        total: products?.rows?.length || 0,
+      });
+    } catch (error: any) {
+      console.error('Error fetching ecommerce products:', error);
       return c.json({ error: error.message }, 500);
     }
   });

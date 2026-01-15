@@ -33,10 +33,22 @@ export function VendorServiceManagementComplete({
   const [showCustomServices, setShowCustomServices] = useState(false); // ✅ NEW
   const [showPackages, setShowPackages] = useState(false); // ✅ NEW: Package Management
   const [showCatalogView, setShowCatalogView] = useState(false); // ✅ NEW: Catalog browsing
+  const [serviceCounts, setServiceCounts] = useState<Record<ServiceStyle, number>>({
+    at_home: 0,
+    at_center: 0,
+    tele: 0
+  }); // ✅ NEW: Track service counts per style
 
   useEffect(() => {
     loadRoleConfiguration();
   }, [vendorId]);
+  
+  // ✅ Refresh counts when returning from sub-views
+  useEffect(() => {
+    if (!selectedServiceStyle && !showCatalogView && !showCustomServices && !showPackages) {
+      loadRoleConfiguration();
+    }
+  }, [selectedServiceStyle, showCatalogView, showCustomServices, showPackages]);
 
   // ✅ PHASE 3: Role-based conditional field visibility
   const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
@@ -62,6 +74,37 @@ export function VendorServiceManagementComplete({
         // ✅ FIX: Extract allowedServiceStyles and role config from services endpoint response
         const allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || ['at_home', 'at_center', 'tele'];
         const roleConfig = data.role?.config || data.roleConfig || {};
+        
+        // ✅ NEW: Extract service counts per style
+        const counts: Record<ServiceStyle, number> = {
+          at_home: 0,
+          at_center: 0,
+          tele: 0
+        };
+        
+        if (data.services) {
+          // Services might be grouped by style
+          if (data.services.at_home) counts.at_home = data.services.at_home.count || data.services.at_home.services?.length || 0;
+          if (data.services.at_center) counts.at_center = data.services.at_center.count || data.services.at_center.services?.length || 0;
+          if (data.services.tele) counts.tele = data.services.tele.count || data.services.tele.services?.length || 0;
+        }
+        
+        // Also check allServices for total count verification
+        if (data.allServices && Array.isArray(data.allServices)) {
+          data.allServices.forEach((svc: any) => {
+            const style = svc.serviceStyle || svc.service_style;
+            if (style === 'at_home') counts.at_home++;
+            else if (style === 'at_center') counts.at_center++;
+            else if (style === 'tele') counts.tele++;
+          });
+          // Only use this if grouped counts were 0
+          if (counts.at_home === 0 && counts.at_center === 0 && counts.tele === 0) {
+            // Already counted above
+          }
+        }
+        
+        console.log('✅ [ROLE-CONFIG] Service counts:', counts);
+        setServiceCounts(counts);
         
         if (Array.isArray(allowedStyles)) {
           console.log('✅ [ROLE-CONFIG] Setting allowed styles:', allowedStyles);
@@ -224,31 +267,48 @@ export function VendorServiceManagementComplete({
 
           <div className="space-y-3">
             {[
-              { value: 'at_home' as ServiceStyle, label: 'Home Services', icon: '🏠', color: 'bg-blue-50 border-blue-200 hover:bg-blue-100' },
-              { value: 'at_center' as ServiceStyle, label: 'Book at Clinic', icon: '🏥', color: 'bg-green-50 border-green-200 hover:bg-green-100' },
-              { value: 'tele' as ServiceStyle, label: 'Tele Consultation', icon: '📱', color: 'bg-purple-50 border-purple-200 hover:bg-purple-100' }
+              { value: 'at_home' as ServiceStyle, label: 'Home Services', icon: '🏠', color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', activeColor: 'border-blue-500' },
+              { value: 'at_center' as ServiceStyle, label: 'Book at Clinic', icon: '🏥', color: 'bg-green-50 border-green-200 hover:bg-green-100', activeColor: 'border-green-500' },
+              { value: 'tele' as ServiceStyle, label: 'Tele Consultation', icon: '📱', color: 'bg-purple-50 border-purple-200 hover:bg-purple-100', activeColor: 'border-purple-500' }
             ]
               .filter(type => Array.isArray(allowedServiceStyles) && allowedServiceStyles.includes(type.value))
-              .map(type => (
-                <button
-                  key={type.value}
-                  onClick={() => setSelectedServiceStyle(type.value)}
-                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${type.color}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-4xl">{type.icon}</div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{type.label}</h3>
-                      <p className="text-xs text-gray-600 mt-0.5">{getStyleDescription(type.value)}</p>
+              .map(type => {
+                const count = serviceCounts[type.value] || 0;
+                const hasServices = count > 0;
+                
+                return (
+                  <button
+                    key={type.value}
+                    onClick={() => setSelectedServiceStyle(type.value)}
+                    className={`w-full p-4 rounded-xl border-2 transition-all text-left ${type.color} ${hasServices ? type.activeColor : ''}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="text-4xl">{type.icon}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-gray-900">{type.label}</h3>
+                          {hasServices && (
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">
+                              {count}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          {hasServices 
+                            ? `${count} service${count > 1 ? 's' : ''} enabled` 
+                            : getStyleDescription(type.value)
+                          }
+                        </p>
+                      </div>
+                      <div className="text-gray-400">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
                     </div>
-                    <div className="text-gray-400">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
           </div>
 
           {(Array.isArray(allowedServiceStyles) ? allowedServiceStyles : []).length === 0 && (

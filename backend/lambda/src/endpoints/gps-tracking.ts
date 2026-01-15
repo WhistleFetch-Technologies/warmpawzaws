@@ -19,6 +19,8 @@ import { streamSSE } from 'hono/streaming';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // GPS TRACKING HANDLERS

@@ -10,16 +10,26 @@ import { apiClient } from './api-client';
 import { createMockApiClient, mockProducts, mockCategories, mockOrders, mockOrderStats, mockSalesAnalytics, mockProductPerformance } from './mock-data';
 
 // Check if we're in local mode (no API available)
-const isLocalMode = typeof window !== 'undefined' && 
-                    (!process.env.NEXT_PUBLIC_API_BASE_URL || 
-                     localStorage.getItem('useMockData') === 'true');
+// We use a function to check at runtime, not build time
+const getIsLocalMode = () => {
+  if (typeof window === 'undefined') return false;
+  // Check if explicitly set to mock mode
+  if (localStorage.getItem('useMockData') === 'true') return true;
+  // Check runtime config for API URL (deployed apps use this)
+  const runtimeConfig = (window as any).__WARMPAWZ_RUNTIME_CONFIG__;
+  if (runtimeConfig?.apiBaseUrl) return false;
+  // Check build-time env var
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) return false;
+  // Default to mock only if no API URL is configured
+  return true;
+};
 
 const mockClient = createMockApiClient();
 
 export const apiClientWithMock = {
   get: async <T = any>(endpoint: string): Promise<T> => {
     try {
-      if (isLocalMode) {
+      if (getIsLocalMode()) {
         console.log('[MOCK] GET', endpoint);
         return await mockClient.get(endpoint) as T;
       }
@@ -38,7 +48,7 @@ export const apiClientWithMock = {
 
   post: async <T = any>(endpoint: string, data?: any): Promise<T> => {
     try {
-      if (isLocalMode) {
+      if (getIsLocalMode()) {
         console.log('[MOCK] POST', endpoint, data);
         return await mockClient.post(endpoint, data) as T;
       }
@@ -56,7 +66,7 @@ export const apiClientWithMock = {
 
   put: async <T = any>(endpoint: string, data?: any): Promise<T> => {
     try {
-      if (isLocalMode) {
+      if (getIsLocalMode()) {
         console.log('[MOCK] PUT', endpoint, data);
         return await mockClient.put(endpoint, data) as T;
       }
@@ -74,7 +84,7 @@ export const apiClientWithMock = {
 
   delete: async <T = any>(endpoint: string): Promise<T> => {
     try {
-      if (isLocalMode) {
+      if (getIsLocalMode()) {
         console.log('[MOCK] DELETE', endpoint);
         return await mockClient.delete(endpoint) as T;
       }

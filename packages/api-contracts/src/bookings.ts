@@ -17,8 +17,8 @@ export const CreateBookingRequestSchema = z.object({
   staffId: z.string().uuid('Invalid staff ID format').optional(),
   bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   bookingTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/, 'Invalid time format (HH:MM)'),
-  serviceType: z.enum(['at_vendor', 'at_home', 'online'], {
-    errorMap: () => ({ message: 'Service type must be at_vendor, at_home, or online' }),
+  serviceType: z.enum(['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product'], {
+    errorMap: () => ({ message: 'Service type must be at_vendor/at_center, at_home, or online/tele' }),
   }),
   address: z.string().optional(),
   city: z.string().optional(),
@@ -66,7 +66,7 @@ export const BookingSchema = z.object({
   bookingDate: z.string(),
   bookingTime: z.string(),
   status: z.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled']),
-  serviceType: z.enum(['at_vendor', 'at_home', 'online']),
+  serviceType: z.enum(['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product']),
   address: z.string().nullable(),
   city: z.string().nullable(),
   state: z.string().nullable(),

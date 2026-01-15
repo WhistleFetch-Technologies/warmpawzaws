@@ -14,6 +14,8 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { calculateCommuteTime, calculateMultipleCommuteTimes, calculateStaffETA } from '../utils/commute-time-calculator';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 class CalculateCommuteTimeHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {

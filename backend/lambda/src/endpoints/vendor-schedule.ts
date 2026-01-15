@@ -19,6 +19,8 @@
 import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 /**
  * Generate time slots from a time window
@@ -120,30 +122,48 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       const dayOfWeek = requestedDate.getDay();
 
       // Get vendor schedule slots for this day (use vendor_availability_v2 table)
-      let scheduleQuery = `
-        SELECT * FROM vendor_availability_v2
-        WHERE vendor_id = $1
-        AND day_of_week = $2
-        AND service_style = $3
-        AND is_enabled = true
-        ORDER BY time_window_start
-      `;
-
-      const scheduleParams: any[] = [vendorId, dayOfWeek, serviceStyle];
-
+      // Handle both service_style and service_type column names (schema migration difference)
+      let scheduleSlots;
+      
       if (staffId) {
-        scheduleQuery = `
-          SELECT * FROM staff_schedules
-          WHERE staff_id = $1
-          AND day_of_week = $2
-          AND is_available = true
-          ORDER BY start_time
-        `;
-        scheduleParams[0] = staffId;
-        scheduleParams[2] = dayOfWeek;
+        scheduleSlots = await query(
+          `SELECT * FROM staff_schedules
+           WHERE staff_id = $1
+           AND day_of_week = $2
+           AND is_available = true
+           ORDER BY start_time`,
+          [staffId, dayOfWeek]
+        );
+      } else {
+        // Try with service_style first, then service_type
+        try {
+          scheduleSlots = await query(
+            `SELECT *, time_window_start as start_time, time_window_end as end_time 
+             FROM vendor_availability_v2
+             WHERE vendor_id = $1
+             AND day_of_week = $2
+             AND service_style = $3
+             AND is_enabled = true
+             ORDER BY time_window_start`,
+            [vendorId, dayOfWeek, serviceStyle]
+          );
+        } catch (queryErr: any) {
+          if (queryErr.message?.includes('service_style')) {
+            scheduleSlots = await query(
+              `SELECT *, start_time as time_window_start, end_time as time_window_end 
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+               AND day_of_week = $2
+               AND service_type = $3
+               AND is_available = true
+               ORDER BY start_time`,
+              [vendorId, dayOfWeek, serviceStyle]
+            );
+          } else {
+            throw queryErr;
+          }
+        }
       }
-
-      const scheduleSlots = await query(scheduleQuery, scheduleParams);
 
       if (scheduleSlots.rows.length === 0) {
         return c.json({
@@ -255,12 +275,19 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       }
 
       // ✅ FIX: Use vendor_availability_v2 table (exists in schema, migration 006)
+      // Handle both column name variations
       let schedule;
       try {
+        // Try with service_style/time_window columns first
         schedule = await query(
-          `SELECT * FROM vendor_availability_v2
+          `SELECT *, 
+                  COALESCE(service_style, service_type) as service_style,
+                  COALESCE(time_window_start, start_time) as time_window_start,
+                  COALESCE(time_window_end, end_time) as time_window_end,
+                  COALESCE(is_enabled, is_available) as is_enabled
+           FROM vendor_availability_v2
            WHERE vendor_id = $1
-           ORDER BY day_of_week, time_window_start`,
+           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
           [vendorId]
         );
       } catch (error: any) {
@@ -366,41 +393,79 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         const serviceStyle = slot.serviceStyle || slot.service_style || 'at_center';
         const timeWindowStart = slot.timeWindowStart || slot.time_window_start;
         
-        // ✅ FIX: Use vendor_availability_v2 table (exists in schema, migration 006)
+        // ✅ FIX: Use vendor_availability_v2 table
+        // Support both service_style and service_type column names (schema migration difference)
         // Delete existing slot for this day/service style if exists
-        await query(
-          `DELETE FROM vendor_availability_v2
-           WHERE vendor_id = $1
-           AND day_of_week = $2
-           AND service_style = $3
-           AND time_window_start = $4`,
-          [
-            vendorId,
-            dayOfWeek,
-            serviceStyle,
-            timeWindowStart,
-          ]
-        );
+        try {
+          await query(
+            `DELETE FROM vendor_availability_v2
+             WHERE vendor_id = $1
+             AND day_of_week = $2
+             AND COALESCE(service_style, service_type) = $3
+             AND COALESCE(time_window_start, start_time) = $4`,
+            [
+              vendorId,
+              dayOfWeek,
+              serviceStyle,
+              timeWindowStart,
+            ]
+          );
+        } catch (deleteErr: any) {
+          // Try with service_type if service_style doesn't exist
+          if (deleteErr.message?.includes('service_style')) {
+            await query(
+              `DELETE FROM vendor_availability_v2
+               WHERE vendor_id = $1
+               AND day_of_week = $2
+               AND service_type = $3
+               AND start_time = $4`,
+              [vendorId, dayOfWeek, serviceStyle, timeWindowStart]
+            );
+          }
+        }
 
-        // Insert new slot
-        const result = await query(
-          `INSERT INTO vendor_availability_v2
-           (vendor_id, day_of_week, service_style, time_window_start, time_window_end, slot_duration_minutes, max_capacity, is_enabled)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING *`,
-          [
-            vendorId,
-            dayOfWeek,
-            serviceStyle,
-            timeWindowStart,
-            slot.timeWindowEnd || slot.time_window_end,
-            slot.slotDurationMinutes || slot.slot_duration_minutes || 30,
-            slot.maxCapacity || slot.max_capacity || 1,
-            slot.isEnabled !== false,
-          ]
-        );
+        // Insert new slot - try with service_style first, then service_type
+        let result;
+        try {
+          result = await query(
+            `INSERT INTO vendor_availability_v2
+             (vendor_id, day_of_week, service_style, time_window_start, time_window_end, slot_duration_minutes, max_capacity, is_enabled)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING *`,
+            [
+              vendorId,
+              dayOfWeek,
+              serviceStyle,
+              timeWindowStart,
+              slot.timeWindowEnd || slot.time_window_end,
+              slot.slotDurationMinutes || slot.slot_duration_minutes || 30,
+              slot.maxCapacity || slot.max_capacity || 1,
+              slot.isEnabled !== false,
+            ]
+          );
+        } catch (insertErr: any) {
+          // Fallback to service_type column if service_style doesn't exist
+          if (insertErr.message?.includes('service_style')) {
+            result = await query(
+              `INSERT INTO vendor_availability_v2
+               (vendor_id, day_of_week, service_type, start_time, end_time, is_available)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               RETURNING *`,
+              [
+                vendorId,
+                dayOfWeek,
+                serviceStyle,
+                timeWindowStart,
+                slot.timeWindowEnd || slot.time_window_end,
+                slot.isEnabled !== false,
+              ]
+            );
+          } else {
+            throw insertErr;
+          }
+        }
 
-        if (result.rows.length > 0) {
+        if (result && result.rows.length > 0) {
           results.push(result.rows[0]);
         }
       }

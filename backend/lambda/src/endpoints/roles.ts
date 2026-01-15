@@ -18,6 +18,8 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // ROLE HANDLERS
@@ -670,49 +672,35 @@ export function registerRoleEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // Default dashboard buttons by role
+  // All available customer services - used as default for all roles
+  // These represent the services shown in the customer app
+  const ALL_CUSTOMER_SERVICES = [
+    { id: 'vet', label: 'Vet Care', icon: '🩺', enabled: true, serviceId: 'vet', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'grooming', label: 'Grooming', icon: '✂️', enabled: true, serviceId: 'grooming', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'shop', label: 'Shop', icon: '🛍️', enabled: true, serviceId: 'shop', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'training', label: 'Training', icon: '🎓', enabled: true, serviceId: 'training', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'walker', label: 'Walker', icon: '🚶', enabled: true, serviceId: 'walker', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'boarding', label: 'Boarding', icon: '🏠', enabled: true, serviceId: 'boarding', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'adoption', label: 'Adoption', icon: '❤️', enabled: true, serviceId: 'adoption', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'mating', label: 'Mating & Dating', icon: '💕', enabled: true, serviceId: 'mating-dating-hub', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'cafes', label: 'Pet Cafes', icon: '☕', enabled: true, serviceId: 'cafes', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'photography', label: 'Photography', icon: '📷', enabled: true, serviceId: 'photography', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'insurance', label: 'Insurance', icon: '🛡️', enabled: true, serviceId: 'insurance', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'breeder', label: 'Breeder', icon: '🐕', enabled: true, serviceId: 'breeder', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'ambulance', label: 'Ambulance', icon: '🚑', enabled: true, serviceId: 'ambulance', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'nutritionist', label: 'Nutritionist', icon: '🥗', enabled: true, serviceId: 'nutritionist', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'relocation', label: 'Relocation', icon: '✈️', enabled: true, serviceId: 'relocation', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'resort', label: 'Pet Resort', icon: '🏖️', enabled: true, serviceId: 'resort', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'holiday', label: 'Pet Holiday', icon: '🌴', enabled: true, serviceId: 'holiday', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'sunset', label: 'Sunset Care', icon: '🌅', enabled: true, serviceId: 'sunset', launchPhase: 'full', rolloutPercentage: 100 },
+  ];
+
+  // Default dashboard buttons by role - returns ALL customer services
+  // The Dashboard UI tab allows admins to enable/disable specific services per role
   function getDefaultButtonsForRole(roleId: string): any[] {
-    const roleLower = roleId.toLowerCase();
-    
-    const defaultButtons: Record<string, any[]> = {
-      veterinarian: [
-        { id: 'vet_consultation', label: 'Book Consultation', icon: '🩺', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'vet_emergency', label: 'Emergency Care', icon: '🚨', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'vet_vaccination', label: 'Vaccination', icon: '💉', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'vet_checkup', label: 'Health Checkup', icon: '📋', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-      groomer: [
-        { id: 'grooming_booking', label: 'Book Grooming', icon: '✂️', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'grooming_spa', label: 'Pet Spa', icon: '🛁', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'grooming_nail', label: 'Nail Trimming', icon: '💅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-      walker: [
-        { id: 'walk_booking', label: 'Book Walk', icon: '🚶', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'walk_sitting', label: 'Pet Sitting', icon: '🏠', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-      trainer: [
-        { id: 'training_booking', label: 'Book Training', icon: '🎓', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'training_behavior', label: 'Behavior Training', icon: '🐕', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-    };
-
-    // Try exact match first
-    if (defaultButtons[roleLower]) {
-      return defaultButtons[roleLower];
-    }
-
-    // Try partial match
-    for (const [key, buttons] of Object.entries(defaultButtons)) {
-      if (roleLower.includes(key) || key.includes(roleLower)) {
-        return buttons;
-      }
-    }
-
-    // Default generic buttons
-    return [
-      { id: 'book_service', label: 'Book Service', icon: '📅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'view_services', label: 'View Services', icon: '🔍', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-    ];
+    // For all roles, return ALL customer services enabled by default
+    // Admins can then disable specific services via the Dashboard UI tab
+    return [...ALL_CUSTOMER_SERVICES];
   }
 
   app.get('/config/ui/dashboard', async (c) => {
@@ -804,15 +792,34 @@ export function registerRoleEndpoints(app: Hono) {
         return c.json({ error: 'Invalid config format' }, 400);
       }
 
-      await upsert('platform_settings',
-        {
+      // Check if config exists
+      const existing = await select('platform_settings', {
+        setting_key: `platform:ui:dashboard:${roleId}`
+      });
+
+      if (existing.length > 0) {
+        // Update existing
+        await update(
+          'platform_settings',
+          { setting_key: `platform:ui:dashboard:${roleId}` },
+          {
+            setting_value: configToSave,
+            setting_type: 'object',  // Must be one of: string, number, boolean, object, array
+            description: `Dashboard UI configuration for role ${roleId}`,
+            updated_at: new Date().toISOString(),
+          }
+        );
+      } else {
+        // Insert new
+        await insert('platform_settings', {
           setting_key: `platform:ui:dashboard:${roleId}`,
           setting_value: configToSave,
-          setting_type: 'json',
+          setting_type: 'object',  // Must be one of: string, number, boolean, object, array
           description: `Dashboard UI configuration for role ${roleId}`,
-        },
-        'setting_key'
-      );
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
 
       return c.json({
         success: true,

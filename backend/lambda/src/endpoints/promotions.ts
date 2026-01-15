@@ -17,6 +17,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query, deleteRows } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerPromotionEndpoints(app: Hono) {
   // ============================================================================

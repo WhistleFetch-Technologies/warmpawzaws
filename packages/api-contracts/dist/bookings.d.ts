@@ -11,7 +11,7 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     staffId: z.ZodOptional<z.ZodString>;
     bookingDate: z.ZodString;
     bookingTime: z.ZodString;
-    serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+    serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
     address: z.ZodOptional<z.ZodString>;
     city: z.ZodOptional<z.ZodString>;
     state: z.ZodOptional<z.ZodString>;
@@ -30,7 +30,7 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     serviceId: string;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     staffId?: string | undefined;
     address?: string | undefined;
     city?: string | undefined;
@@ -50,7 +50,7 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     serviceId: string;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     staffId?: string | undefined;
     address?: string | undefined;
     city?: string | undefined;
@@ -110,7 +110,7 @@ export declare const BookingSchema: z.ZodObject<{
     bookingDate: z.ZodString;
     bookingTime: z.ZodString;
     status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
-    serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+    serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
     address: z.ZodNullable<z.ZodString>;
     city: z.ZodNullable<z.ZodString>;
     state: z.ZodNullable<z.ZodString>;
@@ -139,7 +139,7 @@ export declare const BookingSchema: z.ZodObject<{
     staffId: string | null;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     address: string | null;
     city: string | null;
     state: string | null;
@@ -168,7 +168,7 @@ export declare const BookingSchema: z.ZodObject<{
     staffId: string | null;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     address: string | null;
     city: string | null;
     state: string | null;
@@ -264,7 +264,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             bookingDate: z.ZodString;
             bookingTime: z.ZodString;
             status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
-            serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+            serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
             address: z.ZodNullable<z.ZodString>;
             city: z.ZodNullable<z.ZodString>;
             state: z.ZodNullable<z.ZodString>;
@@ -293,7 +293,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -322,7 +322,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -353,7 +353,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -384,7 +384,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -418,7 +418,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -452,7 +452,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -487,7 +487,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             bookingDate: z.ZodString;
             bookingTime: z.ZodString;
             status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
-            serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+            serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
             address: z.ZodNullable<z.ZodString>;
             city: z.ZodNullable<z.ZodString>;
             state: z.ZodNullable<z.ZodString>;
@@ -516,7 +516,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -545,7 +545,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -579,7 +579,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -613,7 +613,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -650,7 +650,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -687,7 +687,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;

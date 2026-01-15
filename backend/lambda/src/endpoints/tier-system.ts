@@ -18,6 +18,8 @@
 
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 const TIER_CONFIG = {
   Bronze: { commission: 15.0, minBookings: 0, minRevenue: 0 },

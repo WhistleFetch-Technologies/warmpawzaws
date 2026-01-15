@@ -19,6 +19,11 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert, deleteRows } from '../database/rds-connection';
 import { getErrorMessage, createSafeErrorResponse } from '../utils/error-serialization';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
+
+// Color constants for charts
+const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 // ============================================================================
 // PHASE 24: CATALOG SELECTORS
@@ -4759,6 +4764,47 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.post('/admin/fix/activate-approved-vendors', async (c) => {
+    try {
+      const result = await query('UPDATE vendors SET is_active = true, updated_at = NOW() WHERE status = \'approved\' AND is_active = false RETURNING id, phone, business_name');
+      return c.json({ success: true, message: 'All approved vendors activated', activated: result.rows.length, vendors: result.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
+  app.post('/admin/fix/create-vendor-identity', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { phone, roleId } = body;
+      
+      if (!phone) {
+        return c.json({ success: false, error: 'phone is required' }, 400);
+      }
+      
+      // Check if vendor_identity already exists
+      const existing = await query('SELECT * FROM vendor_identity WHERE phone = $1', [phone]);
+      if (existing.rows.length > 0) {
+        // Update existing to activated status
+        await query('UPDATE vendor_identity SET selected_role_id = $1, onboarding_status = \'ACTIVATED\', updated_at = NOW() WHERE phone = $2', [roleId, phone]);
+        return c.json({ success: true, message: 'Vendor identity updated', identity: existing.rows[0] });
+      }
+      
+      // Create new vendor_identity (without vendor_id column since it doesn't exist)
+      const result = await query(`
+        INSERT INTO vendor_identity (phone, selected_role_id, onboarding_status, metadata, created_at, updated_at)
+        VALUES ($1, $2, 'ACTIVATED', '{}', NOW(), NOW())
+        RETURNING *
+      `, [phone, roleId]);
+      
+      return c.json({ success: true, message: 'Vendor identity created', identity: result.rows[0] });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+
   app.post('/admin/fix/publish-vendor-services', async (c) => {
     try {
       await query('UPDATE vendor_services SET is_active = true WHERE is_active = false');
@@ -4968,6 +5014,1006 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fixing indexes:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // VENDOR ADMINISTRATION - COMPLIANCE, INSIGHTS, ACTIVITIES, FRAUD DETECTION
+  // ============================================================================
+
+  // Compliance Issues Actions
+  app.post('/admin/vendors/compliance-issues/:issueId/investigate', async (c) => {
+    try {
+      const issueId = c.req.param('issueId');
+      const body = await c.req.json().catch(() => ({}));
+      const adminId = body.adminId || 'system';
+
+      // Update compliance issue status
+      try {
+        await query(`
+          UPDATE compliance_issues 
+          SET status = 'investigating', 
+              investigated_by = $1,
+              investigated_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $2
+        `, [adminId, issueId]);
+      } catch (err) {
+        // If compliance_issues table doesn't exist, try updating vendor directly
+        await query(`
+          UPDATE vendors 
+          SET status = 'under_review',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [issueId]);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Issue marked as investigating',
+        issueId,
+      });
+    } catch (error: any) {
+      console.error('Error investigating compliance issue:', error);
+      return c.json({ error: error.message || 'Failed to update issue status' }, 500);
+    }
+  });
+
+  app.post('/admin/vendors/compliance-issues/:issueId/resolve', async (c) => {
+    try {
+      const issueId = c.req.param('issueId');
+      const body = await c.req.json().catch(() => ({}));
+      const adminId = body.adminId || 'system';
+      const resolutionNotes = body.notes || null;
+
+      // Update compliance issue status
+      try {
+        await query(`
+          UPDATE compliance_issues 
+          SET status = 'resolved', 
+              resolved_by = $1,
+              resolved_at = NOW(),
+              resolution_notes = $2,
+              updated_at = NOW()
+          WHERE id = $3
+        `, [adminId, resolutionNotes, issueId]);
+      } catch (err) {
+        // If compliance_issues table doesn't exist, try updating vendor directly
+        await query(`
+          UPDATE vendors 
+          SET status = 'approved',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [issueId]);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Issue marked as resolved',
+        issueId,
+      });
+    } catch (error: any) {
+      console.error('Error resolving compliance issue:', error);
+      return c.json({ error: error.message || 'Failed to resolve issue' }, 500);
+    }
+  });
+
+  // Vendor Insights
+  app.get('/admin/vendors/insights', async (c) => {
+    try {
+      const range = c.req.query('range') || '30d';
+      const days = range === '7d' ? 7 : range === '90d' ? 90 : 30;
+
+      // Get sales data
+      const salesData = await query(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN b.status = 'completed' THEN b.total_amount ELSE 0 END), 0) as total_sales,
+          COALESCE(SUM(CASE WHEN b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '${days} days' THEN b.total_amount ELSE 0 END), 0) as period_sales,
+          COALESCE(SUM(CASE WHEN b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '${days * 2} days' AND b.created_at < NOW() - INTERVAL '${days} days' THEN b.total_amount ELSE 0 END), 0) as previous_period_sales
+        FROM bookings b
+        WHERE b.created_at >= NOW() - INTERVAL '${days * 2} days'
+      `).catch(() => ({ rows: [{ total_sales: 0, period_sales: 0, previous_period_sales: 0 }] }));
+
+      const sales = salesData.rows[0] || { total_sales: 0, period_sales: 0, previous_period_sales: 0 };
+      const growth = sales.previous_period_sales > 0 
+        ? ((sales.period_sales - sales.previous_period_sales) / sales.previous_period_sales) * 100 
+        : 0;
+
+      // Get booking statistics
+      const bookingStats = await query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE status = 'completed') as completed_bookings,
+          COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled_bookings,
+          COUNT(*) as total_bookings,
+          AVG(rating) FILTER (WHERE rating IS NOT NULL) as avg_rating
+        FROM bookings
+        WHERE created_at >= NOW() - INTERVAL '${days} days'
+      `).catch(() => ({ rows: [{ completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 }] }));
+
+      const stats = bookingStats.rows[0] || { completed_bookings: 0, cancelled_bookings: 0, total_bookings: 0, avg_rating: 0 };
+      const cancellationRate = stats.total_bookings > 0 
+        ? (stats.cancelled_bookings / stats.total_bookings) * 100 
+        : 0;
+
+      // Get vendor distribution by category
+      const categoryDist = await query(`
+        SELECT 
+          COALESCE(v.category, v.vendor_type, 'other') as category,
+          COUNT(*) as count
+        FROM vendors v
+        WHERE v.is_active = true
+        GROUP BY COALESCE(v.category, v.vendor_type, 'other')
+      `).catch(() => ({ rows: [] }));
+
+      const totalVendors = categoryDist.rows.reduce((sum, r) => sum + parseInt(r.count), 0);
+      const byCategory = categoryDist.rows.map((r, idx) => ({
+        name: r.category.charAt(0).toUpperCase() + r.category.slice(1),
+        value: parseInt(r.count),
+        color: COLORS[idx % COLORS.length]
+      }));
+
+      // Get vendor status distribution
+      const statusDist = await query(`
+        SELECT 
+          CASE 
+            WHEN is_active = true AND status = 'approved' THEN 'Active'
+            WHEN status = 'pending' OR status = 'pending_approval' THEN 'Pending'
+            WHEN is_active = false THEN 'Suspended'
+            ELSE 'Other'
+          END as status,
+          COUNT(*) as count
+        FROM vendors
+        GROUP BY 
+          CASE 
+            WHEN is_active = true AND status = 'approved' THEN 'Active'
+            WHEN status = 'pending' OR status = 'pending_approval' THEN 'Pending'
+            WHEN is_active = false THEN 'Suspended'
+            ELSE 'Other'
+          END
+      `).catch(() => ({ rows: [] }));
+
+      const byStatus = statusDist.rows.map((r, idx) => ({
+        name: r.status,
+        value: parseInt(r.count),
+        color: r.status === 'Active' ? COLORS[1] : r.status === 'Pending' ? COLORS[3] : COLORS[4]
+      }));
+
+      // Get daily trends
+      const trends = await query(`
+        SELECT 
+          DATE(b.created_at) as date,
+          COALESCE(SUM(CASE WHEN b.status = 'completed' THEN b.total_amount ELSE 0 END), 0) as sales,
+          COUNT(*) FILTER (WHERE b.status = 'completed') as bookings,
+          COUNT(DISTINCT b.vendor_id) as vendors
+        FROM bookings b
+        WHERE b.created_at >= NOW() - INTERVAL '${days} days'
+        GROUP BY DATE(b.created_at)
+        ORDER BY DATE(b.created_at) ASC
+      `).catch(() => ({ rows: [] }));
+
+      const trendsData = trends.rows.map(r => ({
+        date: new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        sales: parseFloat(r.sales) || 0,
+        bookings: parseInt(r.bookings) || 0,
+        vendors: parseInt(r.vendors) || 0
+      }));
+
+      return c.json({
+        sales: {
+          total: parseFloat(sales.total_sales) || 0,
+          growth: Math.round(growth * 10) / 10,
+          thisMonth: parseFloat(sales.period_sales) || 0,
+          lastMonth: parseFloat(sales.previous_period_sales) || 0,
+          trend: growth >= 0 ? 'up' : 'down'
+        },
+        activities: {
+          totalBookings: parseInt(stats.total_bookings) || 0,
+          completedBookings: parseInt(stats.completed_bookings) || 0,
+          cancelledBookings: parseInt(stats.cancelled_bookings) || 0,
+          cancellationRate: Math.round(cancellationRate * 10) / 10,
+          avgRating: parseFloat(stats.avg_rating) || 0
+        },
+        distribution: {
+          byCategory,
+          byStatus
+        },
+        trends: trendsData
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor insights:', error);
+      return c.json({ error: error.message || 'Failed to fetch insights' }, 500);
+    }
+  });
+
+  // Vendor Activities
+  app.get('/admin/vendors/activities', async (c) => {
+    try {
+      const filter = c.req.query('filter') || 'all';
+      const limit = parseInt(c.req.query('limit') || '50');
+
+      let activitiesQuery = `
+        SELECT 
+          'booking' as activity_type,
+          b.id as activity_id,
+          v.id as vendor_id,
+          v.business_name as vendor_name,
+          'New booking created' as description,
+          b.created_at as timestamp,
+          jsonb_build_object(
+            'bookingId', b.id,
+            'amount', b.total_amount,
+            'status', b.status
+          ) as metadata,
+          CASE 
+            WHEN b.status = 'completed' THEN 'success'
+            WHEN b.status = 'cancelled' THEN 'error'
+            ELSE 'info'
+          END as severity
+        FROM bookings b
+        INNER JOIN vendors v ON v.id = b.vendor_id
+        WHERE b.created_at >= NOW() - INTERVAL '7 days'
+      `;
+
+      if (filter !== 'all') {
+        if (filter === 'booking') {
+          activitiesQuery += ` AND true`;
+        } else if (filter === 'payment') {
+          activitiesQuery = `
+            SELECT 
+              'payment' as activity_type,
+              t.id as activity_id,
+              v.id as vendor_id,
+              v.business_name as vendor_name,
+              'Payment received' as description,
+              t.created_at as timestamp,
+              jsonb_build_object('amount', t.amount, 'type', t.type) as metadata,
+              'success' as severity
+            FROM transactions t
+            INNER JOIN vendors v ON v.id = t.vendor_id
+            WHERE t.created_at >= NOW() - INTERVAL '7 days' AND t.type = 'payment'
+          `;
+        }
+      }
+
+      activitiesQuery += ` ORDER BY timestamp DESC LIMIT $1`;
+
+      const activities = await query(activitiesQuery, [limit]).catch(() => ({ rows: [] }));
+
+      const formatted = activities.rows.map((r: any) => ({
+        id: r.activity_id,
+        vendorId: r.vendor_id,
+        vendorName: r.vendor_name,
+        activityType: r.activity_type,
+        description: r.description,
+        timestamp: r.timestamp,
+        metadata: r.metadata || {},
+        severity: r.severity || 'info'
+      }));
+
+      return c.json({
+        activities: formatted
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor activities:', error);
+      return c.json({ activities: [] });
+    }
+  });
+
+  // Fraud Alerts
+  app.get('/admin/vendors/fraud-alerts', async (c) => {
+    try {
+      // Detect suspicious patterns
+      const suspiciousPayments = await query(`
+        SELECT 
+          v.id as vendor_id,
+          v.business_name as vendor_name,
+          COUNT(DISTINCT t.id) as transaction_count,
+          COUNT(DISTINCT CASE WHEN t.type = 'refund' THEN t.id END) as refund_count,
+          COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_bookings,
+          ROUND(COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(DISTINCT b.id), 0) * 100, 1) as cancellation_rate
+        FROM vendors v
+        LEFT JOIN transactions t ON t.vendor_id = v.id AND t.created_at >= NOW() - INTERVAL '30 days'
+        LEFT JOIN bookings b ON b.vendor_id = v.id AND b.created_at >= NOW() - INTERVAL '30 days'
+        WHERE v.is_active = true
+        GROUP BY v.id, v.business_name
+        HAVING 
+          COUNT(DISTINCT CASE WHEN t.type = 'refund' THEN t.id END) > 5
+          OR COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled') > 10
+          OR (COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(DISTINCT b.id), 0)) > 0.3
+        ORDER BY refund_count DESC, cancellation_rate DESC
+        LIMIT 20
+      `).catch(() => ({ rows: [] }));
+
+      const alerts = suspiciousPayments.rows.map((r: any, idx: number) => {
+        let riskLevel = 'low';
+        let alertType = 'suspicious_payment';
+        
+        if (r.refund_count > 10 || r.cancellation_rate > 40) {
+          riskLevel = 'high';
+        } else if (r.refund_count > 5 || r.cancellation_rate > 25) {
+          riskLevel = 'medium';
+        }
+
+        if (r.cancellation_rate > 30) {
+          alertType = 'cancellation_pattern';
+        } else if (r.refund_count > 5) {
+          alertType = 'suspicious_payment';
+        }
+
+        return {
+          id: `alert-${r.vendor_id}-${idx}`,
+          vendorId: r.vendor_id,
+          vendorName: r.vendor_name,
+          riskLevel,
+          alertType,
+          description: r.refund_count > 5 
+            ? `Multiple refund requests (${r.refund_count}) in short time period`
+            : `High cancellation rate (${r.cancellation_rate}%)`,
+          detectedAt: new Date().toISOString(),
+          evidence: {
+            transactionCount: parseInt(r.transaction_count) || 0,
+            cancellationRate: parseFloat(r.cancellation_rate) || 0
+          },
+          status: 'new'
+        };
+      });
+
+      return c.json({ alerts });
+    } catch (error: any) {
+      console.error('Error fetching fraud alerts:', error);
+      return c.json({ alerts: [] });
+    }
+  });
+
+  app.post('/admin/vendors/fraud-alerts/:alertId/:action', async (c) => {
+    try {
+      const alertId = c.req.param('alertId');
+      const action = c.req.param('action');
+      const body = await c.req.json().catch(() => ({}));
+      const adminId = body.adminId || 'system';
+
+      // Extract vendor ID from alert ID (format: alert-{vendorId}-{idx})
+      const vendorIdMatch = alertId.match(/alert-([^-]+)-/);
+      const vendorId = vendorIdMatch ? vendorIdMatch[1] : null;
+
+      if (action === 'investigate' && vendorId) {
+        // Mark vendor for investigation
+        await query(`
+          UPDATE vendors 
+          SET status = 'under_review',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [vendorId]);
+      } else if (action === 'resolve' && vendorId) {
+        // Clear investigation status
+        await query(`
+          UPDATE vendors 
+          SET status = 'approved',
+              updated_at = NOW()
+          WHERE id = $1
+        `, [vendorId]);
+      }
+
+      return c.json({
+        success: true,
+        message: `Alert ${action}d successfully`,
+        alertId
+      });
+    } catch (error: any) {
+      console.error('Error handling fraud alert:', error);
+      return c.json({ error: error.message || 'Failed to handle alert' }, 500);
+    }
+  });
+
+  // Abnormal Behavior
+  app.get('/admin/vendors/abnormal-behavior', async (c) => {
+    try {
+      const behaviors = await query(`
+        SELECT 
+          v.id as vendor_id,
+          v.business_name as vendor_name,
+          COUNT(b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_count,
+          COUNT(b.id) as total_bookings,
+          ROUND(COUNT(b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(b.id), 0) * 100, 1) as cancellation_rate,
+          ROUND(AVG(b.rating) FILTER (WHERE b.rating IS NOT NULL), 1) as avg_rating
+        FROM vendors v
+        LEFT JOIN bookings b ON b.vendor_id = v.id AND b.created_at >= NOW() - INTERVAL '30 days'
+        WHERE v.is_active = true
+        GROUP BY v.id, v.business_name
+        HAVING 
+          COUNT(b.id) FILTER (WHERE b.status = 'cancelled') > 5
+          OR (COUNT(b.id) FILTER (WHERE b.status = 'cancelled')::numeric / NULLIF(COUNT(b.id), 0)) > 0.2
+          OR AVG(b.rating) FILTER (WHERE b.rating IS NOT NULL) < 3.0
+        ORDER BY cancellation_rate DESC, avg_rating ASC
+        LIMIT 20
+      `).catch(() => ({ rows: [] }));
+
+      const formatted = behaviors.rows.map((r: any) => {
+        let behaviorType = 'high_cancellation';
+        let severity = 'warning';
+        let description = '';
+        let value = 0;
+        let threshold = 20;
+
+        if (r.cancellation_rate > 30) {
+          behaviorType = 'high_cancellation';
+          severity = 'alert';
+          description = `Cancellation rate above 30%`;
+          value = parseFloat(r.cancellation_rate) || 0;
+          threshold = 20;
+        } else if (r.avg_rating < 3.0) {
+          behaviorType = 'low_rating';
+          severity = 'warning';
+          description = `Average rating below 3.0`;
+          value = parseFloat(r.avg_rating) || 0;
+          threshold = 3.5;
+        } else if (r.cancellation_rate > 20) {
+          behaviorType = 'high_cancellation';
+          severity = 'warning';
+          description = `Cancellation rate above 20%`;
+          value = parseFloat(r.cancellation_rate) || 0;
+          threshold = 20;
+        }
+
+        return {
+          vendorId: r.vendor_id,
+          vendorName: r.vendor_name,
+          behaviorType,
+          severity,
+          description,
+          metrics: {
+            value,
+            threshold,
+            trend: value > threshold ? 'up' : 'down'
+          }
+        };
+      });
+
+      return c.json({ behaviors: formatted });
+    } catch (error: any) {
+      console.error('Error fetching abnormal behaviors:', error);
+      return c.json({ behaviors: [] });
+    }
+  });
+
+  // Remove duplicate role_permissions entries
+  app.post('/admin/fix/remove-duplicate-permissions', async (c) => {
+    try {
+      // Find and remove duplicate permission entries
+      const result = await query(`
+        WITH duplicates AS (
+          SELECT id, role_id, permission_name,
+                 ROW_NUMBER() OVER (PARTITION BY role_id, permission_name ORDER BY id) as rn
+          FROM role_permissions
+        )
+        DELETE FROM role_permissions
+        WHERE id IN (SELECT id FROM duplicates WHERE rn > 1)
+        RETURNING id, role_id, permission_name
+      `);
+      
+      return c.json({
+        success: true,
+        message: `Removed ${result.rows.length} duplicate permission entries`,
+        removed: result.rows
+      });
+    } catch (error: any) {
+      console.error('Error removing duplicates:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // Comprehensive fix for all capability aliases
+  app.post('/admin/fix/capability-aliases', async (c) => {
+    try {
+      // Define all known aliases: wrong_id -> correct_id
+      const aliases: Record<string, string> = {
+        // Booking aliases
+        'booking': 'bookings',
+        'booking_create': 'bookings',
+        'booking_view': 'bookings',
+        // Prescription aliases
+        'prescription': 'prescriptions',
+        'prescription_create': 'prescriptions',
+        // Staff aliases
+        'staff_create': 'staff_management',
+        'staff_schedule': 'schedule_management',
+        // Inventory/Catalog aliases
+        'inventory_manage': 'inventory',
+        'product_catalog': 'catalog',
+        // Pricing aliases
+        'service_pricing': 'pricing',
+        // Diagnostic aliases
+        'diagnostic_results': 'diagnostics',
+      };
+      
+      let deleted = 0;
+      let updated = 0;
+      const results: any[] = [];
+      
+      for (const [wrongId, correctId] of Object.entries(aliases)) {
+        // Find all role_permissions with this wrong ID
+        const perms = await query(
+          "SELECT id, role_id, permission_name FROM role_permissions WHERE permission_name = $1",
+          [wrongId]
+        );
+        
+        for (const perm of perms.rows) {
+          // Check if this role already has the correct capability
+          const existing = await query(
+            "SELECT id FROM role_permissions WHERE role_id = $1 AND permission_name = $2",
+            [perm.role_id, correctId]
+          );
+          
+          if (existing.rows.length > 0) {
+            // Role already has correct capability, delete the wrong one
+            await query('DELETE FROM role_permissions WHERE id = $1', [perm.id]);
+            results.push({ role_id: perm.role_id, action: 'deleted', from: wrongId, reason: `${correctId} already exists` });
+            deleted++;
+          } else {
+            // Update to correct capability
+            await query("UPDATE role_permissions SET permission_name = $1 WHERE id = $2", [correctId, perm.id]);
+            results.push({ role_id: perm.role_id, action: 'updated', from: wrongId, to: correctId });
+            updated++;
+          }
+        }
+      }
+      
+      return c.json({
+        success: true,
+        message: `Fixed capability aliases: ${updated} updated, ${deleted} deleted`,
+        total_changes: updated + deleted,
+        results
+      });
+    } catch (error: any) {
+      console.error('Error fixing capability aliases:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // Fix role capabilities casing - convert 'Dashboard' to 'dashboard', etc.
+  app.post('/admin/fix/normalize-role-capabilities', async (c) => {
+    try {
+      // Get all capabilities to build a mapping of name -> id
+      const allCaps = await select('capabilities', {});
+      const nameToId: Record<string, string> = {};
+      const capIds = new Set<string>();
+      allCaps.forEach((cap: any) => {
+        // Map both exact name and lowercased for lookups
+        nameToId[cap.name] = cap.id;
+        nameToId[cap.name.toLowerCase()] = cap.id;
+        capIds.add(cap.id);
+      });
+      
+      // Known aliases - map singular to plural where plural exists
+      const aliases: Record<string, string> = {
+        'booking': 'bookings', // booking should be bookings
+      };
+
+      // Get all role permissions
+      const allPerms = await query('SELECT id, role_id, permission_name FROM role_permissions');
+      
+      let deletedCount = 0;
+      let updatedCount = 0;
+      const fixes: { role_id: string; old: string; action: string; new?: string }[] = [];
+
+      // Group by role_id for duplicate detection
+      const permsByRole: Record<string, any[]> = {};
+      for (const perm of allPerms.rows) {
+        if (!permsByRole[perm.role_id]) {
+          permsByRole[perm.role_id] = [];
+        }
+        permsByRole[perm.role_id].push(perm);
+      }
+
+      for (const [roleId, perms] of Object.entries(permsByRole)) {
+        // Build set of existing permission names for this role
+        const existingPermNames = new Set(perms.map((p: any) => p.permission_name));
+        const normalizedNames = new Set<string>();
+        
+        for (const perm of perms) {
+          const permName = perm.permission_name;
+          const normalizedName = permName.toLowerCase().replace(/\s+/g, '_');
+          
+          // Check for known aliases first
+          if (aliases[permName] && capIds.has(aliases[permName])) {
+            const aliasTarget = aliases[permName];
+            // If target already exists in this role's perms OR in normalized set, delete the alias
+            if (existingPermNames.has(aliasTarget) || normalizedNames.has(aliasTarget)) {
+              // Delete duplicate alias - target already exists
+              await query('DELETE FROM role_permissions WHERE id = $1', [perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: 'deleted (alias target exists)', new: aliasTarget });
+              deletedCount++;
+            } else {
+              // Update to alias target
+              await query('UPDATE role_permissions SET permission_name = $1 WHERE id = $2', [aliasTarget, perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: 'aliased', new: aliasTarget });
+              normalizedNames.add(aliasTarget);
+              updatedCount++;
+            }
+            continue;
+          }
+          
+          // Check if this is a capitalized name that should be an ID
+          const isCapitalized = permName && permName[0] === permName[0].toUpperCase() && /[A-Z]/.test(permName);
+          
+          if (isCapitalized) {
+            // Check if the correct version already exists
+            if (normalizedNames.has(normalizedName)) {
+              // Delete this duplicate
+              await query('DELETE FROM role_permissions WHERE id = $1', [perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: 'deleted (duplicate)' });
+              deletedCount++;
+            } else {
+              // Update to lowercase
+              const correctId = nameToId[permName] || normalizedName;
+              await query('UPDATE role_permissions SET permission_name = $1 WHERE id = $2', [correctId, perm.id]);
+              fixes.push({ role_id: roleId, old: permName, action: 'updated', new: correctId });
+              normalizedNames.add(correctId.toLowerCase());
+              updatedCount++;
+            }
+          } else {
+            // Already lowercase - track it
+            normalizedNames.add(normalizedName);
+          }
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: `Normalized role capabilities: ${updatedCount} updated, ${deletedCount} duplicates deleted`,
+        fixes: fixes
+      });
+    } catch (error: any) {
+      console.error('Error normalizing role capabilities:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // Debug endpoint to check capabilities
+  app.get('/admin/debug/capabilities', async (c) => {
+    try {
+      const allCaps = await select('capabilities', {});
+      const capIds = allCaps.map((r: any) => r.id);
+      return c.json({
+        count: allCaps.length,
+        sampleCap: allCaps[0],
+        firstTenIds: capIds.slice(0, 10),
+        hasDashboard: capIds.includes('dashboard'),
+        hasProfile: capIds.includes('profile'),
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // Apply correct capability mappings to all roles based on service type
+  app.post('/admin/fix/apply-role-capability-mappings', async (c) => {
+    try {
+      // Define proper capability mappings for each role
+      const ROLE_CAPABILITY_MAPPINGS: Record<string, string[]> = {
+        // ===== HOME GROOMER (Solo, no center) =====
+        'groomers': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'gps_tracking', // Home service tracking
+          'gallery', 'portfolio', 'custom_services', 'pricing', 'services',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== CENTER GROOMER (With salon/center) =====
+        'pet_groomer': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management', // Center operations
+          'gallery', 'portfolio', 'custom_services', 'package_management', 'pricing',
+        ],
+        
+        // ===== WALKER (Home only, solo) =====
+        'pet_walker': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'gps_tracking', 'photo_updates', 'walking', // Home/mobile service
+          'custom_services', 'package_management', 'pricing',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== SITTER (Home only) =====
+        'pet_sitter': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'photo_updates', // Share updates during sitting
+          'custom_services', 'package_management', 'pricing',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== TRAINER (Center with home/tele options) =====
+        'pet_trainer': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management', // Center operations
+          'training_programs', 'progress_tracking',
+          'custom_services', 'package_management', 'pricing',
+          'tele', 'video_calling', // Remote training
+        ],
+        
+        // ===== VETERINARIAN (Clinic with home/tele) =====
+        'veterinarian': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management', // Clinic operations
+          'prescriptions', 'medical_records', 'diagnostics', 'emergency',
+          'patient_monitoring', 'vet_summary',
+          'custom_services', 'package_management', 'pricing',
+          'tele', 'video_calling', // Tele-consultation
+        ],
+        
+        // ===== VETERINARY CLINIC (Multi-doctor clinic) =====
+        'veterinary_clinic': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management', // Clinic operations
+          'prescriptions', 'medical_records', 'diagnostics', 'emergency',
+          'emergency_protocols', 'patient_monitoring', 'vet_summary',
+          'diagnostic_lab', 'multi_doctor_management', 'ambulance_services',
+          'custom_services', 'package_management', 'pricing',
+          'tele', 'video_calling',
+        ],
+        
+        // ===== TAXI (Mobile, solo) =====
+        'pet_taxi': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'gps_tracking', 'distance_pricing', 'emergency',
+          'custom_services', 'package_management',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== AMBULANCE (Mobile emergency) =====
+        'pet_ambulance': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'gps_tracking', 'emergency', 'emergency_protocols',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== RELOCATION (Mobile) =====
+        'pet_relocation': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'gps_tracking', 'distance_pricing',
+          'custom_services', 'pricing',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== BOARDING (Center only) =====
+        'pet_boarding': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management', // Center operations
+          'rooms', 'room_management', 'cctv_access', 'photo_updates',
+          'occupancy_tracking', 'nightly_pricing',
+          'custom_services', 'package_management',
+        ],
+        
+        // ===== RESORT (Premium boarding) =====
+        'pet_resort': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management',
+          'rooms', 'room_management', 'cctv_access', 'photo_updates',
+          'occupancy_tracking', 'nightly_pricing',
+          'custom_services', 'package_management', 'gallery', 'events',
+        ],
+        
+        // ===== PET CAFE (Center only) =====
+        'pet_cafe': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management',
+          'menu', 'cafe_tables', 'table_management', 'pax_management',
+          'inventory', 'catalog', 'events',
+          'custom_services', 'package_management',
+        ],
+        
+        // ===== NUTRITIONIST (Tele/Home, solo) =====
+        'nutritionist': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'meal_plans', 'diet_charts', 'progress_tracking',
+          'custom_services', 'package_management', 'pricing',
+          'tele', 'video_calling',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== BEHAVIORIST (Tele/Home, solo) =====
+        'pet_behaviorist': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'progress_tracking',
+          'custom_services', 'package_management', 'pricing',
+          'tele', 'video_calling',
+          // NO facility_management, NO staff_management
+        ],
+        
+        // ===== PHOTOGRAPHER (Can have studio) =====
+        'pet_photographer': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management', // Studio
+          'gallery', 'portfolio',
+          'custom_services', 'package_management', 'pricing',
+        ],
+        
+        // ===== EVENT ORGANIZER (Mobile) =====
+        'pet_event_organizer': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'events', 'gallery', 'portfolio',
+          'custom_services', 'package_management', 'pricing',
+          // NO facility_management (mobile events)
+        ],
+        
+        // ===== SHELTER (Center, NGO) =====
+        'pet_shelter': [
+          'dashboard', 'profile', 'chat', 'schedule', 'notifications',
+          'facility_management', 'staff_management',
+          'adoption', 'donation', 'events', 'pet_profiles',
+          // Different financial model for NGO
+        ],
+        
+        // ===== SUNSET SERVICES (Center/Home) =====
+        'pet_sunset_services': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', 'staff_management',
+          'memorial', 'counseling',
+          'custom_services', 'package_management',
+        ],
+        
+        // ===== BREEDER (Center) =====
+        'pet_breeder': [
+          'dashboard', 'profile', 'chat', 'schedule', 'bookings',
+          'earnings', 'settlements', 'bank_account', 'notifications',
+          'facility_management', // Breeding facility
+          'catalog', 'pet_profiles',
+          'custom_services', 'pricing',
+        ],
+        
+        // ===== INSURANCE (Center, online) =====
+        'insurance': [
+          'dashboard', 'profile', 'chat', 'schedule', 'notifications',
+          'earnings', 'settlements', 'bank_account',
+          'facility_management', 'staff_management',
+          'insurance_plans', 'policy_management', 'claims_management',
+          'custom_services', 'pricing',
+        ],
+        
+        // ===== PET STORE (Seller - uses Seller Hub) =====
+        'pet_products_store': [
+          'dashboard', 'profile', 'chat', 'notifications',
+          'earnings', 'settlements', 'bank_account',
+          'facility_management', 'staff_management',
+          'catalog', 'inventory', 'orders', 'delivery',
+          'pricing', 'promotions', 'coupons', 'analytics',
+          // NO bookings (uses orders)
+        ],
+        
+        // ===== PET PHARMACY (Healthcare + Retail) =====
+        'pet_pharmacy': [
+          'dashboard', 'profile', 'chat', 'notifications',
+          'earnings', 'settlements', 'bank_account',
+          'facility_management', 'staff_management',
+          'catalog', 'inventory', 'orders', 'delivery',
+          'prescriptions', 'prescription_verification',
+          'controlled_substances', 'expiry_management',
+          // NO bookings (uses orders)
+        ],
+      };
+
+      // Get all roles
+      const rolesResult = await query('SELECT id, name FROM roles');
+      const roles = rolesResult.rows;
+      
+      // Valid capability IDs (from GetCapabilitiesHandler in roles.ts)
+      const VALID_CAP_IDS = new Set([
+        // Core Operations
+        'dashboard', 'bookings', 'services', 'staff', 'schedule', 'profile',
+        'staff_management', 'schedule_management',
+        // Finance & Payments
+        'earnings', 'settlements', 'bank_account', 'pricing',
+        // Communication
+        'chat', 'notifications', 'video_calling', 'tele',
+        // Healthcare
+        'prescriptions', 'medical_records', 'diagnostics', 'pharmacy',
+        'emergency', 'emergency_protocols', 'ambulance_services', 'diagnostic_lab',
+        'patient_monitoring', 'vet_summary', 'prescription_verification', 'controlled_substances',
+        'multi_doctor_management',
+        // Specialized Services
+        'ambulance', 'cafe_tables', 'table_management', 'rooms', 'room_management',
+        'insurance_plans', 'pet_profiles', 'meal_plans', 'training_programs', 'walking',
+        'pax_management', 'occupancy_tracking', 'nightly_pricing', 'menu', 'diet_charts',
+        'counseling', 'adoption', 'donation', 'events', 'memorial',
+        'claims_management', 'policy_management',
+        // Operations
+        'inventory', 'orders', 'delivery', 'gps_tracking', 'reports', 'settings',
+        'catalog', 'expiry_management', 'distance_pricing', 'facility_management', 'custom_services',
+        // Media
+        'photo_updates', 'gallery', 'portfolio', 'progress_tracking', 'cctv_access',
+        // Advanced Features
+        'packages', 'subscriptions', 'coupons', 'promotions', 'reviews', 'analytics',
+        'export', 'integrations', 'package_management',
+      ]);
+      const validCapIds = VALID_CAP_IDS;
+      
+      const results: any[] = [];
+      
+      for (const role of roles) {
+        const roleName = role.name;
+        const roleId = role.id;
+        
+        if (!ROLE_CAPABILITY_MAPPINGS[roleName]) {
+          results.push({ role: roleName, action: 'skipped', reason: 'No mapping defined' });
+          continue;
+        }
+        
+        const targetCaps = ROLE_CAPABILITY_MAPPINGS[roleName];
+        
+        // Filter to only valid capabilities
+        const validTargetCaps = targetCaps.filter(cap => validCapIds.has(cap));
+        const invalidCaps = targetCaps.filter(cap => !validCapIds.has(cap));
+        
+        if (invalidCaps.length > 0) {
+          console.log(`Warning: Role ${roleName} has invalid capabilities: ${invalidCaps.join(', ')}`);
+        }
+        
+        // Get current permissions
+        const currentPerms = await query(
+          'SELECT id, permission_name FROM role_permissions WHERE role_id = $1',
+          [roleId]
+        );
+        const currentCaps = new Set(currentPerms.rows.map((r: any) => r.permission_name));
+        
+        // Calculate additions and removals
+        const toAdd = validTargetCaps.filter(cap => !currentCaps.has(cap));
+        const toRemove = [...currentCaps].filter(cap => !validTargetCaps.includes(cap));
+        
+        // Add new capabilities
+        for (const cap of toAdd) {
+          await insert('role_permissions', {
+            role_id: roleId,
+            permission_name: cap,
+            resource: '*',
+            action: '*',
+          });
+        }
+        
+        // Remove old capabilities
+        for (const cap of toRemove) {
+          await query(
+            'DELETE FROM role_permissions WHERE role_id = $1 AND permission_name = $2',
+            [roleId, cap]
+          );
+        }
+        
+        results.push({
+          role: roleName,
+          action: 'updated',
+          before: currentCaps.size,
+          after: validTargetCaps.length,
+          added: toAdd,
+          removed: toRemove,
+          invalid: invalidCaps,
+        });
+      }
+      
+      return c.json({
+        success: true,
+        message: `Applied capability mappings to ${results.filter(r => r.action === 'updated').length} roles`,
+        results,
+      });
+    } catch (error: any) {
+      console.error('Error applying role capability mappings:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 }

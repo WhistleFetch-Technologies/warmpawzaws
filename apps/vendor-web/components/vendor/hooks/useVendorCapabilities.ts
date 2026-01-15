@@ -9,8 +9,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 
-// Default capabilities for fallback
+// Default capabilities for fallback (only used when API fails)
+// ⚠️ Keep this minimal - actual capabilities MUST come from database
 const DEFAULT_CAPABILITIES: Record<string, boolean> = {
+  dashboard: true,
+  profile: true,
+};
+
+// Full default capabilities - only used as absolute last resort after API failure
+const FULL_DEFAULT_CAPABILITIES: Record<string, boolean> = {
   dashboard: true,
   profile: true,
   bookings: true,
@@ -27,6 +34,7 @@ export interface VendorCapabilities {
   roleId: string | null;
   roleName: string | null;
   refresh: () => void;
+  initialLoadComplete: boolean; // ✅ NEW: Indicates first DB load completed (prevents flickering)
 }
 
 interface RoleResponse {
@@ -49,14 +57,38 @@ interface RoleResponse {
  */
 function capabilitiesToMap(capabilities: string[]): Record<string, boolean> {
   const map: Record<string, boolean> = {};
+  
+  // ✅ FIX: Map common plural/singular capability aliases
+  const aliases: Record<string, string[]> = {
+    'bookings': ['booking', 'bookings'],
+    'services': ['service', 'services', 'catalog'], // Also treat services as catalog capability
+    'prescriptions': ['prescription', 'prescriptions', 'rx'],
+    'notifications': ['notification', 'notifications'],
+    'medical_records': ['medical_record', 'medical_records', 'medicalRecords', 'medicalRecord'],
+    'custom_services': ['custom_service', 'custom_services', 'customServices', 'customService'],
+    'staff_management': ['staff', 'staff_management', 'staffManagement', 'manage_staff'],
+    'package_management': ['packages', 'package_management', 'packageManagement'],
+    'schedule_management': ['schedule', 'schedule_management', 'scheduleManagement'],
+    'facility_management': ['facility', 'facility_management', 'facilityManagement'],
+  };
+  
   capabilities.forEach(cap => {
     // Normalize capability names (handle both snake_case and camelCase)
     const normalized = cap.toLowerCase().replace(/-/g, '_');
     map[normalized] = true;
+    
     // Also add camelCase version
     const camelCase = normalized.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
     map[camelCase] = true;
+    
+    // ✅ FIX: Add all aliases for this capability
+    if (aliases[normalized]) {
+      aliases[normalized].forEach(alias => {
+        map[alias] = true;
+      });
+    }
   });
+  
   return map;
 }
 
@@ -75,11 +107,13 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
   } else {
     roleId = roleIdOrVendorData;
   }
-  const [capabilities, setCapabilities] = useState<Record<string, boolean>>(DEFAULT_CAPABILITIES);
+  // ✅ FIX: Start with empty capabilities - wait for DB response
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleName, setRoleName] = useState<string | null>(null);
   const [resolvedRoleId, setResolvedRoleId] = useState<string | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const loadCapabilities = useCallback(async () => {
     // If capabilities were pre-loaded (e.g., from vendor dashboard response), use them
@@ -92,6 +126,7 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       setCapabilities(mergedCapabilities);
       setResolvedRoleId(roleId || null);
       setLoading(false);
+      setInitialLoadComplete(true);
       console.log('[useVendorCapabilities] Using pre-loaded capabilities:', preloadedCapabilities.length);
       return;
     }
@@ -114,9 +149,11 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
     }
     
     if (!effectiveRoleId) {
-      console.warn('[useVendorCapabilities] No roleId provided and none in localStorage, using default capabilities');
+      console.warn('[useVendorCapabilities] No roleId provided and none in localStorage, using minimal fallback');
+      // ✅ FIX: Only use minimal defaults, actual capabilities MUST come from DB
       setCapabilities(DEFAULT_CAPABILITIES);
       setLoading(false);
+      setInitialLoadComplete(true);
       return;
     }
 
@@ -166,7 +203,7 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       if (response?.success && response.capabilities) {
         const capsMap = capabilitiesToMap(response.capabilities);
         
-        // Merge with defaults to ensure basic capabilities are available
+        // ✅ FIX: Merge with minimal defaults, DB is source of truth
         const mergedCapabilities = {
           ...DEFAULT_CAPABILITIES,
           ...capsMap,
@@ -176,24 +213,25 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
         setRoleName(response.roleName || null);
         setResolvedRoleId(response.roleId || effectiveRoleId);
         
-        console.log('[useVendorCapabilities] Loaded capabilities:', {
+        console.log('[useVendorCapabilities] ✅ Loaded capabilities from DATABASE:', {
           roleId: response.roleId,
           roleName: response.roleName,
           capabilitiesCount: response.capabilities.length,
           capabilities: response.capabilities,
         });
       } else {
-        // Fallback to default capabilities
-        console.warn('[useVendorCapabilities] Could not load role, using defaults for:', effectiveRoleId);
-        setCapabilities(DEFAULT_CAPABILITIES);
+        // Fallback to full default capabilities only after API failure
+        console.warn('[useVendorCapabilities] ⚠️ Could not load role from DB, using full defaults for:', effectiveRoleId);
+        setCapabilities(FULL_DEFAULT_CAPABILITIES);
       }
     } catch (err: any) {
-      console.error('[useVendorCapabilities] Error loading capabilities:', err);
+      console.error('[useVendorCapabilities] ❌ Error loading capabilities from DB:', err);
       setError(err.message || 'Failed to load capabilities');
-      // Use default capabilities on error
-      setCapabilities(DEFAULT_CAPABILITIES);
+      // Use full default capabilities on API error
+      setCapabilities(FULL_DEFAULT_CAPABILITIES);
     } finally {
       setLoading(false);
+      setInitialLoadComplete(true);
     }
   }, [roleId, preloadedCapabilities]);
 
@@ -202,22 +240,8 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
     loadCapabilities();
   }, [loadCapabilities]);
 
-  // Also try to load from vendor session/storage for offline support
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !loading) {
-      const cached = sessionStorage.getItem(`vendor_capabilities_${roleId}`);
-      if (cached && Object.keys(capabilities).length <= Object.keys(DEFAULT_CAPABILITIES).length) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed.timestamp && Date.now() - parsed.timestamp < 300000) { // 5 min cache
-            setCapabilities(prev => ({ ...prev, ...parsed.capabilities }));
-          }
-        } catch (e) {
-          // Ignore cache errors
-        }
-      }
-    }
-  }, [roleId, loading, capabilities]);
+  // ✅ REMOVED: Secondary cache loading was causing flickering
+  // The API call is the single source of truth now
 
   // Cache capabilities for offline use
   useEffect(() => {
@@ -240,5 +264,6 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
     roleId: resolvedRoleId,
     roleName,
     refresh: loadCapabilities,
+    initialLoadComplete, // ✅ NEW: Indicates first DB load completed
   };
 }

@@ -28,6 +28,8 @@ import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
 import { calculateStaffETA } from '../utils/commute-time-calculator';
 import { validateServiceAvailability } from '../utils/service-availability-validator';
+import { normalizeDbRow, buildBookingResponse } from '../utils/entity-extractor';
+import { normalizeBooking, isValidUUID } from '../types/entities';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,

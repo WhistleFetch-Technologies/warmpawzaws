@@ -29,6 +29,8 @@ import {
   SendOtpRequestSchema,
   VerifyOtpRequestSchema,
 } from '@warmpawz/api-contracts/auth';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // OTP HELPERS

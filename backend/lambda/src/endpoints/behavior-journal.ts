@@ -13,6 +13,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerBehaviorJournalEndpoints(app: Hono) {
   /**

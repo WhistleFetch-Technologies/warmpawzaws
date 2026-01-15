@@ -17,6 +17,8 @@
 import { Hono } from 'hono';
 import { select, insert, update, query, deleteRows } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // GET /vendor/:vendorId/products - List vendor products
@@ -132,12 +134,17 @@ class GetVendorProductsHandler extends BaseHandler {
         const countResult = await query(countQuery, countParams);
         total = parseInt(countResult.rows[0]?.total || '0', 10);
       } catch (error: any) {
-        // If UUID validation fails, return empty products
-        if (error.message?.includes('invalid input syntax for type uuid')) {
+        // Handle table not existing, column not existing, or invalid UUID
+        if (error.message?.includes('invalid input syntax for type uuid') ||
+            error.message?.includes('relation "products" does not exist') ||
+            error.message?.includes('column') ||
+            error.code === '42P01' || // undefined_table
+            error.code === '42703') { // undefined_column
           return this.success({
             products: [],
             total: 0,
             count: 0,
+            message: 'No products available yet'
           });
         }
         throw error;

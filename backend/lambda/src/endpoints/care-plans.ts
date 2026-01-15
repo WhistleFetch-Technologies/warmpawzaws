@@ -20,6 +20,8 @@ import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { invokeBedrock } from '../utils/bedrock-client';
 import { withRetry } from '../utils/error-recovery';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 interface PlanGenerationRequest {
   ticketId?: string;
@@ -170,6 +172,43 @@ export function registerCarePlansEndpoints(app: Hono) {
   });
 
   /**
+   * GET /crm/plans/templates
+   * Get available plan templates
+   * NOTE: This route MUST be registered before /crm/plans/:planId to avoid conflict
+   */
+  app.get('/crm/plans/templates', async (c) => {
+    try {
+      const planType = c.req.query('planType');
+      const petType = c.req.query('petType');
+
+      let filters: any = { is_active: true };
+      if (planType) filters.plan_type = planType;
+      if (petType) filters.pet_type = petType;
+
+      const templates = await select('care_plan_templates', filters);
+
+      return c.json({
+        success: true,
+        templates: templates.map(t => ({
+          id: t.id,
+          name: t.name,
+          planType: t.plan_type,
+          petType: t.pet_type,
+          condition: t.condition,
+          description: t.description,
+          templateData: t.template_data,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching templates:', error);
+      return c.json({ 
+        success: false,
+        error: error.message || 'Failed to fetch templates' 
+      }, 500);
+    }
+  });
+
+  /**
    * GET /crm/plans/:planId
    * Get plan details with items
    */
@@ -284,42 +323,6 @@ export function registerCarePlansEndpoints(app: Hono) {
       return c.json({ 
         success: false,
         error: error.message || 'Failed to complete plan item' 
-      }, 500);
-    }
-  });
-
-  /**
-   * GET /crm/plans/templates
-   * Get available plan templates
-   */
-  app.get('/crm/plans/templates', async (c) => {
-    try {
-      const planType = c.req.query('planType');
-      const petType = c.req.query('petType');
-
-      let filters: any = { is_active: true };
-      if (planType) filters.plan_type = planType;
-      if (petType) filters.pet_type = petType;
-
-      const templates = await select('care_plan_templates', filters);
-
-      return c.json({
-        success: true,
-        templates: templates.map(t => ({
-          id: t.id,
-          name: t.name,
-          planType: t.plan_type,
-          petType: t.pet_type,
-          condition: t.condition,
-          description: t.description,
-          templateData: t.template_data,
-        })),
-      });
-    } catch (error: any) {
-      console.error('Error fetching templates:', error);
-      return c.json({ 
-        success: false,
-        error: error.message || 'Failed to fetch templates' 
       }, 500);
     }
   });

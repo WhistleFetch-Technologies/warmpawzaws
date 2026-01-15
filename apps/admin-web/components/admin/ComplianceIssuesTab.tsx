@@ -27,21 +27,12 @@ export function ComplianceIssuesTab() {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/vendors/compliance-issues');
-      setIssues(data.issues || []);
+      // Handle both response formats
+      const issuesList = data.issues || data.data?.issues || [];
+      setIssues(issuesList);
     } catch (error) {
       console.error('Error loading compliance issues:', error);
-      // Mock data for now
-      setIssues([
-        {
-          id: '1',
-          vendorName: 'Pet Care Center',
-          issueType: 'Missing Documentation',
-          severity: 'high',
-          description: 'Updated license certificate not uploaded',
-          reportedAt: new Date().toISOString(),
-          status: 'open',
-        },
-      ]);
+      setIssues([]); // Set empty array on error instead of mock data
     } finally {
       setLoading(false);
     }

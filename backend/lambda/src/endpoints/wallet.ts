@@ -20,6 +20,8 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, withTransaction, getClient } from '../database/rds-connection';
 import { logAuditEntry } from '../utils/audit-log';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // WALLET HANDLERS

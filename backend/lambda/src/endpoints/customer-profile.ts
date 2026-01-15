@@ -19,6 +19,8 @@
 import { Hono } from 'hono';
 import { select, update, query, insert } from '../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');

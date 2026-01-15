@@ -14,6 +14,8 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert, deleteRows, upsert } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -415,23 +417,77 @@ class GetVendorComplianceIssuesHandler extends BaseHandler {
       try {
         issues = await query(`
           SELECT 
-            v.*,
-            ci.issue_type,
-            ci.severity,
-            ci.description,
-            ci.created_at as issue_created_at,
-            ci.resolved_at
+            ci.id,
+            v.id as vendor_id,
+            v.business_name as vendor_name,
+            COALESCE(ci.issue_type, 'Missing Documentation') as issue_type,
+            COALESCE(ci.severity, 'medium') as severity,
+            COALESCE(ci.description, 'Compliance issue detected') as description,
+            COALESCE(ci.created_at, v.updated_at) as reported_at,
+            CASE 
+              WHEN ci.resolved_at IS NOT NULL THEN 'resolved'
+              WHEN ci.investigated_at IS NOT NULL THEN 'investigating'
+              ELSE 'open'
+            END as status
           FROM vendors v
-          INNER JOIN compliance_issues ci ON ci.vendor_id = v.id
-          WHERE ci.resolved_at IS NULL
-          ORDER BY ci.severity DESC, ci.created_at DESC
+          LEFT JOIN compliance_issues ci ON ci.vendor_id = v.id
+          WHERE (ci.resolved_at IS NULL OR ci.id IS NULL)
+            AND (
+              v.status IN ('pending', 'under_review', 'pending_clarification')
+              OR ci.id IS NOT NULL
+            )
+          ORDER BY 
+            CASE ci.severity
+              WHEN 'critical' THEN 1
+              WHEN 'high' THEN 2
+              WHEN 'medium' THEN 3
+              WHEN 'low' THEN 4
+              ELSE 5
+            END,
+            COALESCE(ci.created_at, v.updated_at) DESC
+          LIMIT 50
         `);
-      } catch {
-        // Fallback if compliance_issues table doesn't exist
-        issues = { rows: [] };
+      } catch (err) {
+        // Fallback: Get vendors with issues from vendor table
+        issues = await query(`
+          SELECT 
+            v.id as id,
+            v.id as vendor_id,
+            v.business_name as vendor_name,
+            'Missing Documentation' as issue_type,
+            CASE 
+              WHEN v.status = 'pending_clarification' THEN 'high'
+              WHEN v.status = 'under_review' THEN 'medium'
+              ELSE 'low'
+            END as severity,
+            CASE 
+              WHEN v.status = 'pending_clarification' THEN 'Updated documentation not uploaded'
+              WHEN v.status = 'under_review' THEN 'Vendor under review'
+              ELSE 'Compliance check required'
+            END as description,
+            v.updated_at as reported_at,
+            CASE 
+              WHEN v.status = 'under_review' THEN 'investigating'
+              ELSE 'open'
+            END as status
+          FROM vendors v
+          WHERE v.status IN ('pending_clarification', 'under_review', 'pending')
+          ORDER BY v.updated_at DESC
+          LIMIT 50
+        `);
       }
 
-      return this.success({ success: true, issues: issues.rows || [] });
+      const formatted = (issues.rows || []).map((r: any) => ({
+        id: r.id || r.vendor_id,
+        vendorName: r.vendor_name || r.business_name,
+        issueType: r.issue_type,
+        severity: r.severity || 'medium',
+        description: r.description,
+        reportedAt: r.reported_at || r.issue_created_at,
+        status: r.status || 'open'
+      }));
+
+      return this.success({ success: true, issues: formatted });
     } catch (error: any) {
       console.error('Error fetching compliance issues:', error);
       return this.success({ success: true, issues: [] }); // Return empty array instead of error

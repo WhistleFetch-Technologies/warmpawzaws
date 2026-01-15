@@ -25,6 +25,8 @@ import {
   verifyCognitoToken,
   CognitoTokens 
 } from '../utils/cognito-client';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // OTP REPOSITORY HELPERS

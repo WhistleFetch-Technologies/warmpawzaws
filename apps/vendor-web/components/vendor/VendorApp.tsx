@@ -111,6 +111,26 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               }
               // Merge profile data with identity data
               Object.assign(identity, { vendor_id: vendorId });
+            } else {
+              // ✅ FIX: Profile returned null vendor - try to fetch vendor by phone directly from vendors list
+              console.log('⚠️ [VendorApp] Profile returned null vendor, fetching vendor by phone...');
+              try {
+                const vendorsResponse = await apiClient.get<any>('/admin/vendors');
+                const vendorsData = vendorsResponse?.data?.vendors || vendorsResponse?.vendors || [];
+                const matchingVendor = vendorsData.find((v: any) => 
+                  v.phone === identity.phone || 
+                  v.phone === `+91${identity.phone}` || 
+                  v.phone?.replace(/\D/g, '').endsWith(identity.phone?.replace(/\D/g, ''))
+                );
+                if (matchingVendor) {
+                  vendorId = matchingVendor.id;
+                  vendorRecordExists = true;
+                  console.log('✅ [VendorApp] Found vendor by phone lookup:', vendorId);
+                  Object.assign(identity, { vendor_id: vendorId });
+                }
+              } catch (vendorLookupError) {
+                console.warn('⚠️ [VendorApp] Could not fetch vendors list:', vendorLookupError);
+              }
             }
           } catch (profileError: any) {
             console.warn('⚠️ [VendorApp] Could not fetch vendor profile, using identity ID:', profileError.message);

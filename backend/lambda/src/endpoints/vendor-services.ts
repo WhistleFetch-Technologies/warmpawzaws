@@ -17,8 +17,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
+import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../utils/entity-extractor';
+import { isValidUUID, normalizeVendorService } from '../types/entities';
 
 export function registerVendorServicesEndpoints(app: Hono) {
   /**
@@ -71,7 +74,20 @@ export function registerVendorServicesEndpoints(app: Hono) {
           if (roles.length > 0) {
             role = roles[0];
             roleConfig = role.config || {};
-            allowedServiceStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ['at_home', 'at_center', 'tele'];
+            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ['at_home', 'at_center', 'tele'];
+            
+            // Map role config styles to database styles
+            // Role config uses: at_clinic, video_consultation, home_visit
+            // Database uses: at_center, at_home, tele
+            const styleMapping: Record<string, string> = {
+              'at_clinic': 'at_center',
+              'at_center': 'at_center',
+              'video_consultation': 'tele',
+              'tele': 'tele',
+              'home_visit': 'at_home',
+              'at_home': 'at_home',
+            };
+            allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
             
             // Get capabilities from DB
             try {
@@ -215,58 +231,191 @@ export function registerVendorServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
       
+      // CRITICAL: Ensure we use the correct vendor ID from vendors table
+      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
+      let actualVendorId = vendorId;
+      const existingVendor = await select('vendors', { id: vendorId });
+      if (existingVendor.length === 0) {
+        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select('vendor_identity', { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+            // Check if vendor exists by phone (there might be an existing vendor with different ID)
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
+            } else {
+              // Get application data for vendor details
+              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              
+              // Create vendors record
+              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert('vendors', {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '000000',
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: 'Vendor not approved or activated' }, 403);
+          }
+        } else {
+          return c.json({ error: 'Vendor identity not found' }, 404);
+        }
+      }
+      
       const serviceData = await c.req.json();
       const {
         serviceId,
+        catalogId, // Also accept catalogId from service_catalog
         serviceStyle,
+        serviceName, // Accept service name for catalog items
+        categoryName, // Accept category name for catalog items
         customPrice,
         customDuration,
+        basePrice,
+        duration,
         isEnabled,
         publishStatus,
         isCustomService,
+        description,
       } = serviceData;
 
-      if (!serviceId || !serviceStyle) {
+      // Support both serviceId and catalogId
+      const inputServiceId = serviceId || catalogId;
+      
+      if (!inputServiceId || !serviceStyle) {
         return c.json({ error: 'serviceId and serviceStyle are required' }, 400);
       }
 
-      // Check if service already exists
-      const existing = await query(
-        `SELECT id FROM vendor_services
-         WHERE vendor_id = $1 AND service_id = $2 AND service_style = $3`,
-        [vendorId, serviceId, serviceStyle]
-      );
-
-      if (existing.rows.length > 0) {
-        return c.json({ error: 'Service already exists for this style' }, 409);
+      // ✅ FIX: Determine if inputServiceId is UUID or TEXT catalog ID
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inputServiceId);
+      console.log(`[VendorServices] Input service ID: ${inputServiceId}, isUUID: ${isUUID}`);
+      
+      let effectiveServiceId: string = inputServiceId;
+      let baseService: any = null;
+      
+      if (isUUID) {
+        // Try to get service from services table by UUID
+        const baseServices = await select('services', { id: inputServiceId });
+        if (baseServices.length > 0) {
+          baseService = baseServices[0];
+          effectiveServiceId = baseServices[0].id;
+        } else {
+          // Try service_catalog by UUID id
+          const catalogResult = await query(
+            `SELECT * FROM service_catalog WHERE id::text = $1`,
+            [inputServiceId]
+          );
+          if (catalogResult.rows.length > 0) {
+            const catalogItem = catalogResult.rows[0];
+            baseService = {
+              name: catalogItem.service_name || catalogItem.display_name || serviceName,
+              category: catalogItem.category_name || categoryName,
+              price: catalogItem.base_price || basePrice || 0,
+              duration_minutes: catalogItem.duration_minutes || duration || 30,
+              catalogId: catalogItem.service_id, // TEXT catalog ID
+            };
+            effectiveServiceId = catalogItem.id; // UUID from service_catalog
+          }
+        }
+      } else {
+        // Input is TEXT catalog ID (like "general-checkup")
+        // Query service_catalog by TEXT service_id
+        const catalogResult = await query(
+          `SELECT * FROM service_catalog WHERE service_id = $1`,
+          [inputServiceId]
+        );
+        
+        if (catalogResult.rows.length > 0) {
+          const catalogItem = catalogResult.rows[0];
+          baseService = {
+            name: catalogItem.service_name || catalogItem.display_name || serviceName,
+            category: catalogItem.category_name || categoryName,
+            price: catalogItem.base_price || basePrice || 0,
+            duration_minutes: catalogItem.duration_minutes || duration || 30,
+            catalogId: catalogItem.service_id,
+          };
+          // Use the UUID 'id' column from service_catalog for vendor_services
+          effectiveServiceId = catalogItem.id;
+          console.log(`[VendorServices] Resolved TEXT catalog ID ${inputServiceId} to UUID ${effectiveServiceId}`);
+        }
       }
-
-      // Get base service info
-      const baseServices = await select('services', { id: serviceId });
-      if (baseServices.length === 0) {
+      
+      // If still no base service, try with provided data (custom services)
+      if (!baseService && serviceName) {
+        baseService = {
+          name: serviceName,
+          category: categoryName || 'General',
+          price: basePrice || 0,
+          duration_minutes: duration || 30,
+        };
+        // Generate a new UUID for custom service
+        effectiveServiceId = randomUUID();
+        console.log(`[VendorServices] Creating custom service with new UUID: ${effectiveServiceId}`);
+      }
+      
+      if (!baseService) {
         return c.json({ error: 'Base service not found' }, 404);
       }
 
-      const baseService = baseServices[0];
+      // Check if service already exists (using actualVendorId after vendor resolution above)
+      const existing = await query(
+        `SELECT id, publish_status, is_enabled FROM vendor_services
+         WHERE vendor_id = $1 AND service_id = $2 AND service_style = $3`,
+        [actualVendorId, effectiveServiceId, serviceStyle]
+      );
+
+      if (existing.rows.length > 0) {
+        // ✅ FIX: Return the existing service instead of error
+        // This allows frontend to gracefully handle already-added services
+        return c.json({ 
+          success: true,
+          message: 'Service already exists',
+          alreadyExists: true,
+          vendorServiceId: existing.rows[0].id,
+          publishStatus: existing.rows[0].publish_status,
+          isEnabled: existing.rows[0].is_enabled
+        }, 200);
+      }
 
       const vendorService = await insert('vendor_services', {
-        vendor_id: vendorId,
-        service_id: serviceId,
+        vendor_id: actualVendorId,
+        service_id: effectiveServiceId, // Now always UUID
         service_name: baseService.name,
         category: baseService.category,
         service_style: serviceStyle,
-        price: customPrice || baseService.price || price,
+        price: customPrice || baseService.price || 0,
         custom_price: customPrice || null,
         duration_minutes: customDuration || baseService.duration_minutes || 30,
         custom_duration: customDuration || null,
         is_enabled: isEnabled !== false,
         publish_status: publishStatus || 'published',
         is_custom_service: isCustomService || false,
+        custom_description: description || null,
       });
 
       return c.json({
         success: true,
         service: vendorService[0],
+        vendorServiceId: vendorService[0]?.id,
         message: 'Service added successfully',
       });
     } catch (error: any) {

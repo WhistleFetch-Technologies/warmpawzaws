@@ -44,7 +44,8 @@ import {
   Heart,
   Shield,
   Truck,
-  MapPin
+  MapPin,
+  HelpCircle
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -84,6 +85,7 @@ interface VendorDashboardProps {
   onNavigateToEventManagement?: () => void;
   onNavigateToPatientMonitoring?: () => void;
   onNavigateToCafeMenuManagement?: () => void;
+  onNavigateToCafeTables?: () => void; // ✅ NEW: Navigate to Cafe Table Management
   // ✅ NEW: Additional capability navigation handlers (Phase 2)
   onNavigateToPrescriptionVerification?: () => void;
   onNavigateToDeliveryManagement?: () => void;
@@ -92,6 +94,7 @@ interface VendorDashboardProps {
   onNavigateToDistancePricing?: () => void;
   onNavigateToMultiDoctorManagement?: () => void;
   onNavigateToPolicyManagement?: () => void;
+  onNavigateToSupport?: () => void; // ✅ NEW: Navigate to Support Tickets
   onNavigateToMedicalRecords?: () => void; // ✅ Added for compatibility
   onNavigateToDashboard?: () => void; // ✅ Added for dashboard navigation from LandingPage
 }
@@ -178,6 +181,7 @@ export function VendorDashboard({
   onNavigateToEventManagement,
   onNavigateToPatientMonitoring,
   onNavigateToCafeMenuManagement,
+  onNavigateToCafeTables,
   // ✅ NEW: Additional capability navigation handlers (Phase 2)
   onNavigateToPrescriptionVerification,
   onNavigateToDeliveryManagement,
@@ -186,6 +190,7 @@ export function VendorDashboard({
   onNavigateToDistancePricing,
   onNavigateToMultiDoctorManagement,
   onNavigateToPolicyManagement,
+  onNavigateToSupport,
   onNavigateToDashboard
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
@@ -216,7 +221,8 @@ export function VendorDashboard({
   const router = useRouter();
   
   // 🔌 CORE: Load dynamic capabilities
-  const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
+  // ✅ FIX: Use initialLoadComplete to prevent flickering - wait for DB response before rendering
+  const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(vendorData?.roleId);
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
   const isVet = VendorUtils.isVet(vendorData?.roleId);
@@ -376,7 +382,8 @@ export function VendorDashboard({
   const roleIcon = getRoleIcon(vendorData?.roleId); // Returns string emoji
   const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
-  if (loading || capsLoading) {
+  // ✅ FIX: Wait for initialLoadComplete to prevent flickering
+  if (loading || capsLoading || !initialLoadComplete) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -504,6 +511,14 @@ export function VendorDashboard({
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
             <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onNavigateToSupport?.()}
+                className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+              >
+                <HelpCircle className="w-6 h-6 text-blue-600 mb-1" />
+                <span className="text-xs font-medium text-gray-900">Support</span>
+              </button>
+              
               <button
                 onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
@@ -788,6 +803,19 @@ export function VendorDashboard({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Menu</span>
+                </button>
+              )}
+              
+              {/* Cafe Tables Management */}
+              {onNavigateToCafeTables && capabilities.cafe_tables && (
+                <button
+                  onClick={onNavigateToCafeTables}
+                  className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-amber-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Tables</span>
                 </button>
               )}
             </div>

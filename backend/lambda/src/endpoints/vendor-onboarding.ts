@@ -8,6 +8,8 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../base-handler';
 import { select, insert, update, query } from '../db';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // PHASE 1: AUTH & ENTRY

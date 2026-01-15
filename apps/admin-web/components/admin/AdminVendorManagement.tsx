@@ -5,7 +5,7 @@ import {
   Search, Bell, MessageSquare, User, Plus, RefreshCw, TrendingUp, 
   AlertTriangle, Shield, BarChart3, Calendar, DollarSign, FileText, 
   Send, Download, Check, X, Eye, Phone, Grid3x3, Package, Megaphone, 
-  HeadphonesIcon, ClipboardList, Newspaper, PawPrint, Wallet, Users, Settings, MessageCircle, CheckCircle, Globe, ShoppingCart 
+  HeadphonesIcon, ClipboardList, Newspaper, PawPrint, Wallet, Users, Settings, MessageCircle, CheckCircle, Globe, ShoppingCart, UserX
 } from 'lucide-react';
 import { Button, Card, Badge } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
@@ -18,6 +18,9 @@ import { ActiveVendorsTab } from './ActiveVendorsTab';
 import { AddVendorModal } from './AddVendorModal';
 import { QualityAlertsPanel } from './QualityAlertsPanel';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
+import { VendorInsightsDashboard } from './VendorInsightsDashboard';
+import { VendorActivityTracker } from './VendorActivityTracker';
+import { VendorFraudDetection } from './VendorFraudDetection';
 
 interface VendorStats {
   activeVendors: { count: number; percentage: number };
@@ -32,7 +35,7 @@ interface AdminVendorManagementProps {
 }
 
 export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps = {}) {
-  const [activeTab, setActiveTab] = useState<'applications' | 'deactivation' | 'reverification' | 'compliance' | 'active-vendors'>('applications');
+  const [activeTab, setActiveTab] = useState<'overview' | 'applications' | 'deactivation' | 'reverification' | 'compliance' | 'active-vendors' | 'insights'>('overview');
   const [stats, setStats] = useState<VendorStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -47,9 +50,26 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       
       const statsData = await apiClient.get<any>('/admin/vendors/stats');
       // The API response shape varies across handlers; be defensive:
-      setStats(statsData.stats ?? statsData.data ?? statsData);
+      const rawStats = statsData.stats ?? statsData.data ?? statsData;
+      
+      // Ensure all required fields exist with defaults
+      setStats({
+        activeVendors: rawStats.activeVendors || { count: 0, percentage: 0 },
+        pendingApplications: rawStats.pendingApplications || { count: 0, todayCount: 0 },
+        complianceIssues: rawStats.complianceIssues || { count: 0, highPriority: 0 },
+        supportTickets: rawStats.supportTickets || { total: 0, open: 0 },
+        distribution: rawStats.distribution || { active: 0, deactivated: 0, pending: 0 },
+      });
     } catch (error) {
       console.error('Error loading data:', error);
+      // Set default stats on error to prevent crash
+      setStats({
+        activeVendors: { count: 0, percentage: 0 },
+        pendingApplications: { count: 0, todayCount: 0 },
+        complianceIssues: { count: 0, highPriority: 0 },
+        supportTickets: { total: 0, open: 0 },
+        distribution: { active: 0, deactivated: 0, pending: 0 },
+      });
     } finally {
       setLoading(false);
     }
@@ -72,108 +92,138 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
         }} 
       />
 
-      <div className="flex-1 flex flex-col">
-        {/* Top Bar */}
-        <div className="bg-white border-b px-0 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4 flex-1">
-              <div>
-                <h1 className="text-[#FF8C42] text-xl font-bold">Vendor Administration</h1>
-                <p className="text-xs text-gray-500">Complete vendor lifecycle management</p>
+      <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 to-white">
+        {/* Enhanced Top Bar */}
+        <div className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="px-6 py-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6 flex-1">
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] bg-clip-text text-transparent">
+                    Vendor Administration
+                  </h1>
+                  <p className="text-sm text-gray-500 mt-1">Complete vendor lifecycle management & insights</p>
+                </div>
+
+                <div className="flex-1 max-w-lg relative">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Search vendors, applications, or activities..."
+                    className="w-full pl-12 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent transition-all"
+                  />
+                </div>
               </div>
 
-              <div className="flex-1 max-w-md relative ml-8">
-                <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search vendors..."
-                  className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg text-sm"
-                />
+              <div className="flex items-center gap-3">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={loadData}
+                  className="border-gray-300 hover:bg-gray-50"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
+                </Button>
+                <Button 
+                  size="sm" 
+                  className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] hover:from-[#FF7A2E] hover:to-[#FF6B1A] text-white shadow-md hover:shadow-lg transition-all" 
+                  onClick={() => setShowAddVendor(true)}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Vendor
+                </Button>
+                <button className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors relative">
+                  <Bell className="w-5 h-5 text-gray-600" />
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+                </button>
+                <button className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors">
+                  <MessageSquare className="w-5 h-5 text-gray-600" />
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center gap-0">
-              <Button variant="outline" size="sm" onClick={loadData}>
-                <RefreshCw className="w-4 h-4 mr-0" />
-                Refresh
-              </Button>
-              <Button size="sm" className="bg-[#FF8C42] hover:bg-[#FF7A2E]" onClick={() => setShowAddVendor(true)}>
-                <Plus className="w-4 h-4 mr-0" />
-                Add Vendor
-              </Button>
-              <button className="p-0 hover:bg-gray-100 rounded-lg">
-                <Bell className="w-5 h-5 text-gray-600" />
-              </button>
-              <button className="p-0 hover:bg-gray-100 rounded-lg">
-                <MessageSquare className="w-5 h-5 text-gray-600" />
-              </button>
             </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Enhanced Stats Cards */}
         {stats && (
-          <div className="px-0 py-4">
-            <div className="grid grid-cols-4 gap-4 mb-4">
-              <Card className="p-4 border-green-200 bg-green-50/50">
-                <div className="flex items-start justify-between mb-0">
-                  <div className="p-0 bg-green-100 rounded-lg">
-                    <Users className="w-5 h-5 text-green-600" />
+          <div className="px-6 py-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+              <Card className="p-5 border-2 border-green-200 bg-gradient-to-br from-green-50 to-white shadow-md hover:shadow-lg transition-all cursor-pointer group">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="p-3 bg-gradient-to-br from-green-400 to-green-500 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <Users className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-xs text-green-600 bg-green-100 px-0 py-0 rounded">+12%</span>
+                  <span className="text-xs font-semibold text-green-700 bg-green-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    +12%
+                  </span>
                 </div>
                 <div>
-                  <p className="text-gray-600 text-sm mb-0">Active Vendors</p>
-                  <p className="text-2xl font-bold">{stats.activeVendors.count}</p>
+                  <p className="text-gray-600 text-sm font-medium mb-1">Active Vendors</p>
+                  <p className="text-3xl font-bold text-gray-900">{stats.activeVendors?.count ?? 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">{stats.activeVendors?.percentage ?? 0}% of total</p>
                 </div>
               </Card>
 
-              <Card className="p-4 border-orange-200 bg-orange-50/50">
-                <div className="flex items-start justify-between mb-0">
-                  <div className="p-0 bg-orange-100 rounded-lg">
-                    <ClipboardList className="w-5 h-5 text-orange-600" />
+              <Card className="p-5 border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-white shadow-md hover:shadow-lg transition-all cursor-pointer group">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="p-3 bg-gradient-to-br from-orange-400 to-orange-500 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <ClipboardList className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-xs text-orange-600 bg-orange-100 px-0 py-0 rounded">+{stats.pendingApplications.todayCount} today</span>
+                  <span className="text-xs font-semibold text-orange-700 bg-orange-100 px-2.5 py-1 rounded-full">
+                    +{stats.pendingApplications?.todayCount ?? 0} today
+                  </span>
                 </div>
                 <div>
-                  <p className="text-gray-600 text-sm mb-0">Pending Applications</p>
-                  <p className="text-2xl font-bold">{stats.pendingApplications.count}</p>
+                  <p className="text-gray-600 text-sm font-medium mb-1">Pending Applications</p>
+                  <p className="text-3xl font-bold text-gray-900">{stats.pendingApplications?.count ?? 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">Awaiting review</p>
                 </div>
               </Card>
 
-              <Card className="p-4 border-red-200 bg-red-50/50">
-                <div className="flex items-start justify-between mb-0">
-                  <div className="p-0 bg-red-100 rounded-lg">
-                    <AlertTriangle className="w-5 h-5 text-red-600" />
+              <Card className="p-5 border-2 border-red-200 bg-gradient-to-br from-red-50 to-white shadow-md hover:shadow-lg transition-all cursor-pointer group">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="p-3 bg-gradient-to-br from-red-400 to-red-500 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <AlertTriangle className="w-6 h-6 text-white" />
                   </div>
+                  {stats.complianceIssues?.highPriority ? (
+                    <span className="text-xs font-semibold text-red-700 bg-red-100 px-2.5 py-1 rounded-full animate-pulse">
+                      {stats.complianceIssues.highPriority} urgent
+                    </span>
+                  ) : null}
                 </div>
                 <div>
-                  <p className="text-gray-600 text-sm mb-0">Compliance Issues</p>
-                  <p className="text-2xl font-bold">{stats.complianceIssues.count}</p>
-                  <p className="text-xs text-gray-500 mt-0">{stats.complianceIssues.highPriority} high priority</p>
+                  <p className="text-gray-600 text-sm font-medium mb-1">Compliance Issues</p>
+                  <p className="text-3xl font-bold text-gray-900">{stats.complianceIssues?.count ?? 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">{stats.complianceIssues?.highPriority ?? 0} high priority</p>
                 </div>
               </Card>
 
-              <Card className="p-4 border-blue-200 bg-blue-50/50">
-                <div className="flex items-start justify-between mb-0">
-                  <div className="p-0 bg-blue-100 rounded-lg">
-                    <HeadphonesIcon className="w-5 h-5 text-blue-600" />
+              <Card className="p-5 border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white shadow-md hover:shadow-lg transition-all cursor-pointer group">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="p-3 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <HeadphonesIcon className="w-6 h-6 text-white" />
                   </div>
+                  {stats.supportTickets?.open ? (
+                    <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
+                      {stats.supportTickets.open} open
+                    </span>
+                  ) : null}
                 </div>
                 <div>
-                  <p className="text-gray-600 text-sm mb-0">Support Tickets</p>
-                  <p className="text-2xl font-bold">{stats.supportTickets.total}</p>
-                  <p className="text-xs text-gray-500 mt-0">{stats.supportTickets.open} open</p>
+                  <p className="text-gray-600 text-sm font-medium mb-1">Support Tickets</p>
+                  <p className="text-3xl font-bold text-gray-900">{stats.supportTickets?.total ?? 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">{stats.supportTickets?.open ?? 0} open tickets</p>
                 </div>
               </Card>
             </div>
 
-            {/* Quality Alerts Panel - Attention Queue */}
-            <div className="mb-4">
+            {/* Quality Alerts Panel - Enhanced */}
+            <div className="mb-6">
               <QualityAlertsPanel 
                 onViewVendor={(vendorId) => {
                   setActiveTab('active-vendors');
-                  // TODO: Scroll to or highlight vendor in active vendors tab
                 }}
                 maxAlerts={5}
               />
@@ -181,69 +231,122 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="px-0 mb-4">
-          <div className="flex gap-0 border-b">
+        {/* Enhanced Tabs */}
+        <div className="px-6 mb-6">
+          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
             <button
-              onClick={() => setActiveTab('applications')}
-              className={`px-4 py-0 text-sm border-b-2 transition-colors ${
-                activeTab === 'applications'
-                  ? 'border-[#FF8C42] text-[#FF8C42]'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              onClick={() => setActiveTab('overview')}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                activeTab === 'overview'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Applications
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Overview
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('applications')}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                activeTab === 'applications'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4" />
+                Applications
+              </div>
             </button>
             <button
               onClick={() => setActiveTab('active-vendors')}
-              className={`px-4 py-0 text-sm border-b-2 transition-colors ${
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'active-vendors'
-                  ? 'border-[#FF8C42] text-[#FF8C42]'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Active Vendors
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Active Vendors
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('insights')}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                activeTab === 'insights'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Insights
+              </div>
             </button>
             <button
               onClick={() => setActiveTab('deactivation')}
-              className={`px-4 py-0 text-sm border-b-2 transition-colors ${
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'deactivation'
-                  ? 'border-[#FF8C42] text-[#FF8C42]'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Deactivation Requests
+              <div className="flex items-center gap-2">
+                <UserX className="w-4 h-4" />
+                Deactivation
+              </div>
             </button>
             <button
               onClick={() => setActiveTab('reverification')}
-              className={`px-4 py-0 text-sm border-b-2 transition-colors ${
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'reverification'
-                  ? 'border-[#FF8C42] text-[#FF8C42]'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Reverification
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Reverification
+              </div>
             </button>
             <button
               onClick={() => setActiveTab('compliance')}
-              className={`px-4 py-0 text-sm border-b-2 transition-colors ${
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'compliance'
-                  ? 'border-[#FF8C42] text-[#FF8C42]'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
-              Compliance Issues
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Compliance
+              </div>
             </button>
           </div>
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto px-0 pb-0">
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Fraud Detection & Activity */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <VendorFraudDetection />
+                <VendorActivityTracker />
+              </div>
+            </div>
+          )}
           {activeTab === 'applications' && (
             <EnhancedPendingApplicationsTab />
           )}
           {activeTab === 'active-vendors' && (
             <ActiveVendorsTab />
+          )}
+          {activeTab === 'insights' && (
+            <VendorInsightsDashboard />
           )}
           {activeTab === 'deactivation' && (
             <DeactivationRequestsTab />
