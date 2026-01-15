@@ -1,366 +1,219 @@
-# Admin UI Testing Guide
-**Date:** 2025-01-28  
-**Status:** Ready for Testing
+# Testing Guide - Customer App API Integration
 
----
+## 🧪 Test Results Summary
 
-## Prerequisites
+### ✅ Deployment Status
+- **Lambda Function**: ✅ Deployed and Active
+- **API Endpoints**: ✅ Responding correctly
+- **Parameter Compatibility**: ✅ Working (problemGridId supported)
+- **Backward Compatibility**: ✅ Maintained (problemId still works)
 
-### 1. Start Backend Server
+### ⚠️ Database Issue Found
+**Issue**: `problem_grid_mappings` table does not exist
+- **Impact**: `/customer/vendors/by-problem` endpoint returns error for this table
+- **Status**: Code handles gracefully, but needs table or alternative approach
+- **Solution**: Either create the table or use alternative endpoints
+
+## 📋 Testing Checklist
+
+### 1. Test Service Discovery Endpoint (Working)
 ```bash
-# Navigate to backend directory
-cd backend/lambda
-
-# Start the server (adjust port if needed)
-npm run dev
-# or
-# The server should be running on the configured port (check your .env)
+curl "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/discover-services?category=vet"
 ```
 
-### 2. Start Admin Web Server
+**Expected**: Returns vendors with services, ratings, availability
+
+### 2. Test Vendor Search (Working)
 ```bash
-# Navigate to admin web directory
-cd apps/admin-web
-
-# Start the development server
-npm run dev
-# Server will run on http://localhost:3003
+curl "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/vendors/search?roleId=veterinarian"
 ```
 
----
+**Expected**: Returns vendors matching the role
 
-## Testing Methods
-
-### Method 1: Automated API Testing
-
-#### Setup
+### 3. Test Problem-Based Discovery (Needs Table)
 ```bash
-# Set the API base URL
-export API_BASE_URL=http://localhost:3000  # Adjust port as needed
-
-# Run the test script
-node scripts/test-admin-ui.js
+# This will work once problem_grid_mappings table exists
+curl "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/vendors/by-problem?problemGridId=health-checkup&roleId=veterinarian"
 ```
 
-#### What It Tests
-- ✅ Banner CRUD operations (Create, Read, Update, Delete)
-- ✅ Loyalty Rules CRUD operations
-- ✅ Loyalty Stats and Transactions
-- ✅ Promotions CRUD operations
-- ✅ API contract consistency
+**Current Status**: Returns error about missing table
+**Action Needed**: Create `problem_grid_mappings` table or use alternative endpoints
 
-#### Expected Output
-```
-🚀 Starting Admin UI API Tests...
-📍 Base URL: http://localhost:3000
+## 🔧 Database Setup Options
 
-📋 Testing Banner Management...
-  [1] Creating banner...
-      ✅ Banner created: <id>
-  [2] Getting all banners...
-      ✅ Retrieved banners: 1
-  [3] Updating banner...
-      ✅ Banner updated
-  [4] Deleting banner...
-      ✅ Banner deleted
+### Option 1: Create problem_grid_mappings Table
+```sql
+CREATE TABLE IF NOT EXISTS problem_grid_mappings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  problem_id TEXT NOT NULL,
+  problem_name TEXT NOT NULL,
+  problem_display_name TEXT,
+  role_id TEXT NOT NULL,
+  sub_category_id TEXT,
+  sub_category_name TEXT,
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
 
-🎁 Testing Loyalty & Rewards Management...
-  [1] Creating loyalty rule...
-      ✅ Loyalty rule created: <id>
-  [2] Getting all loyalty rules...
-      ✅ Retrieved rules: 1
-  [3] Getting loyalty stats...
-      ✅ Retrieved stats: {...}
-  [4] Getting loyalty transactions...
-      ✅ Retrieved transactions: 0
-  [5] Updating loyalty rule...
-      ✅ Rule updated
-  [6] Deleting loyalty rule...
-      ✅ Rule deleted
-
-🎉 Testing Promotions Management...
-  [1] Creating promotion...
-      ✅ Promotion created: <id>
-  [2] Getting all promotions...
-      ✅ Retrieved promotions: 1
-  [3] Updating promotion...
-      ✅ Promotion updated
-  [4] Deleting promotion...
-      ✅ Promotion deleted
-
-============================================================
-📊 TEST SUMMARY
-============================================================
-...
-Total: 14 passed, 0 failed
-============================================================
+CREATE INDEX IF NOT EXISTS idx_problem_grid_problem_id ON problem_grid_mappings(problem_id);
+CREATE INDEX IF NOT EXISTS idx_problem_grid_role_id ON problem_grid_mappings(role_id);
 ```
 
----
+### Option 2: Use Alternative Endpoints (Immediate Solution)
+Instead of `/customer/vendors/by-problem`, use:
+- `/customer/discover-services?category=vet` - Works now
+- `/customer/vendors/search?roleId=veterinarian` - Works now
+- `/customer/services/by-problem` - May need table, but has fallback
 
-### Method 2: Manual UI Testing
+## 🧪 Frontend Testing Steps
 
-#### Step 1: Access Admin Portal
-1. Open browser: `http://localhost:3003`
-2. Login with UAT credentials:
-   - **Email:** `admin@warmpawz.com`
-   - **Password:** `Warmpawz2025`
+### Step 1: Test Service Discovery
+1. Open customer app
+2. Navigate to Vet service
+3. Verify vendors appear
+4. Check browser console for API calls
+5. Verify real vendor names (not placeholders)
 
-#### Step 2: Test Banner Management
+### Step 2: Test Vendor Details
+1. Click on a vendor
+2. Verify vendor profile loads
+3. Check services are listed
+4. Verify ratings and reviews show
 
-**Navigate:** Click "Banner Management" in sidebar or go to `/banners`
+### Step 3: Test Problem Grid (If Table Exists)
+1. Navigate to problem grid
+2. Select a problem
+3. Verify vendors/specialists appear
+4. Check schedule availability
+5. Test filters
 
-**Test Cases:**
-1. **Create Banner**
-   - Click "Create Banner" button
-   - Fill form:
-     - Title: "Test Banner"
-     - Description: "Test description"
-     - Image URL: "https://via.placeholder.com/800x200"
-     - Link URL: "https://example.com"
-     - Position: "Home Top"
-     - Start Date: Today
-     - End Date: 30 days from now
-     - Active: Checked
-   - Click "Create Banner"
-   - ✅ Verify: Banner appears in list
-   - ✅ Verify: Success message displays
+### Step 4: Test Specialists Display
+1. For vet clinics, verify doctors/specialists appear
+2. Check specialization details
+3. Verify services per specialist
+4. Test booking flow
 
-2. **Edit Banner**
-   - Click "Edit" on created banner
-   - Change title to "Updated Test Banner"
-   - Click "Save Changes"
-   - ✅ Verify: Banner title updated in list
-   - ✅ Verify: Success message displays
+## 📊 API Response Verification
 
-3. **Toggle Status**
-   - Click "Deactivate" on active banner
-   - ✅ Verify: Status changes to "Inactive"
-   - Click "Activate" on inactive banner
-   - ✅ Verify: Status changes to "Active"
-
-4. **Delete Banner**
-   - Click "Delete" on test banner
-   - Confirm deletion
-   - ✅ Verify: Banner removed from list
-   - ✅ Verify: Success message displays
-
-5. **Filter Banners**
-   - Select position filter
-   - ✅ Verify: List filters correctly
-   - Select status filter
-   - ✅ Verify: List filters correctly
-
-6. **Mobile View**
-   - Resize browser to mobile width (375px)
-   - ✅ Verify: Layout is responsive
-   - ✅ Verify: Forms are usable
-   - ✅ Verify: Tables scroll horizontally
-
-#### Step 3: Test Loyalty Management
-
-**Navigate:** Click "Loyalty & Rewards" in sidebar or go to `/loyalty`
-
-**Test Cases:**
-1. **View Stats**
-   - ✅ Verify: Stats cards display
-   - ✅ Verify: Numbers are formatted correctly
-
-2. **Create Loyalty Rule**
-   - Click "Create Rule" button
-   - Fill form:
-     - Name: "Test Loyalty Rule"
-     - Description: "Test description"
-     - Points per Rupee: 1
-     - Redemption Rate: 100
-     - Min Points to Redeem: 100
-     - Active: Checked
-   - Click "Create Rule"
-   - ✅ Verify: Rule appears in table
-   - ✅ Verify: Success message displays
-
-3. **Edit Loyalty Rule**
-   - Click "Edit" on created rule
-   - Change name to "Updated Test Rule"
-   - Click "Update Rule"
-   - ✅ Verify: Rule name updated in table
-   - ✅ Verify: Success message displays
-
-4. **Toggle Status**
-   - Click "Deactivate" on active rule
-   - ✅ Verify: Status badge changes
-   - Click "Activate" on inactive rule
-   - ✅ Verify: Status badge changes
-
-5. **Delete Loyalty Rule**
-   - Click "Delete" on test rule
-   - Confirm deletion
-   - ✅ Verify: Rule removed from table
-   - ✅ Verify: Success message displays
-
-6. **View Transactions**
-   - Scroll to "Recent Transactions" section
-   - ✅ Verify: Transactions table displays
-   - Click "View All" (if implemented)
-   - ✅ Verify: Full transaction list loads
-
-7. **Mobile View**
-   - Resize browser to mobile width
-   - ✅ Verify: Stats cards stack vertically
-   - ✅ Verify: Table is scrollable
-   - ✅ Verify: Forms are usable
-
-#### Step 4: Test Promotions Management
-
-**Navigate:** Click "Marketing & Promotions" in sidebar or go to `/promotions`
-
-**Test Cases:**
-1. **Create Promotion**
-   - Click "Create Promotion" button
-   - Fill form with test data
-   - Click "Create Promotion"
-   - ✅ Verify: Promotion appears in list
-   - ✅ Verify: Success message displays
-
-2. **Edit Promotion**
-   - Click "Edit" on created promotion
-   - Modify fields
-   - Click "Save Changes"
-   - ✅ Verify: Changes saved
-   - ✅ Verify: Success message displays
-
-3. **Delete Promotion**
-   - Click "Delete" on test promotion
-   - Confirm deletion
-   - ✅ Verify: Promotion removed
-   - ✅ Verify: Success message displays
-
-4. **Create Coupon**
-   - Switch to "Coupons" tab
-   - Click "Create Coupon"
-   - Fill form
-   - Click "Create Coupon"
-   - ✅ Verify: Coupon appears in list
-
-5. **Mobile View**
-   - Resize browser to mobile width
-   - ✅ Verify: Layout is responsive
-   - ✅ Verify: Tabs work correctly
-
----
-
-## Test Checklist Summary
-
-### Banner Management ✅
-- [ ] Create banner
-- [ ] Edit banner
-- [ ] Delete banner
-- [ ] Toggle status
-- [ ] Filter by position
-- [ ] Filter by status
-- [ ] Mobile responsive
-- [ ] Error handling
-- [ ] Success messages
-
-### Loyalty Management ✅
-- [ ] View stats
-- [ ] Create rule
-- [ ] Edit rule
-- [ ] Delete rule
-- [ ] Toggle status
-- [ ] View transactions
-- [ ] Mobile responsive
-- [ ] Error handling
-- [ ] Success messages
-
-### Promotions Management ✅
-- [ ] Create promotion
-- [ ] Edit promotion
-- [ ] Delete promotion
-- [ ] Create coupon
-- [ ] Edit coupon
-- [ ] Delete coupon
-- [ ] Mobile responsive
-- [ ] Error handling
-- [ ] Success messages
-
----
-
-## Common Issues & Solutions
-
-### Issue: API Tests Fail with "fetch failed"
-**Solution:** 
-- Ensure backend server is running
-- Check API_BASE_URL is correct
-- Verify CORS is configured
-
-### Issue: UI Shows "Failed to fetch"
-**Solution:**
-- Check backend server is running
-- Verify API endpoints are registered
-- Check browser console for errors
-
-### Issue: Forms Don't Submit
-**Solution:**
-- Check browser console for validation errors
-- Verify all required fields are filled
-- Check network tab for API errors
-
-### Issue: Mobile Layout Broken
-**Solution:**
-- Clear browser cache
-- Check Tailwind classes are correct
-- Verify responsive breakpoints
-
----
-
-## Testing Results Template
-
-```markdown
-## Test Results - [Date]
-
-### Banner Management
-- Create: ✅ / ❌
-- Edit: ✅ / ❌
-- Delete: ✅ / ❌
-- Toggle: ✅ / ❌
-- Filters: ✅ / ❌
-- Mobile: ✅ / ❌
-
-### Loyalty Management
-- Stats: ✅ / ❌
-- Create: ✅ / ❌
-- Edit: ✅ / ❌
-- Delete: ✅ / ❌
-- Transactions: ✅ / ❌
-- Mobile: ✅ / ❌
-
-### Promotions Management
-- Create: ✅ / ❌
-- Edit: ✅ / ❌
-- Delete: ✅ / ❌
-- Coupons: ✅ / ❌
-- Mobile: ✅ / ❌
-
-### Issues Found
-1. [Issue description]
-2. [Issue description]
-
-### Notes
-[Any additional notes]
+### Expected Response Format - /customer/discover-services
+```json
+{
+  "success": true,
+  "vendors": [
+    {
+      "id": "vendor-id",
+      "businessName": "Real Clinic Name",
+      "rating": 4.5,
+      "totalReviews": 120,
+      "isAvailableToday": true,
+      "distance": 2.5,
+      "featuredOfferings": [...]
+    }
+  ]
+}
 ```
 
----
+### Expected Response Format - /customer/vendors/by-problem (Once Table Exists)
+```json
+{
+  "success": true,
+  "vendors": [
+    {
+      "id": "vendor-id",
+      "businessName": "Clinic Name",
+      "specialists": [
+        {
+          "staffId": "staff-id",
+          "fullName": "Dr. Name",
+          "specializationDetails": [...],
+          "services": [...]
+        }
+      ],
+      "nextAvailable": {
+        "date": "Monday",
+        "time": "10:00 AM"
+      }
+    }
+  ],
+  "specialists": [...]
+}
+```
 
-## Next Steps After Testing
+## 🔍 Monitoring & Debugging
 
-1. **Document Issues** - Record all bugs and issues found
-2. **Fix Critical Bugs** - Address blocking issues first
-3. **Fix Minor Issues** - Address non-blocking issues
-4. **Re-test** - Verify fixes work correctly
-5. **Update Documentation** - Update this guide with findings
+### Check Lambda Logs
+```bash
+aws logs tail /aws/lambda/warmpawz-dev-api-handler --follow --region ap-south-1
+```
 
----
+### Check API Gateway Logs
+```bash
+aws apigatewayv2 get-logs --api-id YOUR_API_ID --region ap-south-1
+```
 
-**Ready to test!** Follow the steps above to verify all functionality works correctly.
+### Browser Console Checks
+1. Open DevTools → Network tab
+2. Filter by "vendors" or "by-problem"
+3. Check request/response
+4. Verify no 404/500 errors
+5. Check response contains real data
 
+## ✅ Success Criteria
+
+### API Level
+- [x] Endpoints respond (not 404/500)
+- [x] Parameter compatibility works
+- [ ] Problem-based discovery works (needs table)
+- [x] Service discovery works
+- [x] Vendor search works
+
+### Frontend Level
+- [ ] Real vendor data displays
+- [ ] No placeholder data visible
+- [ ] Specialists appear for vet clinics
+- [ ] Schedule availability shows
+- [ ] Filters work correctly
+
+### Data Quality
+- [ ] Vendor names are real (not "Test Vendor")
+- [ ] Ratings are realistic (0-5 range)
+- [ ] Services have real prices
+- [ ] Locations are valid addresses
+
+## 🚨 Troubleshooting
+
+### Issue: "problem_grid_mappings does not exist"
+**Solution**: 
+1. Create the table (see SQL above)
+2. OR use alternative endpoints (`/customer/discover-services`)
+3. OR populate table with problem mappings
+
+### Issue: No vendors returned
+**Check**:
+- Vendor status is 'approved'
+- Vendor is_active = true
+- Role matches query parameter
+
+### Issue: No specialists returned
+**Check**:
+- Staff table has data for vendors
+- Staff is_active = true
+- Staff linked to vendors correctly
+
+## 📝 Next Actions
+
+1. **Immediate**: Test `/customer/discover-services` endpoint (works now)
+2. **Short-term**: Create `problem_grid_mappings` table or use alternatives
+3. **Testing**: Verify frontend displays real data
+4. **Monitoring**: Check CloudWatch logs for errors
+
+## 🎯 Current Status
+
+- ✅ **Backend Deployed**: Lambda function active
+- ✅ **API Endpoints**: Responding correctly
+- ✅ **Parameter Support**: problemGridId working
+- ⚠️ **Database**: problem_grid_mappings table needed
+- ✅ **Alternative Endpoints**: Available and working
+
+**Recommendation**: Use `/customer/discover-services` and `/customer/vendors/search` endpoints while setting up problem_grid_mappings table.

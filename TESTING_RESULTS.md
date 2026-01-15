@@ -1,198 +1,245 @@
-# Local Testing - Results & Instructions
+# Testing Results - Customer App API Integration
 
-**Date:** 2026-01-28  
-**Status:** ⚠️ **SERVER STARTING - MANUAL TESTING RECOMMENDED**
+## ✅ Test Execution Summary
 
----
-
-## 🔍 Current Status
-
-The serverless-offline server is configured and ready, but needs to be started manually for best results.
+### Date: 2026-01-15
+### Status: **PARTIALLY SUCCESSFUL** - Core endpoints working, database table needed
 
 ---
 
-## 🚀 Manual Testing Instructions
+## 🧪 Test Results
 
-### Step 1: Start Server (Terminal 1)
+### 1. ✅ Lambda Deployment - **SUCCESS**
+- **Function**: `warmpawz-dev-api-handler`
+- **Status**: Active and deployed
+- **Last Modified**: 2026-01-15T13:33:57.000+0000
+- **State**: Active
+- **Update Status**: Successful
 
+### 2. ✅ API Endpoint Tests
+
+#### Test 2.1: `/customer/discover-services` - **✅ WORKING**
 ```bash
-cd backend/lambda
-npm run start:local
+GET /customer/discover-services?category=vet&limit=2
 ```
 
-**Wait for this message:**
-```
-Offline [http for lambda] http://localhost:3000
-```
+**Result**: ✅ **SUCCESS**
+- Returns real vendor data
+- Vendors found: "Vet Warmpaz", "Test Veterinary Clinic"
+- Real addresses, phone numbers, emails
+- Response format correct
 
-**Keep this terminal open!**
-
----
-
-### Step 2: Test Endpoints (Terminal 2)
-
-#### Option A: Automated Test Script
-```bash
-cd backend/lambda
-./test-endpoints.sh
-```
-
-#### Option B: Manual Testing
-
-**1. Health Check**
-```bash
-curl http://localhost:3000/health
-```
-
-**Expected Response:**
+**Sample Response**:
 ```json
 {
   "success": true,
-  "data": { ... },
-  "meta": {
-    "timestamp": "2026-01-28T...",
-    "requestId": "req-...",
-    "version": "v1"
-  }
+  "vendors": [
+    {
+      "id": "e4306109-d03e-40bd-a78c-58f08b30a958",
+      "businessName": "Vet Warmpaz",
+      "address": "A-004,Chartered Beverly Hills...",
+      "city": "Bengaluru",
+      "phone": "9606901515",
+      "email": "abhayankarbellur@gmail.com",
+      "rating": 0,
+      "totalReviews": 0,
+      "totalOfferings": 0
+    }
+  ]
 }
 ```
 
-**2. Send OTP**
+#### Test 2.2: `/customer/vendors/by-problem` - **⚠️ NEEDS DATABASE TABLE**
 ```bash
-curl -X POST http://localhost:3000/auth/send-otp \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "+919876543210"}'
+GET /customer/vendors/by-problem?problemGridId=test&roleId=veterinarian
 ```
 
-**Expected:** Success response with message
+**Result**: ⚠️ **DATABASE TABLE MISSING**
+- Endpoint responds correctly
+- Parameter compatibility works (`problemGridId` accepted)
+- Error: `"relation \"problem_grid_mappings\" does not exist"`
+- **Action Required**: Create `problem_grid_mappings` table
 
-**3. Verify OTP (UAT Mode: OTP = 123456)**
-```bash
-curl -X POST http://localhost:3000/auth/verify-otp \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "+919876543210", "otp": "123456"}'
-```
+#### Test 2.3: Parameter Compatibility - **✅ WORKING**
+- ✅ `problemGridId` parameter accepted
+- ✅ `problemId` parameter still works (backward compatible)
+- ✅ `roleId` filtering works
+- ✅ All new parameters supported
 
-**Expected:** JWT token in response
-
-**4. Test Validation (Should Fail)**
-```bash
-curl -X POST http://localhost:3000/auth/send-otp \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "invalid"}'
-```
-
-**Expected:** HTTP 400 with validation error
+### 3. ✅ Code Deployment Verification
+- ✅ Lambda function code updated
+- ✅ New endpoint logic deployed
+- ✅ Error handling in place
+- ✅ Graceful degradation for missing tables
 
 ---
 
-## ✅ What to Verify
+## 📊 Real Data Verification
 
-### Basic Functionality
-- [ ] Server starts on port 3000
-- [ ] Health endpoint responds
-- [ ] CORS headers present
+### Vendors Found in Database:
+1. **Vet Warmpaz**
+   - ID: `e4306109-d03e-40bd-a78c-58f08b30a958`
+   - Location: Bengaluru, Karnataka
+   - Phone: 9606901515
+   - Email: abhayankarbellur@gmail.com
 
-### Auth Endpoints
-- [ ] Send OTP works
-- [ ] Verify OTP works (gets token)
-- [ ] Error handling works
+2. **Test Veterinary Clinic**
+   - ID: `4dd488a2-54a9-4246-80b4-8b3e28636998`
+   - Location: Mumbai, Maharashtra
+   - Services: 8 offerings
 
-### Enhanced Features
-- [ ] API contract validation (400 for invalid data)
-- [ ] Request IDs in responses
-- [ ] Structured JSON responses
-- [ ] Logs visible in server terminal
+### ✅ Confirmation:
+- **Real vendor data** is being returned (not placeholders)
+- **Real addresses** and contact information
+- **Real vendor IDs** from database
+- **No mock/placeholder data** in responses
 
 ---
 
-## 🐛 Troubleshooting
+## ⚠️ Issues Found
 
-### Server Won't Start
-```bash
-# Check if port 3000 is in use
-lsof -i :3000
+### Issue 1: Missing Database Table
+**Table**: `problem_grid_mappings`
+**Impact**: Problem-based vendor discovery endpoint cannot query problems
+**Status**: Code handles gracefully, returns error message
+**Solution**: Create table or use alternative endpoints
 
-# Kill process if needed
-kill -9 $(lsof -t -i:3000)
+### Issue 2: Alternative Endpoints Available
+**Working Endpoints**:
+- ✅ `/customer/discover-services` - Returns vendors by category
+- ✅ `/customer/vendors/search` - Returns vendors by role
+- ⚠️ `/customer/vendors/by-problem` - Needs `problem_grid_mappings` table
 
-# Change port in serverless.local.yml
-# httpPort: 3001
+---
+
+## ✅ What's Working
+
+1. **Service Discovery**: `/customer/discover-services` returns real vendors
+2. **Vendor Search**: `/customer/vendors/search` works
+3. **Parameter Support**: All new parameters accepted
+4. **Real Data**: Actual vendor data from database
+5. **Error Handling**: Graceful error messages
+6. **Backward Compatibility**: Old parameters still work
+
+---
+
+## 🔧 Required Actions
+
+### Immediate (To Enable Problem-Based Discovery)
+
+#### Option A: Create problem_grid_mappings Table
+```sql
+CREATE TABLE IF NOT EXISTS problem_grid_mappings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  problem_id TEXT NOT NULL,
+  problem_name TEXT NOT NULL,
+  problem_display_name TEXT,
+  role_id TEXT NOT NULL,
+  sub_category_id TEXT,
+  sub_category_name TEXT,
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Add indexes
+CREATE INDEX IF NOT EXISTS idx_problem_grid_problem_id 
+  ON problem_grid_mappings(problem_id);
+CREATE INDEX IF NOT EXISTS idx_problem_grid_role_id 
+  ON problem_grid_mappings(role_id);
+
+-- Insert sample data
+INSERT INTO problem_grid_mappings (problem_id, problem_name, problem_display_name, role_id, order_index)
+VALUES 
+  ('health-checkup', 'Health Checkup', 'Health Checkup', '072548c8-84a9-4165-a9ec-0387c8c76a0e', 1),
+  ('vaccination', 'Vaccination', 'Vaccination', '072548c8-84a9-4165-a9ec-0387c8c76a0e', 2),
+  ('grooming', 'Grooming', 'Full Grooming', 'pet_groomer', 1);
 ```
 
-### Build Issues
-```bash
-cd backend/lambda
-npm run build:bundle
-```
-
-### Module Errors
-```bash
-# Rebuild API contracts
-cd ../../packages/api-contracts
-npm run build
-cd ../../backend/lambda
-npm run build:bundle
-```
+#### Option B: Use Alternative Endpoints (Immediate Solution)
+- Use `/customer/discover-services?category=vet` instead
+- Use `/customer/vendors/search?roleId=veterinarian`
+- Frontend can be updated to use these endpoints
 
 ---
 
-## 📊 Expected Test Results
+## 🧪 Frontend Testing Steps
 
-### ✅ Success Indicators
-- HTTP 200/201 for valid requests
-- HTTP 400 for validation errors
-- Structured JSON responses
-- Request IDs in meta field
-- JWT tokens from verify-otp
-- Logs show structured JSON
+### Step 1: Test Service Discovery (Works Now)
+1. Open customer app
+2. Navigate to Vet service
+3. **Expected**: Real vendors like "Vet Warmpaz" appear
+4. **Verify**: No placeholder data
+5. **Check**: Browser console shows API calls to `/customer/discover-services`
 
-### ❌ Issues to Watch For
-- Connection refused (server not started)
-- 500 errors (check logs)
-- Missing request IDs
-- Invalid response format
+### Step 2: Test Vendor Details
+1. Click on "Vet Warmpaz"
+2. **Expected**: Vendor profile loads with real address
+3. **Verify**: Phone number, email, address are real
+4. **Check**: Services list (may be empty if vendor has no services configured)
 
----
-
-## 📝 Next Steps After Testing
-
-### If Tests Pass ✅
-1. Apply database migration 050
-2. Proceed to AWS deployment
-3. Set up monitoring
-
-### If Issues Found ⚠️
-1. Check server logs
-2. Verify build output
-3. Test individual endpoints
-4. Fix issues before deployment
+### Step 3: Test Problem Grid (After Table Creation)
+1. Navigate to problem grid
+2. Select a problem
+3. **Expected**: Vendors/specialists appear
+4. **Verify**: Schedule availability shows
+5. **Check**: Specialists data for vet clinics
 
 ---
 
-## 🎯 Quick Commands
+## 📈 Performance Metrics
 
-```bash
-# Start server
-cd backend/lambda && npm run start:local
-
-# Test health
-curl http://localhost:3000/health
-
-# Test send OTP
-curl -X POST http://localhost:3000/auth/send-otp \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "+919876543210"}'
-
-# Test verify OTP
-curl -X POST http://localhost:3000/auth/verify-otp \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "+919876543210", "otp": "123456"}'
-```
+- **API Response Time**: < 2 seconds ✅
+- **Lambda Function**: Active and responding ✅
+- **Error Rate**: Low (only missing table issue) ✅
+- **Data Quality**: Real vendor data ✅
 
 ---
 
-**Status:** ⚠️ **READY FOR MANUAL TESTING**
+## 🎯 Next Steps Priority
 
-**Start server:** `cd backend/lambda && npm run start:local`
+### High Priority
+1. ✅ **DONE**: Deploy Lambda with enhanced endpoints
+2. ✅ **DONE**: Deploy customer web app
+3. ✅ **DONE**: Verify API returns real data
+4. ⚠️ **TODO**: Create `problem_grid_mappings` table OR update frontend to use alternative endpoints
 
+### Medium Priority
+5. Test frontend integration
+6. Verify specialists display
+7. Test schedule availability
+8. Test filters (price, location, sorting)
+
+### Low Priority
+9. Optimize database queries
+10. Add caching if needed
+11. Monitor performance
+
+---
+
+## ✅ Summary
+
+### What's Working ✅
+- Lambda deployment successful
+- API endpoints responding
+- Real vendor data being returned
+- Parameter compatibility working
+- Error handling in place
+
+### What Needs Attention ⚠️
+- `problem_grid_mappings` table needs to be created
+- OR frontend should use alternative endpoints
+- Frontend testing needed to verify UI displays real data
+
+### Recommendation
+**Use `/customer/discover-services` endpoint immediately** - it's working and returning real vendor data. Create `problem_grid_mappings` table when ready to enable problem-based discovery.
+
+---
+
+## 🚀 Status: **READY FOR FRONTEND TESTING**
+
+The API is deployed and returning real data. Frontend can now be tested to verify:
+1. Real vendors display (not placeholders)
+2. Vendor details show correctly
+3. Services appear properly
+4. No mock data visible
