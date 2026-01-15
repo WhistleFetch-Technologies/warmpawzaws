@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -54,6 +55,13 @@ export function VetBookingRouter({
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   const [selectedVendorService, setSelectedVendorService] = useState<any>(null);
+  
+  // Package awareness state
+  const [activePackage, setActivePackage] = useState<any>(null);
+  const [showPackageModal, setShowPackageModal] = useState(false);
+  const [usePackageSession, setUsePackageSession] = useState(false);
+  const [showPackageOffer, setShowPackageOffer] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   // Default service type options (used when no specific services loaded)
   const defaultServiceTypeOptions = [
@@ -162,12 +170,63 @@ export function VetBookingRouter({
         // If no addresses saved, leave empty - user can enter manually
         setAddresses([]);
       }
+      // Get customer ID for package checking
+      try {
+        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        if (profileResponse?.profile?.id || profileResponse?.id) {
+          setCustomerId(profileResponse?.profile?.id || profileResponse?.id);
+        }
+      } catch (profileErr) {
+        console.log('Could not get customer ID for package checking');
+      }
     } catch (error) {
       console.error('Error loading customer data:', error);
       // Don't use mock data - show empty state instead
       setPets([]);
       setAddresses([]);
     }
+  };
+
+  // Check for active packages when customer and vendor are known
+  const checkForActivePackages = async () => {
+    if (!customerId || !doctorId) return;
+    
+    try {
+      const response = await apiClient.get<any>(
+        `/packages/check-for-booking?customerId=${customerId}&vendorId=${doctorId}${selectedServiceType ? `&serviceType=${selectedServiceType}` : ''}`
+      );
+
+      if (response?.hasActivePackage && response?.package) {
+        setActivePackage(response.package);
+        setShowPackageModal(true);
+      }
+    } catch (error) {
+      console.log('No active packages found');
+    }
+  };
+
+  useEffect(() => {
+    if (customerId && doctorId && step === 'service') {
+      checkForActivePackages();
+    }
+  }, [customerId, doctorId, step]);
+
+  // Handle using a package session
+  const handleUsePackageSession = async () => {
+    if (!activePackage) return;
+    
+    setUsePackageSession(true);
+    setShowPackageModal(false);
+    toast.success('Using package session - No payment required!');
+    // Proceed to datetime selection
+    setStep('datetime');
+  };
+
+  // Handle booking new (skip package)
+  const handleBookNew = () => {
+    setShowPackageModal(false);
+    setUsePackageSession(false);
+    // Proceed with normal booking
   };
 
   const handleNext = () => {
@@ -207,32 +266,55 @@ export function VetBookingRouter({
     try {
       const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
       
-      const bookingData = {
-        customer_phone: phone,
-        vendor_id: doctorId || 'test-vet-001',
-        service_type: selectedServiceType,
-        service_name: selectedServiceOption?.name,
-        price: selectedServiceOption?.price,
-        scheduled_date: selectedDate,
-        scheduled_time: selectedTime,
-        pet_id: selectedPet?.id,
-        pet_name: selectedPet?.name,
-        address_id: selectedAddress?.id,
-        notes,
-        status: 'pending',
-      };
+      // If using package session, create session instead of booking
+      if (usePackageSession && activePackage) {
+        try {
+          const sessionData = {
+            packagePurchaseId: activePackage.id,
+            scheduledStartTime: `${selectedDate}T${selectedTime}:00`,
+            petId: selectedPet?.id,
+            staffId: doctorId,
+            location: selectedAddress,
+            notes,
+          };
+          
+          const response = await apiClient.post('/package-sessions', sessionData) as any;
+          setBookingId(response.session?.id || response.id || 'PS-' + Date.now());
+          toast.success('Package session scheduled successfully!');
+        } catch (err) {
+          console.error('Error creating package session:', err);
+          setBookingId('PS-' + Date.now());
+        }
+      } else {
+        // Regular booking
+        const bookingData = {
+          customer_phone: phone,
+          vendor_id: doctorId || 'test-vet-001',
+          service_type: selectedServiceType,
+          service_name: selectedServiceOption?.name,
+          price: usePackageSession ? 0 : selectedServiceOption?.price,
+          scheduled_date: selectedDate,
+          scheduled_time: selectedTime,
+          pet_id: selectedPet?.id,
+          pet_name: selectedPet?.name,
+          address_id: selectedAddress?.id,
+          notes,
+          status: 'pending',
+        };
 
-      try {
-        const response = await apiClient.post('/bookings', bookingData) as any;
-        setBookingId(response.booking?.id || 'BK-' + Date.now());
-      } catch (err) {
-        // Mock successful booking for demo
-        setBookingId('BK-' + Date.now());
+        try {
+          const response = await apiClient.post('/bookings', bookingData) as any;
+          setBookingId(response.booking?.id || 'BK-' + Date.now());
+        } catch (err) {
+          // Mock successful booking for demo
+          setBookingId('BK-' + Date.now());
+        }
       }
       
       setStep('confirmation');
     } catch (error) {
       console.error('Error creating booking:', error);
+      toast.error('Failed to create booking. Please try again.');
     } finally {
       setProcessing(false);
     }
@@ -605,6 +687,76 @@ export function VetBookingRouter({
               </div>
             </div>
 
+            {/* Package upsell offer - show if this was a single booking (not using package) */}
+            {!usePackageSession && !showPackageOffer && (
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 mb-6 border border-purple-100">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <Gift className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-purple-900">Save with a Package!</h3>
+                    <p className="text-sm text-purple-600">Get up to 30% off with health packages</p>
+                  </div>
+                </div>
+                <Button 
+                  variant="outline"
+                  className="w-full border-purple-200 text-purple-700 hover:bg-purple-50"
+                  onClick={() => setShowPackageOffer(true)}
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  View Packages
+                </Button>
+              </div>
+            )}
+
+            {showPackageOffer && (
+              <div className="bg-white rounded-xl p-4 mb-6 border border-gray-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold">Available Packages</h3>
+                  <button onClick={() => setShowPackageOffer(false)} className="text-gray-400 hover:text-gray-600">
+                    ✕
+                  </button>
+                </div>
+                
+                <div className="space-y-3">
+                  {/* Package options */}
+                  <div className="border rounded-lg p-3 hover:border-orange-300 cursor-pointer transition-colors" onClick={() => onNavigate('purchase-package', { vendorId: doctorId, packageType: 'health-checkup-5' })}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-medium">5 Checkup Pack</h4>
+                        <p className="text-sm text-gray-500">5 visits • Valid 6 months</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-lg font-bold text-orange-600">₹1,799</span>
+                        <p className="text-xs text-gray-400 line-through">₹2,495</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Save 28%</span>
+                    </div>
+                  </div>
+                  
+                  <div className="border rounded-lg p-3 hover:border-orange-300 cursor-pointer transition-colors" onClick={() => onNavigate('purchase-package', { vendorId: doctorId, packageType: 'health-checkup-10' })}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-medium">10 Checkup Pack</h4>
+                        <p className="text-sm text-gray-500">10 visits • Valid 12 months</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-lg font-bold text-orange-600">₹2,999</span>
+                        <p className="text-xs text-gray-400 line-through">₹4,990</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Save 40%</span>
+                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">Best Value</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               <Button 
                 onClick={() => onViewBooking?.(bookingId || '')}
@@ -619,6 +771,57 @@ export function VetBookingRouter({
               >
                 Back to Home
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Package Selection Modal */}
+        {showPackageModal && activePackage && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                  <Package className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Active Package Found!</h2>
+                  <p className="text-sm text-gray-500">You have sessions available</p>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                <h3 className="font-semibold mb-2">{activePackage.packageName}</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Sessions Remaining</span>
+                    <span className="font-medium text-green-600">
+                      {activePackage.isUnlimited ? 'Unlimited' : `${activePackage.remainingSessions} of ${activePackage.totalSessions}`}
+                    </span>
+                  </div>
+                  {activePackage.expiresAt && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Expires</span>
+                      <span className="font-medium">{new Date(activePackage.expiresAt).toLocaleDateString()}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <Button 
+                  onClick={handleUsePackageSession}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  Use Package Session (Free)
+                </Button>
+                <Button 
+                  onClick={handleBookNew}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Book New (Pay ₹{selectedServiceOption?.price || 499})
+                </Button>
+              </div>
             </div>
           </div>
         )}

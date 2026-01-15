@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy } from 'lucide-react';
+import { ArrowLeft, GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -15,14 +15,57 @@ interface TrainingServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+interface ActiveTrainingPackage {
+  id: string;
+  packageName: string;
+  trainerName: string;
+  petName: string;
+  totalSessions: number;
+  completedSessions: number;
+  skillsLearned: string[];
+  nextSessionDate?: string;
+}
+
+interface PetSkillProgress {
+  skillName: string;
+  level: number; // 0-100
+  status: 'not_started' | 'in_progress' | 'mastered';
+}
+
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
   const [loading, setLoading] = useState(true);
   const [featuredTrainers, setFeaturedTrainers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [activePackages, setActivePackages] = useState<ActiveTrainingPackage[]>([]);
+  const [petSkills, setPetSkills] = useState<PetSkillProgress[]>([]);
 
   useEffect(() => {
     loadTrainingData();
+    loadActiveTrainingPackages();
+    loadPetSkills();
   }, []);
+
+  const loadActiveTrainingPackages = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`);
+      if (response?.packages) {
+        setActivePackages(response.packages);
+      }
+    } catch (error) {
+      console.log('No active training packages');
+    }
+  };
+
+  const loadPetSkills = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/pet-skills`);
+      if (response?.skills) {
+        setPetSkills(response.skills);
+      }
+    } catch (error) {
+      console.log('No pet skills data');
+    }
+  };
 
   const loadTrainingData = async () => {
     try {
@@ -133,6 +176,129 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
+          {/* Active Training Package with Progress */}
+          {activePackages.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-purple-600" />
+                  <h2 className="text-lg font-bold text-slate-900">Your Training</h2>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-purple-600"
+                  onClick={() => onNavigate?.('training-progress', { packageId: activePackages[0].id })}
+                >
+                  View Progress
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+              
+              <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50 p-4">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <Trophy className="w-6 h-6 text-purple-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-purple-900">{activePackages[0].packageName}</h3>
+                    <p className="text-sm text-purple-600">with {activePackages[0].trainerName}</p>
+                    <p className="text-xs text-gray-500 mt-1">{activePackages[0].petName}</p>
+                  </div>
+                </div>
+                
+                {/* Session Progress */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600">Sessions Completed</span>
+                    <span className="font-medium">{activePackages[0].completedSessions}/{activePackages[0].totalSessions}</span>
+                  </div>
+                  <div className="h-2 bg-purple-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all"
+                      style={{ width: `${(activePackages[0].completedSessions / activePackages[0].totalSessions) * 100}%` }}
+                    />
+                  </div>
+                </div>
+                
+                {/* Skills Learned */}
+                {activePackages[0].skillsLearned && activePackages[0].skillsLearned.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs text-gray-500 mb-2">Skills Learned</p>
+                    <div className="flex flex-wrap gap-2">
+                      {activePackages[0].skillsLearned.map((skill, idx) => (
+                        <span key={idx} className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                          <CheckCircle className="w-3 h-3" />
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Next Session */}
+                {activePackages[0].nextSessionDate && (
+                  <div className="flex items-center justify-between pt-3 border-t border-purple-100">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Clock className="w-4 h-4" />
+                      <span>Next: {new Date(activePackages[0].nextSessionDate).toLocaleDateString()}</span>
+                    </div>
+                    <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+                      View Details
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+
+          {/* Pet Skills Matrix Preview */}
+          {petSkills.length > 0 && (
+            <Card className="border-blue-200 bg-blue-50/50 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-semibold text-blue-900">Skill Progress</h3>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-blue-600"
+                  onClick={() => onNavigate?.('training-skill-matrix')}
+                >
+                  Full Matrix
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {petSkills.slice(0, 3).map((skill, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700">{skill.skillName}</span>
+                        <span className={`text-xs font-medium ${
+                          skill.status === 'mastered' ? 'text-green-600' : 
+                          skill.status === 'in_progress' ? 'text-blue-600' : 'text-gray-400'
+                        }`}>
+                          {skill.status === 'mastered' ? '✓ Mastered' : 
+                           skill.status === 'in_progress' ? 'In Progress' : 'Not Started'}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all ${
+                            skill.status === 'mastered' ? 'bg-green-500' : 
+                            skill.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-300'
+                          }`}
+                          style={{ width: `${skill.level}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Spotlight Offers */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">

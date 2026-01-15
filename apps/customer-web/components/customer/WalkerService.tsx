@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Bike, Star, MapPin, Clock, Search, Navigation } from 'lucide-react';
+import { ArrowLeft, Bike, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -13,14 +13,50 @@ interface WalkerServiceProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+interface ActiveWalk {
+  id: string;
+  walkerName: string;
+  petName: string;
+  startTime: string;
+  status: 'in_progress' | 'completed' | 'scheduled';
+  distanceCovered?: number;
+  currentLocation?: { latitude: number; longitude: number };
+}
+
 export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps) {
   const [loading, setLoading] = useState(true);
   const [walkers, setWalkers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeWalks, setActiveWalks] = useState<ActiveWalk[]>([]);
+  const [activePackages, setActivePackages] = useState<any[]>([]);
 
   useEffect(() => {
     loadWalkers();
+    loadActiveWalks();
+    loadActivePackages();
   }, []);
+
+  const loadActiveWalks = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/active-walks`);
+      if (response?.walks) {
+        setActiveWalks(response.walks);
+      }
+    } catch (error) {
+      console.log('No active walks');
+    }
+  };
+
+  const loadActivePackages = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=walking`);
+      if (response?.packages) {
+        setActivePackages(response.packages);
+      }
+    } catch (error) {
+      console.log('No active packages');
+    }
+  };
 
   useEffect(() => {
     if (searchQuery) {
@@ -85,6 +121,72 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Active Walk in Progress - GPS Tracking */}
+        {activeWalks.filter(w => w.status === 'in_progress').length > 0 && (
+          <Card className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 relative overflow-hidden">
+            <div className="absolute top-2 right-2">
+              <span className="flex items-center gap-1 bg-white/20 backdrop-blur px-2 py-1 rounded-full text-xs">
+                <Radio className="w-3 h-3 animate-pulse" />
+                LIVE
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center">
+                <Navigation className="w-8 h-8" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-lg mb-1">Walk in Progress</h3>
+                <p className="text-white/90 text-sm">{activeWalks[0].petName} with {activeWalks[0].walkerName}</p>
+                {activeWalks[0].distanceCovered && (
+                  <p className="text-white/80 text-xs mt-1">{activeWalks[0].distanceCovered}km covered</p>
+                )}
+              </div>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                className="bg-white text-green-600 hover:bg-white/90"
+                onClick={() => onNavigate?.('walk-live-tracking', { sessionId: activeWalks[0].id })}
+              >
+                <Eye className="w-4 h-4 mr-1" />
+                Track
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* Active Walking Packages */}
+        {activePackages.length > 0 && (
+          <Card className="border-blue-200 bg-blue-50/50 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-blue-600" />
+                <h3 className="font-semibold text-blue-900">Your Walking Packages</h3>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {activePackages.slice(0, 2).map((pkg, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-white rounded-lg p-3 border border-blue-100">
+                  <div>
+                    <p className="font-medium text-sm">{pkg.packageName || 'Walking Package'}</p>
+                    <p className="text-xs text-gray-500">
+                      {pkg.remainingSessions === 'unlimited' ? 'Unlimited' : `${pkg.remainingSessions} sessions left`}
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="text-blue-600 border-blue-200"
+                    onClick={() => onNavigate?.('schedule-walk', { packageId: pkg.id })}
+                  >
+                    <Play className="w-3 h-3 mr-1" />
+                    Schedule
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         {/* Hero Banner */}
         <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-6">
           <div className="flex items-start justify-between">
