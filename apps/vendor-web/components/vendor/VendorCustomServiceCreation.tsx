@@ -130,9 +130,12 @@ export function VendorCustomServiceCreation({
           // data already available
           console.log('📚 [CUSTOM-SERVICE] Loaded catalog services:', data.services?.length || 0);
           
+          // ✅ FIX: Ensure services is always an array
+          const services = Array.isArray(data.services) ? data.services : [];
+          
           // Extract unique categories from services
           const categoriesMap = new Map();
-          (data.services || []).forEach((service: any) => {
+          services.forEach((service: any) => {
             if (service.categoryId && service.categoryName) {
               categoriesMap.set(service.categoryId, {
                 id: service.categoryId,
@@ -144,9 +147,13 @@ export function VendorCustomServiceCreation({
           const uniqueCategories = Array.from(categoriesMap.values());
           console.log('✅ [CUSTOM-SERVICE] Unique categories:', uniqueCategories.length);
           setCatalogCategories(uniqueCategories);
+        } else {
+          console.warn('⚠️ [CUSTOM-SERVICE] No catalog data or failed response');
+          setCatalogCategories([]);
         }
       } catch (error) {
         console.error('❌ [CUSTOM-SERVICE] Error loading catalog categories:', error);
+        setCatalogCategories([]);
       }
     };
 
@@ -220,9 +227,12 @@ export function VendorCustomServiceCreation({
       if (data && data.success) {
         // data already available
         console.log('✅ Custom services loaded:', data);
-        setCustomServices(data.services || []);
+        // ✅ FIX: Ensure services is always an array
+        const services = Array.isArray(data.services) ? data.services : [];
+        setCustomServices(services);
       } else {
         console.error('❌ Failed to load custom services:', data);
+        setCustomServices([]);
         toast.error(data?.error || 'Failed to load custom services');
       }
     } catch (error) {
