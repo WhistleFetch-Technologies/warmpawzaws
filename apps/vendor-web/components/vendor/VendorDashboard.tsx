@@ -10,8 +10,7 @@ import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // �
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
-import VendorUtils from '@/lib/vendor-utils';
-import { getVendorRoleId, normalizeServiceStyle } from '@/lib/vendor-utils';
+import { getVendorRoleId, normalizeServiceStyle, hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
 import Analytics from '@/lib/analytics';
@@ -54,7 +53,7 @@ import { VendorNotificationModal } from './VendorNotificationModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
-import { VendorPaymentSettings } from './VendorPaymentSettings';
+import { VendorSettingsScreen } from './VendorSettingsScreen';
 import { AIChatBot } from '../customer/AIChatBot';
 
 interface VendorDashboardProps {
@@ -227,10 +226,11 @@ export function VendorDashboard({
   const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(vendorData?.roleId);
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
-  const isVet = VendorUtils.isVet(vendorData?.roleId);
+  const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
 
   // ✅ INTEGRATION: Check if solo provider and route to solo dashboard
-  if (VendorUtils.isSoloProvider(vendorData)) {
+  const isSoloProvider = vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
+  if (isSoloProvider) {
     const soloSession = {
       vendorId: vendorData.id || vendorId,
       centerId: vendorData.centerId,
@@ -463,7 +463,13 @@ export function VendorDashboard({
         <div className="p-4 border-b border-gray-100">
           <div className="flex flex-wrap gap-3">
             {/* Staff Management - For Clinics/Hospitals */}
-            {onNavigateToStaffManagement && (capabilities.staff_management || VendorUtils.isHealthcareProvider(vendorData?.roleId)) && (
+            {/* ✅ FIX: Show staff management based on capability OR role check OR if handler exists */}
+            {onNavigateToStaffManagement && (
+              capabilities.staff_management || 
+              capabilities.staff || 
+              capabilities.staffManagement || 
+              hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet', 'pet_groomer', 'pet_trainer', 'pet_clinic', 'clinic'])
+            ) && (
               <button
                 onClick={onNavigateToStaffManagement}
                 className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
@@ -476,9 +482,13 @@ export function VendorDashboard({
             {/* ✅ FIX: Center Profile - Use capability-based check with fallbacks */}
             {onNavigateToCenterProfile && (
               capabilities.facility_management ||  // ✅ PRIMARY: Check capability
-              VendorUtils.canOfferCenter(vendorData?.roleId) ||  // ✅ FALLBACK: Check if role can offer center services
+              capabilities.facility ||  // ✅ Alias check
+              capabilities.facilityManagement ||  // ✅ Alias check (camelCase)
+              hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet', 'pet_groomer', 'pet_trainer', 'clinic', 'pet_boarder', 'pet_resort']) ||  // ✅ FALLBACK: Check if role can offer center services
               vendorData?.serviceStyle === 'at_center' ||  // ✅ FALLBACK: Check service style
-              vendorData?.serviceStyles?.includes('at_center')  // ✅ FALLBACK: Check if array includes at_center
+              vendorData?.serviceStyles?.includes('at_center') ||  // ✅ FALLBACK: Check if array includes at_center
+              vendorData?.service_style === 'at_center' ||  // ✅ FALLBACK: Check snake_case
+              (vendorData as any)?.serviceTypes?.includes('at_center')  // ✅ FALLBACK: Check alternative field name
             ) && (
               <button
                 onClick={onNavigateToCenterProfile}
@@ -490,7 +500,7 @@ export function VendorDashboard({
             )}
             
             {/* Inventory/Store - For Pet Stores/Pharmacies */}
-            {onNavigateToBusinessHub && (capabilities.inventory || VendorUtils.isStore(vendorData?.roleId)) && (
+            {onNavigateToBusinessHub && (capabilities.inventory || hasVendorRole(vendorData, ['pet_products_store', 'pet_pharmacy', 'seller', 'retailer'])) && (
               <button
                 onClick={onNavigateToBusinessHub}
                 className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
@@ -1225,19 +1235,13 @@ export function VendorDashboard({
         </div>
       )}
 
-      {/* Vendor Payment Settings */}
+      {/* Vendor Settings */}
       {activeBottomTab === 'settings' && (
-        <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
-          <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center gap-3">
-            <button onClick={() => setActiveBottomTab('home')} className="p-2 hover:bg-gray-100 rounded-full">
-              <ChevronRight className="w-5 h-5 rotate-180 text-gray-600" />
-            </button>
-            <h2 className="text-lg font-semibold text-gray-900">Settings & Payouts</h2>
-          </div>
-          <div className="p-4">
-            <VendorPaymentSettings vendorId={vendorId} vendorData={vendor || vendorData} />
-          </div>
-        </div>
+        <VendorSettingsScreen
+          vendorId={vendorId}
+          vendorData={vendor || vendorData}
+          onBack={() => setActiveBottomTab('home')}
+        />
       )}
 
       {/* AI Support Bot for Vendors */}

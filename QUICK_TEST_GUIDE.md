@@ -1,201 +1,156 @@
-# Quick Testing Guide - Event Management
+# 🚀 Quick Test Guide - Vendor Dashboard Fixes
 
-## 🚀 Quick Start Testing Steps
+## ✅ Build Status: PASSED (No Errors)
 
-### Step 1: Apply Database Migration
+---
 
+## 🎯 Quick Start - Test in 5 Minutes
+
+### 1. Start Server
 ```bash
-# Option A: Using the script (recommended)
-export DB_HOST=your-rds-endpoint.amazonaws.com
-export DB_USER=your_db_user
-export DB_NAME=your_db_name
-./scripts/apply-events-migration.sh
-
-# Option B: Manual psql
-psql -h <DB_HOST> -U <DB_USER> -d <DB_NAME> -f db/migrations/064_enhance_events_schema.sql
+cd /Users/ketan/Documents/warmpawzecodev/apps/vendor-web
+npm run dev
 ```
-
-### Step 2: Deploy Backend
-
-```bash
-./scripts/deploy-lambda-direct.sh
-```
-
-### Step 3: Deploy Frontends
-
-```bash
-# Deploy all frontends
-./scripts/deploy-admin-web.sh
-./scripts/deploy-vendor-web.sh
-./scripts/deploy-customer-web.sh
-
-# Or deploy individually
-cd apps/admin-web && npm run build
-cd apps/vendor-web && npm run build
-cd apps/customer-web && npm run build
-```
-
-### Step 4: Verify Setup
-
-1. **Check Vendor Role**: Ensure test vendor has `events` capability
-   - Login as admin
-   - Go to Roles/Vendors
-   - Assign `events` capability to test vendor OR assign `event_organizer` role
-
-2. **Test Vendor Access**:
-   - Login as vendor
-   - Check if "Events" appears in dashboard
-   - If not, vendor role needs `events` capability
+Open: `http://localhost:3002`
 
 ---
 
-## 🧪 Quick Test Flow (5 minutes)
+## 🧪 Quick Tests
 
-### Test 1: Create Event (Vendor)
-1. Login → Vendor Dashboard
-2. Click "Events" (should be visible)
-3. Click "Create Event"
-4. Fill minimum required fields:
-   - Name: "Test Event"
-   - Date: Tomorrow
-   - Start Time: 10:00
-   - Max Bookings: 10
-   - Price: ₹100
-5. Click "Create Event"
-6. ✅ **Expected**: Event created, status "Pending Approval"
+### Test 1: Staff Management Button (30 seconds)
+1. Login as **veterinary clinic** or **pet groomer**
+2. Look for orange "Manage Staff" button
+3. **Expected:** ✅ Button visible and clickable
 
-### Test 2: Approve Event (Admin)
-1. Login → Admin Dashboard
-2. Go to "Events"
-3. Filter by "Pending Approval"
-4. Find "Test Event"
-5. Click "Approve"
-6. ✅ **Expected**: Status changes to "Approved"
+### Test 2: Center Profile Button (30 seconds)
+1. Login as vendor with `at_center` service style
+2. Look for purple "Center Profile" button  
+3. **Expected:** ✅ Button visible and clickable
 
-### Test 3: Register (Customer)
-1. Login → Customer Dashboard
-2. Go to "Events"
-3. Find "Test Event"
-4. Click "Register Now"
-5. ✅ **Expected**: 
-   - Registration successful
-   - Booking reference shown (EVT-YYYYMMDD-XXXXXX)
-   - QR code displayed
-
-### Test 4: Check-In (Vendor)
-1. Login → Vendor Dashboard
-2. Go to "Events"
-3. Find "Test Event"
-4. Click "Check-In"
-5. Enter booking reference OR scan QR
-6. Click "Check In Customer"
-7. ✅ **Expected**: Customer marked as checked in
+### Test 3: Custom Services (1 minute)
+1. Navigate to Custom Services
+2. Open browser console (F12)
+3. **Expected:** ✅ See logs, no `h.map` error
 
 ---
 
-## 🔍 Verification Checklist
+## 🔍 Browser Console Quick Checks
 
-### Database
-- [ ] Migration 064 applied
-- [ ] Events table has new columns
-- [ ] Can query events with new fields
+```javascript
+// Paste this in browser console (F12)
 
-### Backend
-- [ ] `/vendor/events` endpoint requires capability
-- [ ] `/admin/events/:id/approve` works
-- [ ] `/events/:id/register` generates booking reference
-- [ ] `/events/verify/:ref` returns registration
+// 1. Check capabilities loading
+const vendorData = JSON.parse(localStorage.getItem('vendorData'));
+console.log('✅ Role:', vendorData.roleId);
+console.log('✅ Service Style:', vendorData.serviceStyle);
 
-### Frontend
-- [ ] Vendor: Events page loads
-- [ ] Vendor: Can create event
-- [ ] Admin: Can approve/reject
-- [ ] Customer: Booking reference shown
-- [ ] Vendor: Check-in page works
+// 2. Test custom services endpoint
+fetch('/api/admin/service-catalog')
+  .then(r => r.json())
+  .then(d => console.log('✅ Services loaded:', Array.isArray(d.services)));
 
----
-
-## 🐛 Common Issues
-
-### "Events not showing in vendor dashboard"
-**Fix**: Vendor role needs `events` capability
-```sql
--- Check vendor's role
-SELECT v.id, v.business_name, r.name as role_name
-FROM vendors v
-JOIN roles r ON v.role_id = r.id
-WHERE v.id = '<vendor_id>';
-
--- Add events capability to role
-INSERT INTO role_permissions (role_id, permission_name, resource, action)
-SELECT r.id, 'events', '*', '*'
-FROM roles r
-WHERE r.name = '<role_name>'
-ON CONFLICT DO NOTHING;
-```
-
-### "Cannot create event - 403 error"
-**Fix**: Check capability enforcement
-- Verify vendor has `events` in role_permissions
-- Check backend logs for capability check
-
-### "Booking reference not generated"
-**Fix**: Check registration endpoint
-- Verify `generateBookingReference()` is called
-- Check database for `booking_reference` column
-
-### "QR code not displaying"
-**Fix**: Check QR code generation
-- Verify `qr_code` field populated in database
-- Check frontend QR code rendering
-
----
-
-## 📝 Test Data Setup
-
-### Create Test Vendor with Events Capability
-```sql
--- Option 1: Assign event_organizer role
-UPDATE vendors SET role_id = (
-    SELECT id FROM roles WHERE name = 'event_organizer'
-) WHERE id = '<vendor_id>';
-
--- Option 2: Add events capability to existing role
-INSERT INTO role_permissions (role_id, permission_name, resource, action)
-SELECT role_id, 'events', '*', '*'
-FROM vendors
-WHERE id = '<vendor_id>'
-ON CONFLICT DO NOTHING;
+// 3. Check role capabilities
+fetch(`/api/config/roles/${vendorData.roleId}`)
+  .then(r => r.json())
+  .then(d => console.log('✅ Capabilities:', d.capabilities));
 ```
 
 ---
 
-## 🎯 Success Criteria
+## ✅ Success Indicators
 
-✅ **All tests pass if:**
-1. Vendor can create event with all fields
-2. Admin can approve/reject events
-3. Customer gets booking reference & QR code
-4. Vendor can check-in via QR scan or manual lookup
-5. Max bookings limit enforced
-6. Approval workflow works end-to-end
+### You Should See:
+- ✅ No red errors in console
+- ✅ Buttons appear based on role
+- ✅ Custom services loads without crash
+- ✅ Logs show: `[useVendorCapabilities] ✅ Loaded capabilities from DATABASE`
 
----
-
-## 📞 Next Steps After Testing
-
-1. **If all tests pass**: Deploy to production
-2. **If issues found**: Check logs, verify database schema, test endpoints individually
-3. **Performance**: Test with 50+ events, 100+ registrations
-4. **Security**: Verify capability checks, authorization
+### You Should NOT See:
+- ❌ `h.map is not a function`
+- ❌ `TypeError` in console
+- ❌ Missing buttons for eligible roles
+- ❌ 500 errors in network tab
 
 ---
 
-## 🔗 Related Files
+## 🎨 Visual Check
 
-- Migration: `db/migrations/064_enhance_events_schema.sql`
-- Backend: `backend/lambda/src/endpoints/events.ts`
-- Vendor UI: `apps/vendor-web/app/events/page.tsx`
-- Customer UI: `apps/customer-web/app/events/page.tsx`
-- Admin UI: `apps/admin-web/app/events/page.tsx`
-- Test Plan: `EVENT_MANAGEMENT_TEST_PLAN.md`
+**Staff Management Button:**
+- Color: Orange border (#FF8C42)
+- Icon: 👥 Users
+- Text: "Manage Staff"
+
+**Center Profile Button:**
+- Color: Purple border (#A855F7)
+- Icon: 🏢 Building
+- Text: "Center Profile"
+
+---
+
+## 📱 Test Roles
+
+| Role | Staff Button | Center Button |
+|------|-------------|---------------|
+| Veterinary Clinic | ✅ YES | ✅ YES |
+| Pet Groomer | ✅ YES | ✅ YES (if at_center) |
+| Pet Trainer | ✅ YES | ✅ YES (if at_center) |
+| Dog Walker | ❌ NO | ❌ NO (mobile only) |
+| Pet Store | ❌ NO | ✅ YES |
+
+---
+
+## 🐛 If Something's Wrong
+
+### No Buttons Appearing?
+```javascript
+// Debug in console:
+const v = JSON.parse(localStorage.getItem('vendorData'));
+console.log('Debug Info:', {
+  roleId: v.roleId,
+  serviceStyle: v.serviceStyle,
+  capabilities: v.capabilities
+});
+```
+
+### Custom Services Crashing?
+1. Check Network tab for API errors
+2. Look for `[CUSTOM-SERVICE]` logs in console
+3. Verify vendor has `custom_services` capability
+
+### Slow Loading?
+- Check console for `[useVendorCapabilities]` logs
+- Should see "Loaded from DATABASE" message
+- If not, check `/api/config/roles/:id` endpoint
+
+---
+
+## 📊 Performance Check
+
+**Expected Load Times:**
+- Dashboard: < 2 seconds
+- Custom Services: < 3 seconds
+- Capabilities: < 1 second (cached after first load)
+
+---
+
+## 🚦 Ready to Deploy?
+
+### Checklist:
+- [ ] All buttons appear correctly
+- [ ] No console errors
+- [ ] Custom services works
+- [ ] API calls successful
+- [ ] Tested 3+ different roles
+
+**All checked?** → Ready for staging deployment! 🎉
+
+---
+
+## 📞 Need Help?
+
+Check detailed guide: `VERIFICATION_TESTS.md`
+Check fixes summary: `VENDOR_DASHBOARD_FIXES_SUMMARY.md`
+
+---
+
+*Generated: January 15, 2026*
