@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import { VendorStaffPage } from './VendorStaffPage';
 import { DoctorManagement } from './clinic/DoctorManagement'; // ✅ FIX: Use actual Figma UI for doctor management
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
@@ -188,6 +189,9 @@ export function VendorLandingPage({
       // Toast and sound will be shown automatically by the service
     }
   });
+
+  // 🔒 Get vendor capabilities from role configuration
+  const { capabilities } = useVendorCapabilities(vendorData?.roleId);
   
   useEffect(() => {
     // 🔒 Fast-path: if localStorage already knows we're approved/activated, show dashboard immediately
@@ -850,8 +854,11 @@ export function VendorLandingPage({
         return (
           <VendorBookingManagement
             vendorId={vendorId}
-            
+            vendorData={vendorData}
             onBack={() => setShowBookingManagement(false)}
+            chatEnabled={!!capabilities?.chat}
+            vendorPhone={vendorData?.phone}
+            vendorName={vendorData?.fullName || vendorData?.businessName}
           />
         );
       }

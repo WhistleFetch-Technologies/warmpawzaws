@@ -23,6 +23,10 @@ interface BookingCardProps {
   onEndSession: (booking: any) => void;
   completingBooking: boolean;
   onRefresh: () => void;
+  /** Whether chat capability is enabled for this vendor's role (from role config) */
+  chatEnabled?: boolean;
+  /** Optional callback to open chat modal */
+  onOpenChat?: (booking: any) => void;
 }
 
 export function VendorBookingCard({ 
@@ -32,14 +36,16 @@ export function VendorBookingCard({
   onComplete, 
   onEndSession,
   completingBooking,
-  onRefresh
+  onRefresh,
+  chatEnabled = true, // Default to true for backwards compatibility
+  onOpenChat,
 }: BookingCardProps) {
   
   const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
   const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
                       booking.serviceName?.toLowerCase().includes('walking');
   
-  // ✅ Handle Open Chat
+  // ✅ Handle Open Chat - Use parent callback or fallback to alert
   const handleOpenChat = async () => {
     console.log('💬 Opening chat for booking:', booking.bookingId || booking.id);
     
@@ -52,12 +58,14 @@ export function VendorBookingCard({
       console.error('Error marking messages as read:', error);
     }
     
-    // TODO: Navigate to VendorChatInterface
-    // For now, show alert
-    alert(`Chat with ${booking.customerName} about ${booking.petName}'s booking.\n\nChat interface will open here.`);
-    
-    // Reload bookings to clear unread badges
-    onRefresh();
+    // Use parent callback if provided (opens VendorChatModal)
+    if (onOpenChat) {
+      onOpenChat(booking);
+    } else {
+      // Fallback - should not happen in normal usage
+      alert(`Chat with ${booking.customerName} about ${booking.petName}'s booking.\n\nChat interface will open here.`);
+      onRefresh();
+    }
   };
   
   // ✅ Handle Open Prescription
@@ -208,8 +216,8 @@ export function VendorBookingCard({
           </button>
         )}
         
-        {/* Chat Button - ALL BOOKINGS */}
-        {booking.chatEnabled !== false && (
+        {/* Chat Button - Only show if chat capability is enabled for this role */}
+        {chatEnabled && booking.chatEnabled !== false && (
           <button
             onClick={handleOpenChat}
             className="relative flex-1 min-w-[100px] py-2 px-3 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"

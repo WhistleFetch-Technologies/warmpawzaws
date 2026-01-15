@@ -285,12 +285,28 @@ export function VendorChatModal({
     }
   };
 
-  const handleSupportHandoff = () => {
-    if (onSupportHandoff) {
-      onSupportHandoff(bookingId, 'Customer requested support after booking completion');
-      toast.info('Redirecting to support...');
-    } else {
-      toast.info('Please contact support for further assistance');
+  const handleSupportHandoff = async () => {
+    try {
+      // Create support ticket via chat handoff endpoint
+      const response = await apiClient.post('/support/chat-handoff', {
+        bookingId,
+        vendorId,
+        userType: 'vendor',
+        reason: 'Vendor needs support assistance after booking completion',
+      }) as any;
+
+      if (response.success) {
+        toast.success('Support ticket created! Our team will assist you shortly.');
+        if (onSupportHandoff) {
+          onSupportHandoff(bookingId, 'Support ticket created');
+        }
+        onClose();
+      } else {
+        toast.error('Failed to create support ticket');
+      }
+    } catch (err: any) {
+      console.error('Error creating support handoff:', err);
+      toast.error('Failed to contact support. Please try again.');
     }
   };
 

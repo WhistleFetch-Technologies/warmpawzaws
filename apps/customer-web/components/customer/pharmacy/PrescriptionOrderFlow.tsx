@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { apiClient } from '../../../utils/api-client';
+import { apiClient } from '@/lib/api-client';
 
 // 2D Sketch-style SVG Icons
 const Icons = {

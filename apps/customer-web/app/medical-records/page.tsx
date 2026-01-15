@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
 // ============================================================================
@@ -54,6 +55,7 @@ interface Vaccination {
 // ============================================================================
 
 export default function MedicalRecordsPage() {
+  const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
@@ -346,6 +348,20 @@ export default function MedicalRecordsPage() {
                           <div className="mt-3 text-sm text-orange-600">
                             📎 {record.attachments.length} attachment(s)
                           </div>
+                        )}
+                        
+                        {/* Order Medicine button for prescription records */}
+                        {record.type === 'prescription' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/prescriptions/${record.id}/order`);
+                            }}
+                            className="mt-3 w-full py-2 bg-emerald-50 text-emerald-700 rounded-lg font-medium hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <span>💊</span>
+                            Order Medicine
+                          </button>
                         )}
                       </div>
                     </div>

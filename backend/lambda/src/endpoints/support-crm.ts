@@ -82,16 +82,16 @@ export function registerSupportCrmEndpoints(app: Hono) {
             await publishToSNS('platform-notifications', {
               type: 'support_ticket',
               ticket_id: ticket[0].id,
-              priority: body.priority || 'medium',
-              subject: body.subject,
-              message: body.message,
-              customer_id: body.customer_id,
-              vendor_id: body.vendor_id,
+              priority: priority || 'medium',
+              subject: subject,
+              message: message,
+              customer_id: customerId,
+              vendor_id: null,
               phone: supportPhone,
               email: supportEmail,
             }, {
               messageType: 'Transactional',
-              priority: body.priority || 'medium',
+              priority: priority || 'medium',
             });
             
             console.log(`✅ Support ticket notification sent to support team`);
@@ -738,6 +738,282 @@ export function registerSupportCrmEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error auto-routing tickets:', error);
       return c.json({ error: error.message || 'Failed to auto-route tickets' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/chat-handoff
+   * Create a support ticket from P2P chat handoff with full booking context
+   * Used when booking chat ends and customer needs further assistance
+   */
+  app.post("/support/chat-handoff", async (c) => {
+    try {
+      const {
+        bookingId,
+        customerId,
+        customerPhone,
+        vendorId,
+        reason,
+        chatHistory, // Last few messages for context
+        userType = 'customer',
+      } = await c.req.json();
+
+      if (!bookingId) {
+        return c.json({ error: 'bookingId is required for chat handoff' }, 400);
+      }
+
+      console.log(`📞 [SUPPORT-HANDOFF] Creating support ticket from chat for booking: ${bookingId}`);
+
+      // Fetch comprehensive booking details for CRM
+      const bookingResult = await select('bookings', { id: bookingId });
+      if (bookingResult.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookingResult[0];
+
+      // Fetch all related entities for full context
+      const [customer, vendor, pet, service, reviews, prescriptions, chatMessages] = await Promise.all([
+        // Customer details
+        booking.customer_id 
+          ? select('customers', { id: booking.customer_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Vendor details
+        booking.vendor_id
+          ? select('vendors', { id: booking.vendor_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Pet details
+        booking.pet_id
+          ? select('pets', { id: booking.pet_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Service details
+        booking.service_id
+          ? select('services', { id: booking.service_id }).catch(() => [])
+          : Promise.resolve([]),
+        // Reviews for this booking
+        query(
+          `SELECT * FROM reviews WHERE booking_id = $1`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+        // Prescriptions
+        query(
+          `SELECT * FROM prescriptions WHERE booking_id = $1 AND is_active = true`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+        // Chat messages (last 20 for context)
+        query(
+          `SELECT * FROM chat_messages 
+           WHERE booking_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT 20`,
+          [bookingId]
+        ).catch(() => ({ rows: [] })),
+      ]);
+
+      // Build comprehensive context for CRM agent
+      const crmContext = {
+        booking: {
+          id: booking.id,
+          status: booking.status,
+          bookingDate: booking.booking_date,
+          bookingTime: booking.booking_time,
+          serviceStyle: booking.service_style,
+          totalAmount: booking.total_amount,
+          paymentStatus: booking.payment_status,
+          notes: booking.notes,
+          specialInstructions: booking.special_instructions,
+          completedAt: booking.completed_at,
+          cancelledAt: booking.cancelled_at,
+          cancellationReason: booking.cancellation_reason,
+          createdAt: booking.created_at,
+        },
+        customer: customer[0] ? {
+          id: customer[0].id,
+          name: customer[0].full_name,
+          phone: customer[0].phone,
+          email: customer[0].email,
+          address: customer[0].address,
+        } : null,
+        vendor: vendor[0] ? {
+          id: vendor[0].id,
+          businessName: vendor[0].business_name,
+          fullName: vendor[0].full_name,
+          phone: vendor[0].phone,
+          email: vendor[0].email,
+          vendorType: vendor[0].vendor_type,
+        } : null,
+        pet: pet[0] ? {
+          id: pet[0].id,
+          name: pet[0].name,
+          species: pet[0].species,
+          breed: pet[0].breed,
+          age: pet[0].age,
+          weight: pet[0].weight,
+        } : null,
+        service: service[0] ? {
+          id: service[0].id,
+          name: service[0].name,
+          category: service[0].category,
+          price: service[0].price,
+        } : null,
+        review: reviews.rows[0] ? {
+          rating: reviews.rows[0].rating,
+          comment: reviews.rows[0].comment,
+          createdAt: reviews.rows[0].created_at,
+        } : null,
+        prescriptions: prescriptions.rows.map((p: any) => ({
+          id: p.id,
+          diagnosis: p.diagnosis,
+          medications: p.medications,
+          notes: p.notes,
+        })),
+        recentChatHistory: chatMessages.rows.reverse().map((m: any) => ({
+          sender: m.sender_type,
+          message: m.message,
+          time: m.created_at,
+        })),
+      };
+
+      // Create detailed support ticket
+      const ticket = await insert('support_tickets', {
+        customer_id: booking.customer_id || customerId || null,
+        customer_phone: customerPhone || customer[0]?.phone || null,
+        vendor_id: booking.vendor_id || vendorId || null,
+        booking_id: bookingId,
+        subject: `Post-Booking Support: ${service[0]?.name || 'Service'} - ${customer[0]?.full_name || 'Customer'}`,
+        message: reason || 'Customer requested support after booking chat ended',
+        source: 'chat_handoff',
+        priority: 'medium',
+        category: 'post_booking_support',
+        status: 'open',
+        metadata: crmContext,
+        created_at: new Date().toISOString(),
+      });
+
+      console.log(`✅ [SUPPORT-HANDOFF] Support ticket created: ${ticket[0].id}`);
+
+      // Notify support team
+      try {
+        const { publishToSNS } = require('../utils/aws-clients');
+        await publishToSNS('platform-notifications', {
+          type: 'chat_handoff',
+          ticket_id: ticket[0].id,
+          booking_id: bookingId,
+          customer_name: customer[0]?.full_name || 'Customer',
+          vendor_name: vendor[0]?.business_name || 'Vendor',
+          priority: 'medium',
+        }).catch(() => {});
+      } catch (e) {
+        // Silent fail for notifications
+      }
+
+      return c.json({
+        success: true,
+        ticket: {
+          id: ticket[0].id,
+          status: 'open',
+          subject: ticket[0].subject,
+        },
+        message: 'Support ticket created successfully. Our team will assist you shortly.',
+      });
+    } catch (error: any) {
+      console.error('Error creating chat handoff ticket:', error);
+      return c.json({ error: error.message || 'Failed to create support ticket' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/ticket/:ticketId/context
+   * Get full CRM context for a support ticket (for agent view)
+   */
+  app.get("/support/ticket/:ticketId/context", async (c) => {
+    try {
+      const { ticketId } = c.req.param();
+
+      const tickets = await select('support_tickets', { id: ticketId });
+      if (tickets.length === 0) {
+        return c.json({ error: 'Ticket not found' }, 404);
+      }
+
+      const ticket = tickets[0];
+
+      // If metadata has full context (from chat handoff), return it
+      if (ticket.metadata && Object.keys(ticket.metadata).length > 0) {
+        return c.json({
+          success: true,
+          ticket: {
+            id: ticket.id,
+            status: ticket.status,
+            subject: ticket.subject,
+            message: ticket.message,
+            source: ticket.source,
+            priority: ticket.priority,
+            createdAt: ticket.created_at,
+            assignedAgentId: ticket.assigned_agent_id,
+          },
+          context: ticket.metadata,
+        });
+      }
+
+      // Otherwise, build context from related entities
+      const context: any = {};
+
+      if (ticket.booking_id) {
+        const bookings = await select('bookings', { id: ticket.booking_id });
+        if (bookings.length > 0) {
+          context.booking = bookings[0];
+        }
+      }
+
+      if (ticket.customer_id) {
+        const customers = await select('customers', { id: ticket.customer_id });
+        if (customers.length > 0) {
+          context.customer = {
+            id: customers[0].id,
+            name: customers[0].full_name,
+            phone: customers[0].phone,
+            email: customers[0].email,
+          };
+        }
+      }
+
+      if (ticket.vendor_id) {
+        const vendors = await select('vendors', { id: ticket.vendor_id });
+        if (vendors.length > 0) {
+          context.vendor = {
+            id: vendors[0].id,
+            businessName: vendors[0].business_name,
+            phone: vendors[0].phone,
+          };
+        }
+      }
+
+      // Get ticket responses/history
+      const responses = await query(
+        `SELECT * FROM support_ticket_responses 
+         WHERE ticket_id = $1 
+         ORDER BY created_at ASC`,
+        [ticketId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        ticket: {
+          id: ticket.id,
+          status: ticket.status,
+          subject: ticket.subject,
+          message: ticket.message,
+          source: ticket.source,
+          priority: ticket.priority,
+          createdAt: ticket.created_at,
+          assignedAgentId: ticket.assigned_agent_id,
+        },
+        context,
+        responses: responses.rows,
+      });
+    } catch (error: any) {
+      console.error('Error fetching ticket context:', error);
+      return c.json({ error: error.message || 'Failed to fetch ticket context' }, 500);
     }
   });
 }
