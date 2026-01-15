@@ -18,6 +18,7 @@ import { VetBookingRouter } from './vet/VetBookingRouter';
 import { VetDoctorDetails } from './vet/VetDoctorDetails';
 import { ClinicListView } from './vet/ClinicListView';
 import { ClinicProfileView } from './vet/ClinicProfileView';
+import { VetServicesByStyle } from './vet/VetServicesByStyle';
 import { GroomingServiceRouter } from './GroomingServiceRouter';
 import { TrainingServiceRouter } from './TrainingServiceRouter';
 import { BoardingServiceRouter } from './BoardingServiceRouter';
@@ -111,6 +112,7 @@ type ScreenType =
   | 'vet-clinic-list'
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
+  | 'vet-services-by-style'
   | 'grooming'
   | 'training'
   | 'training_center'
@@ -272,7 +274,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'insurance') setCurrentScreen('insurance');
     else if (service === 'cafes') setCurrentScreen('cafes');
     else if (service === 'shop') setCurrentScreen('shop');
-    else if (service === 'cart') setCurrentScreen('shop'); // Navigate to shop then cart logic handles
+    else if (service === 'cart') setCurrentScreen('cart');
+    else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
     else if (service === 'photography') setCurrentScreen('photography');
     else if (service === 'breeder') setCurrentScreen('breeder');
     else if (service === 'ambulance') setCurrentScreen('integrated-services'); // Use new integrated hub
@@ -296,6 +299,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'vet-clinic-list') setCurrentScreen('vet-clinic-list');
     else if (screen === 'vet-clinic-profile') setCurrentScreen('vet-clinic-profile');
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
+    else if (screen === 'vet-services-by-style') setCurrentScreen('vet-services-by-style');
     else if (screen === 'home') { setCurrentScreen('home'); setVetServiceData(null); }
   };
   
@@ -462,6 +466,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); setCurrentScreen('vet-clinic-profile'); } }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { if (screen === 'appointment') { setVetServiceData({ vendorId: data?.clinicId, serviceType: 'clinic' }); setCurrentScreen('vet-booking'); } }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-services-by-style') return <VetServicesByStyle phone={phone} serviceStyle={vetServiceData?.serviceStyle || 'tele'} serviceTypeName={vetServiceData?.serviceTypeName} category={vetServiceData?.category || 'vet'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { 
     console.log('🟢 [CustomerHomeWrapper] Grooming navigation:', screen, data);
     if (screen === 'appointment-details') { 

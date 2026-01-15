@@ -1279,7 +1279,7 @@ export function CustomerHomeComplete({
             <span className="text-xs text-gray-400">Cart</span>
           </button>
           <button 
-            onClick={() => onOpenMenu && onOpenMenu()}
+            onClick={() => onNavigate && onNavigate('my-bookings')}
             className="flex flex-col items-center gap-1"
           >
             <Calendar className="w-6 h-6 text-gray-400" />
