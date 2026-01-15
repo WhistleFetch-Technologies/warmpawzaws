@@ -119,21 +119,23 @@ export function VendorServiceCatalogView({
       if (localCatalog && localCatalog.length > 0) {
         console.log('📚 [CATALOG] Using local service catalog:', localCatalog.length, 'services');
         // Transform local catalog to match expected format
-        const normalizedServices = localCatalog.map((svc: any) => ({
-          catalogId: svc.id,
-          categoryId: svc.category.toLowerCase().replace(/\s+/g, '_'),
-          categoryName: svc.category,
-          subCategoryId: svc.subCategory?.toLowerCase().replace(/\s+/g, '_') || 'general',
-          subCategoryName: svc.subCategory || 'General',
-          serviceName: svc.name,
-          serviceStyle: svc.serviceStyle,
-          applicableRoles: svc.applicableRoles || [],
-          basePrice: svc.priceRange.min,
-          duration: svc.duration,
-          description: svc.description,
-          isPackage: svc.isPackage || false,
-          packageDetails: svc.packageDetails,
-        }));
+        const normalizedServices = localCatalog
+          .filter((svc: any) => svc.category) // ✅ FIX: Filter out services without category
+          .map((svc: any) => ({
+            catalogId: svc.id,
+            categoryId: (svc.category || 'Uncategorized').toLowerCase().replace(/\s+/g, '_'),
+            categoryName: svc.category || 'Uncategorized',
+            subCategoryId: svc.subCategory?.toLowerCase().replace(/\s+/g, '_') || 'general',
+            subCategoryName: svc.subCategory || 'General',
+            serviceName: svc.name,
+            serviceStyle: svc.serviceStyle,
+            applicableRoles: svc.applicableRoles || [],
+            basePrice: svc.priceRange?.min || 0,
+            duration: svc.duration,
+            description: svc.description,
+            isPackage: svc.isPackage || false,
+            packageDetails: svc.packageDetails,
+          }));
         
         setServices(normalizedServices);
       }

@@ -26,6 +26,12 @@ export function getMicroCategoriesForRole(roleId?: string): MicroCategory[] {
   const categoryMap = new Map<string, MicroCategory>();
   
   services.forEach(service => {
+    // ✅ FIX: Handle undefined category
+    if (!service.category) {
+      console.warn('⚠️ Service missing category:', service);
+      return;
+    }
+    
     const categoryId = service.category.toLowerCase().replace(/\s+/g, '_');
     
     if (!categoryMap.has(categoryId)) {
@@ -40,7 +46,7 @@ export function getMicroCategoriesForRole(roleId?: string): MicroCategory[] {
     } else {
       // Update price range to include all services in category
       const existing = categoryMap.get(categoryId)!;
-      if (existing.priceRange) {
+      if (existing.priceRange && service.priceRange) {
         existing.priceRange.min = Math.min(existing.priceRange.min, service.priceRange.min);
         existing.priceRange.max = Math.max(existing.priceRange.max, service.priceRange.max);
       }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -110,7 +110,32 @@ export function VendorServiceConfigurationScreen({
 
       if (data) {
         console.log('✅ Services loaded:', data);
-        setServices(data.services || []);
+        // ✅ FIX: Normalize service data to ensure consistent field names
+        const normalizedServices = (data.services || []).map((svc: any) => ({
+          ...svc,
+          // Normalize name field
+          name: svc.name || svc.serviceName || svc.service_name || 'Unnamed Service',
+          serviceName: svc.serviceName || svc.service_name || svc.name || 'Unnamed Service',
+          // Normalize price fields
+          price: svc.price || svc.basePrice || svc.base_price || 0,
+          basePrice: svc.basePrice || svc.base_price || svc.price || 0,
+          customPrice: svc.customPrice || svc.custom_price,
+          // Normalize duration
+          duration: svc.duration || svc.duration_minutes || 30,
+          customDuration: svc.customDuration || svc.custom_duration,
+          // Normalize category fields
+          categoryName: svc.categoryName || svc.category_name || svc.category || 'Other',
+          category: svc.category || svc.category_name || svc.categoryName || 'Other',
+          subCategoryName: svc.subCategoryName || svc.sub_category_name || svc.subCategory || '',
+          subCategory: svc.subCategory || svc.sub_category_name || svc.subCategoryName || '',
+          // Normalize status fields
+          isEnabled: svc.isEnabled !== undefined ? svc.isEnabled : (svc.is_enabled !== undefined ? svc.is_enabled : false),
+          publishStatus: svc.publishStatus || svc.publish_status || 'draft',
+          // Normalize description
+          description: svc.description || svc.customDescription || svc.custom_description || '',
+          customDescription: svc.customDescription || svc.custom_description || svc.description || '',
+        }));
+        setServices(normalizedServices);
       } else {
         console.error('❌ Failed to load services:', data);
         toast.error('Failed to load services');
@@ -235,12 +260,12 @@ export function VendorServiceConfigurationScreen({
       
       const servicesToSave = services.map(s => ({
         serviceId: s.id,
-        serviceName: s.name,
+        serviceName: s.name || s.serviceName || 'Unnamed Service',
         isEnabled: s.isEnabled,
         customPrice: s.customPrice,
         customDuration: s.customDuration,
         customDescription: s.customDescription,
-        price: s.price, // Include base price for validation fallback
+        price: s.price || s.basePrice || 0, // Include base price for validation fallback
         isNewService: s.isCustomService || false
       }));
 
@@ -680,9 +705,27 @@ export function VendorServiceConfigurationScreen({
             </div>
           </div>
 
-          {/* ✅ NEW: Bulk Selection Actions */}
+          {/* ✅ NEW: Staff Assignment & Bulk Actions */}
           {services.length > 0 && (
-            <div className="mt-3">
+            <div className="mt-3 space-y-2">
+              {/* Staff Assignment Button */}
+              {enabledCount > 0 && (
+                <Button
+                  onClick={() => {
+                    // Navigate to staff management - using window.location or router if available
+                    if (typeof window !== 'undefined') {
+                      window.location.href = `/staff?assignServices=true&serviceStyle=${serviceStyle}`;
+                    } else {
+                      toast.info('Please go to Staff Management to assign services to your team');
+                    }
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  Assign Services to Staff
+                </Button>
+              )}
+              
               <button
                 onClick={() => setShowBulkActions(!showBulkActions)}
                 className="w-full text-xs font-medium text-[#FF8C42] py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
@@ -844,7 +887,7 @@ export function VendorServiceConfigurationScreen({
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2 mb-1">
                               <div className="flex-1">
-                                <h4 className="font-semibold text-sm leading-tight">{service.name}</h4>
+                                <h4 className="font-semibold text-sm leading-tight">{service.name || service.serviceName || 'Unnamed Service'}</h4>
                                 {service.subCategoryName && (
                                   <p className="text-xs text-gray-500">{service.subCategoryName}</p>
                                 )}
@@ -863,9 +906,8 @@ export function VendorServiceConfigurationScreen({
 
                             {/* Quick Info */}
                             <div className="flex items-center gap-3 text-xs text-gray-600 mb-2">
-                              <span className="flex items-center gap-1">
-                                <DollarSign className="w-3 h-3" />
-                                ₹{service.customPrice || service.price}
+                              <span className="flex items-center gap-1 font-semibold text-[#FF8C42]">
+                                ₹{Number(service.customPrice || service.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </span>
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
@@ -963,13 +1005,20 @@ export function VendorServiceConfigurationScreen({
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
                                   <Label className="text-xs text-gray-700 mb-1 block">Your Price (₹)</Label>
-                                  <Input
-                                    type="number"
-                                    value={service.customPrice || service.price}
-                                    onChange={(e) => updateServicePrice(service.id, parseInt(e.target.value) || 0)}
-                                    className="h-8 text-sm"
-                                    min="0"
-                                  />
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">₹</span>
+                                    <Input
+                                      type="number"
+                                      value={service.customPrice || service.price || 0}
+                                      onChange={(e) => updateServicePrice(service.id, parseInt(e.target.value) || 0)}
+                                      className="h-8 text-sm pl-8"
+                                      min="0"
+                                      placeholder="0"
+                                    />
+                                  </div>
+                                  {service.price && service.customPrice && service.customPrice !== service.price && (
+                                    <p className="text-xs text-gray-500 mt-1">Base: ₹{Number(service.price).toLocaleString('en-IN')}</p>
+                                  )}
                                 </div>
                                 {canControlDuration && (
                                   <div>
