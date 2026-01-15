@@ -1,84 +1,205 @@
-// Comprehensive vendor utilities for all vendor roles
-export default {
-  formatCurrency: (amount: number) => `₹${amount}`,
-  formatDate: (date: Date | string) => new Date(date).toLocaleDateString(),
-  formatTime: (date: Date | string) => new Date(date).toLocaleTimeString(),
-  isSoloProvider: (vendorData: any) => {
-    return vendorData?.serviceStyle === 'solo' || vendorData?.isSoloProvider === true;
-  },
-  isVet: (roleId?: string) => {
-    return roleId === 'vet' || roleId === 'doctor' || roleId === 'veterinarian' || 
-           roleId === 'pet_clinic' || roleId === 'veterinary_clinic' ||
-           roleId?.includes('vet') || roleId?.includes('clinic');
-  },
-  isHealthcareProvider: (roleId?: string) => {
-    return roleId === 'vet' || roleId === 'doctor' || roleId === 'veterinarian' || 
-           roleId === 'pet_clinic' || roleId === 'veterinary_clinic' || 
-           roleId === 'clinic' || roleId === 'hospital' ||
-           roleId === 'pet_pharmacy' || roleId === 'pharmacy' ||
-           roleId === 'pet_ambulance' || roleId === 'ambulance';
-  },
-  canOfferCenter: (roleId?: string) => {
-    // Roles that can offer center-based services
-    return roleId === 'boarder' || roleId === 'pet_boarding' || 
-           roleId === 'groomer' || roleId === 'pet_groomer' || 
-           roleId === 'clinic' || roleId === 'hospital' || 
-           roleId === 'vet' || roleId === 'veterinarian' ||
-           roleId === 'pet_clinic' || roleId === 'veterinary_clinic' ||
-           roleId === 'pet_resort' || roleId === 'resort' ||
-           roleId === 'pet_cafe' || roleId === 'cafe';
-  },
-  isStore: (roleId?: string) => {
-    return roleId === 'store' || roleId === 'shop' || roleId === 'retailer' ||
-           roleId === 'product_seller' || roleId === 'pet_products_store' ||
-           roleId === 'pet_product' || roleId === 'retail';
-  },
-  isGroomer: (roleId?: string) => {
-    return roleId === 'groomer' || roleId === 'pet_groomer' || roleId?.includes('groom');
-  },
-  isWalker: (roleId?: string) => {
-    return roleId === 'walker' || roleId === 'pet_walker' || roleId?.includes('walk');
-  },
-  isTrainer: (roleId?: string) => {
-    return roleId === 'trainer' || roleId === 'pet_trainer' || roleId?.includes('train');
-  },
-  isBoarding: (roleId?: string) => {
-    return roleId === 'boarding' || roleId === 'pet_boarding' || 
-           roleId === 'boarder' || roleId?.includes('board');
-  },
-  isTaxi: (roleId?: string) => {
-    return roleId === 'taxi' || roleId === 'pet_taxi' || 
-           roleId === 'pet_transport' || roleId?.includes('transport');
-  },
-  isPhotographer: (roleId?: string) => {
-    return roleId === 'photographer' || roleId === 'pet_photographer' || roleId?.includes('photo');
-  },
-  isShelter: (roleId?: string) => {
-    return roleId === 'shelter' || roleId === 'pet_shelter' || roleId?.includes('shelter');
-  },
-  isCafe: (roleId?: string) => {
-    return roleId === 'cafe' || roleId === 'pet_cafe';
-  },
-  isResort: (roleId?: string) => {
-    return roleId === 'resort' || roleId === 'pet_resort';
-  },
-  isNutritionist: (roleId?: string) => {
-    return roleId === 'nutritionist' || roleId === 'pet_nutritionist';
-  },
-  isSunsetServices: (roleId?: string) => {
-    return roleId === 'sunset_services' || roleId === 'pet_sunset_services' || roleId?.includes('sunset');
-  },
-  isInsurance: (roleId?: string) => {
-    return roleId === 'insurance' || roleId === 'pet_insurance';
-  },
-  isPharmacy: (roleId?: string) => {
-    return roleId === 'pharmacy' || roleId === 'pet_pharmacy';
-  },
-  isSitter: (roleId?: string) => {
-    return roleId === 'sitter' || roleId === 'pet_sitter';
-  },
-  isBreeder: (roleId?: string) => {
-    return roleId === 'breeder' || roleId === 'pet_breeder';
-  },
+/**
+ * Vendor Utility Functions
+ * Centralized utilities for vendor role handling, service styles, and common operations
+ */
+
+/**
+ * Get vendor role ID from vendor data object
+ * Handles all possible field names and formats
+ */
+export function getVendorRoleId(vendorData: any): string | null {
+  if (!vendorData) return null;
+  
+  return vendorData.roleId || 
+         vendorData.role_id || 
+         vendorData.selected_role_id ||
+         vendorData.roleId ||
+         null;
+}
+
+/**
+ * Get vendor role name from vendor data
+ */
+export function getVendorRoleName(vendorData: any): string | null {
+  if (!vendorData) return null;
+  
+  return vendorData.roleName ||
+         vendorData.role_name ||
+         vendorData.displayRoleName ||
+         null;
+}
+
+/**
+ * Service Style Mapping
+ * Maps various backend service style names to standardized frontend names
+ */
+const SERVICE_STYLE_MAP: Record<string, 'at_home' | 'at_center' | 'tele'> = {
+  // Standard names
+  'at_home': 'at_home',
+  'at_center': 'at_center',
+  'tele': 'tele',
+  
+  // Backend variations
+  'at_clinic': 'at_center',
+  'clinic': 'at_center',
+  'at_center': 'at_center',
+  'video_consultation': 'tele',
+  'tele_consultation': 'tele',
+  'teleconsultation': 'tele',
+  'online': 'tele',
+  'home_visit': 'at_home',
+  'home_service': 'at_home',
+  'mobile': 'at_home',
 };
 
+/**
+ * Normalize service style to standard format
+ */
+export function normalizeServiceStyle(style: string | null | undefined): 'at_home' | 'at_center' | 'tele' {
+  if (!style) return 'at_center'; // Default
+  
+  const normalized = style.toLowerCase().trim();
+  return SERVICE_STYLE_MAP[normalized] || 'at_center';
+}
+
+/**
+ * Get display name for service style
+ */
+export function getServiceStyleDisplayName(style: string): string {
+  const normalized = normalizeServiceStyle(style);
+  
+  const displayNames: Record<string, string> = {
+    'at_home': 'At Home',
+    'at_center': 'At Center',
+    'tele': 'Tele Consultation',
+  };
+  
+  return displayNames[normalized] || style;
+}
+
+/**
+ * Check if vendor has specific role
+ */
+export function hasVendorRole(
+  vendorData: any, 
+  roleIdOrName: string | string[]
+): boolean {
+  const roleId = getVendorRoleId(vendorData);
+  const roleName = getVendorRoleName(vendorData);
+  
+  const rolesToCheck = Array.isArray(roleIdOrName) ? roleIdOrName : [roleIdOrName];
+  
+  return rolesToCheck.some(role => {
+    const normalizedRole = role.toLowerCase().trim();
+    return (
+      roleId?.toLowerCase() === normalizedRole ||
+      roleName?.toLowerCase() === normalizedRole ||
+      roleId?.includes(normalizedRole) ||
+      roleName?.includes(normalizedRole)
+    );
+  });
+}
+
+/**
+ * Check if vendor is a specific role type
+ */
+export function isVendorType(
+  vendorData: any,
+  type: 'service' | 'healthcare' | 'retail' | 'boarding'
+): boolean {
+  const roleId = getVendorRoleId(vendorData);
+  const roleName = getVendorRoleName(vendorData);
+  
+  const roleString = `${roleId} ${roleName}`.toLowerCase();
+  
+  const typeMap: Record<string, string[]> = {
+    service: ['groomer', 'walker', 'trainer', 'sitter', 'service'],
+    healthcare: ['vet', 'veterinarian', 'clinic', 'hospital', 'healthcare'],
+    retail: ['store', 'pharmacy', 'seller', 'retail', 'products'],
+    boarding: ['boarding', 'resort', 'kennel', 'hotel'],
+  };
+  
+  const keywords = typeMap[type] || [];
+  return keywords.some(keyword => roleString.includes(keyword));
+}
+
+/**
+ * Normalize role name for matching
+ */
+export function normalizeRoleName(roleName: string | null | undefined): string {
+  if (!roleName) return '';
+  
+  return roleName
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+/**
+ * Check if service is applicable to vendor role
+ */
+export function isServiceApplicableToRole(
+  service: { applicableRoles?: string[] | string },
+  vendorRoleName: string | null
+): boolean {
+  if (!vendorRoleName) return true; // Show all if no role
+  
+  const applicableRoles = service.applicableRoles || [];
+  
+  // If no roles specified, service is universal
+  if (!applicableRoles || applicableRoles.length === 0) {
+    return true;
+  }
+  
+  // Normalize role name
+  const normalizedVendorRole = normalizeRoleName(vendorRoleName);
+  
+  // Parse applicable roles (handle both array and string)
+  let rolesArray: string[] = [];
+  if (Array.isArray(applicableRoles)) {
+    rolesArray = applicableRoles;
+  } else if (typeof applicableRoles === 'string') {
+    try {
+      const parsed = JSON.parse(applicableRoles);
+      rolesArray = Array.isArray(parsed) ? parsed : [applicableRoles];
+    } catch {
+      rolesArray = [applicableRoles];
+    }
+  }
+  
+  // Normalize all applicable roles
+  const normalizedApplicableRoles = rolesArray
+    .filter(Boolean)
+    .map(r => normalizeRoleName(r));
+  
+  // Direct match
+  if (normalizedApplicableRoles.includes(normalizedVendorRole)) {
+    return true;
+  }
+  
+  // Role name variations
+  const roleVariations: Record<string, string[]> = {
+    'veterinarian': ['vet', 'veterinary', 'veterinary_clinic', 'vet_clinic', 'animal_hospital'],
+    'pet_groomer': ['groomer', 'grooming', 'pet_grooming'],
+    'pet_boarder': ['boarder', 'boarding', 'pet_boarding', 'kennel'],
+    'pet_trainer': ['trainer', 'training', 'pet_training', 'dog_trainer'],
+    'pet_walker': ['walker', 'walking', 'dog_walker', 'pet_walking'],
+    'pet_sitter': ['sitter', 'sitting', 'pet_sitting'],
+    'pet_pharmacy': ['pharmacy', 'pharmacist'],
+    'pet_nutritionist': ['nutritionist', 'nutrition'],
+    'pet_products_store': ['store', 'retailer', 'seller'],
+  };
+  
+  // Check variations
+  for (const [mainRole, variations] of Object.entries(roleVariations)) {
+    if (normalizedVendorRole === mainRole || variations.includes(normalizedVendorRole)) {
+      if (normalizedApplicableRoles.includes(mainRole) ||
+          variations.some(v => normalizedApplicableRoles.includes(v))) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}

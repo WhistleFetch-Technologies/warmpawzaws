@@ -257,6 +257,38 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     primaryActions: ['verify_prescription', 'check_inventory', 'process_order'],
     quickStats: ['pending_orders', 'prescriptions_verified', 'low_stock_items', 'monthly_revenue'],
   },
+  
+  walker: {
+    displayName: 'Dog Walker',
+    icon: '🚶',
+    color: 'blue',
+    category: 'walking',
+    dashboardSections: [
+      ...COMMON_SECTIONS,
+      { id: 'live_tracking', label: 'Live Tracking', icon: '📍', priority: 4, requiresCapability: 'gps_tracking' },
+      { id: 'routes', label: 'Routes', icon: '🗺️', priority: 5 },
+      { id: 'subscriptions', label: 'Subscriptions', icon: '📅', priority: 6 },
+    ],
+    primaryActions: ['start_walk', 'view_schedule', 'send_update'],
+    quickStats: ['walks_today', 'active_subscriptions', 'monthly_revenue', 'rating'],
+  },
+  
+  seller: {
+    displayName: 'Pet Store / E-commerce',
+    icon: '🛒',
+    color: 'indigo',
+    category: 'ecommerce',
+    dashboardSections: [
+      ...COMMON_SECTIONS,
+      { id: 'products', label: 'Products', icon: '📦', priority: 4, requiresCapability: 'catalog' },
+      { id: 'inventory', label: 'Inventory', icon: '📊', priority: 5, requiresCapability: 'inventory' },
+      { id: 'orders', label: 'Orders', icon: '🛍️', priority: 6 },
+      { id: 'returns', label: 'Returns', icon: '↩️', priority: 7 },
+      { id: 'promotions', label: 'Promotions', icon: '🎁', priority: 8 },
+    ],
+    primaryActions: ['add_product', 'view_orders', 'manage_inventory'],
+    quickStats: ['orders_today', 'pending_orders', 'low_stock_items', 'monthly_revenue'],
+  },
 };
 
 // ============================================================================
