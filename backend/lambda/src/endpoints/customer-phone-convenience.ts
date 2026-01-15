@@ -430,4 +430,221 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /customer/:phone/packages
+   * Get customer packages by phone (convenience endpoint)
+   * Query params: serviceType (optional filter)
+   */
+  app.get("/customer/:phone/packages", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const serviceType = c.req.query('serviceType');
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ packages: [], success: true });
+      }
+
+      let packageQuery = `
+        SELECT 
+          pp.*,
+          v.business_name as vendor_name,
+          v.phone as vendor_phone,
+          (pp.total_sessions - pp.remaining_sessions) as sessions_used,
+          CASE 
+            WHEN pp.expires_at IS NOT NULL AND pp.expires_at < NOW() THEN 'expired'
+            WHEN pp.remaining_sessions <= 0 AND pp.unlimited_usage = false THEN 'exhausted'
+            ELSE pp.status
+          END as computed_status
+        FROM package_purchases pp
+        LEFT JOIN vendors v ON pp.vendor_id = v.id
+        WHERE pp.customer_id = $1
+        AND pp.status = 'active'
+        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
+        AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
+      `;
+
+      const params: any[] = [customerId];
+
+      if (serviceType) {
+        packageQuery += ` AND pp.package_type = $2`;
+        params.push(serviceType);
+      }
+
+      packageQuery += ` ORDER BY pp.expires_at ASC NULLS LAST, pp.created_at DESC`;
+
+      const result = await query(packageQuery, params);
+
+      const packages = result.rows.map((pkg: any) => ({
+        id: pkg.id,
+        packageName: pkg.package_name || pkg.name,
+        vendorName: pkg.vendor_name,
+        vendorId: pkg.vendor_id,
+        totalSessions: pkg.total_sessions,
+        remainingSessions: pkg.unlimited_usage ? 'unlimited' : pkg.remaining_sessions,
+        sessionsUsed: pkg.sessions_used || 0,
+        expiresAt: pkg.expires_at,
+        isUnlimited: pkg.unlimited_usage,
+        packageType: pkg.package_type,
+        status: pkg.computed_status
+      }));
+
+      return c.json({
+        success: true,
+        packages: packages,
+        count: packages.length
+      });
+    } catch (error: any) {
+      console.error('Error fetching packages by phone:', error);
+      return c.json({ packages: [], success: true });
+    }
+  });
+
+  /**
+   * GET /customer/:phone/active-walks
+   * Get active walking sessions by phone (convenience endpoint)
+   */
+  app.get("/customer/:phone/active-walks", async (c) => {
+    try {
+      const { phone } = c.req.param();
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ walks: [], success: true });
+      }
+
+      // Get active walk sessions (from walker_live_sessions or package_sessions)
+      const activeWalks = await query(`
+        SELECT 
+          wls.*,
+          b.id as booking_id,
+          b.pet_id,
+          p.name as pet_name,
+          v.id as walker_id,
+          v.business_name as walker_name,
+          wr.distance_covered_km as distanceCovered,
+          wr.waypoints
+        FROM walker_live_sessions wls
+        LEFT JOIN bookings b ON wls.booking_id = b.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN vendors v ON wls.walker_id = v.id
+        LEFT JOIN walk_routes wr ON wls.booking_id = wr.booking_id
+        WHERE wls.customer_id = $1
+        AND wls.is_active = true
+        UNION
+        SELECT 
+          ps.id,
+          ps.booking_id,
+          ps.pet_id,
+          p.name as pet_name,
+          ps.staff_id as walker_id,
+          s.name as walker_name,
+          NULL as distanceCovered,
+          NULL as waypoints,
+          ps.status,
+          ps.scheduled_start_time as started_at,
+          ps.actual_start_time,
+          ps.actual_end_time,
+          ps.location
+        FROM package_sessions ps
+        LEFT JOIN bookings b ON ps.booking_id = b.id
+        LEFT JOIN pets p ON ps.pet_id = p.id
+        LEFT JOIN staff s ON ps.staff_id = s.id
+        WHERE ps.package_purchase_id IN (
+          SELECT id FROM package_purchases WHERE customer_id = $1
+        )
+        AND ps.status = 'in_progress'
+      `, [customerId]);
+
+      const walks = activeWalks.rows.map((walk: any) => ({
+        id: walk.id || walk.booking_id,
+        walkerName: walk.walker_name || 'Walker',
+        petName: walk.pet_name || 'Pet',
+        startTime: walk.started_at || walk.actual_start_time,
+        status: walk.status || 'in_progress',
+        distanceCovered: walk.distanceCovered || 0,
+        currentLocation: walk.location || (walk.waypoints && walk.waypoints.length > 0 ? walk.waypoints[walk.waypoints.length - 1] : null)
+      }));
+
+      return c.json({
+        success: true,
+        walks: walks,
+        count: walks.length
+      });
+    } catch (error: any) {
+      console.error('Error fetching active walks by phone:', error);
+      return c.json({ walks: [], success: true });
+    }
+  });
+
+  /**
+   * GET /customer/:phone/pet-skills
+   * Get pet skills progress by phone (convenience endpoint)
+   */
+  app.get("/customer/:phone/pet-skills", async (c) => {
+    try {
+      const { phone } = c.req.param();
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ skills: [], success: true });
+      }
+
+      // Get all pets for this customer
+      const pets = await query(`
+        SELECT id, name FROM pets WHERE customer_id = $1
+      `, [customerId]);
+
+      if (pets.rows.length === 0) {
+        return c.json({ skills: [], success: true });
+      }
+
+      const petIds = pets.rows.map((p: any) => p.id);
+
+      // Get skill progress for all pets
+      const skillsResult = await query(`
+        SELECT 
+          psp.*,
+          ts.skill_name,
+          ts.category,
+          ts.difficulty_level,
+          p.name as pet_name
+        FROM pet_skill_progress psp
+        LEFT JOIN training_skills ts ON psp.skill_id = ts.id
+        LEFT JOIN pets p ON psp.pet_id = p.id
+        WHERE psp.pet_id = ANY($1)
+        ORDER BY psp.updated_at DESC
+      `, [petIds]);
+
+      const skills = skillsResult.rows.map((skill: any) => {
+        const progressLevel = skill.progress_level || 0;
+        let status: 'not_started' | 'in_progress' | 'mastered' = 'not_started';
+        
+        if (progressLevel >= 100) {
+          status = 'mastered';
+        } else if (progressLevel > 0) {
+          status = 'in_progress';
+        }
+
+        return {
+          skillName: skill.skill_name || 'Unknown Skill',
+          level: progressLevel,
+          status: status,
+          petName: skill.pet_name,
+          category: skill.category,
+          lastUpdated: skill.updated_at
+        };
+      });
+
+      return c.json({
+        success: true,
+        skills: skills,
+        count: skills.length
+      });
+    } catch (error: any) {
+      console.error('Error fetching pet skills by phone:', error);
+      return c.json({ skills: [], success: true });
+    }
+  });
 }

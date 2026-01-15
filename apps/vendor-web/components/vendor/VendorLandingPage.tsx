@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
+import { getVendorRoleId } from '@/lib/vendor-utils';
 import { VendorStaffPage } from './VendorStaffPage';
 import { DoctorManagement } from './clinic/DoctorManagement'; // ✅ FIX: Use actual Figma UI for doctor management
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
@@ -807,7 +808,8 @@ export function VendorLandingPage({
       // This provides a clean dashboard experience with stats, schedule, and quick actions
       
       console.log('🎯 Vendor is ACTIVE - showing VendorDashboardScreen');
-      console.log('   Vendor Role:', vendorData?.roleId);
+      const roleId = getVendorRoleId(vendorData);
+      console.log('   Vendor Role:', roleId);
       console.log('   Vendor Type:', vendorData?.vendorType);
       
       // Show schedule management screen if requested

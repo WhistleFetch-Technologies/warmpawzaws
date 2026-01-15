@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager';
+import { getVendorRoleId, normalizeServiceStyle, isServiceApplicableToRole } from '@/lib/vendor-utils';
 
 interface VendorServiceCatalogViewProps {
   vendorId: string;
@@ -107,15 +108,53 @@ export function VendorServiceCatalogView({
     try {
       setLoading(true);
 
-      // ✅ Get vendor's roleId for filtering services
-      const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
+      // ✅ Get vendor's roleId for filtering services (using utility)
+      const vendorRoleId = getVendorRoleId(vendorData);
       console.log('📚 [CATALOG] Loading service catalog for roleId:', vendorRoleId);
+
+      // ✅ NEW: Try local service catalog first (faster, role-specific)
+      const { getServiceCatalogForRole } = await import('@/lib/service-catalogs');
+      const localCatalog = getServiceCatalogForRole(vendorRoleId);
+      
+      if (localCatalog && localCatalog.length > 0) {
+        console.log('📚 [CATALOG] Using local service catalog:', localCatalog.length, 'services');
+        // Transform local catalog to match expected format
+        const normalizedServices = localCatalog.map((svc: any) => ({
+          catalogId: svc.id,
+          categoryId: svc.category.toLowerCase().replace(/\s+/g, '_'),
+          categoryName: svc.category,
+          subCategoryId: svc.subCategory?.toLowerCase().replace(/\s+/g, '_') || 'general',
+          subCategoryName: svc.subCategory || 'General',
+          serviceName: svc.name,
+          serviceStyle: svc.serviceStyle,
+          applicableRoles: svc.applicableRoles || [],
+          basePrice: svc.priceRange.min,
+          duration: svc.duration,
+          description: svc.description,
+          isPackage: svc.isPackage || false,
+          packageDetails: svc.packageDetails,
+        }));
+        
+        setServices(normalizedServices);
+      }
 
       // Load services from admin catalog API - pass roleId if available for better filtering
       const catalogUrl = vendorRoleId 
         ? `/admin/service-catalog?roleId=${vendorRoleId}`
         : '/admin/service-catalog';
-      const servicesData = await apiClient.get(catalogUrl) as any;
+      
+      let servicesData: any = null;
+      try {
+        servicesData = await apiClient.get(catalogUrl) as any;
+      } catch (apiError) {
+        console.warn('📚 [CATALOG] Admin API failed, using local catalog:', apiError);
+        // If API fails and we have local catalog, continue with that
+        if (localCatalog && localCatalog.length > 0) {
+          // Already set above, continue
+        } else {
+          throw apiError;
+        }
+      }
 
       if (servicesData) {
         console.log('📚 [CATALOG] Loaded services:', servicesData);
@@ -137,8 +176,8 @@ export function VendorServiceCatalogView({
             categoryName: svc.categoryName || svc.category_name || svc.category || 'Uncategorized',
             subCategoryName: svc.subCategoryName || svc.sub_category_name || '',
             serviceGroupName: svc.serviceGroupName || svc.service_group_name || '',
-            // ✅ CRITICAL: Normalize serviceStyle - backend returns service_style
-            serviceStyle: svc.serviceStyle || svc.service_style || 'at_center',
+            // ✅ CRITICAL: Normalize serviceStyle using utility function
+            serviceStyle: normalizeServiceStyle(svc.serviceStyle || svc.service_style),
             // Normalize other fields
             applicableRoles: svc.applicableRoles || svc.applicable_roles || [],
             basePrice: parseFloat(svc.basePrice || svc.base_price || '0'),
@@ -259,7 +298,7 @@ export function VendorServiceCatalogView({
   const groupServicesByCategory = () => {
     let filteredServices = [...services];
 
-    const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
+    const vendorRoleId = getVendorRoleId(vendorData);
     const effectiveAllowedStyles = roleAllowedStyles.length > 0 ? roleAllowedStyles : (allowedServiceStyles || []);
     
     console.log('🔍 [GROUPING] Starting with', filteredServices.length, 'services');
@@ -293,8 +332,8 @@ export function VendorServiceCatalogView({
     if (effectiveAllowedStyles.length > 0) {
       const beforeStyleFilter = filteredServices.length;
       filteredServices = filteredServices.filter(service => {
-        // ✅ FIX: Handle both camelCase and snake_case field names
-        const serviceStyle = service.serviceStyle || (service as any).service_style || 'at_center';
+        // ✅ FIX: Use utility function for consistent style normalization
+        const serviceStyle = normalizeServiceStyle(service.serviceStyle || (service as any).service_style);
         return effectiveAllowedStyles.includes(serviceStyle);
       });
       console.log('🔍 [GROUPING] After role-allowed styles filter:', filteredServices.length, 'services (filtered out:', beforeStyleFilter - filteredServices.length, ')');
@@ -305,7 +344,7 @@ export function VendorServiceCatalogView({
     // 3. User-selected style filter
     if (activeStyle !== 'all') {
       filteredServices = filteredServices.filter(service => {
-        const style = service.serviceStyle || (service as any).service_style || 'at_center';
+        const style = normalizeServiceStyle(service.serviceStyle || (service as any).service_style);
         return style === activeStyle;
       });
       console.log('🔍 [GROUPING] After user style filter:', filteredServices.length, 'services');
@@ -374,68 +413,8 @@ export function VendorServiceCatalogView({
   };
 
   const isServiceApplicable = (service: ServiceCatalogItem, roleName: string): boolean => {
-    // If no role name provided, show all services
-    if (!roleName) {
-      return true;
-    }
-
-    // ✅ FIX: Handle both camelCase and snake_case field names from API
-    const rawApplicableRoles = (service as any).applicableRoles || 
-                               (service as any).applicable_roles || 
-                               [];
-
-    // If service has no applicable roles defined, it's a universal service
-    if (!rawApplicableRoles || rawApplicableRoles.length === 0) {
-      return true;
-    }
-
-    // Parse applicable roles - handle both string and array cases
-    let applicableRoles: string[] = [];
-    
-    if (Array.isArray(rawApplicableRoles)) {
-      applicableRoles = rawApplicableRoles;
-    } else if (typeof rawApplicableRoles === 'string') {
-      try {
-        const parsed = JSON.parse(rawApplicableRoles);
-        applicableRoles = Array.isArray(parsed) ? parsed : [rawApplicableRoles];
-      } catch {
-        applicableRoles = [rawApplicableRoles];
-      }
-    }
-
-    // ✅ FIX: Normalize role names for comparison (lowercase, handle variations)
-    const normalizedRoleName = (roleName || '').toLowerCase();
-    const normalizedApplicableRoles = applicableRoles
-      .filter(r => r != null) // Filter out null/undefined values
-      .map(r => (r || '').toLowerCase());
-    
-    // Check direct match
-    if (normalizedApplicableRoles.includes(normalizedRoleName)) {
-      return true;
-    }
-    
-    // ✅ Check role name variations (e.g., "veterinarian" matches "vet", "veterinary_clinic", etc.)
-    const roleVariations: { [key: string]: string[] } = {
-      'veterinarian': ['vet', 'veterinary', 'veterinary_clinic', 'vet_clinic', 'animal_hospital'],
-      'pet_groomer': ['groomer', 'grooming', 'pet_grooming'],
-      'pet_boarder': ['boarder', 'boarding', 'pet_boarding', 'kennel'],
-      'pet_trainer': ['trainer', 'training', 'pet_training', 'dog_trainer'],
-      'pet_walker': ['walker', 'walking', 'dog_walker', 'pet_walking'],
-      'pet_sitter': ['sitter', 'sitting', 'pet_sitting'],
-    };
-    
-    // Check if any variation matches
-    for (const [mainRole, variations] of Object.entries(roleVariations)) {
-      if (normalizedRoleName === mainRole || variations.includes(normalizedRoleName)) {
-        // Check if the service applies to any variation of this role
-        if (normalizedApplicableRoles.includes(mainRole) || 
-            variations.some(v => normalizedApplicableRoles.includes(v))) {
-          return true;
-        }
-      }
-    }
-    
-    return false;
+    // Use utility function for consistent service applicability checking
+    return isServiceApplicableToRole(service, roleName);
   };
 
   const isServiceAdded = (service: ServiceCatalogItem): boolean => {

@@ -100,17 +100,33 @@ export function registerPackageBookingEndpoints(app: Hono) {
   /**
    * GET /packages/check-for-booking
    * Check if customer has applicable package before creating a booking
+   * Accepts either customerId (UUID) or phone (string) to identify customer
    */
   app.get("/packages/check-for-booking", async (c) => {
     try {
-      const customerId = c.req.query('customerId');
+      let customerId = c.req.query('customerId');
+      const phone = c.req.query('phone');
       const vendorId = c.req.query('vendorId');
       const serviceType = c.req.query('serviceType');
+
+      // Resolve phone to customerId if phone provided
+      if (phone && !customerId) {
+        const cleanPhone = phone.replace(/[^0-9]/g, '');
+        if (cleanPhone && cleanPhone.length >= 10) {
+          const customers = await query(
+            'SELECT id FROM customers WHERE phone = $1 LIMIT 1',
+            [cleanPhone]
+          );
+          if (customers.rows.length > 0) {
+            customerId = customers.rows[0].id;
+          }
+        }
+      }
 
       if (!customerId || !vendorId) {
         return c.json({ 
           hasActivePackage: false,
-          message: 'customerId and vendorId required'
+          message: 'customerId (or phone) and vendorId required'
         });
       }
 
@@ -757,6 +773,104 @@ export function registerPackageBookingEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching package customers:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /package-sessions
+   * Create a new package session (used when booking with package)
+   */
+  app.post("/package-sessions", async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        packagePurchaseId,
+        scheduledStartTime,
+        petId,
+        staffId,
+        location,
+        notes
+      } = body;
+
+      if (!packagePurchaseId || !scheduledStartTime) {
+        return c.json({ 
+          error: 'packagePurchaseId and scheduledStartTime are required' 
+        }, 400);
+      }
+
+      // Verify package exists and is active
+      const packageResult = await query(`
+        SELECT * FROM package_purchases
+        WHERE id = $1
+        AND status = 'active'
+        AND (expires_at IS NULL OR expires_at > NOW())
+        AND (remaining_sessions > 0 OR unlimited_usage = true)
+      `, [packagePurchaseId]);
+
+      if (packageResult.rows.length === 0) {
+        return c.json({ 
+          error: 'Package not found, expired, or has no remaining sessions' 
+        }, 400);
+      }
+
+      const pkg = packageResult.rows[0];
+      const sessionsUsed = pkg.total_sessions - pkg.remaining_sessions;
+      const nextSessionNumber = sessionsUsed + 1;
+
+      // Parse scheduled start time
+      const scheduledDate = new Date(scheduledStartTime);
+      if (isNaN(scheduledDate.getTime())) {
+        return c.json({ error: 'Invalid scheduledStartTime format' }, 400);
+      }
+
+      // Create package session
+      const sessionResult = await query(`
+        INSERT INTO package_sessions (
+          package_purchase_id,
+          scheduled_start_time,
+          pet_id,
+          staff_id,
+          location,
+          notes,
+          status,
+          session_number
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled', $7)
+        RETURNING *
+      `, [
+        packagePurchaseId,
+        scheduledDate.toISOString(),
+        petId || null,
+        staffId || null,
+        location ? JSON.stringify(location) : null,
+        notes || null,
+        nextSessionNumber
+      ]);
+
+      const session = sessionResult.rows[0];
+
+      // Decrement remaining sessions (if not unlimited)
+      if (!pkg.unlimited_usage) {
+        await query(`
+          UPDATE package_purchases
+          SET remaining_sessions = remaining_sessions - 1,
+              updated_at = NOW()
+          WHERE id = $1
+        `, [packagePurchaseId]);
+      }
+
+      return c.json({
+        success: true,
+        session: {
+          id: session.id,
+          packagePurchaseId: session.package_purchase_id,
+          scheduledStartTime: session.scheduled_start_time,
+          status: session.status,
+          sessionNumber: session.session_number
+        }
+      });
+    } catch (error: any) {
+      console.error('Error creating package session:', error);
       return c.json({ error: error.message }, 500);
     }
   });
