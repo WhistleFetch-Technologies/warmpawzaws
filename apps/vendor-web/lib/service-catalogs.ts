@@ -538,7 +538,7 @@ export function getAllServices(): ServiceCatalogItem[] {
  */
 export function getServicesByCategory(category: string): ServiceCatalogItem[] {
   return getAllServices().filter(service => 
-    service.category.toLowerCase() === category.toLowerCase()
+    service.category && service.category.toLowerCase() === category.toLowerCase()
   );
 }
 
@@ -556,8 +556,8 @@ export function searchServices(query: string): ServiceCatalogItem[] {
   const normalizedQuery = query.toLowerCase().trim();
   
   return getAllServices().filter(service =>
-    service.name.toLowerCase().includes(normalizedQuery) ||
-    service.description.toLowerCase().includes(normalizedQuery) ||
-    service.category.toLowerCase().includes(normalizedQuery)
+    (service.name && service.name.toLowerCase().includes(normalizedQuery)) ||
+    (service.description && service.description.toLowerCase().includes(normalizedQuery)) ||
+    (service.category && service.category.toLowerCase().includes(normalizedQuery))
   );
 }
