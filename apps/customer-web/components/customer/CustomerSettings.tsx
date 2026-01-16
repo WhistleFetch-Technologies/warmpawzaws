@@ -35,9 +35,15 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/customer/settings?phone=${encodeURIComponent(customerPhone)}`);
-      if (response.notifications) {
-        setNotifications(response.notifications);
+      // First get customer ID from phone
+      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerRes?.customer?.id || customerRes?.id;
+      
+      if (customerId) {
+        const response = await apiClient.get<any>(`/customer/${customerId}/preferences`);
+        if (response.preferences?.notifications) {
+          setNotifications(response.preferences.notifications);
+        }
       }
     } catch (err) {
       console.error('Error loading settings:', err);
@@ -74,18 +80,25 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
     }
 
     try {
-      await apiClient.put('/customer/settings/notifications', {
-        phone: customerPhone,
-        [key]: newValue,
-        ...(key === 'push_enabled' && !newValue
-          ? {
-              booking_reminders: false,
-              promotional: false,
-              order_updates: false,
-              chat_messages: false,
-            }
-          : {}),
-      });
+      // Get customer ID from phone
+      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerRes?.customer?.id || customerRes?.id;
+      
+      if (customerId) {
+        await apiClient.put(`/customer/${customerId}/preferences`, {
+          notifications: {
+            [key]: newValue,
+            ...(key === 'push_enabled' && !newValue
+              ? {
+                  booking_reminders: false,
+                  promotional: false,
+                  order_updates: false,
+                  chat_messages: false,
+                }
+              : {}),
+          }
+        });
+      }
     } catch (err) {
       console.error('Error saving settings:', err);
       // Revert on error

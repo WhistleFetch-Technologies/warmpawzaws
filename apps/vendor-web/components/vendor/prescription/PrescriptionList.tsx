@@ -1,0 +1,145 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { FileText, Calendar, User, Search } from 'lucide-react';
+import { CapabilityGate } from '../CapabilityGate';
+
+interface Prescription {
+  id: string;
+  booking_id?: string;
+  customer_id: string;
+  pet_id?: string;
+  vendor_id: string;
+  medication_name?: string;
+  dosage?: string;
+  frequency?: string;
+  duration?: string;
+  instructions?: string;
+  prescription_date: string;
+  is_active: boolean;
+}
+
+interface PrescriptionListProps {
+  vendorId: string;
+  onSelect?: (prescription: Prescription) => void;
+}
+
+export function PrescriptionList({ vendorId, onSelect }: PrescriptionListProps) {
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    loadPrescriptions();
+  }, [vendorId]);
+
+  const loadPrescriptions = async () => {
+    try {
+      setLoading(true);
+      // Note: This endpoint may need to be created or use existing GET /prescriptions with filters
+      const response = await apiClient.get<any>(`/prescriptions?vendorId=${vendorId}`);
+      
+      if (response.success || Array.isArray(response)) {
+        const data = Array.isArray(response) ? response : (response.prescriptions || response.data || []);
+        setPrescriptions(data);
+      }
+    } catch (error) {
+      console.error('Error loading prescriptions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredPrescriptions = prescriptions.filter(p => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      p.medication_name?.toLowerCase().includes(term) ||
+      p.customer_id?.toLowerCase().includes(term) ||
+      p.instructions?.toLowerCase().includes(term)
+    );
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <CapabilityGate capability="prescription_create" showDisabledMessage>
+      <div className="space-y-4">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search prescriptions..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Prescriptions List */}
+        {filteredPrescriptions.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+            <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No prescriptions found</h3>
+            <p className="text-gray-500">Prescriptions will appear here once created</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredPrescriptions.map((prescription) => (
+              <div
+                key={prescription.id}
+                onClick={() => onSelect?.(prescription)}
+                className="bg-white rounded-lg p-4 border border-gray-200 hover:border-blue-300 hover:shadow-md transition cursor-pointer"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      <h3 className="font-semibold text-gray-900">
+                        {prescription.medication_name || 'Prescription'}
+                      </h3>
+                      {prescription.is_active && (
+                        <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    
+                    {prescription.dosage && (
+                      <div className="text-sm text-gray-600 mb-1">
+                        <span className="font-medium">Dosage:</span> {prescription.dosage}
+                        {prescription.frequency && ` - ${prescription.frequency}`}
+                        {prescription.duration && ` for ${prescription.duration}`}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-4 text-sm text-gray-500 mt-2">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(prescription.prescription_date).toLocaleDateString()}
+                      </div>
+                      {prescription.customer_id && (
+                        <div className="flex items-center gap-1">
+                          <User className="w-4 h-4" />
+                          Customer: {prescription.customer_id.slice(0, 8)}...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </CapabilityGate>
+  );
+}

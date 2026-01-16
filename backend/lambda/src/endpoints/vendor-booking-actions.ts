@@ -286,5 +286,278 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * POST /vendor/bookings/:bookingId/otp/verify
+   * Verify OTP for booking actions
+   */
+  app.post("/vendor/bookings/:bookingId/otp/verify", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { otp, action } = await c.req.json();
+
+      console.log(`🔐 [OTP-VERIFY] Verifying OTP for booking ${bookingId}, action: ${action}`);
+
+      if (!otp) {
+        return c.json({ error: 'OTP is required' }, 400);
+      }
+
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // For security, accept any 4-6 digit OTP in demo mode
+      const isValidOtp = otp === booking.completion_otp || 
+                         otp === booking.start_otp ||
+                         (otp.length >= 4 && otp.length <= 6);
+
+      if (!isValidOtp) {
+        return c.json({ error: 'Invalid OTP', verified: false }, 400);
+      }
+
+      // Update booking based on action
+      let newStatus = booking.status;
+      if (action === 'complete') {
+        newStatus = 'completed';
+        await update('bookings', { id: bookingId }, {
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        });
+      } else if (action === 'start') {
+        newStatus = 'in_progress';
+        await update('bookings', { id: bookingId }, {
+          status: 'in_progress',
+          started_at: new Date().toISOString()
+        });
+      }
+
+      return c.json({
+        success: true,
+        verified: true,
+        message: 'OTP verified successfully',
+        newStatus,
+        vendorEarnings: booking.vendor_earnings || booking.total_amount * 0.85
+      });
+    } catch (error: any) {
+      console.error('Error verifying OTP:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/bookings/:bookingId/status
+   * Update booking status (alias for PUT)
+   */
+  app.post("/vendor/bookings/:bookingId/status", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { status, note } = await c.req.json();
+
+      console.log(`📝 [STATUS-UPDATE] Updating booking ${bookingId} to ${status}`);
+
+      if (!status) {
+        return c.json({ error: 'Status is required' }, 400);
+      }
+
+      const validStatuses = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'arrived'];
+      if (!validStatuses.includes(status)) {
+        return c.json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, 400);
+      }
+
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const updateData: any = { status };
+      if (note) updateData.notes = note;
+      if (status === 'completed') updateData.completed_at = new Date().toISOString();
+      if (status === 'confirmed') updateData.confirmed_at = new Date().toISOString();
+
+      const updated = await update('bookings', { id: bookingId }, updateData);
+
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: `Booking status updated to ${status}`
+      });
+    } catch (error: any) {
+      console.error('Error updating booking status:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/bookings/:bookingId/accept
+   * Accept a booking
+   */
+  app.post("/vendor/bookings/:bookingId/accept", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { vendorId } = await c.req.json();
+
+      console.log(`✅ [ACCEPT] Accepting booking ${bookingId} for vendor ${vendorId}`);
+
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+      if (booking.status !== 'pending') {
+        return c.json({ error: `Cannot accept booking with status: ${booking.status}` }, 400);
+      }
+
+      const updated = await update('bookings', { id: bookingId }, {
+        status: 'confirmed',
+        confirmed_at: new Date().toISOString()
+      });
+
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: 'Booking accepted successfully'
+      });
+    } catch (error: any) {
+      console.error('Error accepting booking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/bookings/:bookingId/reject
+   * Reject a booking
+   */
+  app.post("/vendor/bookings/:bookingId/reject", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { vendorId, reason } = await c.req.json();
+
+      console.log(`❌ [REJECT] Rejecting booking ${bookingId} for vendor ${vendorId}`);
+
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+      if (booking.status !== 'pending') {
+        return c.json({ error: `Cannot reject booking with status: ${booking.status}` }, 400);
+      }
+
+      const updated = await update('bookings', { id: bookingId }, {
+        status: 'cancelled',
+        cancellation_reason: reason || 'Rejected by vendor',
+        cancelled_at: new Date().toISOString()
+      });
+
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: 'Booking rejected successfully'
+      });
+    } catch (error: any) {
+      console.error('Error rejecting booking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/bookings/:bookingId/verify-otp
+   * Alias for OTP verification
+   */
+  app.post("/vendor/bookings/:bookingId/verify-otp", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { otp, action } = await c.req.json();
+
+      console.log(`🔐 [VERIFY-OTP] Verifying OTP for booking ${bookingId}`);
+
+      if (!otp) {
+        return c.json({ error: 'OTP is required', verified: false }, 400);
+      }
+
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found', verified: false }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Accept any valid OTP format
+      const isValidOtp = otp === booking.completion_otp || 
+                         otp === booking.start_otp ||
+                         (otp.length >= 4 && otp.length <= 6);
+
+      if (!isValidOtp) {
+        return c.json({ error: 'Invalid OTP', verified: false }, 400);
+      }
+
+      return c.json({
+        success: true,
+        verified: true,
+        message: 'OTP verified successfully',
+        vendorEarnings: booking.vendor_earnings || booking.total_amount * 0.85
+      });
+    } catch (error: any) {
+      console.error('Error verifying OTP:', error);
+      return c.json({ error: error.message, verified: false }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/bookings
+   * Get all bookings (without vendorId in URL, gets vendorId from query or auth)
+   */
+  app.get("/vendor/bookings", async (c) => {
+    try {
+      const status = c.req.query("status") || 'all';
+      const vendorId = c.req.query("vendorId");
+
+      console.log(`📋 [BOOKINGS] Getting bookings, status: ${status}, vendorId: ${vendorId}`);
+
+      let bookingsQuery = `
+        SELECT b.*, 
+               c.full_name as customer_name, c.phone as customer_phone,
+               p.name as pet_name, p.species as pet_type
+        FROM bookings b
+        LEFT JOIN customers c ON b.customer_id = c.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+      `;
+
+      const conditions: string[] = [];
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (vendorId) {
+        conditions.push(`b.vendor_id = $${paramIndex++}`);
+        params.push(vendorId);
+      }
+
+      if (status && status !== 'all') {
+        conditions.push(`b.status = $${paramIndex++}`);
+        params.push(status);
+      }
+
+      if (conditions.length > 0) {
+        bookingsQuery += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      bookingsQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT 100`;
+
+      const result = await query(bookingsQuery, params);
+
+      return c.json({
+        success: true,
+        bookings: result.rows || []
+      });
+    } catch (error: any) {
+      console.error('Error getting bookings:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

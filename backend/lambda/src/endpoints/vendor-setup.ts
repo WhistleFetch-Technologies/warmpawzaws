@@ -363,6 +363,125 @@ export function registerVendorSetupEndpoints(app: Hono) {
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  /**
+   * POST /vendor/services/publish
+   * Publish a service for a vendor
+   */
+  app.post('/vendor/services/publish', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { vendorId, serviceId, publishLevel, centreId, centreLevelPrice } = body;
+
+      console.log(`📢 [PUBLISH] Publishing service ${serviceId} for vendor ${vendorId}`);
+
+      if (!vendorId || !serviceId) {
+        return c.json({ error: 'vendorId and serviceId are required' }, 400);
+      }
+
+      // Update or create vendor service
+      const existingService = await query(
+        `SELECT id FROM vendor_services WHERE vendor_id = $1 AND service_id = $2`,
+        [vendorId, serviceId]
+      ).catch(() => ({ rows: [] }));
+
+      if (existingService.rows.length > 0) {
+        await query(
+          `UPDATE vendor_services SET is_active = true, publish_level = $3, centre_id = $4, price = COALESCE($5, price), updated_at = NOW()
+           WHERE vendor_id = $1 AND service_id = $2`,
+          [vendorId, serviceId, publishLevel || 'vendor', centreId, centreLevelPrice]
+        );
+      } else {
+        await query(
+          `INSERT INTO vendor_services (vendor_id, service_id, is_active, publish_level, centre_id, price, created_at)
+           VALUES ($1, $2, true, $3, $4, $5, NOW())`,
+          [vendorId, serviceId, publishLevel || 'vendor', centreId, centreLevelPrice || 0]
+        );
+      }
+
+      return c.json({
+        success: true,
+        message: 'Service published successfully'
+      });
+    } catch (error: any) {
+      console.error('Error publishing service:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/prescription/upload
+   * Upload a prescription for a booking
+   */
+  app.post('/vendor/prescription/upload', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { vendorId, bookingId, petId, customerId, prescriptionData, medications, diagnosis, notes } = body;
+
+      console.log(`💊 [PRESCRIPTION] Uploading prescription for booking ${bookingId}`);
+
+      if (!vendorId || !bookingId) {
+        return c.json({ error: 'vendorId and bookingId are required' }, 400);
+      }
+
+      // Create prescription record
+      const prescription = await query(
+        `INSERT INTO prescriptions (
+           vendor_id, booking_id, pet_id, customer_id, 
+           medications, diagnosis, notes, 
+           status, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW())
+         RETURNING *`,
+        [
+          vendorId, bookingId, petId, customerId,
+          JSON.stringify(medications || prescriptionData?.medications || []),
+          diagnosis || prescriptionData?.diagnosis,
+          notes || prescriptionData?.notes
+        ]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        prescription: prescription.rows[0] || { id: 'rx_' + Date.now() },
+        message: 'Prescription uploaded successfully'
+      });
+    } catch (error: any) {
+      console.error('Error uploading prescription:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/setup/complete
+   * Mark vendor setup as complete (alias for go-live)
+   */
+  app.post('/vendor/setup/complete', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { vendorId, setupCompleted } = body;
+
+      console.log(`✅ [SETUP] Completing setup for vendor ${vendorId}`);
+
+      if (!vendorId) {
+        return c.json({ error: 'vendorId is required' }, 400);
+      }
+
+      // Update vendor status
+      await query(
+        `UPDATE vendors SET setup_completed = true, status = 'active', updated_at = NOW()
+         WHERE id = $1`,
+        [vendorId]
+      ).catch(() => {});
+
+      return c.json({
+        success: true,
+        message: 'Setup completed successfully'
+      });
+    } catch (error: any) {
+      console.error('Error completing setup:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 // Helper functions

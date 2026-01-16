@@ -60,6 +60,7 @@ import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
 import { registerVendorServicesEndpoints } from '../endpoints/vendor-services';
+import { registerVendorPricingEndpoints } from '../endpoints/vendor-pricing';
 import { registerVendorProductsEndpoints } from '../endpoints/vendor-products';
 import { registerVendorOrdersEndpoints } from '../endpoints/vendor-orders';
 import { registerServiceCatalogEndpoints } from '../endpoints/service-catalog';
@@ -293,6 +294,7 @@ registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);
 registerVendorServicesEndpoints(app);
+registerVendorPricingEndpoints(app);
 registerVendorProductsEndpoints(app);
 registerVendorOrdersEndpoints(app);
 // registerServiceCatalogEndpoints(app); // REMOVED: Already registered at line 215 (before parameterized routes)

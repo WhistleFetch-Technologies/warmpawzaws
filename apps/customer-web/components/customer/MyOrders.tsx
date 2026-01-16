@@ -77,8 +77,8 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
       return;
     }
     try {
-      await apiClient.post('/customer/refunds/request', {
-        order_id: orderId,
+      await apiClient.post('/refunds/create', {
+        orderId: orderId,
         reason: refundReason,
         type: 'order',
       });

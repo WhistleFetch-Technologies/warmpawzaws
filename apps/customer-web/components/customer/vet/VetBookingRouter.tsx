@@ -425,7 +425,7 @@ export function VetBookingRouter({
         };
 
         try {
-          const response = await apiClient.post('/bookings', bookingData) as any;
+          const response = await apiClient.post('/bookings/create', bookingData) as any;
           setBookingId(response.booking?.id || 'BK-' + Date.now());
         } catch (err: any) {
           console.error('Error creating booking:', err);

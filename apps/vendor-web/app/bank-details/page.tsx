@@ -223,7 +223,8 @@ export default function BankDetailsPage() {
       setSaving(true);
       setError(null);
       
-      await apiClient.post('/vendor/upi-accounts', upiForm);
+      const vendorId = localStorage.getItem('vendorId');
+      await apiClient.post(`/vendor/${vendorId}/upi-account`, upiForm);
       setSuccess('UPI ID added successfully');
       setShowUPIModal(false);
       loadData();
@@ -238,7 +239,8 @@ export default function BankDetailsPage() {
     if (!confirm('Are you sure you want to remove this UPI ID?')) return;
     
     try {
-      await apiClient.delete(`/vendor/upi-accounts/${upiId}`);
+      const vendorId = localStorage.getItem('vendorId');
+      await apiClient.delete(`/vendor/${vendorId}/upi-account/${upiId}`);
       setSuccess('UPI ID removed');
       loadData();
     } catch (err: any) {

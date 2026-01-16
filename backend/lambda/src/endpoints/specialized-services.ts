@@ -435,10 +435,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // Check if vendor has diagnostics capability
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostics');
-      const hasTestCatalogCapability = await checkVendorCapability(vendorId, 'test_catalog');
-      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+      // Check if vendor has diagnostics capability (try multiple capability names)
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
+                                       await checkVendorCapability(vendorId, 'diagnostics') ||
+                                       await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
       
@@ -463,10 +464,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // Check if vendor has diagnostics capability
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostics');
-      const hasTestCatalogCapability = await checkVendorCapability(vendorId, 'test_catalog');
-      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+      // Check if vendor has diagnostics capability (try multiple capability names)
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
+                                       await checkVendorCapability(vendorId, 'diagnostics') ||
+                                       await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
       
@@ -501,10 +503,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     try {
       const { vendorId, testId } = c.req.param();
       
-      // Check if vendor has diagnostics capability
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostics');
-      const hasTestCatalogCapability = await checkVendorCapability(vendorId, 'test_catalog');
-      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+      // Check if vendor has diagnostics capability (try multiple capability names)
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
+                                       await checkVendorCapability(vendorId, 'diagnostics') ||
+                                       await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
       

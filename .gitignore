@@ -114,6 +114,7 @@ keystore.properties
 tmp/
 temp/
 *.tgz
+*.pack
 
 # =============================================================================
 # LEGACY DIRECTORIES - DO NOT RE-ADD

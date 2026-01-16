@@ -702,29 +702,40 @@ export const vendorTests: UITest[] = [
   // SPECIALIZED VENDOR TYPE TESTS (100+)
   // ============================================================================
 
-  // Clinic-specific tests
+  // ============================================================================
+  // PRESCRIPTION MANAGEMENT TESTS (NEW COMPONENTS)
+  // ============================================================================
+
   {
     id: 'vendor-400',
-    name: 'Upload Prescription',
-    description: 'Vet clinic uploads prescription',
+    name: 'Create Prescription with Multiple Medications',
+    description: 'Vet clinic creates prescription using PrescriptionCreate component',
     role: 'vendor',
     screen: 'prescriptions',
-    component: 'VendorPrescriptionBuilder',
+    component: 'PrescriptionCreate',
     element: 'savePrescriptionButton',
     action: 'click',
     category: 'functional',
     priority: 'high',
     preconditions: ['vendor-152'],
     steps: [
-      { id: 's1', action: 'navigate', target: '/vendor/prescriptions' },
-      { id: 's2', action: 'click', target: 'createPrescriptionButton' },
-      { id: 's3', action: 'type', target: 'medicationName', value: 'Antibiotic' },
-      { id: 's4', action: 'type', target: 'dosage', value: '500mg' },
-      { id: 's5', action: 'click', target: 'savePrescriptionButton' },
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'click', target: 'prescriptionButton' },
+      { id: 's3', action: 'type', target: 'diagnosis', value: 'Fever and cough' },
+      { id: 's4', action: 'type', target: 'medicationName', value: 'Antibiotic' },
+      { id: 's5', action: 'type', target: 'dosage', value: '500mg' },
+      { id: 's6', action: 'type', target: 'frequency', value: 'Twice daily' },
+      { id: 's7', action: 'click', target: 'addMedicationButton' },
+      { id: 's8', action: 'type', target: 'medicationName2', value: 'Cough Syrup' },
+      { id: 's9', action: 'type', target: 'dosage2', value: '10ml' },
+      { id: 's10', action: 'type', target: 'frequency2', value: 'Three times daily' },
+      { id: 's11', action: 'type', target: 'instructions', value: 'Take after meals' },
+      { id: 's12', action: 'type', target: 'followUpDate', value: '2026-02-01' },
+      { id: 's13', action: 'click', target: 'savePrescriptionButton' },
     ],
     apiValidations: [
       {
-        endpoint: '/vendor/prescriptions',
+        endpoint: '/prescriptions',
         method: 'POST',
         expectedStatus: 201,
       },
@@ -740,8 +751,304 @@ export const vendorTests: UITest[] = [
     eventValidations: [],
     expectedResults: [
       { uiState: 'prescription.saved' },
+      { uiState: 'prescriptionList.visible' },
     ],
-    tags: ['prescriptions', 'clinic'],
+    tags: ['prescriptions', 'clinic', 'new-component'],
+  },
+
+  {
+    id: 'vendor-401',
+    name: 'View Prescription List',
+    description: 'Vendor views list of prescriptions using PrescriptionList component',
+    role: 'vendor',
+    screen: 'prescriptions',
+    component: 'PrescriptionList',
+    element: 'prescriptionList',
+    action: 'view',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-400'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'click', target: 'prescriptionListButton' },
+      { id: 's3', action: 'wait', target: 'prescriptionList', value: 2000 },
+      { id: 's4', action: 'type', target: 'searchInput', value: 'Antibiotic' },
+      { id: 's5', action: 'verify', target: 'prescriptionCard' },
+    ],
+    apiValidations: [
+      {
+        endpoint: '/prescriptions/vendor/{{vendorId}}',
+        method: 'GET',
+        expectedStatus: 200,
+      },
+    ],
+    dbValidations: [],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'prescriptionList.visible' },
+      { uiState: 'prescriptionCard.visible' },
+    ],
+    tags: ['prescriptions', 'list', 'new-component'],
+  },
+
+  {
+    id: 'vendor-402',
+    name: 'Prescription Capability Gate',
+    description: 'Prescription button hidden when vendor lacks prescription_create capability',
+    role: 'vendor',
+    screen: 'dashboard',
+    component: 'VendorDashboard',
+    element: 'prescriptionButton',
+    action: 'verify',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-001'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'verify', target: 'prescriptionButton.hidden' },
+    ],
+    apiValidations: [],
+    dbValidations: [
+      {
+        table: 'role_permissions',
+        query: 'SELECT capability FROM role_permissions WHERE role_id = (SELECT role_id FROM vendors WHERE id = {{vendorId}}) AND capability = \'prescription_create\'',
+        expectedResult: {},
+        operation: 'not_exists',
+      },
+    ],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'prescriptionButton.hidden' },
+    ],
+    tags: ['prescriptions', 'capability-gate', 'new-component'],
+  },
+
+  // ============================================================================
+  // DIAGNOSTIC MANAGEMENT TESTS (NEW COMPONENTS)
+  // ============================================================================
+
+  {
+    id: 'vendor-410',
+    name: 'View Diagnostic Results',
+    description: 'Vendor views diagnostic test catalog using DiagnosticResults component',
+    role: 'vendor',
+    screen: 'diagnostics',
+    component: 'DiagnosticResults',
+    element: 'diagnosticResults',
+    action: 'view',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-001'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'click', target: 'diagnosticsButton' },
+      { id: 's3', action: 'wait', target: 'diagnosticResults', value: 2000 },
+      { id: 's4', action: 'type', target: 'searchInput', value: 'Blood' },
+      { id: 's5', action: 'verify', target: 'testCard' },
+    ],
+    apiValidations: [
+      {
+        endpoint: '/vendor/{{vendorId}}/diagnostics/tests',
+        method: 'GET',
+        expectedStatus: 200,
+      },
+    ],
+    dbValidations: [],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'diagnosticResults.visible' },
+    ],
+    tags: ['diagnostics', 'new-component'],
+  },
+
+  {
+    id: 'vendor-411',
+    name: 'Upload Diagnostic Test',
+    description: 'Vendor uploads new diagnostic test using UploadResults component',
+    role: 'vendor',
+    screen: 'diagnostics',
+    component: 'UploadResults',
+    element: 'saveTestButton',
+    action: 'click',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-410'],
+    steps: [
+      { id: 's1', action: 'click', target: 'addTestButton' },
+      { id: 's2', action: 'type', target: 'testName', value: 'Complete Blood Count' },
+      { id: 's3', action: 'type', target: 'testPrice', value: '800' },
+      { id: 's4', action: 'type', target: 'testDescription', value: 'CBC test for blood analysis' },
+      { id: 's5', action: 'select', target: 'testCategory', value: 'Hematology' },
+      { id: 's6', action: 'click', target: 'saveTestButton' },
+    ],
+    apiValidations: [
+      {
+        endpoint: '/vendor/{{vendorId}}/diagnostics/tests',
+        method: 'POST',
+        expectedStatus: 201,
+      },
+    ],
+    dbValidations: [
+      {
+        table: 'diagnostic_tests',
+        query: 'SELECT * FROM diagnostic_tests WHERE vendor_id = {{vendorId}} AND name = \'Complete Blood Count\'',
+        expectedResult: {},
+        operation: 'exists',
+      },
+    ],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'test.saved' },
+      { uiState: 'diagnosticResults.visible' },
+    ],
+    tags: ['diagnostics', 'upload', 'new-component'],
+  },
+
+  {
+    id: 'vendor-412',
+    name: 'Diagnostic Capability Gate',
+    description: 'Diagnostics button hidden when vendor lacks diagnostic_results capability',
+    role: 'vendor',
+    screen: 'dashboard',
+    component: 'VendorDashboard',
+    element: 'diagnosticsButton',
+    action: 'verify',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-001'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'verify', target: 'diagnosticsButton.hidden' },
+    ],
+    apiValidations: [],
+    dbValidations: [
+      {
+        table: 'role_permissions',
+        query: 'SELECT capability FROM role_permissions WHERE role_id = (SELECT role_id FROM vendors WHERE id = {{vendorId}}) AND capability IN (\'diagnostic_results\', \'test_catalog\')',
+        expectedResult: {},
+        operation: 'not_exists',
+      },
+    ],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'diagnosticsButton.hidden' },
+    ],
+    tags: ['diagnostics', 'capability-gate', 'new-component'],
+  },
+
+  // ============================================================================
+  // SERVICE PRICING TESTS (NEW COMPONENTS)
+  // ============================================================================
+
+  {
+    id: 'vendor-420',
+    name: 'Update Service Pricing',
+    description: 'Vendor updates service pricing using ServicePricing component',
+    role: 'vendor',
+    screen: 'pricing',
+    component: 'ServicePricing',
+    element: 'savePricingButton',
+    action: 'click',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-100'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'click', target: 'pricingButton' },
+      { id: 's3', action: 'wait', target: 'servicePricing', value: 2000 },
+      { id: 's4', action: 'click', target: 'serviceCard' },
+      { id: 's5', action: 'type', target: 'priceInput', value: '750' },
+      { id: 's6', action: 'type', target: 'durationInput', value: '45' },
+      { id: 's7', action: 'click', target: 'savePricingButton' },
+    ],
+    apiValidations: [
+      {
+        endpoint: '/vendor/services/{{serviceId}}/pricing',
+        method: 'PUT',
+        expectedStatus: 200,
+      },
+    ],
+    dbValidations: [
+      {
+        table: 'services',
+        query: 'SELECT price, duration_minutes FROM services WHERE id = {{serviceId}}',
+        expectedResult: { price: 750, duration_minutes: 45 },
+        operation: 'select',
+      },
+    ],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'pricing.updated' },
+    ],
+    tags: ['pricing', 'new-component'],
+  },
+
+  {
+    id: 'vendor-421',
+    name: 'Bulk Update Service Pricing',
+    description: 'Vendor bulk updates multiple service prices using ServicePricing component',
+    role: 'vendor',
+    screen: 'pricing',
+    component: 'ServicePricing',
+    element: 'bulkUpdateButton',
+    action: 'click',
+    category: 'functional',
+    priority: 'medium',
+    preconditions: ['vendor-100'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'click', target: 'pricingButton' },
+      { id: 's3', action: 'click', target: 'bulkUpdateTab' },
+      { id: 's4', action: 'select', target: 'serviceCheckbox1', value: 'checked' },
+      { id: 's5', action: 'select', target: 'serviceCheckbox2', value: 'checked' },
+      { id: 's6', action: 'type', target: 'bulkPriceInput', value: '600' },
+      { id: 's7', action: 'click', target: 'bulkUpdateButton' },
+    ],
+    apiValidations: [
+      {
+        endpoint: '/vendor/services/pricing/bulk',
+        method: 'POST',
+        expectedStatus: 200,
+      },
+    ],
+    dbValidations: [],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'bulkPricing.updated' },
+    ],
+    tags: ['pricing', 'bulk', 'new-component'],
+  },
+
+  {
+    id: 'vendor-422',
+    name: 'Pricing Capability Gate',
+    description: 'Pricing button hidden when vendor lacks service_pricing capability',
+    role: 'vendor',
+    screen: 'dashboard',
+    component: 'VendorDashboard',
+    element: 'pricingButton',
+    action: 'verify',
+    category: 'functional',
+    priority: 'high',
+    preconditions: ['vendor-001'],
+    steps: [
+      { id: 's1', action: 'navigate', target: '/vendor/dashboard' },
+      { id: 's2', action: 'verify', target: 'pricingButton.hidden' },
+    ],
+    apiValidations: [],
+    dbValidations: [
+      {
+        table: 'role_permissions',
+        query: 'SELECT capability FROM role_permissions WHERE role_id = (SELECT role_id FROM vendors WHERE id = {{vendorId}}) AND capability = \'service_pricing\'',
+        expectedResult: {},
+        operation: 'not_exists',
+      },
+    ],
+    eventValidations: [],
+    expectedResults: [
+      { uiState: 'pricingButton.hidden' },
+    ],
+    tags: ['pricing', 'capability-gate', 'new-component'],
   },
 
   // Seller (E-commerce) tests

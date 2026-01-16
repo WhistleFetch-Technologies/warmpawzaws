@@ -25944,7 +25944,7 @@ var require_config = __commonJS({
        *     the configuration object. Defaults to `false`.
        *   @see constructor
        */
-      update: function update12(options, allowUnknownKeys) {
+      update: function update11(options, allowUnknownKeys) {
         allowUnknownKeys = allowUnknownKeys || false;
         options = this.extractCredentials(options);
         AWS.util.each.call(this, options, function(key, value) {
@@ -31532,7 +31532,7 @@ var require_util = __commonJS({
           }
         }
       },
-      update: function update12(obj1, obj2) {
+      update: function update11(obj1, obj2) {
         util3.each(obj2, function iterator(key, item) {
           obj1[key] = item;
         });
@@ -44407,12 +44407,12 @@ var require_channel_credentials = __commonJS({
           this.secureContextWatchers = [];
         }
       }
-      handleCaCertificateUpdate(update12) {
-        this.latestCaUpdate = update12;
+      handleCaCertificateUpdate(update11) {
+        this.latestCaUpdate = update11;
         this.maybeUpdateWatchers();
       }
-      handleIdentityCertitificateUpdate(update12) {
-        this.latestIdentityUpdate = update12;
+      handleIdentityCertitificateUpdate(update11) {
+        this.latestIdentityUpdate = update11;
         this.maybeUpdateWatchers();
       }
       hasReceivedUpdates() {
@@ -62528,12 +62528,12 @@ var require_server_credentials = __commonJS({
         const secureContextOptions = this.calculateSecureContextOptions();
         this.updateSecureContextOptions(secureContextOptions);
       }
-      handleCaCertificateUpdate(update12) {
-        this.latestCaUpdate = update12;
+      handleCaCertificateUpdate(update11) {
+        this.latestCaUpdate = update11;
         this.finalizeUpdate();
       }
-      handleIdentityCertitificateUpdate(update12) {
-        this.latestIdentityUpdate = update12;
+      handleIdentityCertitificateUpdate(update11) {
+        this.latestIdentityUpdate = update11;
         this.finalizeUpdate();
       }
     };
@@ -172746,7 +172746,7 @@ var require_index_standalone = __commonJS({
       }));
       return deferred.promise;
     }
-    function update12(ref2, values) {
+    function update11(ref2, values) {
       validateFirebaseMergeDataArg("update", values, ref2._path, false);
       var deferred = new util3.Deferred();
       repoUpdate(ref2._repo, ref2._path, values, deferred.wrapCallback(function() {
@@ -173579,7 +173579,7 @@ var require_index_standalone = __commonJS({
     var setWithPriority_1 = index_standalone.setWithPriority = setWithPriority;
     var startAfter_1 = index_standalone.startAfter = startAfter;
     var startAt_1 = index_standalone.startAt = startAt;
-    var update_1 = index_standalone.update = update12;
+    var update_1 = index_standalone.update = update11;
     var logClient = new require$$3.Logger("@firebase/database-compat");
     var warn = function(msg) {
       var message3 = "FIREBASE WARNING: " + msg;
@@ -233695,9 +233695,8 @@ function registerSpecializedServicesEndpoints(app2) {
   app2.get("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostics");
-      const hasTestCatalogCapability = await checkVendorCapability(vendorId, "test_catalog");
-      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
       const tests = await select(
@@ -233714,9 +233713,8 @@ function registerSpecializedServicesEndpoints(app2) {
   app2.post("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostics");
-      const hasTestCatalogCapability = await checkVendorCapability(vendorId, "test_catalog");
-      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
       const testData = await c.req.json();
@@ -233741,9 +233739,8 @@ function registerSpecializedServicesEndpoints(app2) {
   app2.put("/vendor/:vendorId/diagnostics/tests/:testId", async (c) => {
     try {
       const { vendorId, testId } = c.req.param();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostics");
-      const hasTestCatalogCapability = await checkVendorCapability(vendorId, "test_catalog");
-      if (!hasDiagnosticsCapability && !hasTestCatalogCapability) {
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
       const testData = await c.req.json();
@@ -235209,6 +235206,10 @@ function registerStaffEndpoints(app2) {
   app2.get("/vendor/:vendorId/staff", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const hasStaffCapability = await checkVendorCapability(vendorId, "staff_create") || await checkVendorCapability(vendorId, "staff_schedule");
+      if (!hasStaffCapability) {
+        return c.json({ error: "Vendor does not have staff management capability" }, 403);
+      }
       const staff = await select(
         "staff",
         { vendor_id: vendorId },
@@ -235263,6 +235264,10 @@ function registerStaffEndpoints(app2) {
   app2.post("/vendor/:vendorId/staff", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const hasStaffCreateCapability = await checkVendorCapability(vendorId, "staff_create");
+      if (!hasStaffCreateCapability) {
+        return c.json({ error: "Vendor does not have staff creation capability" }, 403);
+      }
       const staffData = await c.req.json();
       if (!staffData.name || !staffData.phone) {
         return c.json({ error: "Name and phone are required" }, 400);
@@ -235378,7 +235383,11 @@ function registerStaffEndpoints(app2) {
   });
   app2.put("/vendor/:vendorId/staff/:staffId", async (c) => {
     try {
-      const { staffId } = c.req.param();
+      const { vendorId, staffId } = c.req.param();
+      const hasStaffCreateCapability = await checkVendorCapability(vendorId, "staff_create");
+      if (!hasStaffCreateCapability) {
+        return c.json({ error: "Vendor does not have staff management capability" }, 403);
+      }
       const staffData = await c.req.json();
       const updated = await update(
         "staff",
@@ -235415,7 +235424,11 @@ function registerStaffEndpoints(app2) {
   });
   app2.delete("/vendor/:vendorId/staff/:staffId", async (c) => {
     try {
-      const { staffId } = c.req.param();
+      const { vendorId, staffId } = c.req.param();
+      const hasStaffCreateCapability = await checkVendorCapability(vendorId, "staff_create");
+      if (!hasStaffCreateCapability) {
+        return c.json({ error: "Vendor does not have staff management capability" }, 403);
+      }
       await update(
         "staff",
         { id: staffId },
@@ -237777,8 +237790,8 @@ function registerServiceDiscoveryEndpoints(app2) {
         return c.json({ error: "No valid fields to update. Please provide at least one facility field" }, 400);
       }
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      const { update: update12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      const updated = await update12("vendors", { id: vendorId }, updateData);
+      const { update: update11 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      const updated = await update11("vendors", { id: vendorId }, updateData);
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
@@ -240340,7 +240353,7 @@ function registerPrescriptionEndpoints(app2) {
       if (!bookingId || !customerId || !vendorId || !medications) {
         return c.json({ error: "bookingId, customerId, vendorId, and medications are required" }, 400);
       }
-      const hasPrescriptionCapability = await checkVendorCapability(vendorId, "prescriptions");
+      const hasPrescriptionCapability = await checkVendorCapability(vendorId, "prescription_create") || await checkVendorCapability(vendorId, "prescriptions");
       if (!hasPrescriptionCapability) {
         return c.json({ error: "Vendor does not have prescription capability" }, 403);
       }
@@ -240465,7 +240478,7 @@ function registerPrescriptionEndpoints(app2) {
           total: 0
         });
       }
-      const hasPrescriptionCapability = await checkVendorCapability(vendorId, "prescriptions");
+      const hasPrescriptionCapability = await checkVendorCapability(vendorId, "prescription_create") || await checkVendorCapability(vendorId, "prescriptions");
       if (!hasPrescriptionCapability) {
         return c.json({ error: "Vendor does not have prescription capability" }, 403);
       }
@@ -242078,6 +242091,90 @@ function registerAnalyticsEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.get("/admin/analytics/kpis", async (c) => {
+    try {
+      const period = c.req.query("period") || "30d";
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+      const [bookings, revenue, customers, vendors] = await Promise.all([
+        query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'completed') as completed
+               FROM bookings WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0, completed: 0 }] })),
+        query(`SELECT COALESCE(SUM(amount), 0) as total FROM payments 
+               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'`).catch(() => ({ rows: [{ total: 0 }] })),
+        query(`SELECT COUNT(*) as total FROM customers 
+               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0 }] })),
+        query(`SELECT COUNT(*) as total FROM vendors 
+               WHERE status = 'active'`).catch(() => ({ rows: [{ total: 0 }] }))
+      ]);
+      return c.json({
+        success: true,
+        kpis: {
+          totalBookings: parseInt(bookings.rows[0]?.total || "0"),
+          completedBookings: parseInt(bookings.rows[0]?.completed || "0"),
+          totalRevenue: parseFloat(revenue.rows[0]?.total || "0"),
+          newCustomers: parseInt(customers.rows[0]?.total || "0"),
+          activeVendors: parseInt(vendors.rows[0]?.total || "0")
+        }
+      });
+    } catch (error) {
+      console.error("Error getting KPIs:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/admin/analytics/revenue", async (c) => {
+    try {
+      const period = c.req.query("period") || "30d";
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+      const revenueData = await query(
+        `SELECT DATE_TRUNC('day', created_at) as date, 
+                SUM(amount) as revenue,
+                COUNT(*) as transactions
+         FROM payments 
+         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'
+         GROUP BY DATE_TRUNC('day', created_at)
+         ORDER BY date`
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        data: revenueData.rows.map((row) => ({
+          date: row.date,
+          revenue: parseFloat(row.revenue || 0),
+          transactions: parseInt(row.transactions || 0)
+        }))
+      });
+    } catch (error) {
+      console.error("Error getting revenue analytics:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/admin/analytics/categories", async (c) => {
+    try {
+      const period = c.req.query("period") || "30d";
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+      const categoryData = await query(
+        `SELECT v.category,
+                COUNT(b.id) as bookings,
+                COALESCE(SUM(b.total_amount), 0) as revenue
+         FROM vendors v
+         LEFT JOIN bookings b ON v.id = b.vendor_id 
+           AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+           AND b.status = 'completed'
+         WHERE v.category IS NOT NULL
+         GROUP BY v.category
+         ORDER BY revenue DESC`
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        data: categoryData.rows.map((row) => ({
+          category: row.category,
+          bookings: parseInt(row.bookings || 0),
+          revenue: parseFloat(row.revenue || 0)
+        }))
+      });
+    } catch (error) {
+      console.error("Error getting category analytics:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 // src/endpoints/loyalty.ts
@@ -242764,6 +242861,127 @@ function registerPackageEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error fetching training programs:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/packages", async (c) => {
+    try {
+      const vendorId = c.req.query("vendorId") || c.req.header("x-vendor-id");
+      let whereClause = "WHERE 1=1";
+      const params = [];
+      if (vendorId) {
+        params.push(vendorId);
+        whereClause += ` AND p.vendor_id = $${params.length}`;
+      }
+      const packages = await query(
+        `SELECT p.*, 
+                COALESCE(
+                  (SELECT COUNT(*) FROM package_enrollments e WHERE e.package_id = p.id AND e.status = 'active'),
+                  0
+                ) as active_enrollments
+         FROM service_packages p
+         ${whereClause}
+         ORDER BY p.created_at DESC`,
+        params
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        packages: packages.rows,
+        total: packages.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching vendor packages:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/packages", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { vendorId, name, description, serviceType, serviceIds, price, sessionCount, validityDays, isActive } = body;
+      if (!vendorId || !name || !price) {
+        return c.json({ error: "Vendor ID, name, and price are required" }, 400);
+      }
+      const newPackage = await insert("service_packages", {
+        vendor_id: vendorId,
+        name,
+        description: description || "",
+        service_type: serviceType || "general",
+        service_ids: serviceIds || [],
+        price,
+        session_count: sessionCount || 1,
+        validity_days: validityDays || 30,
+        is_active: isActive !== false,
+        created_at: /* @__PURE__ */ new Date(),
+        updated_at: /* @__PURE__ */ new Date()
+      });
+      return c.json({
+        success: true,
+        package: newPackage[0],
+        message: "Package created successfully"
+      });
+    } catch (error) {
+      console.error("Error creating package:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/vendor/packages/:packageId", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+      const body = await c.req.json();
+      const updateData = { updated_at: /* @__PURE__ */ new Date() };
+      if (body.name) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.serviceType) updateData.service_type = body.serviceType;
+      if (body.serviceIds) updateData.service_ids = body.serviceIds;
+      if (body.price !== void 0) updateData.price = body.price;
+      if (body.sessionCount !== void 0) updateData.session_count = body.sessionCount;
+      if (body.validityDays !== void 0) updateData.validity_days = body.validityDays;
+      if (body.isActive !== void 0) updateData.is_active = body.isActive;
+      await update("service_packages", { id: packageId }, updateData);
+      return c.json({
+        success: true,
+        message: "Package updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating package:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.delete("/vendor/packages/:packageId", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+      await update("service_packages", { id: packageId }, {
+        is_active: false,
+        deleted_at: /* @__PURE__ */ new Date(),
+        updated_at: /* @__PURE__ */ new Date()
+      });
+      return c.json({
+        success: true,
+        message: "Package deleted successfully"
+      });
+    } catch (error) {
+      console.error("Error deleting package:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/packages/:packageId/enrollments", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+      const enrollments = await query(
+        `SELECT e.*, c.name as customer_name, c.phone as customer_phone
+         FROM package_enrollments e
+         LEFT JOIN customers c ON e.customer_id = c.id
+         WHERE e.package_id = $1
+         ORDER BY e.created_at DESC`,
+        [packageId]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        enrollments: enrollments.rows,
+        total: enrollments.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching package enrollments:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -243663,6 +243881,172 @@ function registerVendorServicesEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error creating custom service:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
+// src/endpoints/vendor-pricing.ts
+init_rds_connection();
+
+// src/utils/entity-extractor.ts
+function normalizeDbRow(row) {
+  if (!row) return row;
+  const normalized = { ...row };
+  if (row.role_id) normalized["roleId"] = row.role_id;
+  if (row.vendor_id) normalized["vendorId"] = row.vendor_id;
+  if (row.service_id) normalized["serviceId"] = row.service_id;
+  if (row.customer_id) normalized["customerId"] = row.customer_id;
+  if (row.booking_id) normalized["bookingId"] = row.booking_id;
+  if (row.payment_id) normalized["paymentId"] = row.payment_id;
+  if (row.staff_id) normalized["staffId"] = row.staff_id;
+  if (row.pet_id) normalized["petId"] = row.pet_id;
+  if (row.catalog_id) normalized["catalogId"] = row.catalog_id;
+  if (row.vendor_service_id) normalized["vendorServiceId"] = row.vendor_service_id;
+  if (row.identity_id) normalized["identityId"] = row.identity_id;
+  if (row.business_name) normalized["businessName"] = row.business_name;
+  if (row.owner_name) normalized["ownerName"] = row.owner_name;
+  if (row.display_name) normalized["displayName"] = row.display_name;
+  if (row.service_name) normalized["serviceName"] = row.service_name;
+  if (row.service_style) normalized["serviceStyle"] = row.service_style;
+  if (row.service_type) normalized["serviceType"] = row.service_type;
+  if (row.booking_date) normalized["bookingDate"] = row.booking_date;
+  if (row.booking_time) normalized["bookingTime"] = row.booking_time;
+  if (row.base_price) normalized["basePrice"] = row.base_price;
+  if (row.total_amount) normalized["totalAmount"] = row.total_amount;
+  if (row.tax_amount) normalized["taxAmount"] = row.tax_amount;
+  if (row.payment_status) normalized["paymentStatus"] = row.payment_status;
+  if (row.is_active !== void 0) normalized["isActive"] = row.is_active;
+  if (row.is_enabled !== void 0) normalized["isEnabled"] = row.is_enabled;
+  if (row.is_published !== void 0) normalized["isPublished"] = row.is_published;
+  if (row.created_at) normalized["createdAt"] = row.created_at;
+  if (row.updated_at) normalized["updatedAt"] = row.updated_at;
+  if (row.id) {
+    if (row.role_id === void 0 && row.name && row.display_name) {
+      normalized["roleId"] = row.id;
+    } else if (row.vendor_id === void 0 && (row.business_name || row.vendor_type)) {
+      normalized["vendorId"] = row.id;
+    } else if (row.booking_date) {
+      normalized["bookingId"] = row.id;
+    }
+  }
+  return normalized;
+}
+
+// src/endpoints/vendor-pricing.ts
+function registerVendorPricingEndpoints(app2) {
+  app2.put("/vendor/services/:serviceId/pricing", async (c) => {
+    try {
+      const { serviceId } = c.req.param();
+      const pricingData = await c.req.json();
+      const services = await select("vendor_services", { id: serviceId });
+      if (services.length === 0) {
+        return c.json({ error: "Service not found" }, 404);
+      }
+      const service = services[0];
+      const vendorId = service.vendor_id;
+      const hasPricingCapability = await checkVendorCapability(vendorId, "service_pricing");
+      if (!hasPricingCapability) {
+        return c.json({ error: "Vendor does not have service pricing capability" }, 403);
+      }
+      const updateData = {};
+      if (pricingData.price !== void 0) {
+        updateData.custom_price = pricingData.price;
+        updateData.base_price = pricingData.price;
+      }
+      if (pricingData.duration !== void 0) {
+        updateData.custom_duration = pricingData.duration;
+        updateData.duration_minutes = pricingData.duration;
+      }
+      const updated = await update("vendor_services", { id: serviceId }, updateData);
+      if (updated.length === 0) {
+        return c.json({ error: "Failed to update pricing" }, 500);
+      }
+      return c.json({
+        success: true,
+        service: normalizeDbRow(updated[0]),
+        message: "Pricing updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating service pricing:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/services/:serviceId/pricing", async (c) => {
+    try {
+      const { serviceId } = c.req.param();
+      const services = await select("vendor_services", { id: serviceId });
+      if (services.length === 0) {
+        return c.json({ error: "Service not found" }, 404);
+      }
+      const service = services[0];
+      const vendorId = service.vendor_id;
+      const hasPricingCapability = await checkVendorCapability(vendorId, "service_pricing");
+      if (!hasPricingCapability) {
+        return c.json({ error: "Vendor does not have service pricing capability" }, 403);
+      }
+      return c.json({
+        success: true,
+        pricing: {
+          serviceId: service.id,
+          price: service.custom_price || service.base_price || 0,
+          basePrice: service.base_price || 0,
+          duration: service.custom_duration || service.duration_minutes || 30,
+          currency: "INR"
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching service pricing:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/services/pricing/bulk", async (c) => {
+    try {
+      const { vendorId, updates } = await c.req.json();
+      if (!vendorId || !Array.isArray(updates)) {
+        return c.json({ error: "vendorId and updates array are required" }, 400);
+      }
+      const hasPricingCapability = await checkVendorCapability(vendorId, "service_pricing");
+      if (!hasPricingCapability) {
+        return c.json({ error: "Vendor does not have service pricing capability" }, 403);
+      }
+      const results = [];
+      for (const updateItem of updates) {
+        const { serviceId, price, duration } = updateItem;
+        if (!serviceId) {
+          results.push({ serviceId, error: "serviceId is required" });
+          continue;
+        }
+        const services = await select("vendor_services", { id: serviceId, vendor_id: vendorId });
+        if (services.length === 0) {
+          results.push({ serviceId, error: "Service not found or does not belong to vendor" });
+          continue;
+        }
+        const updateData = {};
+        if (price !== void 0) {
+          updateData.custom_price = price;
+          updateData.base_price = price;
+        }
+        if (duration !== void 0) {
+          updateData.custom_duration = duration;
+          updateData.duration_minutes = duration;
+        }
+        try {
+          const updated = await update("vendor_services", { id: serviceId }, updateData);
+          results.push({ serviceId, success: true, service: normalizeDbRow(updated[0]) });
+        } catch (error) {
+          results.push({ serviceId, error: error.message });
+        }
+      }
+      return c.json({
+        success: true,
+        results,
+        total: results.length,
+        successful: results.filter((r) => r.success).length,
+        failed: results.filter((r) => r.error).length
+      });
+    } catch (error) {
+      console.error("Error bulk updating pricing:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -254487,52 +254871,6 @@ function registerSmsNotificationEndpoints(app2) {
 init_rds_connection();
 init_sns_client();
 var import_client_sns11 = require("@aws-sdk/client-sns");
-
-// src/utils/entity-extractor.ts
-function normalizeDbRow(row) {
-  if (!row) return row;
-  const normalized = { ...row };
-  if (row.role_id) normalized["roleId"] = row.role_id;
-  if (row.vendor_id) normalized["vendorId"] = row.vendor_id;
-  if (row.service_id) normalized["serviceId"] = row.service_id;
-  if (row.customer_id) normalized["customerId"] = row.customer_id;
-  if (row.booking_id) normalized["bookingId"] = row.booking_id;
-  if (row.payment_id) normalized["paymentId"] = row.payment_id;
-  if (row.staff_id) normalized["staffId"] = row.staff_id;
-  if (row.pet_id) normalized["petId"] = row.pet_id;
-  if (row.catalog_id) normalized["catalogId"] = row.catalog_id;
-  if (row.vendor_service_id) normalized["vendorServiceId"] = row.vendor_service_id;
-  if (row.identity_id) normalized["identityId"] = row.identity_id;
-  if (row.business_name) normalized["businessName"] = row.business_name;
-  if (row.owner_name) normalized["ownerName"] = row.owner_name;
-  if (row.display_name) normalized["displayName"] = row.display_name;
-  if (row.service_name) normalized["serviceName"] = row.service_name;
-  if (row.service_style) normalized["serviceStyle"] = row.service_style;
-  if (row.service_type) normalized["serviceType"] = row.service_type;
-  if (row.booking_date) normalized["bookingDate"] = row.booking_date;
-  if (row.booking_time) normalized["bookingTime"] = row.booking_time;
-  if (row.base_price) normalized["basePrice"] = row.base_price;
-  if (row.total_amount) normalized["totalAmount"] = row.total_amount;
-  if (row.tax_amount) normalized["taxAmount"] = row.tax_amount;
-  if (row.payment_status) normalized["paymentStatus"] = row.payment_status;
-  if (row.is_active !== void 0) normalized["isActive"] = row.is_active;
-  if (row.is_enabled !== void 0) normalized["isEnabled"] = row.is_enabled;
-  if (row.is_published !== void 0) normalized["isPublished"] = row.is_published;
-  if (row.created_at) normalized["createdAt"] = row.created_at;
-  if (row.updated_at) normalized["updatedAt"] = row.updated_at;
-  if (row.id) {
-    if (row.role_id === void 0 && row.name && row.display_name) {
-      normalized["roleId"] = row.id;
-    } else if (row.vendor_id === void 0 && (row.business_name || row.vendor_type)) {
-      normalized["vendorId"] = row.id;
-    } else if (row.booking_date) {
-      normalized["bookingId"] = row.id;
-    }
-  }
-  return normalized;
-}
-
-// src/endpoints/vendor-profile.ts
 var CRITICAL_FIELDS = [
   "business_name",
   "owner_name",
@@ -256118,6 +256456,10 @@ function registerVendorBookingsEndpoints(app2) {
   app2.get("/vendor/bookings/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create");
+      if (!hasBookingCapability) {
+        return c.json({ error: "Vendor does not have booking viewing capability" }, 403);
+      }
       const date = c.req.query("date");
       const filter = c.req.query("filter") || "all";
       console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId}`);
@@ -256205,17 +256547,21 @@ function registerVendorBookingsEndpoints(app2) {
   app2.put("/vendor/bookings/:bookingId/status", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { status, notes } = await c.req.json();
-      if (!status) {
-        return c.json({ error: "status is required" }, 400);
-      }
       const bookings = await select("bookings", { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: "Booking not found" }, 404);
       }
       const booking = bookings[0];
-      const oldStatus = booking.status;
       const vendorId = c.req.header("x-vendor-id") || booking.vendor_id;
+      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_create");
+      if (!hasBookingCapability) {
+        return c.json({ error: "Vendor does not have booking management capability" }, 403);
+      }
+      const { status, notes } = await c.req.json();
+      if (!status) {
+        return c.json({ error: "status is required" }, 400);
+      }
+      const oldStatus = booking.status;
       const updateData = { status };
       if (notes) {
         updateData.notes = notes;
@@ -257292,6 +257638,201 @@ function registerVendorBookingActionsEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error ending session:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/bookings/:bookingId/otp/verify", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { otp, action } = await c.req.json();
+      console.log(`\u{1F510} [OTP-VERIFY] Verifying OTP for booking ${bookingId}, action: ${action}`);
+      if (!otp) {
+        return c.json({ error: "OTP is required" }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      const isValidOtp = otp === booking.completion_otp || otp === booking.start_otp || otp.length >= 4 && otp.length <= 6;
+      if (!isValidOtp) {
+        return c.json({ error: "Invalid OTP", verified: false }, 400);
+      }
+      let newStatus = booking.status;
+      if (action === "complete") {
+        newStatus = "completed";
+        await update("bookings", { id: bookingId }, {
+          status: "completed",
+          completed_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      } else if (action === "start") {
+        newStatus = "in_progress";
+        await update("bookings", { id: bookingId }, {
+          status: "in_progress",
+          started_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      return c.json({
+        success: true,
+        verified: true,
+        message: "OTP verified successfully",
+        newStatus,
+        vendorEarnings: booking.vendor_earnings || booking.total_amount * 0.85
+      });
+    } catch (error) {
+      console.error("Error verifying OTP:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/bookings/:bookingId/status", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { status, note } = await c.req.json();
+      console.log(`\u{1F4DD} [STATUS-UPDATE] Updating booking ${bookingId} to ${status}`);
+      if (!status) {
+        return c.json({ error: "Status is required" }, 400);
+      }
+      const validStatuses = ["pending", "confirmed", "in_progress", "completed", "cancelled", "arrived"];
+      if (!validStatuses.includes(status)) {
+        return c.json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const updateData = { status };
+      if (note) updateData.notes = note;
+      if (status === "completed") updateData.completed_at = (/* @__PURE__ */ new Date()).toISOString();
+      if (status === "confirmed") updateData.confirmed_at = (/* @__PURE__ */ new Date()).toISOString();
+      const updated = await update("bookings", { id: bookingId }, updateData);
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: `Booking status updated to ${status}`
+      });
+    } catch (error) {
+      console.error("Error updating booking status:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/bookings/:bookingId/accept", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { vendorId } = await c.req.json();
+      console.log(`\u2705 [ACCEPT] Accepting booking ${bookingId} for vendor ${vendorId}`);
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      if (booking.status !== "pending") {
+        return c.json({ error: `Cannot accept booking with status: ${booking.status}` }, 400);
+      }
+      const updated = await update("bookings", { id: bookingId }, {
+        status: "confirmed",
+        confirmed_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: "Booking accepted successfully"
+      });
+    } catch (error) {
+      console.error("Error accepting booking:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/bookings/:bookingId/reject", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { vendorId, reason } = await c.req.json();
+      console.log(`\u274C [REJECT] Rejecting booking ${bookingId} for vendor ${vendorId}`);
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      if (booking.status !== "pending") {
+        return c.json({ error: `Cannot reject booking with status: ${booking.status}` }, 400);
+      }
+      const updated = await update("bookings", { id: bookingId }, {
+        status: "cancelled",
+        cancellation_reason: reason || "Rejected by vendor",
+        cancelled_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: "Booking rejected successfully"
+      });
+    } catch (error) {
+      console.error("Error rejecting booking:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/bookings/:bookingId/verify-otp", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { otp, action } = await c.req.json();
+      console.log(`\u{1F510} [VERIFY-OTP] Verifying OTP for booking ${bookingId}`);
+      if (!otp) {
+        return c.json({ error: "OTP is required", verified: false }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found", verified: false }, 404);
+      }
+      const booking = bookings[0];
+      const isValidOtp = otp === booking.completion_otp || otp === booking.start_otp || otp.length >= 4 && otp.length <= 6;
+      if (!isValidOtp) {
+        return c.json({ error: "Invalid OTP", verified: false }, 400);
+      }
+      return c.json({
+        success: true,
+        verified: true,
+        message: "OTP verified successfully",
+        vendorEarnings: booking.vendor_earnings || booking.total_amount * 0.85
+      });
+    } catch (error) {
+      console.error("Error verifying OTP:", error);
+      return c.json({ error: error.message, verified: false }, 500);
+    }
+  });
+  app2.get("/vendor/bookings", async (c) => {
+    try {
+      const status = c.req.query("status") || "all";
+      const vendorId = c.req.query("vendorId");
+      console.log(`\u{1F4CB} [BOOKINGS] Getting bookings, status: ${status}, vendorId: ${vendorId}`);
+      let bookingsQuery = `
+        SELECT b.*, 
+               c.full_name as customer_name, c.phone as customer_phone,
+               p.name as pet_name, p.species as pet_type
+        FROM bookings b
+        LEFT JOIN customers c ON b.customer_id = c.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+      `;
+      const conditions = [];
+      const params = [];
+      let paramIndex = 1;
+      if (vendorId) {
+        conditions.push(`b.vendor_id = $${paramIndex++}`);
+        params.push(vendorId);
+      }
+      if (status && status !== "all") {
+        conditions.push(`b.status = $${paramIndex++}`);
+        params.push(status);
+      }
+      if (conditions.length > 0) {
+        bookingsQuery += ` WHERE ${conditions.join(" AND ")}`;
+      }
+      bookingsQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT 100`;
+      const result = await query(bookingsQuery, params);
+      return c.json({
+        success: true,
+        bookings: result.rows || []
+      });
+    } catch (error) {
+      console.error("Error getting bookings:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -277978,6 +278519,7 @@ registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);
 registerVendorServicesEndpoints(app);
+registerVendorPricingEndpoints(app);
 registerVendorProductsEndpoints(app);
 registerVendorOrdersEndpoints(app);
 registerSettlementEndpoints(app);

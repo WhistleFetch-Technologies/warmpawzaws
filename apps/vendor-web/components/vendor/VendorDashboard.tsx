@@ -49,7 +49,8 @@ import {
   HelpCircle,
   CheckCircle2,
   User,
-  X
+  X,
+  DollarSign
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -79,6 +80,9 @@ interface VendorDashboardProps {
   onNavigateToCCTV?: () => void;
   onNavigateToControlledSubstances?: () => void;
   onNavigateToPrescription?: () => void;
+  onNavigateToPrescriptionList?: () => void; // ✅ NEW: Navigate to prescription list
+  onNavigateToDiagnostics?: () => void; // ✅ NEW: Navigate to diagnostic management
+  onNavigateToPricing?: () => void; // ✅ NEW: Navigate to service pricing
   onNavigateToProgressTracking?: () => void;
   onNavigateToPackages?: () => void;
   onNavigateToCustomServices?: () => void;
@@ -175,6 +179,9 @@ export function VendorDashboard({
   onNavigateToCCTV,
   onNavigateToControlledSubstances,
   onNavigateToPrescription,
+  onNavigateToPrescriptionList, // ✅ NEW
+  onNavigateToDiagnostics, // ✅ NEW
+  onNavigateToPricing, // ✅ NEW
   onNavigateToProgressTracking,
   onNavigateToPackages,
   onNavigateToCustomServices,
@@ -661,14 +668,57 @@ export function VendorDashboard({
               )}
               
               {/* Prescription Builder */}
-              <CapabilityGate capability="prescription">
+              <CapabilityGate capability="prescription_create">
                 {onNavigateToPrescription && (
                   <button
                     onClick={onNavigateToPrescription}
                     className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                    title="Create Prescription"
                   >
                     <FileText className="w-6 h-6 text-blue-600 mb-1" />
                     <span className="text-xs font-medium text-gray-900">Rx</span>
+                  </button>
+                )}
+              </CapabilityGate>
+              
+              {/* Prescription List */}
+              <CapabilityGate capability="prescription_create">
+                {onNavigateToPrescriptionList && (
+                  <button
+                    onClick={onNavigateToPrescriptionList}
+                    className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                    title="View Prescriptions"
+                  >
+                    <FileText className="w-6 h-6 text-blue-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Rx List</span>
+                  </button>
+                )}
+              </CapabilityGate>
+              
+              {/* Diagnostic Results */}
+              <CapabilityGate capability="diagnostic_results">
+                {onNavigateToDiagnostics && (
+                  <button
+                    onClick={onNavigateToDiagnostics}
+                    className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                    title="Diagnostic Tests"
+                  >
+                    <Monitor className="w-6 h-6 text-purple-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Tests</span>
+                  </button>
+                )}
+              </CapabilityGate>
+              
+              {/* Service Pricing */}
+              <CapabilityGate capability="service_pricing">
+                {onNavigateToPricing && (
+                  <button
+                    onClick={onNavigateToPricing}
+                    className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                    title="Manage Pricing"
+                  >
+                    <DollarSign className="w-6 h-6 text-green-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Pricing</span>
                   </button>
                 )}
               </CapabilityGate>

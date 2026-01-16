@@ -21,6 +21,12 @@ import { select, insert, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { extractEntityIds, normalizeDbRow } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import {
+  validatePrescription,
+  normalizePrescriptionData,
+  formatPrescriptionResponse,
+  type PrescriptionData,
+} from '../lib/services/prescription-service';
 
 export function registerPrescriptionEndpoints(app: Hono) {
   /**
@@ -30,7 +36,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
    */
   app.post("/prescriptions", async (c) => {
     try {
-      const prescriptionData = await c.req.json();
+      const prescriptionData: PrescriptionData = await c.req.json();
       const {
         bookingId,
         customerId,
@@ -45,14 +51,17 @@ export function registerPrescriptionEndpoints(app: Hono) {
         createdByRole,
       } = prescriptionData;
 
-      if (!bookingId || !customerId || !vendorId || !medications) {
-        return c.json({ error: 'bookingId, customerId, vendorId, and medications are required' }, 400);
-      }
-
-      // Check if vendor has prescriptions capability
-      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescriptions');
+      // Check if vendor has prescription capability (try both naming conventions)
+      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
+                                        await checkVendorCapability(vendorId, 'prescriptions');
       if (!hasPrescriptionCapability) {
         return c.json({ error: 'Vendor does not have prescription capability' }, 403);
+      }
+
+      // Validate using functional model
+      const validation = validatePrescription(prescriptionData);
+      if (!validation.isValid) {
+        return c.json({ error: 'Validation failed', errors: validation.errors }, 400);
       }
 
       // Build prescription data based on available columns
@@ -231,8 +240,9 @@ export function registerPrescriptionEndpoints(app: Hono) {
         });
       }
 
-      // Check if vendor has prescriptions capability
-      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescriptions');
+      // Check if vendor has prescription capability (try both naming conventions)
+      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
+                                        await checkVendorCapability(vendorId, 'prescriptions');
       if (!hasPrescriptionCapability) {
         return c.json({ error: 'Vendor does not have prescription capability' }, 403);
       }

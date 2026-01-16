@@ -29,7 +29,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
 
       console.log('📤 Completing setup (informative only)...', payload);
 
-      const data = await apiClient.post('/vendor/setup/complete', payload) as any;
+      const data = await apiClient.post('/vendor/setup/go-live', payload) as any;
 
       if (data && data.success) {
         console.log('✅ [VendorApprovedSetup] Setup marked complete:', data);

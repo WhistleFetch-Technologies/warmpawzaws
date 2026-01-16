@@ -7,6 +7,7 @@ import {
   getRoleConfig, 
   getDashboardSections, 
   getAllowedServiceStyles,
+  normalizeRoleName,
   SERVICE_STYLES,
   DashboardSection,
   ServiceStyleConfig,
@@ -54,14 +55,21 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
 
   // Try to get roleId from localStorage if not provided
   const effectiveRoleId = useMemo(() => {
-    if (roleId) return roleId;
+    if (roleId) {
+      // Normalize role name (handle both DB and UI names)
+      return normalizeRoleName(roleId, false);
+    }
     
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('vendorData');
       if (stored) {
         try {
           const data = JSON.parse(stored);
-          return data.roleId || data.role_id;
+          const storedRoleId = data.roleId || data.role_id;
+          if (storedRoleId) {
+            // Normalize role name
+            return normalizeRoleName(storedRoleId, false);
+          }
         } catch (e) {
           console.warn('[useRoleConfig] Failed to parse vendorData from localStorage');
         }

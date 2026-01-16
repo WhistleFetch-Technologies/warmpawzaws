@@ -137,6 +137,45 @@ const FACILITY_SECTIONS: DashboardSection[] = [
 ];
 
 // ============================================================================
+// ROLE NAME MAPPING (Database to UI)
+// ============================================================================
+// Maps database role names (pet_*) to UI role names and vice versa
+
+export const ROLE_NAME_MAPPING: Record<string, string> = {
+  // UI name -> DB name
+  'groomer': 'pet_groomer',
+  'trainer': 'pet_trainer',
+  'nutritionist': 'pet_nutritionist',
+  'walker': 'pet_walker',
+  'shelter': 'pet_adoption_center',
+  'seller': 'pet_seller', // Check if exists in DB
+  // DB name -> UI name (reverse mapping)
+  'pet_groomer': 'groomer',
+  'pet_trainer': 'trainer',
+  'pet_nutritionist': 'nutritionist',
+  'pet_walker': 'walker',
+  'pet_adoption_center': 'shelter',
+  'pet_seller': 'seller',
+};
+
+/**
+ * Normalize role name (DB -> UI or UI -> DB)
+ */
+export function normalizeRoleName(roleName: string, toDb: boolean = false): string {
+  if (!roleName) return roleName;
+  
+  const normalized = roleName.toLowerCase().trim();
+  
+  if (toDb) {
+    // Convert UI name to DB name
+    return ROLE_NAME_MAPPING[normalized] || normalized;
+  } else {
+    // Convert DB name to UI name (or keep as is)
+    return ROLE_NAME_MAPPING[normalized] || normalized;
+  }
+}
+
+// ============================================================================
 // ROLE-SPECIFIC CONFIGURATIONS
 // ============================================================================
 
@@ -147,10 +186,10 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'emerald',
     category: 'healthcare',
     dashboardSections: [
-      ...COMMON_SECTIONS,
-      ...HEALTHCARE_SECTIONS,
-      ...STAFF_SECTIONS,
-      { id: 'specialized', label: 'Specialized Services', icon: '🔬', priority: 4.5 },
+      ...COMMON_SECTIONS.map(s => ({ ...s, requiresCapability: s.id === 'bookings' ? 'booking_view' : undefined })),
+      ...HEALTHCARE_SECTIONS.map(s => ({ ...s })),
+      ...STAFF_SECTIONS.map(s => ({ ...s, requiresCapability: 'staff_create' })),
+      { id: 'specialized', label: 'Specialized Services', icon: '🔬', priority: 4.5, requiresCapability: 'diagnostic_results' },
     ],
     primaryActions: ['view_appointments', 'create_prescription', 'start_consultation'],
     quickStats: ['today_appointments', 'pending_consultations', 'monthly_revenue', 'patient_count'],
@@ -162,9 +201,31 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'pink',
     category: 'grooming',
     dashboardSections: [
-      ...COMMON_SECTIONS,
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
       { id: 'gallery', label: 'Portfolio', icon: '📸', priority: 4 },
       { id: 'packages', label: 'Packages', icon: '📦', priority: 5 },
+      { id: 'schedule', label: 'Schedule', icon: '🗓️', priority: 3, requiresCapability: 'staff_schedule' },
+    ],
+    primaryActions: ['view_appointments', 'upload_gallery', 'create_package'],
+    quickStats: ['today_appointments', 'monthly_revenue', 'completed_grooms', 'rating'],
+  },
+  // Alias for database role name
+  pet_groomer: {
+    displayName: 'Pet Groomer',
+    icon: '✂️',
+    color: 'pink',
+    category: 'grooming',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'gallery', label: 'Portfolio', icon: '📸', priority: 4 },
+      { id: 'packages', label: 'Packages', icon: '📦', priority: 5 },
+      { id: 'schedule', label: 'Schedule', icon: '🗓️', priority: 3, requiresCapability: 'staff_schedule' },
     ],
     primaryActions: ['view_appointments', 'upload_gallery', 'create_package'],
     quickStats: ['today_appointments', 'monthly_revenue', 'completed_grooms', 'rating'],
@@ -176,10 +237,15 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'amber',
     category: 'boarding',
     dashboardSections: [
-      ...COMMON_SECTIONS,
-      ...FACILITY_SECTIONS,
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      ...FACILITY_SECTIONS.map(s => ({ ...s, requiresCapability: 'facility_management' })),
       { id: 'cctv', label: 'CCTV Access', icon: '📹', priority: 4 },
       { id: 'daily_updates', label: 'Daily Updates', icon: '📝', priority: 5 },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+      { id: 'inventory', label: 'Inventory', icon: '📦', priority: 8, requiresCapability: 'inventory_manage' },
     ],
     primaryActions: ['view_bookings', 'send_update', 'check_occupancy'],
     quickStats: ['current_occupancy', 'check_ins_today', 'check_outs_today', 'monthly_revenue'],
@@ -191,9 +257,31 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'orange',
     category: 'training',
     dashboardSections: [
-      ...COMMON_SECTIONS,
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
       { id: 'training_programs', label: 'Programs', icon: '📚', priority: 4 },
       { id: 'progress_tracking', label: 'Progress', icon: '📈', priority: 5 },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+    ],
+    primaryActions: ['view_sessions', 'log_progress', 'create_program'],
+    quickStats: ['active_programs', 'sessions_today', 'graduation_rate', 'monthly_revenue'],
+  },
+  // Alias for database role name
+  pet_trainer: {
+    displayName: 'Pet Trainer',
+    icon: '🎯',
+    color: 'orange',
+    category: 'training',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'training_programs', label: 'Programs', icon: '📚', priority: 4 },
+      { id: 'progress_tracking', label: 'Progress', icon: '📈', priority: 5 },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
     ],
     primaryActions: ['view_sessions', 'log_progress', 'create_program'],
     quickStats: ['active_programs', 'sessions_today', 'graduation_rate', 'monthly_revenue'],
@@ -205,9 +293,31 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'lime',
     category: 'nutrition',
     dashboardSections: [
-      ...COMMON_SECTIONS,
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
       { id: 'diet_plans', label: 'Diet Plans', icon: '📋', priority: 4 },
       { id: 'meal_management', label: 'Meal Plans', icon: '🍽️', priority: 5 },
+      { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 5, requiresCapability: 'medical_records' },
+    ],
+    primaryActions: ['create_diet_plan', 'view_consultations', 'track_progress'],
+    quickStats: ['active_plans', 'consultations_today', 'monthly_revenue', 'rating'],
+  },
+  // Alias for database role name
+  pet_nutritionist: {
+    displayName: 'Pet Nutritionist',
+    icon: '🥗',
+    color: 'lime',
+    category: 'nutrition',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'diet_plans', label: 'Diet Plans', icon: '📋', priority: 4 },
+      { id: 'meal_management', label: 'Meal Plans', icon: '🍽️', priority: 5 },
+      { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 5, requiresCapability: 'medical_records' },
     ],
     primaryActions: ['create_diet_plan', 'view_consultations', 'track_progress'],
     quickStats: ['active_plans', 'consultations_today', 'monthly_revenue', 'rating'],
@@ -219,9 +329,15 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'rose',
     category: 'hospitality',
     dashboardSections: [
-      ...COMMON_SECTIONS,
-      { id: 'table_management', label: 'Tables', icon: '🪑', priority: 4 },
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? undefined : undefined 
+      })),
+      { id: 'table_management', label: 'Tables', icon: '🪑', priority: 4, requiresCapability: 'cafe_tables' },
       { id: 'events', label: 'Events', icon: '🎉', priority: 5 },
+      { id: 'inventory', label: 'Inventory', icon: '📦', priority: 6, requiresCapability: 'inventory_manage' },
+      { id: 'menu', label: 'Menu', icon: '🍽️', priority: 7, requiresCapability: 'product_catalog' },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 8, requiresCapability: 'staff_create' },
     ],
     primaryActions: ['view_reservations', 'manage_tables', 'create_event'],
     quickStats: ['reservations_today', 'table_occupancy', 'monthly_revenue', 'rating'],
@@ -233,10 +349,35 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'cyan',
     category: 'shelter',
     dashboardSections: [
-      ...COMMON_SECTIONS,
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : undefined 
+      })),
       { id: 'adoptions', label: 'Adoptions', icon: '❤️', priority: 4 },
       { id: 'donations', label: 'Donations', icon: '💝', priority: 5 },
       { id: 'memorial', label: 'Memorial', icon: '🕯️', priority: 6 },
+      { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 7, requiresCapability: 'medical_records' },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 8, requiresCapability: 'staff_create' },
+    ],
+    primaryActions: ['view_applications', 'add_pet', 'manage_donations'],
+    quickStats: ['pets_available', 'adoptions_this_month', 'donations_received', 'pending_applications'],
+  },
+  // Alias for database role name
+  pet_adoption_center: {
+    displayName: 'Pet Shelter',
+    icon: '🏡',
+    color: 'cyan',
+    category: 'shelter',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : undefined 
+      })),
+      { id: 'adoptions', label: 'Adoptions', icon: '❤️', priority: 4 },
+      { id: 'donations', label: 'Donations', icon: '💝', priority: 5 },
+      { id: 'memorial', label: 'Memorial', icon: '🕯️', priority: 6 },
+      { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 7, requiresCapability: 'medical_records' },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 8, requiresCapability: 'staff_create' },
     ],
     primaryActions: ['view_applications', 'add_pet', 'manage_donations'],
     quickStats: ['pets_available', 'adoptions_this_month', 'donations_received', 'pending_applications'],
@@ -250,18 +391,189 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     dashboardSections: [
       { id: 'dashboard', label: 'Dashboard', icon: '📊', priority: 0 },
       { id: 'profile', label: 'Profile', icon: '👤', priority: 1 },
-      { id: 'inventory', label: 'Inventory & Catalog', icon: '📦', priority: 2 },
-      { id: 'orders', label: 'Orders', icon: '🛍️', priority: 3 },
+      { id: 'inventory', label: 'Inventory & Catalog', icon: '📦', priority: 2, requiresCapability: 'inventory_manage' },
+      { id: 'orders', label: 'Orders', icon: '🛍️', priority: 3, requiresCapability: 'orders' },
       { id: 'prescriptions', label: 'Prescription Verification', icon: '✅', priority: 4, requiresCapability: 'prescription_verification' },
       { id: 'delivery', label: 'Delivery Management', icon: '🚚', priority: 5, requiresCapability: 'delivery' },
       { id: 'expiry_management', label: 'Expiry Tracking', icon: '📆', priority: 6, requiresCapability: 'expiry_management' },
       { id: 'controlled_substances', label: 'Controlled Drugs', icon: '🔒', priority: 7, requiresCapability: 'controlled_substances' },
+      { id: 'catalog', label: 'Product Catalog', icon: '📚', priority: 8, requiresCapability: 'product_catalog' },
       { id: 'earnings', label: 'Earnings', icon: '💰', priority: 10 },
       { id: 'settings', label: 'Settings', icon: '⚙️', priority: 20 },
     ],
     allowedServiceStyles: [SERVICE_STYLES.at_center], // Pharmacy only operates at center
     primaryActions: ['verify_prescription', 'check_inventory', 'process_order', 'manage_catalog'],
     quickStats: ['pending_orders', 'prescriptions_verified', 'low_stock_items', 'monthly_revenue'],
+  },
+  // Additional healthcare roles from database
+  vet_clinic: {
+    displayName: 'Veterinary Clinic',
+    icon: '🏥',
+    color: 'emerald',
+    category: 'healthcare',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      ...HEALTHCARE_SECTIONS.map(s => ({ ...s })),
+      ...STAFF_SECTIONS.map(s => ({ ...s, requiresCapability: 'staff_create' })),
+      { id: 'specialized', label: 'Specialized Services', icon: '🔬', priority: 4.5, requiresCapability: 'diagnostic_results' },
+      { id: 'inventory', label: 'Inventory', icon: '📦', priority: 9, requiresCapability: 'inventory_manage' },
+    ],
+    primaryActions: ['view_appointments', 'create_prescription', 'start_consultation'],
+    quickStats: ['today_appointments', 'pending_consultations', 'monthly_revenue', 'patient_count'],
+  },
+  ambulance: {
+    displayName: 'Pet Ambulance Service',
+    icon: '🚑',
+    color: 'red',
+    category: 'healthcare',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'gps_tracking', label: 'GPS Tracking', icon: '📍', priority: 4, requiresCapability: 'gps_tracking' },
+    ],
+    primaryActions: ['view_bookings', 'start_trip', 'update_location'],
+    quickStats: ['active_trips', 'completed_trips', 'monthly_revenue', 'rating'],
+  },
+  diagnostics_center: {
+    displayName: 'Diagnostics Center',
+    icon: '🔬',
+    color: 'blue',
+    category: 'healthcare',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'diagnostics', label: 'Diagnostic Results', icon: '📊', priority: 4, requiresCapability: 'diagnostic_results' },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+    ],
+    primaryActions: ['view_bookings', 'upload_results', 'manage_tests'],
+    quickStats: ['pending_tests', 'completed_tests', 'monthly_revenue', 'rating'],
+  },
+  pet_insurance: {
+    displayName: 'Pet Insurance Provider',
+    icon: '🛡️',
+    color: 'indigo',
+    category: 'specialist',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+    ],
+    primaryActions: ['view_applications', 'process_claims', 'manage_policies'],
+    quickStats: ['active_policies', 'pending_claims', 'monthly_revenue', 'rating'],
+  },
+  pet_sitter: {
+    displayName: 'Pet Sitter',
+    icon: '🏠',
+    color: 'green',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+    ],
+    primaryActions: ['view_bookings', 'send_updates', 'manage_schedule'],
+    quickStats: ['active_bookings', 'completed_sessions', 'monthly_revenue', 'rating'],
+  },
+  pet_transport: {
+    displayName: 'Pet Transport',
+    icon: '🚐',
+    color: 'blue',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : undefined 
+      })),
+      { id: 'gps_tracking', label: 'GPS Tracking', icon: '📍', priority: 4, requiresCapability: 'gps_tracking' },
+    ],
+    primaryActions: ['view_bookings', 'start_trip', 'update_location'],
+    quickStats: ['active_trips', 'completed_trips', 'monthly_revenue', 'rating'],
+  },
+  pet_photographer: {
+    displayName: 'Pet Photographer',
+    icon: '📸',
+    color: 'purple',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'gallery', label: 'Portfolio', icon: '📸', priority: 4 },
+    ],
+    primaryActions: ['view_bookings', 'upload_photos', 'manage_portfolio'],
+    quickStats: ['sessions_today', 'completed_sessions', 'monthly_revenue', 'rating'],
+  },
+  pet_spa: {
+    displayName: 'Pet Spa',
+    icon: '💆',
+    color: 'pink',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+      { id: 'schedule', label: 'Schedule', icon: '🗓️', priority: 3, requiresCapability: 'staff_schedule' },
+    ],
+    primaryActions: ['view_appointments', 'manage_staff', 'view_schedule'],
+    quickStats: ['today_appointments', 'completed_services', 'monthly_revenue', 'rating'],
+  },
+  pet_event_organizer: {
+    displayName: 'Pet Event Organizer',
+    icon: '🎉',
+    color: 'yellow',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'events', label: 'Events', icon: '📅', priority: 4 },
+    ],
+    primaryActions: ['view_events', 'create_event', 'manage_registrations'],
+    quickStats: ['upcoming_events', 'total_registrations', 'monthly_revenue', 'rating'],
+  },
+  pet_relocation: {
+    displayName: 'Pet Relocation',
+    icon: '✈️',
+    color: 'teal',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'gps_tracking', label: 'GPS Tracking', icon: '📍', priority: 4, requiresCapability: 'gps_tracking' },
+    ],
+    primaryActions: ['view_bookings', 'track_shipment', 'update_status'],
+    quickStats: ['active_shipments', 'completed_shipments', 'monthly_revenue', 'rating'],
+  },
+  pet_daycare: {
+    displayName: 'Pet Daycare',
+    icon: '🏫',
+    color: 'orange',
+    category: 'service_provider',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+      { id: 'schedule', label: 'Schedule', icon: '🗓️', priority: 3, requiresCapability: 'staff_schedule' },
+    ],
+    primaryActions: ['view_bookings', 'manage_staff', 'view_schedule'],
+    quickStats: ['current_occupancy', 'check_ins_today', 'monthly_revenue', 'rating'],
   },
   
   walker: {
@@ -270,7 +582,28 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     color: 'blue',
     category: 'walking',
     dashboardSections: [
-      ...COMMON_SECTIONS,
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : undefined 
+      })),
+      { id: 'live_tracking', label: 'Live Tracking', icon: '📍', priority: 4, requiresCapability: 'gps_tracking' },
+      { id: 'routes', label: 'Routes', icon: '🗺️', priority: 5 },
+      { id: 'subscriptions', label: 'Subscriptions', icon: '📅', priority: 6 },
+    ],
+    primaryActions: ['start_walk', 'view_schedule', 'send_update'],
+    quickStats: ['walks_today', 'active_subscriptions', 'monthly_revenue', 'rating'],
+  },
+  // Alias for database role name
+  pet_walker: {
+    displayName: 'Dog Walker',
+    icon: '🚶',
+    color: 'blue',
+    category: 'walking',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_view' : undefined 
+      })),
       { id: 'live_tracking', label: 'Live Tracking', icon: '📍', priority: 4, requiresCapability: 'gps_tracking' },
       { id: 'routes', label: 'Routes', icon: '🗺️', priority: 5 },
       { id: 'subscriptions', label: 'Subscriptions', icon: '📅', priority: 6 },
@@ -286,7 +619,7 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     category: 'ecommerce',
     dashboardSections: [
       ...COMMON_SECTIONS,
-      { id: 'products', label: 'Products', icon: '📦', priority: 4, requiresCapability: 'catalog' },
+      { id: 'products', label: 'Products', icon: '📦', priority: 4, requiresCapability: 'product_catalog' }, // Fixed: catalog -> product_catalog
       { id: 'inventory', label: 'Inventory', icon: '📊', priority: 5, requiresCapability: 'inventory' },
       { id: 'orders', label: 'Orders', icon: '🛍️', priority: 6 },
       { id: 'returns', label: 'Returns', icon: '↩️', priority: 7 },
@@ -303,20 +636,47 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
 
 /**
  * Get role configuration by role ID or name
+ * Handles both database role names (pet_*) and UI role names
  */
 export function getRoleConfig(roleIdOrName: string): RoleConfig | null {
+  if (!roleIdOrName) return null;
+  
+  // Normalize role name - try both DB and UI names
+  const normalized = roleIdOrName.toLowerCase().trim();
+  
   // Try direct match first
-  if (ROLE_CONFIGS[roleIdOrName]) {
+  if (ROLE_CONFIGS[normalized]) {
     return {
-      roleId: roleIdOrName,
-      roleName: roleIdOrName,
-      ...ROLE_CONFIGS[roleIdOrName],
+      roleId: normalized,
+      roleName: normalized,
+      ...ROLE_CONFIGS[normalized],
     } as RoleConfig;
+  }
+  
+  // Try mapped name (DB <-> UI)
+  const mappedName = ROLE_NAME_MAPPING[normalized];
+  if (mappedName && ROLE_CONFIGS[mappedName]) {
+    return {
+      roleId: mappedName,
+      roleName: mappedName,
+      ...ROLE_CONFIGS[mappedName],
+    } as RoleConfig;
+  }
+  
+  // Try reverse mapping (if normalized is DB name, try UI name)
+  for (const [uiName, dbName] of Object.entries(ROLE_NAME_MAPPING)) {
+    if (dbName === normalized && ROLE_CONFIGS[uiName]) {
+      return {
+        roleId: uiName,
+        roleName: uiName,
+        ...ROLE_CONFIGS[uiName],
+      } as RoleConfig;
+    }
   }
   
   // Try to find by display name or partial match
   for (const [key, config] of Object.entries(ROLE_CONFIGS)) {
-    if (config.displayName?.toLowerCase().includes(roleIdOrName.toLowerCase())) {
+    if (config.displayName?.toLowerCase().includes(normalized)) {
       return {
         roleId: key,
         roleName: key,

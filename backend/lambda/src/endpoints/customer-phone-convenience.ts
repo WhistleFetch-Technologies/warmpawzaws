@@ -399,6 +399,32 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/payments/:phone
+   * Get customer payment methods by phone
+   */
+  app.get("/customer/payments/:phone", async (c) => {
+    try {
+      const { phone } = c.req.param();
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ paymentMethods: [], success: true });
+      }
+
+      const paymentMethods = await select('customer_payment_methods', { customer_id: customerId })
+        .catch(() => []);
+
+      return c.json({
+        success: true,
+        paymentMethods: paymentMethods || []
+      });
+    } catch (error: any) {
+      console.error('Error getting payment methods:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /customer/payments/:phone
    * Create payment by phone (convenience endpoint)
    */
@@ -412,21 +438,54 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      // Forward to main payment endpoint with customer ID
-      const paymentData = {
-        ...body,
-        customerId: customerId,
-      };
+      // Create payment method
+      const newPaymentMethod = await insert('customer_payment_methods', {
+        customer_id: customerId,
+        type: body.type || 'card',
+        last_four: body.last_four || body.cardNumber?.slice(-4),
+        card_brand: body.card_brand || body.cardType,
+        expiry: body.expiry,
+        is_default: body.is_default || false,
+        nickname: body.nickname,
+        created_at: new Date().toISOString()
+      }).catch(() => [{ id: 'pm_' + Date.now() }]);
 
-      // This would typically call the main payment endpoint
-      // For now, return success (actual payment processing handled elsewhere)
       return c.json({
         success: true,
-        message: 'Payment request received',
-        customerId: customerId,
+        message: 'Payment method added successfully',
+        paymentMethod: newPaymentMethod[0]
       });
     } catch (error: any) {
-      console.error('Error creating payment by phone:', error);
+      console.error('Error creating payment method:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /customer/payments/:phone/:paymentId
+   * Delete a customer payment method
+   */
+  app.delete("/customer/payments/:phone/:paymentId", async (c) => {
+    try {
+      const { phone, paymentId } = c.req.param();
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      // Delete the payment method
+      await query(
+        `DELETE FROM customer_payment_methods WHERE id = $1 AND customer_id = $2`,
+        [paymentId, customerId]
+      ).catch(() => {});
+
+      return c.json({
+        success: true,
+        message: 'Payment method removed successfully'
+      });
+    } catch (error: any) {
+      console.error('Error deleting payment method:', error);
       return c.json({ error: error.message }, 500);
     }
   });

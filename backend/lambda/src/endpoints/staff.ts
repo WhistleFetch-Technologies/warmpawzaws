@@ -22,6 +22,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -420,10 +421,18 @@ export function registerStaffEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/staff
    * Get all staff for a vendor
+   * Requires: staff_create or staff_schedule capability
    */
   app.get("/vendor/:vendorId/staff", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check capability - allow if vendor has staff_create or staff_schedule
+      const hasStaffCapability = await checkVendorCapability(vendorId, 'staff_create') || 
+                                  await checkVendorCapability(vendorId, 'staff_schedule');
+      if (!hasStaffCapability) {
+        return c.json({ error: 'Vendor does not have staff management capability' }, 403);
+      }
       const staff = await select('staff',
         { vendor_id: vendorId },
         { orderBy: 'created_at', orderDirection: 'DESC' }
@@ -486,10 +495,18 @@ export function registerStaffEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/staff
    * Create a new staff member
+   * Requires: staff_create capability
    */
   app.post("/vendor/:vendorId/staff", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check capability
+      const hasStaffCreateCapability = await checkVendorCapability(vendorId, 'staff_create');
+      if (!hasStaffCreateCapability) {
+        return c.json({ error: 'Vendor does not have staff creation capability' }, 403);
+      }
+      
       const staffData = await c.req.json();
 
       // ⚠️ MANDATORY FIELD VALIDATION
@@ -629,10 +646,17 @@ export function registerStaffEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/staff/:staffId
    * Update staff member
+   * Requires: staff_create capability
    */
   app.put("/vendor/:vendorId/staff/:staffId", async (c) => {
     try {
-      const { staffId } = c.req.param();
+      const { vendorId, staffId } = c.req.param();
+      
+      // Check capability
+      const hasStaffCreateCapability = await checkVendorCapability(vendorId, 'staff_create');
+      if (!hasStaffCreateCapability) {
+        return c.json({ error: 'Vendor does not have staff management capability' }, 403);
+      }
       const staffData = await c.req.json();
 
       const updated = await update('staff',
@@ -677,10 +701,17 @@ export function registerStaffEndpoints(app: Hono) {
   /**
    * DELETE /vendor/:vendorId/staff/:staffId
    * Delete (deactivate) staff member
+   * Requires: staff_create capability
    */
   app.delete("/vendor/:vendorId/staff/:staffId", async (c) => {
     try {
-      const { staffId } = c.req.param();
+      const { vendorId, staffId } = c.req.param();
+      
+      // Check capability
+      const hasStaffCreateCapability = await checkVendorCapability(vendorId, 'staff_create');
+      if (!hasStaffCreateCapability) {
+        return c.json({ error: 'Vendor does not have staff management capability' }, 403);
+      }
 
       await update('staff',
         { id: staffId },

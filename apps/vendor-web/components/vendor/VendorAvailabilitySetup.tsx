@@ -129,7 +129,7 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
         availability
       };
       
-      const data = await apiClient.post('/vendor/setup/availability', payload) as any;
+      const data = await apiClient.put(`/vendor/${vendorId}/availability`, { availability }) as any;
 
       if (!data || !data.success) {
         throw new Error(data?.error || 'Failed to save availability');

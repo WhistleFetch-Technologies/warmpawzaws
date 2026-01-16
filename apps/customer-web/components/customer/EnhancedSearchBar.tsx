@@ -263,10 +263,10 @@ export function EnhancedSearchBar({
     // Save to backend
     if (customerId) {
       try {
-        await apiClient.post('/customer/search/history', {
+        await apiClient.post('/customer/search/track', {
           customerId,
           query: searchQuery,
-          type: 'manual'
+          searchType: 'manual'
         });
       } catch (error) {
         console.error('Error saving search history:', error);

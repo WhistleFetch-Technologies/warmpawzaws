@@ -84,16 +84,14 @@ export function IntegratedServicesSelector({
 
     try {
       setLoading(true);
-      const data = await apiClient.post('/customer/services/request', {
+      const data = await apiClient.post('/bookings/create', {
         customerId,
-        providerId: selectedProvider.providerId,
+        vendorId: selectedProvider.providerId,
         serviceType: activeTab,
-        bookingId,
-        location: { ...userLocation, address: 'Current Location' },
-        details: {
-          providerName: selectedProvider.providerName,
-          price: selectedProvider.basePrice
-        }
+        parentBookingId: bookingId,
+        serviceLocation: { ...userLocation, address: 'Current Location' },
+        notes: `${activeTab} service request - ${selectedProvider.providerName}`,
+        amount: selectedProvider.basePrice
       });
       toast.success(`${activeTab === 'ambulance' ? 'Ambulance' : 'Service'} requested successfully!`);
       onServiceSelected(data);

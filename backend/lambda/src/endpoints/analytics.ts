@@ -474,5 +474,110 @@ export function registerAnalyticsEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /admin/analytics/kpis
+   * Get key performance indicators
+   */
+  app.get("/admin/analytics/kpis", async (c) => {
+    try {
+      const period = c.req.query("period") || "30d";
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+
+      const [bookings, revenue, customers, vendors] = await Promise.all([
+        query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'completed') as completed
+               FROM bookings WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0, completed: 0 }] })),
+        query(`SELECT COALESCE(SUM(amount), 0) as total FROM payments 
+               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'`).catch(() => ({ rows: [{ total: 0 }] })),
+        query(`SELECT COUNT(*) as total FROM customers 
+               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0 }] })),
+        query(`SELECT COUNT(*) as total FROM vendors 
+               WHERE status = 'active'`).catch(() => ({ rows: [{ total: 0 }] })),
+      ]);
+
+      return c.json({
+        success: true,
+        kpis: {
+          totalBookings: parseInt(bookings.rows[0]?.total || '0'),
+          completedBookings: parseInt(bookings.rows[0]?.completed || '0'),
+          totalRevenue: parseFloat(revenue.rows[0]?.total || '0'),
+          newCustomers: parseInt(customers.rows[0]?.total || '0'),
+          activeVendors: parseInt(vendors.rows[0]?.total || '0'),
+        }
+      });
+    } catch (error: any) {
+      console.error('Error getting KPIs:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/analytics/revenue
+   * Get revenue analytics data
+   */
+  app.get("/admin/analytics/revenue", async (c) => {
+    try {
+      const period = c.req.query("period") || "30d";
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+
+      const revenueData = await query(
+        `SELECT DATE_TRUNC('day', created_at) as date, 
+                SUM(amount) as revenue,
+                COUNT(*) as transactions
+         FROM payments 
+         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'
+         GROUP BY DATE_TRUNC('day', created_at)
+         ORDER BY date`
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        data: revenueData.rows.map((row: any) => ({
+          date: row.date,
+          revenue: parseFloat(row.revenue || 0),
+          transactions: parseInt(row.transactions || 0)
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting revenue analytics:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/analytics/categories
+   * Get category-wise analytics
+   */
+  app.get("/admin/analytics/categories", async (c) => {
+    try {
+      const period = c.req.query("period") || "30d";
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+
+      const categoryData = await query(
+        `SELECT v.category,
+                COUNT(b.id) as bookings,
+                COALESCE(SUM(b.total_amount), 0) as revenue
+         FROM vendors v
+         LEFT JOIN bookings b ON v.id = b.vendor_id 
+           AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
+           AND b.status = 'completed'
+         WHERE v.category IS NOT NULL
+         GROUP BY v.category
+         ORDER BY revenue DESC`
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        data: categoryData.rows.map((row: any) => ({
+          category: row.category,
+          bookings: parseInt(row.bookings || 0),
+          revenue: parseFloat(row.revenue || 0)
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting category analytics:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

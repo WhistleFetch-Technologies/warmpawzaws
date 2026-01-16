@@ -42,6 +42,10 @@ import { VendorPortfolioManagement } from './VendorPortfolioManagement'; // ✅ 
 import { VendorCCTVAccess } from './VendorCCTVAccess'; // ✅ FIX: CCTV component
 import { VendorControlledSubstances } from './VendorControlledSubstances'; // ✅ FIX: Controlled substances component
 import { VendorPrescriptionBuilder } from './VendorPrescriptionBuilder'; // ✅ FIX: Prescription builder
+import { PrescriptionCreate } from './prescription/PrescriptionCreate'; // ✅ NEW: Enhanced prescription component
+import { PrescriptionList } from './prescription/PrescriptionList'; // ✅ NEW: Prescription list
+import { DiagnosticResults } from './diagnostics/DiagnosticResults'; // ✅ NEW: Diagnostic management
+import { ServicePricing } from './pricing/ServicePricing'; // ✅ NEW: Service pricing
 import { ProgressTrackingDashboard } from './ProgressTrackingDashboard'; // ✅ FIX: Progress tracking - CORRECTED PATH
 import { PackageManagementContainer } from './packages/PackageManagementContainer'; // ✅ FIX: Package management
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation'; // ✅ FIX: Custom services
@@ -59,6 +63,7 @@ import { VendorCounseling } from './VendorCounseling'; // ✅ NEW: Counseling se
 import { VendorPolicyManagement } from './VendorPolicyManagement'; // ✅ NEW: Policy management
 import { VendorDistancePricing } from './VendorDistancePricing'; // ✅ NEW: Distance pricing
 import { VendorSupportDashboard } from './VendorSupportDashboard'; // ✅ NEW: Support tickets
+import { ArrowLeft } from 'lucide-react'; // ✅ NEW: For navigation
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -153,6 +158,9 @@ export function VendorLandingPage({
   const [showCCTV, setShowCCTV] = useState(false);
   const [showControlledSubstances, setShowControlledSubstances] = useState(false);
   const [showPrescription, setShowPrescription] = useState(false);
+  const [showPrescriptionList, setShowPrescriptionList] = useState(false); // ✅ NEW: Prescription list view
+  const [showDiagnostics, setShowDiagnostics] = useState(false); // ✅ NEW: Diagnostic management
+  const [showPricing, setShowPricing] = useState(false); // ✅ NEW: Service pricing
   const [showProgressTracking, setShowProgressTracking] = useState(false);
   const [showPackages, setShowPackages] = useState(false);
   const [showCustomServices, setShowCustomServices] = useState(false);
@@ -547,7 +555,7 @@ export function VendorLandingPage({
         documents: applicationPayload.documents
       });
 
-      const result = await apiClient.post('/vendor/application/submit', applicationPayload) as any;
+      const result = await apiClient.post('/vendor/onboarding/submit-application', applicationPayload) as any;
 
       if (result && result.success) {
         console.log('✅ Application submitted successfully:', result.applicationId);
@@ -1024,14 +1032,73 @@ export function VendorLandingPage({
         );
       }
       
-      // ✅ FIX: Prescription Builder
+      // ✅ FIX: Prescription Builder (Enhanced)
       if (showPrescription) {
         return (
-          <VendorPrescriptionBuilder
+          <PrescriptionCreate
             vendorId={vendorId}
-            
             onBack={() => setShowPrescription(false)}
+            onSuccess={() => {
+              setShowPrescription(false);
+              setShowPrescriptionList(true);
+            }}
           />
+        );
+      }
+      
+      // ✅ NEW: Prescription List
+      if (showPrescriptionList) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="bg-white border-b sticky top-0 z-10">
+              <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
+                <button onClick={() => setShowPrescriptionList(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-xl font-bold">Prescriptions</h1>
+                <button
+                  onClick={() => {
+                    setShowPrescriptionList(false);
+                    setShowPrescription(true);
+                  }}
+                  className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Create New
+                </button>
+              </div>
+            </div>
+            <div className="max-w-4xl mx-auto px-4 py-6">
+              <PrescriptionList vendorId={vendorId} />
+            </div>
+          </div>
+        );
+      }
+      
+      // ✅ NEW: Diagnostic Results
+      if (showDiagnostics) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="max-w-6xl mx-auto px-4 py-6">
+              <DiagnosticResults
+                vendorId={vendorId}
+                onBack={() => setShowDiagnostics(false)}
+              />
+            </div>
+          </div>
+        );
+      }
+      
+      // ✅ NEW: Service Pricing
+      if (showPricing) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="max-w-6xl mx-auto px-4 py-6">
+              <ServicePricing
+                vendorId={vendorId}
+                onBack={() => setShowPricing(false)}
+              />
+            </div>
+          </div>
         );
       }
       
@@ -1339,6 +1406,9 @@ export function VendorLandingPage({
           onNavigateToCCTV={() => setShowCCTV(true)}
           onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
           onNavigateToPrescription={() => setShowPrescription(true)}
+          onNavigateToPrescriptionList={() => setShowPrescriptionList(true)} // ✅ NEW
+          onNavigateToDiagnostics={() => setShowDiagnostics(true)} // ✅ NEW
+          onNavigateToPricing={() => setShowPricing(true)} // ✅ NEW
           onNavigateToProgressTracking={() => setShowProgressTracking(true)}
           onNavigateToPackages={() => setShowPackages(true)}
           onNavigateToCustomServices={() => setShowCustomServices(true)}

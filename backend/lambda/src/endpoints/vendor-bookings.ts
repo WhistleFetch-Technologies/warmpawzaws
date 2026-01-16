@@ -20,15 +20,24 @@ import { select, update, query } from '../database/rds-connection';
 import { logBookingStatusChange } from '../utils/audit-log';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { checkVendorCapability } from '../middleware/capability-enforcement';
 
 export function registerVendorBookingsEndpoints(app: Hono) {
   /**
    * GET /vendor/bookings/:vendorId
    * Get all bookings for a vendor with filters
+   * Requires: booking_view or booking_create capability
    */
   app.get("/vendor/bookings/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      
+      // Check capability - allow if vendor has booking_view or booking_create
+      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') || 
+                                   await checkVendorCapability(vendorId, 'booking_create');
+      if (!hasBookingCapability) {
+        return c.json({ error: 'Vendor does not have booking viewing capability' }, 403);
+      }
       const date = c.req.query('date');
       const filter = c.req.query('filter') || 'all';
 
@@ -134,25 +143,32 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   /**
    * PUT /vendor/bookings/:bookingId/status
    * Update booking status
+   * Requires: booking_create capability
    */
   app.put("/vendor/bookings/:bookingId/status", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      
+      // Get booking first to get vendorId
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+      const booking = bookings[0];
+      const vendorId = c.req.header('x-vendor-id') || booking.vendor_id;
+      
+      // Check capability
+      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_create');
+      if (!hasBookingCapability) {
+        return c.json({ error: 'Vendor does not have booking management capability' }, 403);
+      }
       const { status, notes } = await c.req.json();
 
       if (!status) {
         return c.json({ error: 'status is required' }, 400);
       }
 
-      // Get booking
-      const bookings = await select('bookings', { id: bookingId });
-      if (bookings.length === 0) {
-        return c.json({ error: 'Booking not found' }, 404);
-      }
-
-      const booking = bookings[0];
       const oldStatus = booking.status;
-      const vendorId = c.req.header('x-vendor-id') || booking.vendor_id;
 
       // Update booking
       const updateData: any = { status };
