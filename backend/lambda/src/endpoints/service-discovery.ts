@@ -165,6 +165,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/discover-services
    * Main customer entry point for service discovery
+   * 
+   * ⚠️ CRITICAL BUSINESS RULE:
+   * - For at_home/tele services: Returns staff members (if vendor has clinic) OR individual providers
+   * - For at_center services: Returns vendors/business entities
    */
   app.get("/customer/discover-services", async (c) => {
     try {
@@ -176,8 +180,88 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const sortBy = c.req.query('sortBy') || 'rating';
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
+      const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
+      const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
 
-      // Build vendor query
+      // ⚠️ CRITICAL: For at_home and tele services, return staff members instead of vendors
+      if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
+        // Use staff discovery endpoint logic
+        const staffParams = new URLSearchParams();
+        if (roleId) staffParams.set('roleId', roleId);
+        staffParams.set('serviceStyle', serviceStyle);
+        if (latitude) staffParams.set('latitude', latitude);
+        if (longitude) staffParams.set('longitude', longitude);
+        
+        // Forward to staff discovery endpoint
+        // Note: This is a simplified approach - in production, you'd call the staff discovery logic directly
+        const staffQuery = `
+          SELECT DISTINCT s.*, 
+                 COALESCE(v.business_name, s.name) as vendor_name,
+                 COALESCE(v.city, '') as city,
+                 COALESCE(v.state, '') as state,
+                 s.default_location as location,
+                 v.id as vendor_id
+          FROM staff s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          WHERE s.is_active = true
+            AND s.mobile_verified = true
+            AND (s.vendor_id IS NULL OR (v.status = 'approved' AND v.is_active = true))
+        `;
+        
+        const staffParamsArray: any[] = [];
+        let staffParamIndex = 1;
+        
+        if (roleId) {
+          const role = await query('SELECT name, id FROM roles WHERE name = $1 OR id = $1', [roleId]);
+          if (role.rows.length > 0) {
+            const staffQueryWithRole = staffQuery + ` AND s.role = $${staffParamIndex}`;
+            staffParamsArray.push(role.rows[0].name);
+            staffParamIndex++;
+            
+            // Filter by service style
+            const staffQueryWithStyle = staffQueryWithRole + ` AND EXISTS (
+              SELECT 1 FROM staff_services ss 
+              WHERE ss.staff_id = s.id
+                AND ss.enabled_by_staff = true
+                AND ss.is_active = true
+                AND $${staffParamIndex} = ANY(ss.service_styles)
+            )`;
+            staffParamsArray.push(serviceStyle);
+            
+            const staffResults = await query(staffQueryWithStyle, staffParamsArray);
+            
+            // Format as vendors for compatibility
+            const formattedStaff = staffResults.rows.map((staff: any) => ({
+              id: staff.id,
+              vendorId: staff.vendor_id || staff.id,
+              businessName: staff.vendor_name,
+              name: staff.name,
+              role: staff.role,
+              phone: staff.phone,
+              email: staff.email,
+              photo: staff.photo,
+              isStaffMember: true,
+              isIndividualProvider: !staff.vendor_id,
+              vendor: staff.vendor_id ? {
+                id: staff.vendor_id,
+                businessName: staff.vendor_name,
+              } : null,
+              location: staff.location,
+              city: staff.city,
+              state: staff.state,
+            }));
+            
+            return c.json({
+              success: true,
+              vendors: formattedStaff,
+              staff: formattedStaff, // Also return as staff for clarity
+              total: formattedStaff.length,
+            });
+          }
+        }
+      }
+
+      // Build vendor query (for at_center services or no serviceStyle specified)
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
