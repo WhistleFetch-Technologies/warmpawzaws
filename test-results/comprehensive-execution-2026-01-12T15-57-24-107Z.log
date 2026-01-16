@@ -1,0 +1,75 @@
+[2026-01-12T15:57:24.117Z] =================================================================
+[2026-01-12T15:57:24.135Z] 🚀 WARMPAWZ COMPREHENSIVE SYSTEM EXECUTION
+[2026-01-12T15:57:24.135Z] =================================================================
+[2026-01-12T15:57:24.135Z] 
+[2026-01-12T15:57:24.135Z] Environment: dev
+[2026-01-12T15:57:24.136Z] API Base: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+[2026-01-12T15:57:24.136Z] Issue Tracker: /Users/ketan/Documents/warmpawzecodev/WARMPAWZ_SYSTEM_EXECUTION_ISSUE_TRACKER.json
+[2026-01-12T15:57:24.136Z] Log File: /Users/ketan/Documents/warmpawzecodev/test-results/comprehensive-execution-2026-01-12T15-57-24-107Z.log
+[2026-01-12T15:57:24.136Z] 
+[2026-01-12T15:57:24.138Z] 
+=================================================================
+[2026-01-12T15:57:24.139Z] PHASE 1: ADMIN MASTER DATA SEEDING
+[2026-01-12T15:57:24.139Z] =================================================================
+
+[2026-01-12T15:57:24.140Z] Testing: Health check
+[2026-01-12T15:57:24.141Z]   GET /health
+[2026-01-12T15:57:24.342Z]   ✅ PASS
+[2026-01-12T15:57:24.343Z] Testing: Get all roles
+[2026-01-12T15:57:24.343Z]   GET /config/roles
+[2026-01-12T15:57:24.459Z]   ✅ PASS
+[2026-01-12T15:57:24.460Z] Testing: Get service catalog
+[2026-01-12T15:57:24.460Z]   GET /admin/service-catalog
+[2026-01-12T15:57:24.557Z]   ✅ PASS
+[2026-01-12T15:57:24.582Z] Testing: Get service catalog categories
+[2026-01-12T15:57:24.582Z]   GET /service-catalog/categories
+[2026-01-12T15:57:24.631Z]   ❌ FAIL - Status: 500
+[2026-01-12T15:57:24.632Z]   Response: {"error":"operator does not exist: uuid = text"}
+[2026-01-12T15:57:24.639Z] ❌ ISSUE RECORDED: ISSUE-0001
+[2026-01-12T15:57:24.639Z]    Category: API | App: Admin | Endpoint: /service-catalog/categories
+[2026-01-12T15:57:24.639Z] 
+✅ Phase 1 Complete
+
+[2026-01-12T15:57:24.639Z] 
+=================================================================
+[2026-01-12T15:57:24.639Z] PHASE 2: VENDOR LIFECYCLE
+[2026-01-12T15:57:24.639Z] =================================================================
+
+[2026-01-12T15:57:24.639Z] Testing: Get vendor onboarding roles
+[2026-01-12T15:57:24.639Z]   GET /vendor/onboarding/roles
+[2026-01-12T15:57:25.391Z]   ✅ PASS
+[2026-01-12T15:57:25.392Z] Testing: Get onboarding form for veterinarian
+[2026-01-12T15:57:25.392Z]   GET /onboarding-form/veterinarian
+[2026-01-12T15:57:25.448Z]   ✅ PASS
+[2026-01-12T15:57:25.449Z] 
+✅ Phase 2 Complete
+
+[2026-01-12T15:57:25.449Z] 
+=================================================================
+[2026-01-12T15:57:25.449Z] PHASE 3: CUSTOMER LIFECYCLE
+[2026-01-12T15:57:25.449Z] =================================================================
+
+[2026-01-12T15:57:25.450Z] Testing: Customer search
+[2026-01-12T15:57:25.450Z]   GET /customer/vendors/search?query=grooming
+[2026-01-12T15:57:25.496Z]   ❌ FAIL - Status: 500
+[2026-01-12T15:57:25.497Z]   Response: {"success":false,"error":"query11 is not a function","vendors":[],"total":0}
+[2026-01-12T15:57:25.497Z] ❌ ISSUE RECORDED: ISSUE-0002
+[2026-01-12T15:57:25.498Z]    Category: API | App: Customer | Endpoint: /customer/vendors/search?query=grooming
+[2026-01-12T15:57:25.498Z] 
+✅ Phase 3 Complete
+
+[2026-01-12T15:57:25.498Z] 
+=================================================================
+[2026-01-12T15:57:25.498Z] EXECUTION SUMMARY
+[2026-01-12T15:57:25.498Z] =================================================================
+[2026-01-12T15:57:25.498Z] Total Tests Passed: 5
+[2026-01-12T15:57:25.498Z] Total Tests Failed: 2
+[2026-01-12T15:57:25.499Z] Total Issues Found: 5
+[2026-01-12T15:57:25.499Z] Total Issues Fixed: 0
+[2026-01-12T15:57:25.499Z] Total Issues Verified: 0
+[2026-01-12T15:57:25.499Z] Total Issues Closed: 0
+[2026-01-12T15:57:25.499Z] 
+[2026-01-12T15:57:25.499Z] Issue Tracker: /Users/ketan/Documents/warmpawzecodev/WARMPAWZ_SYSTEM_EXECUTION_ISSUE_TRACKER.json
+[2026-01-12T15:57:25.499Z] Full Log: /Users/ketan/Documents/warmpawzecodev/test-results/comprehensive-execution-2026-01-12T15-57-24-107Z.log
+[2026-01-12T15:57:25.499Z] 
+[2026-01-12T15:57:25.499Z] ❌ SOME TESTS FAILED - Review issues in tracker

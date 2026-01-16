@@ -1,0 +1,253 @@
+[2026-01-12T18:27:19.433Z] =================================================================
+[2026-01-12T18:27:19.436Z] 🚀 WARMPAWZ COMPREHENSIVE SYSTEM EXECUTION
+[2026-01-12T18:27:19.436Z] =================================================================
+[2026-01-12T18:27:19.436Z] 
+[2026-01-12T18:27:19.436Z] Environment: dev
+[2026-01-12T18:27:19.437Z] API Base: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+[2026-01-12T18:27:19.437Z] Issue Tracker: /Users/ketan/Documents/warmpawzecodev/WARMPAWZ_SYSTEM_EXECUTION_ISSUE_TRACKER.json
+[2026-01-12T18:27:19.437Z] Log File: /Users/ketan/Documents/warmpawzecodev/test-results/comprehensive-execution-2026-01-12T18-27-19-432Z.log
+[2026-01-12T18:27:19.437Z] 
+[2026-01-12T18:27:19.437Z] ✅ Loaded test data IDs: 7 IDs
+[2026-01-12T18:27:19.441Z] 
+=================================================================
+[2026-01-12T18:27:19.441Z] PHASE 1: ADMIN MASTER DATA SEEDING
+[2026-01-12T18:27:19.441Z] =================================================================
+
+[2026-01-12T18:27:19.441Z] Testing: Health check
+[2026-01-12T18:27:19.441Z]   GET /health
+[2026-01-12T18:27:21.027Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:21.028Z] Testing: Get all roles
+[2026-01-12T18:27:21.029Z]   GET /config/roles
+[2026-01-12T18:27:21.272Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:21.273Z] Testing: Get service catalog
+[2026-01-12T18:27:21.273Z]   GET /admin/service-catalog
+[2026-01-12T18:27:21.420Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:21.421Z] Testing: Get service catalog categories
+[2026-01-12T18:27:21.421Z]   GET /service-catalog/categories
+[2026-01-12T18:27:21.467Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:27:21.467Z]   Response: {"error":"operator does not exist: uuid = text"}
+[2026-01-12T18:27:21.468Z] ❌ ISSUE RECORDED: ISSUE-0001
+[2026-01-12T18:27:21.468Z]    Category: API | App: Admin | Endpoint: /service-catalog/categories
+[2026-01-12T18:27:21.468Z] 
+✅ Phase 1 Complete
+
+[2026-01-12T18:27:21.469Z] 
+=================================================================
+[2026-01-12T18:27:21.469Z] PHASE 2: VENDOR LIFECYCLE
+[2026-01-12T18:27:21.469Z] =================================================================
+
+[2026-01-12T18:27:21.469Z] Testing: Get vendor onboarding roles
+[2026-01-12T18:27:21.469Z]   GET /vendor/onboarding/roles
+[2026-01-12T18:27:21.710Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:27:21.711Z]   Response: {"success":false,"error":{"code":"INTERNAL_ERROR","message":"sorry, too many clients already"},"meta":{"timestamp":"2026-01-12T18:27:21.724Z","requestId":"cd05d23f-e7ed-42ea-8bcb-deb99ff078aa","versio
+[2026-01-12T18:27:21.711Z] ❌ ISSUE RECORDED: ISSUE-0002
+[2026-01-12T18:27:21.711Z]    Category: API | App: Vendor | Endpoint: /vendor/onboarding/roles
+[2026-01-12T18:27:21.712Z] Testing: Get onboarding form for veterinarian
+[2026-01-12T18:27:21.712Z]   GET /onboarding-form/veterinarian
+[2026-01-12T18:27:21.955Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:21.956Z] 
+✅ Phase 2 Complete
+
+[2026-01-12T18:27:21.956Z] 
+=================================================================
+[2026-01-12T18:27:21.957Z] PHASE 3: CUSTOMER LIFECYCLE
+[2026-01-12T18:27:21.957Z] =================================================================
+
+[2026-01-12T18:27:21.957Z] Testing: Customer search
+[2026-01-12T18:27:21.957Z]   GET /customer/vendors/search?query=grooming
+[2026-01-12T18:27:22.010Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.011Z] Testing: Discover services
+[2026-01-12T18:27:22.011Z]   GET /customer/discover-services?category=veterinary
+[2026-01-12T18:27:22.065Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.066Z] Testing: Get services for veterinarian role
+[2026-01-12T18:27:22.066Z]   GET /service-catalog/role/veterinarian
+[2026-01-12T18:27:22.114Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.115Z] 
+✅ Phase 3 Complete
+
+[2026-01-12T18:27:22.116Z] 
+=================================================================
+[2026-01-12T18:27:22.116Z] PHASE 4: BOOKING LIFECYCLE
+[2026-01-12T18:27:22.116Z] =================================================================
+
+[2026-01-12T18:27:22.116Z] Testing: Get available booking slots
+[2026-01-12T18:27:22.118Z]   GET /bookings/available-slots?vendorId=60746b1a-95bb-41f6-ad43-fe1263c19122&date=2026-01-13
+[2026-01-12T18:27:22.171Z]   ✅ PASS - Status: 404
+[2026-01-12T18:27:22.172Z] Testing: Create booking
+[2026-01-12T18:27:22.173Z]   POST /bookings/create
+[2026-01-12T18:27:22.218Z]   ✅ PASS - Status: 400
+[2026-01-12T18:27:22.218Z] Testing: Get vendor reschedule policy
+[2026-01-12T18:27:22.219Z]   GET /vendor/reschedule-policy?bookingId=f5f83b32-e590-433a-8b13-2af480595b77
+[2026-01-12T18:27:22.262Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.263Z] 
+✅ Phase 4 Complete
+
+[2026-01-12T18:27:22.263Z] 
+=================================================================
+[2026-01-12T18:27:22.263Z] PHASE 5: PAYMENT & WALLET
+[2026-01-12T18:27:22.263Z] =================================================================
+
+[2026-01-12T18:27:22.264Z] Testing: Get wallet balance
+[2026-01-12T18:27:22.264Z]   GET /wallet/48687edc-c31e-4e19-860a-0f4093c8a2b6
+[2026-01-12T18:27:22.307Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.308Z] Testing: Get wallet transactions
+[2026-01-12T18:27:22.308Z]   GET /wallet/48687edc-c31e-4e19-860a-0f4093c8a2b6/transactions
+[2026-01-12T18:27:22.355Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.357Z] Testing: Get payment status
+[2026-01-12T18:27:22.357Z]   GET /payment/af66c88e-5478-4c17-a62d-10a7b6da7537/status
+[2026-01-12T18:27:22.399Z]   ✅ PASS - Status: 404
+[2026-01-12T18:27:22.400Z] 
+✅ Phase 5 Complete
+
+[2026-01-12T18:27:22.401Z] 
+=================================================================
+[2026-01-12T18:27:22.401Z] PHASE 6: VENDOR CAPABILITIES
+[2026-01-12T18:27:22.401Z] =================================================================
+
+[2026-01-12T18:27:22.401Z] Testing: Get vendor services
+[2026-01-12T18:27:22.401Z]   GET /vendor/60746b1a-95bb-41f6-ad43-fe1263c19122/services
+[2026-01-12T18:27:22.450Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.451Z] Testing: Get vendor bookings
+[2026-01-12T18:27:22.452Z]   GET /vendor/bookings/60746b1a-95bb-41f6-ad43-fe1263c19122
+[2026-01-12T18:27:22.498Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.499Z] Testing: Get vendor profile
+[2026-01-12T18:27:22.499Z]   GET /vendor/60746b1a-95bb-41f6-ad43-fe1263c19122/profile
+[2026-01-12T18:27:22.544Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.545Z] Testing: Get vendor dashboard
+[2026-01-12T18:27:22.545Z]   GET /vendor/dashboard/60746b1a-95bb-41f6-ad43-fe1263c19122
+[2026-01-12T18:27:22.598Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.599Z] 
+✅ Phase 6 Complete
+
+[2026-01-12T18:27:22.599Z] 
+=================================================================
+[2026-01-12T18:27:22.599Z] PHASE 7: EDGE CASES & FAILURE HANDLING
+[2026-01-12T18:27:22.599Z] =================================================================
+
+[2026-01-12T18:27:22.600Z] Testing: Calculate refund policy
+[2026-01-12T18:27:22.600Z]   POST /refund-policy/calculate
+[2026-01-12T18:27:22.645Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.647Z] Testing: Get support tickets
+[2026-01-12T18:27:22.647Z]   GET /admin/support/tickets
+[2026-01-12T18:27:22.689Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.690Z] Testing: Get admin refund rules
+[2026-01-12T18:27:22.690Z]   GET /admin/refund-rules
+[2026-01-12T18:27:22.731Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.732Z] 
+✅ Phase 7 Complete
+
+[2026-01-12T18:27:22.732Z] 
+=================================================================
+[2026-01-12T18:27:22.732Z] PHASE 8: ADDITIONAL ADMIN ENDPOINTS
+[2026-01-12T18:27:22.732Z] =================================================================
+
+[2026-01-12T18:27:22.733Z] Testing: Get admin analytics overview
+[2026-01-12T18:27:22.733Z]   GET /admin/analytics/overview
+[2026-01-12T18:27:22.778Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.778Z] Testing: Get admin analytics vendors
+[2026-01-12T18:27:22.779Z]   GET /admin/analytics/vendors
+[2026-01-12T18:27:22.825Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.826Z] Testing: Get admin analytics customers
+[2026-01-12T18:27:22.826Z]   GET /admin/analytics/customers
+[2026-01-12T18:27:22.920Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.921Z] Testing: Get admin governance status
+[2026-01-12T18:27:22.921Z]   GET /admin/governance/status
+[2026-01-12T18:27:22.970Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:22.971Z] 
+✅ Phase 8 Complete
+
+[2026-01-12T18:27:22.972Z] 
+=================================================================
+[2026-01-12T18:27:22.972Z] PHASE 9: CUSTOMER ENDPOINTS
+[2026-01-12T18:27:22.972Z] =================================================================
+
+[2026-01-12T18:27:22.972Z] Testing: Get customer orders
+[2026-01-12T18:27:22.972Z]   GET /customer/orders
+[2026-01-12T18:27:23.015Z]   ✅ PASS - Status: 404
+[2026-01-12T18:27:23.016Z] Testing: Get customer bookings
+[2026-01-12T18:27:23.016Z]   GET /customer/48687edc-c31e-4e19-860a-0f4093c8a2b6/bookings
+[2026-01-12T18:27:23.059Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.060Z] Testing: Get customer addresses
+[2026-01-12T18:27:23.060Z]   GET /customer/48687edc-c31e-4e19-860a-0f4093c8a2b6/addresses
+[2026-01-12T18:27:23.119Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.120Z] Testing: Get customer profile
+[2026-01-12T18:27:23.120Z]   GET /customer/48687edc-c31e-4e19-860a-0f4093c8a2b6
+[2026-01-12T18:27:23.160Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.161Z] 
+✅ Phase 9 Complete
+
+[2026-01-12T18:27:23.162Z] 
+=================================================================
+[2026-01-12T18:27:23.162Z] PHASE 10: VENDOR ENDPOINTS
+[2026-01-12T18:27:23.162Z] =================================================================
+
+[2026-01-12T18:27:23.162Z] Testing: Get vendor services
+[2026-01-12T18:27:23.162Z]   GET /vendor/60746b1a-95bb-41f6-ad43-fe1263c19122/services
+[2026-01-12T18:27:23.210Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.211Z] Testing: Get vendor bookings
+[2026-01-12T18:27:23.211Z]   GET /vendor/bookings/60746b1a-95bb-41f6-ad43-fe1263c19122
+[2026-01-12T18:27:23.259Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.259Z] Testing: Get vendor profile
+[2026-01-12T18:27:23.259Z]   GET /vendor/60746b1a-95bb-41f6-ad43-fe1263c19122/profile
+[2026-01-12T18:27:23.304Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.306Z] Testing: Get vendor onboarding status
+[2026-01-12T18:27:23.306Z]   GET /vendor/onboarding/status?phone=8888888888
+[2026-01-12T18:27:23.348Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.349Z] 
+✅ Phase 10 Complete
+
+[2026-01-12T18:27:23.350Z] 
+=================================================================
+[2026-01-12T18:27:23.350Z] PHASE 11: BOOKING & APPOINTMENT ENDPOINTS
+[2026-01-12T18:27:23.350Z] =================================================================
+
+[2026-01-12T18:27:23.350Z] Testing: Get enhanced booking details
+[2026-01-12T18:27:23.350Z]   GET /bookings/f5f83b32-e590-433a-8b13-2af480595b77/enhanced?actorId=48687edc-c31e-4e19-860a-0f4093c8a2b6&actorRole=customer
+[2026-01-12T18:27:23.423Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.425Z] Testing: Get booking prescriptions
+[2026-01-12T18:27:23.426Z]   GET /bookings/f5f83b32-e590-433a-8b13-2af480595b77/prescriptions
+[2026-01-12T18:27:23.470Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.470Z] Testing: Get booking medical records
+[2026-01-12T18:27:23.470Z]   GET /bookings/f5f83b32-e590-433a-8b13-2af480595b77/medical-records
+[2026-01-12T18:27:23.511Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.512Z] Testing: Get booking history
+[2026-01-12T18:27:23.512Z]   GET /bookings/f5f83b32-e590-433a-8b13-2af480595b77/history
+[2026-01-12T18:27:23.559Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.559Z] 
+✅ Phase 11 Complete
+
+[2026-01-12T18:27:23.560Z] 
+=================================================================
+[2026-01-12T18:27:23.560Z] PHASE 12: PAYMENT & FINANCIAL ENDPOINTS
+[2026-01-12T18:27:23.560Z] =================================================================
+
+[2026-01-12T18:27:23.561Z] Testing: Get payment gateway status
+[2026-01-12T18:27:23.561Z]   GET /admin/payment-gateways
+[2026-01-12T18:27:23.605Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:27:23.605Z]   Response: {"success":false,"error":"relation \"payment_gateways\" does not exist"}
+[2026-01-12T18:27:23.607Z] ❌ ISSUE RECORDED: ISSUE-0003
+[2026-01-12T18:27:23.607Z]    Category: API | App: System | Endpoint: /admin/payment-gateways
+[2026-01-12T18:27:23.607Z] Testing: Razorpay webhook (test)
+[2026-01-12T18:27:23.607Z]   POST /razorpay/webhook
+[2026-01-12T18:27:23.649Z]   ✅ PASS - Status: 400
+[2026-01-12T18:27:23.650Z] Testing: Get settlements
+[2026-01-12T18:27:23.650Z]   GET /settlements
+[2026-01-12T18:27:23.692Z]   ✅ PASS - Status: 200
+[2026-01-12T18:27:23.693Z] 
+✅ Phase 12 Complete
+
+[2026-01-12T18:27:23.693Z] 
+=================================================================
+[2026-01-12T18:27:23.693Z] EXECUTION SUMMARY
+[2026-01-12T18:27:23.693Z] =================================================================
+[2026-01-12T18:27:23.693Z] Total Tests Passed: 38
+[2026-01-12T18:27:23.694Z] Total Tests Failed: 3
+[2026-01-12T18:27:23.694Z] Total Issues Found: 234
+[2026-01-12T18:27:23.694Z] Total Issues Fixed: 1
+[2026-01-12T18:27:23.694Z] Total Issues Verified: 0
+[2026-01-12T18:27:23.694Z] Total Issues Closed: 0
+[2026-01-12T18:27:23.694Z] 
+[2026-01-12T18:27:23.694Z] Issue Tracker: /Users/ketan/Documents/warmpawzecodev/WARMPAWZ_SYSTEM_EXECUTION_ISSUE_TRACKER.json
+[2026-01-12T18:27:23.694Z] Full Log: /Users/ketan/Documents/warmpawzecodev/test-results/comprehensive-execution-2026-01-12T18-27-19-432Z.log
+[2026-01-12T18:27:23.694Z] 
+[2026-01-12T18:27:23.695Z] ❌ SOME TESTS FAILED - Review issues in tracker

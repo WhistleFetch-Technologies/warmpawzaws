@@ -1,0 +1,127 @@
+[2026-01-12T18:05:38.830Z] =================================================================
+[2026-01-12T18:05:38.832Z] 🚀 WARMPAWZ COMPREHENSIVE SYSTEM EXECUTION
+[2026-01-12T18:05:38.833Z] =================================================================
+[2026-01-12T18:05:38.833Z] 
+[2026-01-12T18:05:38.833Z] Environment: dev
+[2026-01-12T18:05:38.833Z] API Base: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+[2026-01-12T18:05:38.833Z] Issue Tracker: /Users/ketan/Documents/warmpawzecodev/WARMPAWZ_SYSTEM_EXECUTION_ISSUE_TRACKER.json
+[2026-01-12T18:05:38.833Z] Log File: /Users/ketan/Documents/warmpawzecodev/test-results/comprehensive-execution-2026-01-12T18-05-38-829Z.log
+[2026-01-12T18:05:38.833Z] 
+[2026-01-12T18:05:38.833Z] ✅ Loaded test data IDs: 7 IDs
+[2026-01-12T18:05:38.834Z] 
+=================================================================
+[2026-01-12T18:05:38.834Z] PHASE 1: ADMIN MASTER DATA SEEDING
+[2026-01-12T18:05:38.834Z] =================================================================
+
+[2026-01-12T18:05:38.834Z] Testing: Health check
+[2026-01-12T18:05:38.834Z]   GET /health
+[2026-01-12T18:05:39.020Z]   ✅ PASS
+[2026-01-12T18:05:39.021Z] Testing: Get all roles
+[2026-01-12T18:05:39.021Z]   GET /config/roles
+[2026-01-12T18:05:39.310Z]   ✅ PASS
+[2026-01-12T18:05:39.311Z] Testing: Get service catalog
+[2026-01-12T18:05:39.311Z]   GET /admin/service-catalog
+[2026-01-12T18:05:39.414Z]   ✅ PASS
+[2026-01-12T18:05:39.424Z] Testing: Get service catalog categories
+[2026-01-12T18:05:39.429Z]   GET /service-catalog/categories
+[2026-01-12T18:05:39.617Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:05:39.617Z]   Response: {"error":"operator does not exist: uuid = text"}
+[2026-01-12T18:05:39.622Z] ❌ ISSUE RECORDED: ISSUE-0001
+[2026-01-12T18:05:39.627Z]    Category: API | App: Admin | Endpoint: /service-catalog/categories
+[2026-01-12T18:05:39.628Z] 
+✅ Phase 1 Complete
+
+[2026-01-12T18:05:39.631Z] 
+=================================================================
+[2026-01-12T18:05:39.642Z] PHASE 2: VENDOR LIFECYCLE
+[2026-01-12T18:05:39.645Z] =================================================================
+
+[2026-01-12T18:05:39.647Z] Testing: Get vendor onboarding roles
+[2026-01-12T18:05:39.648Z]   GET /vendor/onboarding/roles
+[2026-01-12T18:05:40.662Z]   ✅ PASS
+[2026-01-12T18:05:40.663Z] Testing: Get onboarding form for veterinarian
+[2026-01-12T18:05:40.663Z]   GET /onboarding-form/veterinarian
+[2026-01-12T18:05:40.721Z]   ✅ PASS
+[2026-01-12T18:05:40.721Z] 
+✅ Phase 2 Complete
+
+[2026-01-12T18:05:40.721Z] 
+=================================================================
+[2026-01-12T18:05:40.721Z] PHASE 3: CUSTOMER LIFECYCLE
+[2026-01-12T18:05:40.721Z] =================================================================
+
+[2026-01-12T18:05:40.722Z] Testing: Customer search
+[2026-01-12T18:05:40.722Z]   GET /customer/vendors/search?query=grooming
+[2026-01-12T18:05:40.779Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:05:40.779Z]   Response: {"success":false,"error":"column v.specializations does not exist","vendors":[],"total":0}
+[2026-01-12T18:05:40.779Z] ❌ ISSUE RECORDED: ISSUE-0002
+[2026-01-12T18:05:40.780Z]    Category: API | App: Customer | Endpoint: /customer/vendors/search?query=grooming
+[2026-01-12T18:05:40.780Z] Testing: Discover services
+[2026-01-12T18:05:40.780Z]   GET /customer/discover-services?category=veterinary
+[2026-01-12T18:05:40.849Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:05:40.850Z]   Response: {"error":"column s.is_global does not exist"}
+[2026-01-12T18:05:40.851Z] ❌ ISSUE RECORDED: ISSUE-0003
+[2026-01-12T18:05:40.851Z]    Category: API | App: Customer | Endpoint: /customer/discover-services?category=veterinary
+[2026-01-12T18:05:40.851Z] Testing: Get services for veterinarian role
+[2026-01-12T18:05:40.851Z]   GET /service-catalog/role/veterinarian
+[2026-01-12T18:05:40.951Z]   ✅ PASS
+[2026-01-12T18:05:40.952Z] 
+✅ Phase 3 Complete
+
+[2026-01-12T18:05:40.953Z] 
+=================================================================
+[2026-01-12T18:05:40.953Z] PHASE 4: BOOKING LIFECYCLE
+[2026-01-12T18:05:40.953Z] =================================================================
+
+[2026-01-12T18:05:40.953Z] Testing: Get available booking slots
+[2026-01-12T18:05:40.953Z]   GET /bookings/available-slots?vendorId=60746b1a-95bb-41f6-ad43-fe1263c19122&date=2026-01-13
+[2026-01-12T18:05:41.050Z]   ❌ FAIL - Status: 404
+[2026-01-12T18:05:41.050Z]   Response: {"success":false,"error":{"code":"NOT_FOUND","message":"Booking not found"},"meta":{"timestamp":"2026-01-12T18:05:41.071Z","requestId":"d98c0a47-c7ae-4c9d-b80b-546a416bab13","version":"v1"}}
+[2026-01-12T18:05:41.051Z] ❌ ISSUE RECORDED: ISSUE-0004
+[2026-01-12T18:05:41.051Z]    Category: API | App: Customer | Endpoint: /bookings/available-slots?vendorId=60746b1a-95bb-41f6-ad43-fe1263c19122&date=2026-01-13
+[2026-01-12T18:05:41.051Z] Testing: Create booking
+[2026-01-12T18:05:41.051Z]   POST /bookings/create
+[2026-01-12T18:05:41.094Z]   ❌ FAIL - Status: 400
+[2026-01-12T18:05:41.094Z]   Response: {"success":false,"error":{"code":"VALIDATION_ERROR","message":"Validation failed","details":{"errors":[{"code":"invalid_type","expected":"string","received":"undefined","path":["customerId"],"message"
+[2026-01-12T18:05:41.095Z] ❌ ISSUE RECORDED: ISSUE-0005
+[2026-01-12T18:05:41.095Z]    Category: API | App: Customer | Endpoint: /bookings/create
+[2026-01-12T18:05:41.095Z] Testing: Get vendor reschedule policy
+[2026-01-12T18:05:41.095Z]   GET /vendor/reschedule-policy?bookingId=f5f83b32-e590-433a-8b13-2af480595b77
+[2026-01-12T18:05:41.148Z]   ✅ PASS
+[2026-01-12T18:05:41.148Z] 
+✅ Phase 4 Complete
+
+[2026-01-12T18:05:41.149Z] 
+=================================================================
+[2026-01-12T18:05:41.149Z] PHASE 5: PAYMENT & WALLET
+[2026-01-12T18:05:41.149Z] =================================================================
+
+[2026-01-12T18:05:41.149Z] Testing: Get wallet balance
+[2026-01-12T18:05:41.149Z]   GET /wallet/48687edc-c31e-4e19-860a-0f4093c8a2b6
+[2026-01-12T18:05:41.243Z]   ✅ PASS
+[2026-01-12T18:05:41.244Z] Testing: Get wallet transactions
+[2026-01-12T18:05:41.244Z]   GET /wallet/48687edc-c31e-4e19-860a-0f4093c8a2b6/transactions
+[2026-01-12T18:05:41.346Z]   ❌ FAIL - Status: 500
+[2026-01-12T18:05:41.347Z]   Response: {"error":"column \"customer_id\" does not exist","requestId":"unknown"}
+[2026-01-12T18:05:41.347Z] ❌ ISSUE RECORDED: ISSUE-0006
+[2026-01-12T18:05:41.347Z]    Category: API | App: Customer | Endpoint: /wallet/48687edc-c31e-4e19-860a-0f4093c8a2b6/transactions
+[2026-01-12T18:05:41.347Z] Testing: Get payment status
+[2026-01-12T18:05:41.348Z]   GET /payment/af66c88e-5478-4c17-a62d-10a7b6da7537/status
+[2026-01-12T18:05:41.395Z]   ❌ FAIL - Status: 404
+[2026-01-12T18:05:41.395Z]   Response: {"error":"Not Found"}
+[2026-01-12T18:05:41.396Z] ❌ ISSUE RECORDED: ISSUE-0007
+[2026-01-12T18:05:41.396Z]    Category: API | App: System | Endpoint: /payment/af66c88e-5478-4c17-a62d-10a7b6da7537/status
+[2026-01-12T18:05:41.396Z] 
+✅ Phase 5 Complete
+
+[2026-01-12T18:05:41.397Z] 
+=================================================================
+[2026-01-12T18:05:41.397Z] PHASE 6: VENDOR CAPABILITIES
+[2026-01-12T18:05:41.397Z] =================================================================
+
+[2026-01-12T18:05:41.397Z] 
+❌ FATAL ERROR: vendorId is not defined
+[2026-01-12T18:05:41.398Z] ReferenceError: vendorId is not defined
+    at executePhase6 (/Users/ketan/Documents/warmpawzecodev/scripts/execute-comprehensive-system-test.js:324:49)
+    at main (/Users/ketan/Documents/warmpawzecodev/scripts/execute-comprehensive-system-test.js:498:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)

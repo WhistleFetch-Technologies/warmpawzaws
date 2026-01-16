@@ -1,0 +1,32 @@
+{
+  "components/customer/CustomerPetDetails.tsx -> @/lib/photo-upload": {
+    "id": 1122,
+    "files": [
+      "static/chunks/122.e68a8f8d0a53f398.js"
+    ]
+  },
+  "components/customer/CustomerPetProfile.tsx -> @/lib/photo-upload": {
+    "id": 1122,
+    "files": [
+      "static/chunks/122.e68a8f8d0a53f398.js"
+    ]
+  },
+  "components/customer/CustomerUserProfile.tsx -> @/lib/photo-upload": {
+    "id": 1122,
+    "files": [
+      "static/chunks/122.e68a8f8d0a53f398.js"
+    ]
+  },
+  "components/customer/UserAccountSidebar.tsx -> @/lib/photo-upload": {
+    "id": 1122,
+    "files": [
+      "static/chunks/122.e68a8f8d0a53f398.js"
+    ]
+  },
+  "lib/api-client.ts -> ./error-handling": {
+    "id": 8063,
+    "files": [
+      "static/chunks/63.d322f6061030236e.js"
+    ]
+  }
+}

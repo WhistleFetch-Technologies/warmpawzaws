@@ -1,0 +1,38 @@
+[13:25:52] Starting comprehensive testing for Batch 21
+[13:25:52] Testing 10 files
+[0;34mℹ[0m Testing syntax: universal-staff-schedule-sql.tsx
+[0;32m✓[0m Syntax check passed: universal-staff-schedule-sql.tsx
+[0;34mℹ[0m Testing syntax: razorpay-payment-integration-sql.tsx
+[0;32m✓[0m Syntax check passed: razorpay-payment-integration-sql.tsx
+[0;34mℹ[0m Testing syntax: groomer-gallery-system-sql.tsx
+[0;32m✓[0m Syntax check passed: groomer-gallery-system-sql.tsx
+[0;34mℹ[0m Testing syntax: vendor-utils-sql.tsx
+[0;32m✓[0m Syntax check passed: vendor-utils-sql.tsx
+[0;34mℹ[0m Testing syntax: payment-razorpay-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: payment-razorpay-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: nutritionist-system-sql.tsx
+[0;32m✓[0m Syntax check passed: nutritionist-system-sql.tsx
+[0;34mℹ[0m Testing syntax: gst-configuration-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: gst-configuration-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: system-optimization-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: system-optimization-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: enhanced-refund-system-sql.tsx
+[0;32m✓[0m Syntax check passed: enhanced-refund-system-sql.tsx
+[0;34mℹ[0m Testing syntax: catalog-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: catalog-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: universal-staff-schedule-sql.tsx
+[0;32m✓[0m Route registered: universal-staff-schedule-sql.tsx
+[0;34mℹ[0m Testing route registration: razorpay-payment-integration-sql.tsx
+[0;32m✓[0m Route registered: razorpay-payment-integration-sql.tsx
+[0;34mℹ[0m Testing route registration: groomer-gallery-system-sql.tsx
+[0;32m✓[0m Route registered: groomer-gallery-system-sql.tsx
+[0;34mℹ[0m Testing route registration: vendor-utils-sql.tsx
+[0;32m✓[0m Route registered: vendor-utils-sql.tsx
+[0;34mℹ[0m Testing route registration: payment-razorpay-endpoints-sql.tsx
+[0;32m✓[0m Route registered: payment-razorpay-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: nutritionist-system-sql.tsx
+[0;32m✓[0m Route registered: nutritionist-system-sql.tsx
+[0;34mℹ[0m Testing route registration: gst-configuration-endpoints-sql.tsx
+[0;32m✓[0m Route registered: gst-configuration-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: system-optimization-endpoints-sql.tsx
+[0;31m✗[0m Route NOT registered: system-optimization-endpoints-sql.tsx

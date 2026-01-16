@@ -1,0 +1,14 @@
+=========================================
+COMPLETE LOYALTY E2E TEST
+=========================================
+API Base URL: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+Started: Tue Jan 13 15:14:44 IST 2026
+
+=========================================
+STEP 1: Get buy_product Rule
+=========================================
+[TEST] Get all rules
+  → GET /admin/loyalty-action-rules
+  ← HTTP 200
+[0;32m  ✓ Success[0m
+[0;31mbuy_product rule not found[0m
