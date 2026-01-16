@@ -107,10 +107,10 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       console.log('Saving onboarding with phone:', session.phone);
       console.log('Onboarding data:', onboardingData);
       
-      const responseData = await apiClient.post('/customer/onboarding', {
+      const responseData = await apiClient.post('/customer/profile', {
         phone: session.phone,
-        type: 'have-pet',
-        data: onboardingData,
+        onboardingType: 'have-pet',
+        ...onboardingData,
       }) as any;
       console.log('Response data:', responseData);
 

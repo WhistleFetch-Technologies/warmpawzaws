@@ -370,5 +370,172 @@ export function registerPackageEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  // ============================================================================
+  // VENDOR PACKAGE MANAGEMENT ENDPOINTS
+  // ============================================================================
+
+  /**
+   * GET /vendor/packages
+   * Get all packages for the authenticated vendor
+   */
+  app.get("/vendor/packages", async (c) => {
+    try {
+      // Get vendorId from auth header or query param
+      const vendorId = c.req.query('vendorId') || c.req.header('x-vendor-id');
+      
+      let whereClause = 'WHERE 1=1';
+      const params: any[] = [];
+      
+      if (vendorId) {
+        params.push(vendorId);
+        whereClause += ` AND p.vendor_id = $${params.length}`;
+      }
+
+      const packages = await query(
+        `SELECT p.*, 
+                COALESCE(
+                  (SELECT COUNT(*) FROM package_enrollments e WHERE e.package_id = p.id AND e.status = 'active'),
+                  0
+                ) as active_enrollments
+         FROM service_packages p
+         ${whereClause}
+         ORDER BY p.created_at DESC`,
+        params
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        packages: packages.rows,
+        total: packages.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor packages:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/packages
+   * Create a new package
+   */
+  app.post("/vendor/packages", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { vendorId, name, description, serviceType, serviceIds, price, sessionCount, validityDays, isActive } = body;
+
+      if (!vendorId || !name || !price) {
+        return c.json({ error: 'Vendor ID, name, and price are required' }, 400);
+      }
+
+      const newPackage = await insert('service_packages', {
+        vendor_id: vendorId,
+        name,
+        description: description || '',
+        service_type: serviceType || 'general',
+        service_ids: serviceIds || [],
+        price,
+        session_count: sessionCount || 1,
+        validity_days: validityDays || 30,
+        is_active: isActive !== false,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      return c.json({
+        success: true,
+        package: newPackage[0],
+        message: 'Package created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating package:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/packages/:packageId
+   * Update a package
+   */
+  app.put("/vendor/packages/:packageId", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+      const body = await c.req.json();
+
+      const updateData: any = { updated_at: new Date() };
+      
+      if (body.name) updateData.name = body.name;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.serviceType) updateData.service_type = body.serviceType;
+      if (body.serviceIds) updateData.service_ids = body.serviceIds;
+      if (body.price !== undefined) updateData.price = body.price;
+      if (body.sessionCount !== undefined) updateData.session_count = body.sessionCount;
+      if (body.validityDays !== undefined) updateData.validity_days = body.validityDays;
+      if (body.isActive !== undefined) updateData.is_active = body.isActive;
+
+      await update('service_packages', { id: packageId }, updateData);
+
+      return c.json({
+        success: true,
+        message: 'Package updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating package:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/packages/:packageId
+   * Delete a package
+   */
+  app.delete("/vendor/packages/:packageId", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+
+      // Soft delete - mark as inactive
+      await update('service_packages', { id: packageId }, { 
+        is_active: false,
+        deleted_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Package deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting package:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/packages/:packageId/enrollments
+   * Get enrollments for a package
+   */
+  app.get("/vendor/packages/:packageId/enrollments", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+
+      const enrollments = await query(
+        `SELECT e.*, c.name as customer_name, c.phone as customer_phone
+         FROM package_enrollments e
+         LEFT JOIN customers c ON e.customer_id = c.id
+         WHERE e.package_id = $1
+         ORDER BY e.created_at DESC`,
+        [packageId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        enrollments: enrollments.rows,
+        total: enrollments.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching package enrollments:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

@@ -581,8 +581,269 @@ export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
     icon: '⚙️',
     description: 'App settings',
     category: 'operations',
-    route: '/operations/settings',
-    parentRoute: '/operations',
+    route: '/settings',
+  },
+  
+  // ============================================================================
+  // MISSING CAPABILITIES - Added from audit (Phase 1 fixes)
+  // ============================================================================
+  
+  // Facility Management - needed by 12+ roles
+  facility_management: {
+    name: 'facility_management',
+    display_name: 'Facility',
+    icon: '🏢',
+    description: 'Manage facility details and amenities',
+    category: 'operations',
+    route: '/facility',
+  },
+
+  // Emergency - needed by healthcare roles
+  emergency: {
+    name: 'emergency',
+    display_name: 'Emergency',
+    icon: '🚨',
+    description: 'Emergency protocols and alerts',
+    category: 'specialized',
+    route: '/emergency',
+  },
+
+  // Patient Monitoring - for vet/clinic
+  patient_monitoring: {
+    name: 'patient_monitoring',
+    display_name: 'Patient Monitoring',
+    icon: '❤️',
+    description: 'Track patient vitals and conditions',
+    category: 'specialized',
+    route: '/medical/monitoring',
+    parentRoute: '/medical',
+  },
+
+  // Vet Summary - for vet/clinic
+  vet_summary: {
+    name: 'vet_summary',
+    display_name: 'Vet Summary',
+    icon: '📋',
+    description: 'Patient summaries and reports',
+    category: 'specialized',
+    route: '/medical/summary',
+    parentRoute: '/medical',
+  },
+
+  // Controlled Substances - for pharmacy
+  controlled_substances: {
+    name: 'controlled_substances',
+    display_name: 'Controlled Substances',
+    icon: '🔒',
+    description: 'Manage controlled medications',
+    category: 'specialized',
+    route: '/pharmacy/controlled',
+    parentRoute: '/pharmacy',
+  },
+
+  // Prescription Verification - for pharmacy
+  prescription_verification: {
+    name: 'prescription_verification',
+    display_name: 'Rx Verification',
+    icon: '✅',
+    description: 'Verify prescriptions',
+    category: 'specialized',
+    route: '/pharmacy/verify',
+    parentRoute: '/pharmacy',
+  },
+
+  // Expiry Management - for pharmacy/seller
+  expiry_management: {
+    name: 'expiry_management',
+    display_name: 'Expiry Tracking',
+    icon: '📆',
+    description: 'Track product expiration dates',
+    category: 'operations',
+    route: '/inventory/expiry',
+    parentRoute: '/inventory',
+  },
+
+  // CCTV Access - for boarding/resort
+  cctv_access: {
+    name: 'cctv_access',
+    display_name: 'CCTV Access',
+    icon: '📹',
+    description: 'Manage camera access',
+    category: 'operations',
+    route: '/facility/cctv',
+    parentRoute: '/facility',
+  },
+
+  // Memorial - for sunset services
+  memorial: {
+    name: 'memorial',
+    display_name: 'Memorial',
+    icon: '🕯️',
+    description: 'Memorial services',
+    category: 'specialized',
+    route: '/memorial',
+  },
+
+  // Counseling - for behaviorist/sunset
+  counseling: {
+    name: 'counseling',
+    display_name: 'Counseling',
+    icon: '💬',
+    description: 'Counseling sessions',
+    category: 'specialized',
+    route: '/counseling',
+  },
+
+  // Custom Services - for all roles
+  custom_services: {
+    name: 'custom_services',
+    display_name: 'Custom Services',
+    icon: '✨',
+    description: 'Create custom services',
+    category: 'services',
+    route: '/services/custom',
+    parentRoute: '/services',
+  },
+
+  // Distance Pricing - for taxi/walker/ambulance
+  distance_pricing: {
+    name: 'distance_pricing',
+    display_name: 'Distance Pricing',
+    icon: '📏',
+    description: 'Configure distance-based pricing',
+    category: 'finance',
+    route: '/pricing/distance',
+    parentRoute: '/pricing',
+  },
+  
+  // Photo Updates - for boarding/walker/sitter
+  photo_updates: {
+    name: 'photo_updates',
+    display_name: 'Photo Updates',
+    icon: '📸',
+    description: 'Send photo updates to customers',
+    category: 'communication',
+    route: '/communication/photos',
+    parentRoute: '/communication',
+  },
+  
+  // PAX Management - for cafe/events
+  pax_management: {
+    name: 'pax_management',
+    display_name: 'PAX Management',
+    icon: '👥',
+    description: 'Manage party size and capacity',
+    category: 'specialized',
+    route: '/cafe/capacity',
+    parentRoute: '/cafe',
+  },
+  
+  // Occupancy Tracking - for boarding/resort
+  occupancy_tracking: {
+    name: 'occupancy_tracking',
+    display_name: 'Occupancy Tracking',
+    icon: '📊',
+    description: 'Track room/table occupancy',
+    category: 'operations',
+    route: '/resort/occupancy',
+    parentRoute: '/resort',
+  },
+  
+  // Nightly Pricing - for boarding/resort
+  nightly_pricing: {
+    name: 'nightly_pricing',
+    display_name: 'Nightly Pricing',
+    icon: '🌙',
+    description: 'Configure nightly rates',
+    category: 'finance',
+    route: '/resort/pricing',
+    parentRoute: '/resort',
+  },
+  
+  // Emergency Protocols - for clinic/ambulance
+  emergency_protocols: {
+    name: 'emergency_protocols',
+    display_name: 'Emergency Protocols',
+    icon: '📋',
+    description: 'Emergency response protocols',
+    category: 'specialized',
+    route: '/emergency/protocols',
+    parentRoute: '/emergency',
+  },
+  
+  // Multi Doctor Management - for clinics
+  multi_doctor_management: {
+    name: 'multi_doctor_management',
+    display_name: 'Multi-Doctor',
+    icon: '👨‍⚕️',
+    description: 'Manage multiple doctors/vets',
+    category: 'operations',
+    route: '/staff/doctors',
+    parentRoute: '/staff',
+  },
+  
+  // Ambulance Services - for ambulance/clinic
+  ambulance_services: {
+    name: 'ambulance_services',
+    display_name: 'Ambulance Services',
+    icon: '🚑',
+    description: 'Ambulance and transport',
+    category: 'specialized',
+    route: '/ambulance/services',
+    parentRoute: '/ambulance',
+  },
+  
+  // Diagnostic Lab - for clinic/diagnostic centers
+  diagnostic_lab: {
+    name: 'diagnostic_lab',
+    display_name: 'Diagnostic Lab',
+    icon: '🔬',
+    description: 'Laboratory and diagnostic tests',
+    category: 'specialized',
+    route: '/medical/lab',
+    parentRoute: '/medical',
+  },
+  
+  // Catalog - for sellers/pharmacy
+  catalog: {
+    name: 'catalog',
+    display_name: 'Catalog',
+    icon: '📚',
+    description: 'Product/service catalog',
+    category: 'services',
+    route: '/catalog',
+  },
+  
+  // Donation - for shelters/NGOs
+  donation: {
+    name: 'donation',
+    display_name: 'Donations',
+    icon: '💝',
+    description: 'Donation management',
+    category: 'specialized',
+    route: '/donations',
+  },
+  
+  // Policy Management - for insurance
+  policy_management: {
+    name: 'policy_management',
+    display_name: 'Policy Management',
+    icon: '📋',
+    description: 'Insurance policy management',
+    category: 'specialized',
+    route: '/insurance/policies',
+    parentRoute: '/insurance',
+  },
+  
+  // Claims Management - for insurance
+  claims_management: {
+    name: 'claims_management',
+    display_name: 'Claims Management',
+    icon: '📝',
+    description: 'Insurance claims processing',
+    category: 'specialized',
+    route: '/insurance/claims',
+    parentRoute: '/insurance',
   },
 };
 

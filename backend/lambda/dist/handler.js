@@ -229443,17 +229443,17 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_clinic", "video_consultation", "home_visit"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "prescription",
+      "prescriptions",
       "medical_records",
-      "booking",
+      "bookings",
       "chat",
-      "staff_management",
-      "tele",
+      "staff",
+      "tele_consultation",
       "emergency",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "vet_summary",
       "patient_monitoring"
     ],
@@ -229465,17 +229465,17 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_clinic", "video_consultation", "home_visit"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "prescription",
+      "prescriptions",
       "medical_records",
-      "booking",
+      "bookings",
       "chat",
-      "staff_management",
-      "tele",
+      "staff",
+      "tele_consultation",
       "emergency",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "vet_summary",
       "patient_monitoring",
       "multi_doctor_management",
@@ -229491,15 +229491,14 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center", "at_home"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "booking",
-      "portfolio",
+      "bookings",
       "gallery",
       "chat",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management"
+      "packages"
     ],
     icon: "\u2702\uFE0F",
     category: "service_provider"
@@ -229509,16 +229508,16 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center"],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      "booking",
+      "bookings",
       "cctv_access",
       "photo_updates",
       "chat",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
-      "room_management",
+      "packages",
+      "rooms",
       "nightly_pricing",
       "occupancy_tracking"
     ],
@@ -229530,16 +229529,16 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center"],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      "booking",
+      "bookings",
       "cctv_access",
       "photo_updates",
       "chat",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
-      "room_management",
+      "packages",
+      "rooms",
       "nightly_pricing",
       "occupancy_tracking"
     ],
@@ -229553,11 +229552,11 @@ var STANDARD_ROLE_DEFINITIONS = {
     capabilities: [
       "gps_tracking",
       "photo_updates",
-      "booking",
+      "bookings",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "chat"
     ],
     icon: "\u{1F9AE}",
@@ -229568,14 +229567,14 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_home", "at_center", "online"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "booking",
+      "bookings",
       "progress_tracking",
       "chat",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management"
+      "packages"
     ],
     icon: "\u{1F3BE}",
     category: "service_provider"
@@ -229585,15 +229584,15 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_home", "at_center", "video_consultation"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "booking",
+      "bookings",
       "progress_tracking",
       "chat",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
-      "tele"
+      "packages",
+      "tele_consultation"
     ],
     icon: "\u{1F9E0}",
     category: "service_provider"
@@ -229603,14 +229602,14 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_home"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "booking",
+      "bookings",
       "photo_updates",
       "chat",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
-      "staff_management"
+      "packages",
+      "staff"
     ],
     icon: "\u{1F3E0}",
     category: "service_provider"
@@ -229620,13 +229619,13 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_home"],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      "booking",
+      "bookings",
       "gps_tracking",
       "emergency",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "distance_pricing",
       "chat"
     ],
@@ -229642,9 +229641,9 @@ var STANDARD_ROLE_DEFINITIONS = {
       "inventory",
       "orders",
       "delivery",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management"
+      "schedule"
     ],
     icon: "\u{1F6CD}\uFE0F",
     category: "retail"
@@ -229656,11 +229655,11 @@ var STANDARD_ROLE_DEFINITIONS = {
     capabilities: [
       "catalog",
       "inventory",
-      "prescription",
+      "prescriptions",
       "delivery",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "prescription_verification",
       "controlled_substances",
       "expiry_management"
@@ -229673,15 +229672,15 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center"],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      "booking",
+      "bookings",
       "menu",
       "events",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
-      "table_management",
+      "packages",
+      "cafe_tables",
       "pax_management",
       "chat"
     ],
@@ -229693,14 +229692,13 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center", "at_home", "outdoor"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "booking",
-      "portfolio",
+      "bookings",
       "gallery",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "chat"
     ],
     icon: "\u{1F4F8}",
@@ -229714,9 +229712,9 @@ var STANDARD_ROLE_DEFINITIONS = {
       "adoption",
       "donation",
       "events",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "chat"
     ],
     icon: "\u{1F3E0}",
@@ -229728,13 +229726,13 @@ var STANDARD_ROLE_DEFINITIONS = {
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
       "events",
-      "booking",
-      "staff_management",
+      "bookings",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "chat",
       "custom_services",
-      "package_management"
+      "packages"
     ],
     icon: "\u{1F4C5}",
     category: "specialist"
@@ -229744,14 +229742,14 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center", "home_visit"],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      "booking",
+      "bookings",
       "memorial",
       "counseling",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "chat"
     ],
     icon: "\u{1F305}",
@@ -229762,16 +229760,15 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_center", "video_consultation", "home_visit"],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      "booking",
+      "bookings",
       "chat",
-      "staff_management",
-      "tele",
+      "staff",
+      "tele_consultation",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services",
-      "package_management",
+      "packages",
       "meal_plans",
-      "diet_charts",
       "progress_tracking"
     ],
     icon: "\u{1F957}",
@@ -229783,9 +229780,9 @@ var STANDARD_ROLE_DEFINITIONS = {
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
       "chat",
-      "staff_management",
+      "staff",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "policy_management",
       "claims_management"
     ],
@@ -229797,11 +229794,11 @@ var STANDARD_ROLE_DEFINITIONS = {
     serviceStyles: ["at_home"],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      "booking",
+      "bookings",
       "gps_tracking",
       "emergency",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "chat",
       "emergency_protocols"
     ],
@@ -229814,10 +229811,10 @@ var STANDARD_ROLE_DEFINITIONS = {
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
       "catalog",
-      "booking",
+      "bookings",
       "chat",
       "facility_management",
-      "schedule_management",
+      "schedule",
       "custom_services"
     ],
     icon: "\u{1F436}",
@@ -235220,12 +235217,40 @@ function registerStaffEndpoints(app2) {
       const enrichedStaff = await Promise.all(
         staff.map(async (s) => {
           const services = await query(
-            "SELECT ss.*, sv.name as service_name FROM staff_services ss INNER JOIN services sv ON ss.service_id = sv.id WHERE ss.staff_id = $1",
+            `SELECT ss.*, sv.name as service_name, ss.service_styles 
+             FROM staff_services ss 
+             INNER JOIN services sv ON ss.service_id = sv.id 
+             WHERE ss.staff_id = $1`,
             [s.id]
           );
+          let specializations = [];
+          try {
+            const specsResult = await query(
+              "SELECT specialization FROM staff_specializations WHERE staff_id = $1",
+              [s.id]
+            );
+            specializations = specsResult.rows.map((row) => row.specialization);
+          } catch (e) {
+            specializations = [];
+          }
           return {
-            ...s,
-            services: services.rows
+            id: s.id,
+            name: s.name,
+            phone: s.phone,
+            email: s.email,
+            role: s.role,
+            photo: s.photo,
+            experience_years: s.experience_years,
+            qualifications: s.qualifications,
+            is_active: s.is_active,
+            mobile_verified: s.mobile_verified,
+            mobile_verified_at: s.mobile_verified_at,
+            specializations,
+            services: services.rows.map((svc) => ({
+              id: svc.id,
+              name: svc.service_name,
+              service_style: svc.service_styles
+            }))
           };
         })
       );

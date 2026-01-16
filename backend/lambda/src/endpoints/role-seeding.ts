@@ -396,9 +396,9 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'policy_management',
       'claims_management'
     ],
@@ -410,11 +410,11 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      'booking',
+      'bookings',
       'gps_tracking',
       'emergency',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'chat',
       'emergency_protocols'
     ],
@@ -427,10 +427,10 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
       'catalog',
-      'booking',
+      'bookings',
       'chat',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services'
     ],
     icon: '🐶',

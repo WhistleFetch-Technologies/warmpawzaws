@@ -80,13 +80,13 @@ export default function BankDetailsPage() {
       setLoading(true);
       setError(null);
       
-      const [bankRes, upiRes] = await Promise.all([
-        apiClient.get<any>('/vendor/bank-accounts'),
-        apiClient.get<any>('/vendor/upi-accounts'),
-      ]);
+      const vendorId = localStorage.getItem('vendorId');
+      const bankRes = await apiClient.get<any>(`/vendor/${vendorId}/bank-account`);
       
-      setBankAccounts(bankRes.accounts || bankRes || []);
-      setUpiAccounts(upiRes.accounts || upiRes || []);
+      // Backend returns single bank account, wrap in array for UI compatibility
+      const bankData = bankRes.bankAccount || bankRes.bank_account || bankRes;
+      setBankAccounts(bankData ? (Array.isArray(bankData) ? bankData : [bankData]) : []);
+      setUpiAccounts([]); // UPI accounts handled separately if needed
     } catch (err: any) {
       console.error('Error loading bank details:', err);
       setError(err.message || 'Failed to load bank details');
@@ -148,11 +148,12 @@ export default function BankDetailsPage() {
       setSaving(true);
       setError(null);
       
+      const vendorId = localStorage.getItem('vendorId');
       if (editingBank) {
-        await apiClient.put(`/vendor/bank-accounts/${editingBank.id}`, bankForm);
+        await apiClient.post(`/vendor/${vendorId}/bank-account`, bankForm);
         setSuccess('Bank account updated successfully');
       } else {
-        await apiClient.post('/vendor/bank-accounts', bankForm);
+        await apiClient.post(`/vendor/${vendorId}/bank-account`, bankForm);
         setSuccess('Bank account added successfully');
       }
       
@@ -170,7 +171,8 @@ export default function BankDetailsPage() {
       setVerifying(accountId);
       setError(null);
       
-      await apiClient.post(`/vendor/bank-accounts/${accountId}/verify`, {});
+      const vendorId = localStorage.getItem('vendorId');
+      await apiClient.post(`/vendor/${vendorId}/bank-account/verify`, {});
       setSuccess('Bank account verification initiated. You will receive a small test deposit.');
       loadData();
     } catch (err: any) {

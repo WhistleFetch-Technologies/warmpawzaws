@@ -81,9 +81,10 @@ export default function SubscriptionsPage() {
       setLoading(true);
       setError(null);
       
+      const vendorId = localStorage.getItem('vendorId');
       const [plansRes, servicesRes] = await Promise.all([
-        apiClient.get<any>('/vendor/subscriptions/plans'),
-        apiClient.get<any>('/vendor/services'),
+        apiClient.get<any>(`/subscriptions/plans/vendor/${vendorId}`),
+        apiClient.get<any>(`/vendor/${vendorId}/services`),
       ]);
       
       setPlans(plansRes.plans || plansRes || []);
@@ -160,11 +161,12 @@ export default function SubscriptionsPage() {
       setSaving(true);
       setError(null);
       
+      const vendorId = localStorage.getItem('vendorId');
       if (editingPlan) {
-        await apiClient.put(`/vendor/subscriptions/plans/${editingPlan.id}`, planForm);
+        await apiClient.put(`/subscriptions/plans/${editingPlan.id}`, planForm);
         setSuccess('Subscription plan updated successfully');
       } else {
-        await apiClient.post('/vendor/subscriptions/plans', planForm);
+        await apiClient.post('/subscriptions/plans', { ...planForm, vendorId });
         setSuccess('Subscription plan created successfully');
       }
       
@@ -182,7 +184,7 @@ export default function SubscriptionsPage() {
     if (!confirm('Are you sure you want to delete this subscription plan? Existing subscribers will be notified.')) return;
     
     try {
-      await apiClient.delete(`/vendor/subscriptions/plans/${planId}`);
+      await apiClient.delete(`/subscriptions/plans/${planId}`);
       setSuccess('Subscription plan deleted');
       loadData();
     } catch (err: any) {

@@ -55,8 +55,7 @@ export default function ServiceManagementPage() {
   const handleAddService = async () => {
     try {
       const vendorId = localStorage.getItem('vendorId');
-      await apiClient.post('/vendor-services/create', {
-        vendorId,
+      await apiClient.post(`/vendor/${vendorId}/services`, {
         ...newService,
       });
       setShowAddForm(false);
@@ -69,7 +68,8 @@ export default function ServiceManagementPage() {
 
   const toggleServiceStatus = async (serviceId: string, isEnabled: boolean) => {
     try {
-      await apiClient.put(`/vendor-services/${serviceId}`, { is_enabled: !isEnabled });
+      const vendorId = localStorage.getItem('vendorId');
+      await apiClient.put(`/vendor/${vendorId}/services/${serviceId}`, { is_enabled: !isEnabled });
       loadServices();
     } catch (err) {
       console.error('Error updating service:', err);

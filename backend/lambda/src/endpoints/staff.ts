@@ -1589,7 +1589,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
 
       const response = await fetch(url.toString());
-      const data = await response.json();
+      const data = await response.json() as any;
 
       if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
         console.error('Google Places API error:', data);
@@ -1637,7 +1637,7 @@ export function registerStaffEndpoints(app: Hono) {
       }
 
       const response = await fetch(url.toString());
-      const data = await response.json();
+      const data = await response.json() as any;
 
       if (data.status !== 'OK') {
         return c.json({ error: 'Failed to get place details' }, 500);
