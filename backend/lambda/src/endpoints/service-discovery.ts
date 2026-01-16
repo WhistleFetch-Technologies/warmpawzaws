@@ -1377,7 +1377,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   /**
    * GET /customer/services/by-style
    * Get available services filtered by style (tele, at_home, at_center)
-   * This is for home/tele service discovery - lists actual configured services
+   * 
+   * ⚠️ CRITICAL BUSINESS RULE for at_home and tele:
+   * - For BUSINESS ENTITIES (clinics, grooming centers): Return only VERIFIED STAFF MEMBERS
+   * - For INDIVIDUAL PROVIDERS (home groomers, individual vets): Return the provider directly
+   * - Only verified providers (mobile_verified = true) appear in results
    */
   app.get("/customer/services/by-style", async (c) => {
     try {
@@ -1391,104 +1395,387 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Service style is required (tele, at_home, at_center)', success: false }, 400);
       }
 
-      // Get vendors with services in this style
-      let vendorsQuery = `
-        SELECT DISTINCT ON (v.id)
-          v.id as vendor_id,
-          v.business_name,
-          v.owner_name,
-          v.phone,
-          v.address,
-          v.city,
-          v.latitude,
-          v.longitude,
-          r.name as role_name,
-          r.display_name as role_display_name,
-          (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
-          (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count
-        FROM vendors v
-        LEFT JOIN roles r ON v.role_id = r.id
-        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-        WHERE v.status = 'approved' 
-          AND v.is_active = true
-          AND vs.service_style = $1
-          AND vs.is_enabled = true
-          AND vs.publish_status = 'published'
-      `;
-      
-      const params: any[] = [serviceStyle];
-      let paramIndex = 2;
+      const customerLat = latitude ? parseFloat(latitude) : null;
+      const customerLng = longitude ? parseFloat(longitude) : null;
 
-      // Filter by category/role
-      if (category) {
-        const categoryRoles: Record<string, string[]> = {
-          'vet': ['veterinarian', 'vet_clinic'],
-          'grooming': ['groomer', 'grooming_salon', 'pet_groomer'],
-          'training': ['trainer', 'pet_trainer'],
-        };
-        const roles = categoryRoles[category.toLowerCase()];
-        if (roles) {
-          vendorsQuery += ` AND r.name = ANY($${paramIndex})`;
-          params.push(roles);
-          paramIndex++;
+      // ========== FOR AT_CENTER: Return vendors directly ==========
+      if (serviceStyle === 'at_center') {
+        let vendorsQuery = `
+          SELECT DISTINCT ON (v.id)
+            v.id as vendor_id,
+            v.business_name,
+            v.owner_name,
+            v.phone,
+            v.address,
+            v.city,
+            v.latitude,
+            v.longitude,
+            r.name as role_name,
+            r.display_name as role_display_name,
+            (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
+            (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count,
+            'vendor' as provider_type
+          FROM vendors v
+          LEFT JOIN roles r ON v.role_id = r.id
+          INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+          WHERE v.status = 'approved' 
+            AND v.is_active = true
+            AND vs.service_style = $1
+            AND vs.is_enabled = true
+            AND vs.publish_status = 'published'
+        `;
+        
+        const params: any[] = [serviceStyle];
+        let paramIndex = 2;
+
+        if (category) {
+          const categoryRoles: Record<string, string[]> = {
+            'vet': ['veterinarian', 'vet_clinic'],
+            'grooming': ['groomer', 'grooming_salon', 'pet_groomer'],
+            'training': ['trainer', 'pet_trainer'],
+          };
+          const roles = categoryRoles[category.toLowerCase()];
+          if (roles) {
+            vendorsQuery += ` AND r.name = ANY($${paramIndex})`;
+            params.push(roles);
+            paramIndex++;
+          }
         }
+
+        vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
+
+        const vendorsResult = await query(vendorsQuery, params);
+
+        const vendorsWithServices = await Promise.all(
+          vendorsResult.rows.map(async (vendor) => {
+            const servicesResult = await query(
+              `SELECT 
+                vs.id,
+                vs.service_id,
+                vs.service_name,
+                vs.price,
+                vs.duration_minutes as duration,
+                vs.custom_description as description,
+                vs.category as category_name
+               FROM vendor_services vs
+               WHERE vs.vendor_id = $1 
+                 AND vs.service_style = $2
+                 AND vs.is_enabled = true
+                 AND vs.publish_status = 'published'
+               ORDER BY vs.price ASC`,
+              [vendor.vendor_id, serviceStyle]
+            );
+
+            let distance = null;
+            if (customerLat && customerLng && vendor.latitude && vendor.longitude) {
+              distance = calculateDistance(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
+            }
+
+            return {
+              providerId: vendor.vendor_id,
+              providerType: 'vendor',
+              vendorId: vendor.vendor_id,
+              name: vendor.business_name || vendor.owner_name,
+              phone: vendor.phone,
+              address: vendor.address,
+              city: vendor.city,
+              role: vendor.role_display_name || vendor.role_name,
+              rating: parseFloat(vendor.avg_rating || '0').toFixed(1),
+              reviewCount: parseInt(vendor.review_count || '0', 10),
+              distance: distance ? parseFloat(distance.toFixed(2)) : null,
+              isVerified: true, // Vendors don't need mobile verification
+              services: servicesResult.rows.map(s => ({
+                id: s.id,
+                serviceId: s.service_id,
+                name: s.service_name,
+                price: parseFloat(s.price || 0),
+                duration: s.duration || 30,
+                description: s.description,
+                category: s.category_name,
+              })),
+            };
+          })
+        );
+
+        const filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
+
+        return c.json({
+          success: true,
+          style: serviceStyle,
+          providers: filteredVendors,
+          total: filteredVendors.length,
+        });
       }
 
-      vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
+      // ========== FOR AT_HOME and TELE: Return verified staff/individual providers ==========
+      // 1. Get individual providers (staff with vendor_id = NULL and is_individual_provider = true)
+      // 2. Get verified staff members from clinics/centers who are assigned to this service style
 
-      const vendorsResult = await query(vendorsQuery, params);
+      const providers: any[] = [];
 
-      // For each vendor, get their services in this style
-      const vendorsWithServices = await Promise.all(
-        vendorsResult.rows.map(async (vendor) => {
-          const servicesResult = await query(
-            `SELECT 
-              vs.id,
-              vs.service_id,
-              vs.service_name,
-              vs.price,
-              vs.duration_minutes as duration,
-              vs.custom_description as description,
-              vs.category as category_name
-             FROM vendor_services vs
-             WHERE vs.vendor_id = $1 
-               AND vs.service_style = $2
-               AND vs.is_enabled = true
-               AND vs.publish_status = 'published'
-             ORDER BY vs.price ASC`,
-            [vendor.vendor_id, serviceStyle]
-          );
+      // Category role mapping
+      const categoryRoles: Record<string, string[]> = {
+        'vet': ['Veterinarian', 'veterinarian', 'vet'],
+        'grooming': ['Groomer', 'groomer', 'pet_groomer'],
+        'training': ['Trainer', 'trainer', 'pet_trainer'],
+        'walker': ['Walker', 'walker', 'pet_walker'],
+      };
 
-          return {
-            vendorId: vendor.vendor_id,
-            vendorName: vendor.business_name || vendor.owner_name,
-            phone: vendor.phone,
-            address: vendor.address,
-            city: vendor.city,
-            role: vendor.role_display_name || vendor.role_name,
-            rating: parseFloat(vendor.avg_rating || '0').toFixed(1),
-            reviewCount: parseInt(vendor.review_count || '0', 10),
-            services: servicesResult.rows.map(s => ({
-              id: s.id,
-              serviceId: s.service_id,
-              name: s.service_name,
-              price: parseFloat(s.price || 0),
-              duration: s.duration || 30,
-              description: s.description,
-              category: s.category_name,
-            })),
-          };
-        })
-      );
+      const targetRoles = category ? (categoryRoles[category.toLowerCase()] || []) : [];
 
-      // Filter vendors with at least one service
-      const filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
+      // ========== 1. Get Individual Providers (no vendor_id, verified) ==========
+      let individualQuery = `
+        SELECT 
+          s.id,
+          s.name,
+          s.phone,
+          s.email,
+          s.photo,
+          s.role,
+          s.experience_years,
+          s.qualifications,
+          s.default_location,
+          s.is_individual_provider,
+          s.mobile_verified,
+          COALESCE((SELECT AVG(rating) FROM reviews WHERE staff_id = s.id), 0) as avg_rating,
+          COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0) as review_count
+        FROM staff s
+        WHERE s.is_active = true
+          AND s.mobile_verified = true
+          AND s.vendor_id IS NULL
+          AND s.is_individual_provider = true
+      `;
+
+      const individualParams: any[] = [];
+      let individualParamIdx = 1;
+
+      if (targetRoles.length > 0) {
+        individualQuery += ` AND s.role = ANY($${individualParamIdx})`;
+        individualParams.push(targetRoles);
+        individualParamIdx++;
+      }
+
+      // Check if staff has services with this style enabled
+      individualQuery += ` AND EXISTS (
+        SELECT 1 FROM staff_services ss 
+        WHERE ss.staff_id = s.id 
+          AND ss.enabled_by_staff = true 
+          AND ss.is_active = true
+          AND $${individualParamIdx} = ANY(ss.service_styles)
+      )`;
+      individualParams.push(serviceStyle);
+      individualParamIdx++;
+
+      const individualResult = await query(individualQuery, individualParams);
+
+      for (const ind of individualResult.rows) {
+        // Get services for this individual
+        const servicesResult = await query(
+          `SELECT 
+            ss.id,
+            ss.service_id,
+            ss.price,
+            ss.duration_minutes as duration,
+            ss.service_styles,
+            s.name as service_name,
+            s.description,
+            s.category
+           FROM staff_services ss
+           INNER JOIN services s ON ss.service_id = s.id
+           WHERE ss.staff_id = $1 
+             AND ss.enabled_by_staff = true 
+             AND ss.is_active = true
+             AND $2 = ANY(ss.service_styles)
+           ORDER BY ss.price ASC`,
+          [ind.id, serviceStyle]
+        );
+
+        // Calculate distance if location available
+        let distance = null;
+        if (customerLat && customerLng && ind.default_location) {
+          const loc = typeof ind.default_location === 'string' 
+            ? JSON.parse(ind.default_location) 
+            : ind.default_location;
+          if (loc.lat && loc.lng) {
+            distance = calculateDistance(customerLat, customerLng, parseFloat(loc.lat), parseFloat(loc.lng));
+          }
+        }
+
+        providers.push({
+          providerId: ind.id,
+          providerType: 'individual',
+          staffId: ind.id,
+          vendorId: null,
+          name: ind.name,
+          phone: ind.phone,
+          photo: ind.photo,
+          role: ind.role,
+          experienceYears: ind.experience_years,
+          qualifications: ind.qualifications,
+          rating: parseFloat(ind.avg_rating || '0').toFixed(1),
+          reviewCount: parseInt(ind.review_count || '0', 10),
+          distance: distance ? parseFloat(distance.toFixed(2)) : null,
+          isVerified: true,
+          isIndividualProvider: true,
+          services: servicesResult.rows.map(s => ({
+            id: s.id,
+            serviceId: s.service_id,
+            name: s.service_name,
+            price: parseFloat(s.price || 0),
+            duration: s.duration || 30,
+            description: s.description,
+            category: s.category,
+          })),
+        });
+      }
+
+      // ========== 2. Get Verified Staff from Clinics/Centers ==========
+      let staffQuery = `
+        SELECT 
+          s.id,
+          s.name,
+          s.phone,
+          s.email,
+          s.photo,
+          s.role,
+          s.experience_years,
+          s.qualifications,
+          s.default_location,
+          s.mobile_verified,
+          s.vendor_id,
+          v.business_name as vendor_name,
+          v.address as vendor_address,
+          v.city as vendor_city,
+          v.latitude as vendor_lat,
+          v.longitude as vendor_lng,
+          r.display_name as vendor_role_display,
+          COALESCE((SELECT AVG(rating) FROM reviews WHERE staff_id = s.id), 0) as avg_rating,
+          COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0) as review_count
+        FROM staff s
+        INNER JOIN vendors v ON s.vendor_id = v.id
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE s.is_active = true
+          AND s.mobile_verified = true
+          AND v.status = 'approved'
+          AND v.is_active = true
+          AND s.vendor_id IS NOT NULL
+      `;
+
+      const staffParams: any[] = [];
+      let staffParamIdx = 1;
+
+      // Filter by role
+      if (targetRoles.length > 0) {
+        staffQuery += ` AND s.role = ANY($${staffParamIdx})`;
+        staffParams.push(targetRoles);
+        staffParamIdx++;
+      }
+
+      // Check if staff has services with this style enabled
+      staffQuery += ` AND EXISTS (
+        SELECT 1 FROM staff_services ss 
+        WHERE ss.staff_id = s.id 
+          AND ss.enabled_by_staff = true 
+          AND ss.is_active = true
+          AND $${staffParamIdx} = ANY(ss.service_styles)
+      )`;
+      staffParams.push(serviceStyle);
+      staffParamIdx++;
+
+      const staffResult = await query(staffQuery, staffParams);
+
+      for (const staff of staffResult.rows) {
+        // Get services for this staff
+        const servicesResult = await query(
+          `SELECT 
+            ss.id,
+            ss.service_id,
+            ss.price,
+            ss.duration_minutes as duration,
+            ss.service_styles,
+            s.name as service_name,
+            s.description,
+            s.category
+           FROM staff_services ss
+           INNER JOIN services s ON ss.service_id = s.id
+           WHERE ss.staff_id = $1 
+             AND ss.enabled_by_staff = true 
+             AND ss.is_active = true
+             AND $2 = ANY(ss.service_styles)
+           ORDER BY ss.price ASC`,
+          [staff.id, serviceStyle]
+        );
+
+        // Calculate distance
+        let distance = null;
+        if (customerLat && customerLng) {
+          // First try staff's default_location, then vendor's location
+          let lat = null, lng = null;
+          if (staff.default_location) {
+            const loc = typeof staff.default_location === 'string' 
+              ? JSON.parse(staff.default_location) 
+              : staff.default_location;
+            lat = loc.lat;
+            lng = loc.lng;
+          } else if (staff.vendor_lat && staff.vendor_lng) {
+            lat = parseFloat(staff.vendor_lat);
+            lng = parseFloat(staff.vendor_lng);
+          }
+          if (lat && lng) {
+            distance = calculateDistance(customerLat, customerLng, lat, lng);
+          }
+        }
+
+        providers.push({
+          providerId: staff.id,
+          providerType: 'staff',
+          staffId: staff.id,
+          vendorId: staff.vendor_id,
+          vendorName: staff.vendor_name,
+          name: staff.name,
+          phone: staff.phone,
+          photo: staff.photo,
+          role: staff.role,
+          experienceYears: staff.experience_years,
+          qualifications: staff.qualifications,
+          address: staff.vendor_address,
+          city: staff.vendor_city,
+          vendorRoleDisplay: staff.vendor_role_display,
+          rating: parseFloat(staff.avg_rating || '0').toFixed(1),
+          reviewCount: parseInt(staff.review_count || '0', 10),
+          distance: distance ? parseFloat(distance.toFixed(2)) : null,
+          isVerified: true,
+          isIndividualProvider: false,
+          services: servicesResult.rows.map(s => ({
+            id: s.id,
+            serviceId: s.service_id,
+            name: s.service_name,
+            price: parseFloat(s.price || 0),
+            duration: s.duration || 30,
+            description: s.description,
+            category: s.category,
+          })),
+        });
+      }
+
+      // Filter providers with at least one service and sort by distance
+      const filteredProviders = providers
+        .filter(p => p.services.length > 0)
+        .sort((a, b) => {
+          // Sort by distance if available, otherwise by rating
+          if (a.distance !== null && b.distance !== null) {
+            return a.distance - b.distance;
+          }
+          return parseFloat(b.rating) - parseFloat(a.rating);
+        });
 
       return c.json({
         success: true,
         style: serviceStyle,
-        vendors: filteredVendors,
-        total: filteredVendors.length,
+        providers: filteredProviders,
+        total: filteredProviders.length,
+        // Also return as vendors for backward compatibility
+        vendors: filteredProviders,
       });
     } catch (error: any) {
       console.error('Error fetching services by style:', error);

@@ -663,9 +663,9 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
 
       let response: any;
       if (staff) {
-        response = await apiClient.put(`/staff/${staff.id}`, payload);
+        response = await apiClient.put(`/vendor/${clinicId}/staff/${staff.id}`, payload);
       } else {
-        response = await apiClient.post<any>('/staff/create', payload);
+        response = await apiClient.post<any>(`/vendor/${clinicId}/staff`, payload);
       }
 
       if (response.success !== false) {

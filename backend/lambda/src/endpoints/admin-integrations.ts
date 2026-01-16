@@ -476,5 +476,149 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       }, 500);
     }
   });
+
+  // ============================================================================
+  // GST VERIFICATION
+  // ============================================================================
+  
+  /**
+   * POST /verify/gst
+   * Verify GST number and fetch business details
+   * In production, this would integrate with a GST API provider
+   */
+  app.post("/verify/gst", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { gstNumber, businessName } = body;
+
+      console.log(`[GST VERIFY] Verifying GST: ${gstNumber}`);
+
+      if (!gstNumber) {
+        return c.json({ error: 'GST number is required' }, 400);
+      }
+
+      // Validate GST number format (15 characters, alphanumeric)
+      const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+      if (!gstRegex.test(gstNumber.toUpperCase())) {
+        return c.json({ 
+          success: false,
+          verified: false,
+          error: 'Invalid GST number format. Format: 22AAAAA0000A1Z5'
+        }, 400);
+      }
+
+      // TODO: In production, integrate with GST API provider like
+      // - ClearTax GST API
+      // - Masters India GST API
+      // - Signzy GST API
+      // For now, return a mock successful verification
+
+      return c.json({
+        success: true,
+        verified: true,
+        gstNumber: gstNumber.toUpperCase(),
+        businessDetails: {
+          legalName: businessName || 'Business Name',
+          tradeName: businessName || 'Business Name',
+          registrationDate: '2020-01-01',
+          status: 'Active',
+          stateCode: gstNumber.substring(0, 2),
+        },
+        message: 'GST number verified successfully'
+      });
+
+    } catch (error: any) {
+      console.error('[GST VERIFY] Error:', error);
+      return c.json({ 
+        success: false,
+        error: error.message || 'GST verification failed'
+      }, 500);
+    }
+  });
+
+  // ============================================================================
+  // BANK ACCOUNT VERIFICATION
+  // ============================================================================
+  
+  /**
+   * POST /verify/bank
+   * Verify bank account details
+   * In production, this would integrate with a bank verification API
+   */
+  app.post("/verify/bank", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { accountNumber, ifsc, accountHolderName } = body;
+
+      console.log(`[BANK VERIFY] Verifying account: ${accountNumber?.slice(-4)} at IFSC: ${ifsc}`);
+
+      if (!accountNumber || !ifsc) {
+        return c.json({ 
+          success: false,
+          error: 'Account number and IFSC code are required' 
+        }, 400);
+      }
+
+      // Validate IFSC format (11 characters: 4 letters + 0 + 6 alphanumeric)
+      const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+      if (!ifscRegex.test(ifsc.toUpperCase())) {
+        return c.json({ 
+          success: false,
+          verified: false,
+          error: 'Invalid IFSC code format. Format: ABCD0123456'
+        }, 400);
+      }
+
+      // TODO: In production, integrate with bank verification API provider like
+      // - Cashfree Bank Verification API
+      // - Razorpay Fund Account Validation
+      // - Decentro Bank Verification API
+      // For now, return a mock successful verification
+
+      return c.json({
+        success: true,
+        verified: true,
+        accountNumber: `xxxx${accountNumber.slice(-4)}`,
+        ifsc: ifsc.toUpperCase(),
+        accountHolderName: accountHolderName || 'Account Holder',
+        bankDetails: {
+          bankName: getBankNameFromIFSC(ifsc),
+          branch: 'Branch Name',
+          city: 'City',
+        },
+        message: 'Bank account verified successfully'
+      });
+
+    } catch (error: any) {
+      console.error('[BANK VERIFY] Error:', error);
+      return c.json({ 
+        success: false,
+        error: error.message || 'Bank verification failed'
+      }, 500);
+    }
+  });
+}
+
+// Helper function to get bank name from IFSC code
+function getBankNameFromIFSC(ifsc: string): string {
+  const bankCodes: Record<string, string> = {
+    'SBIN': 'State Bank of India',
+    'HDFC': 'HDFC Bank',
+    'ICIC': 'ICICI Bank',
+    'AXIS': 'Axis Bank',
+    'KKBK': 'Kotak Mahindra Bank',
+    'IDFB': 'IDFC First Bank',
+    'PUNB': 'Punjab National Bank',
+    'BARB': 'Bank of Baroda',
+    'CNRB': 'Canara Bank',
+    'UBIN': 'Union Bank of India',
+    'BKID': 'Bank of India',
+    'RATN': 'RBL Bank',
+    'YESB': 'Yes Bank',
+    'INDB': 'IndusInd Bank',
+  };
+  
+  const bankCode = ifsc.substring(0, 4).toUpperCase();
+  return bankCodes[bankCode] || `Bank (${bankCode})`;
 }
 

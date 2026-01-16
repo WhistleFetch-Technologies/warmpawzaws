@@ -444,6 +444,19 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         use_wallet: useWallet,
       };
 
+      // ⚠️ CRITICAL: Add staff_id for home/tele services
+      // This ensures the correct verified staff member is assigned to the booking
+      if ((service.service_style === 'at_home' || service.service_style === 'tele') && selectedStaff) {
+        bookingData.staff_id = selectedStaff;
+        
+        // Add commute info if available
+        if (commuteInfo) {
+          bookingData.estimated_arrival_time = commuteInfo.arrival;
+          bookingData.commute_time_minutes = commuteInfo.time;
+          bookingData.buffer_time_minutes = commuteInfo.bufferTime;
+        }
+      }
+
       // Add specialized service-specific data
       if (specializedType) {
         bookingData.service_type = specializedType;

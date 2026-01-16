@@ -36,7 +36,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
 
       console.log('🔐 Requesting OTP for:', cleanPhone);
       
-      const data = await apiClient.post('/customer/auth/request-otp', { phone: cleanPhone }) as any;
+      const data = await apiClient.post('/auth/send-otp', { phone: cleanPhone }) as any;
       console.log('✅ OTP sent:', data);
       
       if (data.uatMode) {
@@ -64,14 +64,14 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       
       console.log('🔐 Verifying OTP for:', cleanPhone);
       
-      const data = await apiClient.post('/customer/auth/verify-otp', { phone: cleanPhone, otp: otpCode }) as any;
+      const data = await apiClient.post('/auth/verify-otp', { phone: cleanPhone, otp: otpCode, role: 'customer' }) as any;
       console.log('✅ OTP verified:', data);
       
       // ✅ NEW: Apply referral code if provided
       if (referralCode && data.isNewUser) {
         try {
           console.log('🎁 Applying referral code:', referralCode);
-          const referralData = await apiClient.post('/customer/referrals/apply', {
+          const referralData = await apiClient.post('/referrals/apply', {
             referralCode: referralCode,
             newUserId: data.customer.id,
             userType: 'customer'

@@ -506,10 +506,10 @@ export function VendorLandingPage({
         createdAt: new Date().toISOString()
       };
 
-      const profileResponse = await apiClient.post('/vendor/profile/save', vendorProfile) as any;
+      const profileResponse = await apiClient.put(`/vendor/${vendorId}/profile`, vendorProfile) as any;
 
-      if (!profileResponse || !profileResponse.success) {
-        toast.error('Failed to save profile');
+      if (!profileResponse || profileResponse.error) {
+        toast.error(profileResponse?.error || 'Failed to save profile');
         return;
       }
 

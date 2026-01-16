@@ -70,10 +70,7 @@ export function ProfileScreen({ vendorId, onBack }: ProfileScreenProps) {
   const handleSave = async () => {
     try {
       setSaving(true);
-      await apiClient.post('/vendor/profile/save', {
-        id: vendorId,
-        ...formData,
-      });
+      await apiClient.put(`/vendor/${vendorId}/profile`, formData);
       toast.success('Profile saved');
     } catch (error: any) {
       console.error('[ProfileScreen] Failed to save profile', error);

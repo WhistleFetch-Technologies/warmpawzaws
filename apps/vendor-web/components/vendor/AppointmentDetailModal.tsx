@@ -158,8 +158,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     // ✅ SECURITY FIX: Use authenticated fetch for tracking session
     try {
       setProcessing(true);
-      await apiClient.post('/tracking/session/create', {
-        bookingId: booking.id,
+      await apiClient.post(`/vendor/tracking/${booking.id}/start`, {
         vendorId: vendorData.id,
         type: 'traveling'
       });

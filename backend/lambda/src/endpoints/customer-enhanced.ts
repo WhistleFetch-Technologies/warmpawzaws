@@ -393,6 +393,71 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
+  // GET /customer/pets?phone=... - MUST come before /customer/:customerId
+  app.get('/customer/pets', async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // Clean phone - remove non-digits and country code
+      let cleanPhone = phone.replace(/\D/g, '');
+      // Remove leading country code (91 for India) if present
+      if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
+        cleanPhone = cleanPhone.slice(2);
+      }
+
+      // Get customer by phone - try both original and cleaned
+      let customers = await select('customers', { phone: cleanPhone });
+      if (customers.length === 0) {
+        // Try with original phone (in case it's stored differently)
+        customers = await select('customers', { phone });
+      }
+      if (customers.length === 0) {
+        // Try with +91 prefix
+        customers = await select('customers', { phone: `+91${cleanPhone}` });
+      }
+      if (customers.length === 0) {
+        return c.json({ 
+          success: false, 
+          error: { code: 'NOT_FOUND', message: 'Customer not found' },
+          pets: [],
+          count: 0
+        }, 404);
+      }
+
+      const customer = customers[0];
+
+      // Get pets
+      const pets = await select('pets',
+        { customer_id: customer.id },
+        { orderBy: 'created_at', orderDirection: 'DESC' }
+      );
+
+      return c.json({
+        success: true,
+        pets: pets.map((pet: any) => ({
+          id: pet.id,
+          name: pet.name,
+          species: pet.species,
+          breed: pet.breed,
+          age_years: pet.age_years,
+          age_months: pet.age_months,
+          gender: pet.gender,
+          weight_kg: pet.weight_kg,
+          profile_photo_url: pet.profile_photo_url,
+          medical_history: pet.medical_history || {},
+          createdAt: pet.created_at,
+        })),
+        count: pets.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer pets by phone:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   // Parameterized route - MUST come after specific routes
   app.get('/customer/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
@@ -430,54 +495,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
-  /**
-   * GET /customer/pets?phone=...
-   * Get customer pets by phone (convenience endpoint)
-   */
-  app.get('/customer/pets', async (c) => {
-    try {
-      const phone = c.req.query('phone');
-      if (!phone) {
-        return c.json({ error: 'phone is required' }, 400);
-      }
-
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
-        return c.json({ error: 'Customer not found' }, 404);
-      }
-
-      const customer = customers[0];
-
-      // Get pets
-      const pets = await select('pets',
-        { customer_id: customer.id },
-        { orderBy: 'created_at', orderDirection: 'DESC' }
-      );
-
-      return c.json({
-        success: true,
-        pets: pets.map((pet: any) => ({
-          id: pet.id,
-          name: pet.name,
-          species: pet.species,
-          breed: pet.breed,
-          age_years: pet.age_years,
-          age_months: pet.age_months,
-          gender: pet.gender,
-          weight_kg: pet.weight_kg,
-          profile_photo_url: pet.profile_photo_url,
-          medical_history: pet.medical_history || {},
-          createdAt: pet.created_at,
-        })),
-        count: pets.length,
-      });
-    } catch (error: any) {
-      console.error('Error fetching customer pets by phone:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
   app.post('/customer/:customerId/pets', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
@@ -498,8 +515,21 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
+      // Clean phone - remove non-digits and country code
+      let cleanPhone = phone.replace(/\D/g, '');
+      // Remove leading country code (91 for India) if present
+      if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
+        cleanPhone = cleanPhone.slice(2);
+      }
+
+      // Get customer by phone - try multiple formats
+      let customers = await select('customers', { phone: cleanPhone });
+      if (customers.length === 0) {
+        customers = await select('customers', { phone });
+      }
+      if (customers.length === 0) {
+        customers = await select('customers', { phone: `+91${cleanPhone}` });
+      }
       if (customers.length === 0) {
         return c.json({ pets: [], count: 0 });
       }

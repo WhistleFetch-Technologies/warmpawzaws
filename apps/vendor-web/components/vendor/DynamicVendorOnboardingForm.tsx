@@ -194,17 +194,21 @@ export function DynamicVendorOnboardingForm({
   const fetchGoogleMapsKey = async () => {
     console.log('🔑 [API KEY] Fetching Google Maps API key from backend...');
     try {
-      const data = await apiClient.get('/vendor/endpoint') as any;
+      const data = await apiClient.get('/config/google-maps-key') as any;
       
       console.log('🔑 [API KEY] Response data:', data);
       
-      if (data && data.settings?.googleMaps?.apiKey) {
+      if (data && data.apiKey) {
         console.log('✅ [API KEY] Found API key in backend settings');
+        console.log('🔑 [API KEY] Key length:', data.apiKey.length);
+        setGoogleMapsApiKey(data.apiKey);
+      } else if (data && data.settings?.googleMaps?.apiKey) {
+        console.log('✅ [API KEY] Found API key in backend settings (legacy)');
         console.log('🔑 [API KEY] Key length:', data.settings.googleMaps.apiKey.length);
         setGoogleMapsApiKey(data.settings.googleMaps.apiKey);
       } else {
         console.warn('⚠️ [API KEY] No Google Maps API key found in backend settings');
-        console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data.settings, null, 2));
+        console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data, null, 2));
         toast.warning('Google Maps not configured. Please contact administrator.');
       }
     } catch (error) {
@@ -245,9 +249,9 @@ export function DynamicVendorOnboardingForm({
   const checkServerHealth = async () => {
     try {
       console.log('[DYNAMIC FORM] 🏥 Checking server health...');
-      const data = await apiClient.get('/vendor/endpoint') as any;
+      const data = await apiClient.get('/health') as any;
       
-      if (data && data.success) {
+      if (data && data.status === 'ok') {
         console.log('[DYNAMIC FORM] ✅ Server is healthy:', data);
       } else {
         console.error('[DYNAMIC FORM] ⚠️ Server health check failed');
@@ -255,8 +259,8 @@ export function DynamicVendorOnboardingForm({
       }
     } catch (error) {
       console.error('[DYNAMIC FORM] ❌ Server unreachable:', error);
-      console.error('[DYNAMIC FORM] 💡 Tip: Edge Function may not be deployed to Supabase');
-      toast.error('Cannot connect to backend server. Please check Supabase Edge Functions.');
+      console.error('[DYNAMIC FORM] 💡 Tip: API Gateway may not be deployed correctly');
+      toast.error('Cannot connect to backend server. Please check API Gateway.');
     }
   };
 

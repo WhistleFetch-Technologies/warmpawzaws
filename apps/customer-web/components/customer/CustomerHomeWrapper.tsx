@@ -7,6 +7,7 @@ import { CustomerPetDetails } from './CustomerPetDetails';
 import { CustomerPetProfile } from './CustomerPetProfile';
 import { WalkerService } from './WalkerService';
 import { WalkerDashboard } from './walker/WalkerDashboard';
+import { WalkLiveTrackingView } from './walker/WalkLiveTrackingView';
 import { CustomerSidebar } from './CustomerSidebar';
 import { PetBookingDetails } from './PetBookingDetails';
 import { PetQuickView } from './PetQuickView';
@@ -179,7 +180,9 @@ type ScreenType =
   | 'problem_selected'
   | 'services_by_problem'
   | 'grooming_center'
-  | 'grooming_home';
+  | 'grooming_home'
+  | 'walk-live-tracking'
+  | 'schedule-walk';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -201,6 +204,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
   const { addToCart } = useCart();
 
   // Notification Service logic... (kept same as original)
@@ -305,7 +309,22 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   
   const handleWalkerNavigate = (screen: string, data?: any) => {
     setWalkerServiceData(data);
-    if (screen === 'walker-booking') setCurrentScreen('walker-booking');
+    if (screen === 'walker-booking') {
+      setCurrentScreen('walker-booking');
+    } else if (screen === 'create-booking') {
+      setPreviousScreen(currentScreen);
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'walking' });
+      setCurrentScreen('create-booking');
+    } else if (screen === 'walk-live-tracking') {
+      setPreviousScreen(currentScreen);
+      setWalkerServiceData({ sessionId: data?.sessionId, bookingId: data?.sessionId });
+      setCurrentScreen('walk-live-tracking');
+    } else if (screen === 'schedule-walk') {
+      setPreviousScreen(currentScreen);
+      setWalkerServiceData({ packageId: data?.packageId });
+      setCurrentScreen('schedule-walk');
+    }
   };
 
   const handleAccountNavigate = (path: string) => {
@@ -439,17 +458,30 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} data={walkerServiceData} />;
   if (currentScreen === 'walker-booking') return <WalkerService phone={phone} onBack={() => setCurrentScreen('walker')} onNavigate={(screen, data) => {
     if (screen === 'create-booking') {
+      setPreviousScreen('walker-booking');
       setSelectedVendorId(data?.vendorId);
-      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'walking' });
       setCurrentScreen('create-booking');
+    } else if (screen === 'walk-live-tracking') {
+      setPreviousScreen('walker-booking');
+      setWalkerServiceData({ sessionId: data?.sessionId, bookingId: data?.sessionId });
+      setCurrentScreen('walk-live-tracking');
+    } else if (screen === 'schedule-walk') {
+      setPreviousScreen('walker-booking');
+      setWalkerServiceData({ packageId: data?.packageId });
+      setCurrentScreen('schedule-walk');
     } else if (screen === 'problem_grid') {
       setCurrentServiceType('walker');
       setCurrentScreen('problem_grid');
     } else if (screen === 'problem_selected') {
       setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Walking Service', roleId: 'walker' });
       setCurrentScreen('services_by_problem');
+    } else {
+      handleWalkerNavigate(screen, data);
     }
   }} />;
+  if (currentScreen === 'walk-live-tracking') return <WalkLiveTrackingView bookingId={walkerServiceData?.bookingId || walkerServiceData?.sessionId || ''} onBack={() => { setCurrentScreen(previousScreen || 'walker-booking'); setPreviousScreen(null); }} />;
+  if (currentScreen === 'schedule-walk') return <CreateBookingPage phone={phone} vendorId={walkerServiceData?.vendorId} serviceId={walkerServiceData?.packageId} onBack={() => { setCurrentScreen(previousScreen || 'walker-booking'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
   if (currentScreen === 'vet') return <VetServiceRouter phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
     if (screen === 'problem_grid') {
       setCurrentServiceType('veterinarian');
@@ -478,6 +510,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedAppointmentId(data?.appointmentId); 
       setCurrentScreen('appointment-details'); 
     } else if (screen === 'create-booking') {
+      setPreviousScreen('grooming');
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
@@ -508,6 +541,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
     console.log('🟢 [CustomerHomeWrapper] Training navigation:', screen, data);
     if (screen === 'create-booking') {
+      setPreviousScreen('training');
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
@@ -528,6 +562,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
   if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
     if (screen === 'create-booking') {
+      setPreviousScreen('boarding');
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
@@ -545,6 +580,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (screen === 'adoption_questionnaire') {
       setCurrentScreen('adoption_questionnaire');
     } else if (screen === 'create-booking') {
+      setPreviousScreen('adoption');
       setSelectedVendorId(data?.vendorId);
       setCurrentScreen('create-booking');
     } else if (screen === 'problem_grid') {
@@ -559,6 +595,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
   if (currentScreen === 'sunset') return <SunsetServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
     if (screen === 'create-booking') {
+      setPreviousScreen('sunset');
       setSelectedVendorId(data?.vendorId);
       setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
       setCurrentScreen('create-booking');
@@ -739,7 +776,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
 
   // ✅ NEW: Create Booking
-  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => setCurrentScreen('services')} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
 
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 

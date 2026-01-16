@@ -277,16 +277,26 @@ export class ApiClient {
         );
       }
       
-      // Handle 401: In UAT mode, don't redirect - let components handle gracefully
+      // Handle 401: In UAT mode or for admin routes, don't redirect - let components handle gracefully
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
           // Check if we're in UAT mode - if so, don't redirect, just throw error
           const isUat = getRuntimeConfig().uatMode || UAT_MODE;
-          if (!isUat) {
-            // Only redirect in production mode
+          const isAdminRoute = endpoint.startsWith('/admin');
+          
+          // Don't redirect if in UAT mode OR if it's an admin route (admin app should handle auth differently)
+          if (!isUat && !isAdminRoute) {
+            // Only redirect in production mode for non-admin routes
             localStorage.removeItem('adminAuthToken');
             localStorage.removeItem('adminId');
             window.location.href = '/';
+          } else {
+            // In UAT mode or admin routes, just throw error with helpful message
+            if (UAT_MODE) {
+              console.warn('⚠️ [API Client] 401 Unauthorized - Check authentication token');
+              console.warn('   Endpoint:', endpoint);
+              console.warn('   Token present:', !!token);
+            }
           }
         }
       }

@@ -257,7 +257,7 @@ export function VendorTeleConsultationFlow({
       
       // Notify backend about call start
       try {
-        await apiClient.post('/teleconsultation/start', {
+        await apiClient.post('/video-call/create', {
           bookingId,
           vendorId,
           roomId: newRoomId,
@@ -301,8 +301,7 @@ export function VendorTeleConsultationFlow({
     
     // Notify backend
     try {
-      await apiClient.post('/teleconsultation/end', {
-        bookingId,
+      await apiClient.post(`/video-call/${bookingId}/end`, {
         vendorId,
         duration: callDuration,
       });

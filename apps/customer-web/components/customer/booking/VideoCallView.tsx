@@ -172,7 +172,7 @@ export function VideoCallView({
       
       // Try to get meeting info from backend
       try {
-        await apiClient.post('/video-call/join', { 
+        await apiClient.post('/video-call/create', { 
           bookingId,
           participantType 
         });

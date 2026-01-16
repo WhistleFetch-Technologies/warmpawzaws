@@ -74,7 +74,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     const loadFacilityData = async () => {
       try {
         setLoading(true);
-        const data = await apiClient.get('/vendor/endpoint') as any;
+        const data = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
 
         if (data && data.success && data.facility) {
           setFacility({

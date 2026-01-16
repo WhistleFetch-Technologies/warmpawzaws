@@ -429,16 +429,49 @@ export function registerStaffEndpoints(app: Hono) {
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
 
-      // Enrich with services and availability
+      // Enrich with services, specializations, and availability
       const enrichedStaff = await Promise.all(
         staff.map(async (s: any) => {
+          // Get services
           const services = await query(
-            'SELECT ss.*, sv.name as service_name FROM staff_services ss INNER JOIN services sv ON ss.service_id = sv.id WHERE ss.staff_id = $1',
+            `SELECT ss.*, sv.name as service_name, ss.service_styles 
+             FROM staff_services ss 
+             INNER JOIN services sv ON ss.service_id = sv.id 
+             WHERE ss.staff_id = $1`,
             [s.id]
           );
+
+          // Get specializations from staff_specializations table
+          let specializations: string[] = [];
+          try {
+            const specsResult = await query(
+              'SELECT specialization FROM staff_specializations WHERE staff_id = $1',
+              [s.id]
+            );
+            specializations = specsResult.rows.map((row: any) => row.specialization);
+          } catch (e) {
+            // Table might not exist, use empty array
+            specializations = [];
+          }
+
           return {
-            ...s,
-            services: services.rows,
+            id: s.id,
+            name: s.name,
+            phone: s.phone,
+            email: s.email,
+            role: s.role,
+            photo: s.photo,
+            experience_years: s.experience_years,
+            qualifications: s.qualifications,
+            is_active: s.is_active,
+            mobile_verified: s.mobile_verified,
+            mobile_verified_at: s.mobile_verified_at,
+            specializations: specializations,
+            services: services.rows.map((svc: any) => ({
+              id: svc.id,
+              name: svc.service_name,
+              service_style: svc.service_styles,
+            })),
           };
         })
       );

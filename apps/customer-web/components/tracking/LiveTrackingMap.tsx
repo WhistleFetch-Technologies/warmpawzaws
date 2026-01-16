@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { MapPin, Navigation, Phone } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { MapPin, Navigation, Phone, X, Clock, Route, RefreshCw, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { apiClient } from '@/lib/api-client';
 
 interface LiveTrackingMapProps {
   bookingId: string;
@@ -14,58 +17,364 @@ interface LiveTrackingMapProps {
   onClose?: () => void;
 }
 
-export function LiveTrackingMap({ bookingId, currentLocation, route, walkerName, walkerPhone, petName, onClose }: LiveTrackingMapProps) {
-  const [mapUrl, setMapUrl] = useState<string>('');
+interface TrackingData {
+  status: 'active' | 'inactive' | 'completed';
+  currentLocation: { latitude: number; longitude: number } | null;
+  route: Array<{ latitude: number; longitude: number; timestamp: string }>;
+  staffName?: string;
+  staffPhone?: string;
+  eta?: string;
+  startTime?: string;
+  totalDistance?: number;
+  lastUpdate?: string;
+}
 
-  useEffect(() => {
-    if (currentLocation) {
-      // Generate Google Maps static image URL
-      const url = `https://maps.googleapis.com/maps/api/staticmap?center=${currentLocation.latitude},${currentLocation.longitude}&zoom=15&size=600x400&markers=color:red%7C${currentLocation.latitude},${currentLocation.longitude}`;
-      setMapUrl(url);
+export function LiveTrackingMap({ 
+  bookingId, 
+  currentLocation: initialLocation, 
+  route: initialRoute, 
+  walkerName, 
+  walkerPhone, 
+  petName, 
+  onClose 
+}: LiveTrackingMapProps) {
+  const [trackingData, setTrackingData] = useState<TrackingData>({
+    status: 'inactive',
+    currentLocation: initialLocation || null,
+    route: initialRoute?.map((p, i) => ({ ...p, timestamp: new Date().toISOString() })) || [],
+    staffName: walkerName,
+    staffPhone: walkerPhone,
+  });
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [lastError, setLastError] = useState<string | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectAttempts = useRef(0);
+
+  // Get API base URL
+  const getApiBaseUrl = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('api_base_url') || process.env.NEXT_PUBLIC_API_URL || '';
     }
-  }, [currentLocation]);
+    return process.env.NEXT_PUBLIC_API_URL || '';
+  };
+
+  // Initialize SSE connection for live tracking
+  useEffect(() => {
+    const connectToSSE = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
+      setConnectionStatus('connecting');
+      setLastError(null);
+
+      const apiBase = getApiBaseUrl();
+      const sseUrl = `${apiBase}/gps-tracking/booking/${bookingId}/stream`;
+
+      try {
+        const eventSource = new EventSource(sseUrl);
+        eventSourceRef.current = eventSource;
+
+        eventSource.onopen = () => {
+          console.log('[LiveTracking] SSE connection opened');
+          setConnectionStatus('connected');
+          reconnectAttempts.current = 0;
+        };
+
+        eventSource.addEventListener('location', (event: MessageEvent) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('[LiveTracking] Location update:', data);
+            
+            setTrackingData(prev => ({
+              ...prev,
+              status: 'active',
+              currentLocation: {
+                latitude: data.latitude,
+                longitude: data.longitude,
+              },
+              route: [
+                ...prev.route,
+                { 
+                  latitude: data.latitude, 
+                  longitude: data.longitude, 
+                  timestamp: data.timestamp || new Date().toISOString()
+                }
+              ],
+              eta: data.eta,
+              lastUpdate: data.timestamp || new Date().toISOString(),
+            }));
+          } catch (error) {
+            console.error('[LiveTracking] Failed to parse location data:', error);
+          }
+        });
+
+        eventSource.addEventListener('status', (event: MessageEvent) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('[LiveTracking] Status update:', data);
+            
+            setTrackingData(prev => ({
+              ...prev,
+              status: data.status,
+              totalDistance: data.totalDistance,
+            }));
+
+            if (data.status === 'completed') {
+              eventSource.close();
+              setConnectionStatus('disconnected');
+            }
+          } catch (error) {
+            console.error('[LiveTracking] Failed to parse status data:', error);
+          }
+        });
+
+        eventSource.onerror = (error) => {
+          console.error('[LiveTracking] SSE error:', error);
+          setConnectionStatus('error');
+          
+          eventSource.close();
+          eventSourceRef.current = null;
+
+          // Attempt reconnection with exponential backoff
+          if (reconnectAttempts.current < 5) {
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+            reconnectAttempts.current++;
+            setLastError(`Connection lost. Reconnecting in ${delay / 1000}s...`);
+            
+            setTimeout(connectToSSE, delay);
+          } else {
+            setLastError('Connection failed. Please refresh to try again.');
+          }
+        };
+      } catch (error) {
+        console.error('[LiveTracking] Failed to create SSE connection:', error);
+        setConnectionStatus('error');
+        setLastError('Failed to connect to tracking service');
+      }
+    };
+
+    // Load initial tracking data
+    const loadInitialData = async () => {
+      try {
+        const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
+        if (response.success && response.tracking) {
+          setTrackingData(prev => ({
+            ...prev,
+            status: response.tracking.status || 'inactive',
+            currentLocation: response.tracking.currentLocation || null,
+            route: response.tracking.route || [],
+            staffName: response.tracking.staffName || walkerName,
+            staffPhone: response.tracking.staffPhone || walkerPhone,
+            eta: response.tracking.eta,
+            startTime: response.tracking.startTime,
+            totalDistance: response.tracking.totalDistance,
+          }));
+        }
+      } catch (error) {
+        console.error('[LiveTracking] Failed to load initial data:', error);
+      }
+    };
+
+    loadInitialData();
+    connectToSSE();
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, [bookingId, walkerName, walkerPhone]);
+
+  // Generate map URL with route markers
+  const getMapUrl = () => {
+    if (!trackingData.currentLocation) return null;
+
+    const { latitude, longitude } = trackingData.currentLocation;
+    
+    // Basic static map with current position
+    let url = `https://maps.googleapis.com/maps/api/staticmap?center=${latitude},${longitude}&zoom=16&size=600x400&maptype=roadmap`;
+    
+    // Add current position marker
+    url += `&markers=color:blue%7Clabel:S%7C${latitude},${longitude}`;
+    
+    // Add route path if available (limited to last 20 points to avoid URL length issues)
+    if (trackingData.route.length > 1) {
+      const pathPoints = trackingData.route.slice(-20)
+        .map(p => `${p.latitude},${p.longitude}`)
+        .join('|');
+      url += `&path=color:0x4285F4%7Cweight:4%7C${pathPoints}`;
+    }
+
+    // Note: In production, add your Google Maps API key
+    // url += `&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`;
+    
+    return url;
+  };
+
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDistance = (meters: number) => {
+    if (meters >= 1000) {
+      return `${(meters / 1000).toFixed(2)} km`;
+    }
+    return `${Math.round(meters)} m`;
+  };
+
+  const mapUrl = getMapUrl();
+  const displayName = trackingData.staffName || walkerName;
+  const displayPhone = trackingData.staffPhone || walkerPhone;
 
   return (
-    <Card className="w-full overflow-hidden">
-      <div className="w-full h-64 bg-gray-200 rounded-lg flex flex-col items-center justify-center relative">
-        {mapUrl ? (
+    <Card className="w-full overflow-hidden relative">
+      {/* Close button */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-10 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-white transition-colors"
+        >
+          <X className="w-5 h-5 text-gray-600" />
+        </button>
+      )}
+
+      {/* Connection status badge */}
+      <div className="absolute top-3 left-3 z-10">
+        <Badge 
+          variant={
+            connectionStatus === 'connected' ? 'default' : 
+            connectionStatus === 'connecting' ? 'outline' :
+            'destructive'
+          }
+          className={
+            connectionStatus === 'connected' 
+              ? 'bg-green-500 text-white' 
+              : connectionStatus === 'connecting'
+              ? 'bg-yellow-500 text-white'
+              : ''
+          }
+        >
+          {connectionStatus === 'connected' && '🟢 Live'}
+          {connectionStatus === 'connecting' && '⏳ Connecting...'}
+          {connectionStatus === 'disconnected' && '⚪ Offline'}
+          {connectionStatus === 'error' && '🔴 Error'}
+        </Badge>
+      </div>
+
+      {/* Map area */}
+      <div className="w-full h-72 bg-gray-200 relative">
+        {mapUrl && trackingData.currentLocation ? (
           <img 
             src={mapUrl} 
             alt="Live tracking map" 
             className="w-full h-full object-cover"
-            onError={() => setMapUrl('')}
+            onError={() => {}}
           />
         ) : (
-          <>
-            <Navigation className="w-12 h-12 text-gray-400 mb-2" />
-            <p className="text-gray-500 text-sm">Live tracking map</p>
-            {currentLocation && (
-              <p className="text-xs text-gray-400 mt-1">
-                {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
-              </p>
-            )}
-          </>
-        )}
-        {walkerName && (
-          <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-gray-900">{walkerName}</p>
-                {petName && <p className="text-sm text-gray-600">Walking {petName}</p>}
-              </div>
-              {walkerPhone && (
-                <a 
-                  href={`tel:${walkerPhone}`}
-                  className="p-2 bg-[#FF8C42] text-white rounded-full hover:bg-[#FF7A29] transition-colors"
+          <div className="w-full h-full flex flex-col items-center justify-center">
+            {trackingData.status === 'inactive' ? (
+              <>
+                <Clock className="w-12 h-12 text-gray-400 mb-2" />
+                <p className="text-gray-500">Waiting for tracking to start...</p>
+                <p className="text-xs text-gray-400 mt-1">The provider will start tracking when they're on the way</p>
+              </>
+            ) : connectionStatus === 'error' ? (
+              <>
+                <AlertCircle className="w-12 h-12 text-red-400 mb-2" />
+                <p className="text-gray-500">{lastError || 'Connection error'}</p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="mt-3"
+                  onClick={() => window.location.reload()}
                 >
-                  <Phone className="w-4 h-4" />
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry
+                </Button>
+              </>
+            ) : (
+              <>
+                <Navigation className="w-12 h-12 text-gray-400 mb-2 animate-pulse" />
+                <p className="text-gray-500">Loading tracking data...</p>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Tracking stats overlay */}
+        {trackingData.status === 'active' && (
+          <div className="absolute top-14 left-3 right-3 flex gap-2">
+            {trackingData.eta && (
+              <Badge variant="secondary" className="bg-white/90 text-gray-700">
+                <Clock className="w-3 h-3 mr-1" />
+                ETA: {formatTime(trackingData.eta)}
+              </Badge>
+            )}
+            {trackingData.totalDistance && (
+              <Badge variant="secondary" className="bg-white/90 text-gray-700">
+                <Route className="w-3 h-3 mr-1" />
+                {formatDistance(trackingData.totalDistance)}
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* Provider info overlay */}
+        {displayName && (
+          <div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#FF8C42] rounded-full flex items-center justify-center text-white font-semibold">
+                  {displayName.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{displayName}</p>
+                  {petName && (
+                    <p className="text-sm text-gray-600">
+                      {trackingData.status === 'active' ? 'En route' : 'Assigned'} for {petName}
+                    </p>
+                  )}
+                  {trackingData.lastUpdate && (
+                    <p className="text-xs text-gray-400">
+                      Updated {formatTime(trackingData.lastUpdate)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {displayPhone && (
+                <a 
+                  href={`tel:${displayPhone}`}
+                  className="p-3 bg-[#FF8C42] text-white rounded-full hover:bg-[#FF7A29] transition-colors shadow-md"
+                >
+                  <Phone className="w-5 h-5" />
                 </a>
               )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Tracking completed state */}
+      {trackingData.status === 'completed' && (
+        <div className="p-4 bg-green-50 border-t border-green-100">
+          <div className="flex items-center gap-2 text-green-700">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="font-medium">Tracking completed</span>
+          </div>
+          {trackingData.totalDistance && (
+            <p className="text-sm text-green-600 mt-1">
+              Total distance: {formatDistance(trackingData.totalDistance)}
+            </p>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
-

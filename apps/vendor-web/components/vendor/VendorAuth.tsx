@@ -281,7 +281,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const handleDebugCheck = async () => {
     console.log('🔍 DEBUG: Checking ALL vendor data...');
     try {
-      const data = await apiClient.get('/make-server-3dd53475/auth/diagnostic/all-vendors') as any;
+      const data = await apiClient.get('/admin/vendors/all') as any;
       
       console.log('📊 ========== RAW RESPONSE ==========');
       console.log('Full data:', JSON.stringify(data, null, 2));
