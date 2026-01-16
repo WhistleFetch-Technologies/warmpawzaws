@@ -1,138 +1,163 @@
-# Deployment Checklist - Hard Refresh Fix
+# Deployment Checklist - Vendor Web Fix
 
-## Pre-Deployment
+## ✅ Completed Fixes
 
-- [x] Code changes complete
-- [x] Test scripts created
-- [x] Documentation updated
-- [ ] Code reviewed
-- [ ] Backup current version
+1. **UAT Critical Fixes** (Backend)
+   - ✅ Service update SQL error fix
+   - ✅ Facility provisioning during approval
+   - ✅ PUT /vendor/facility/:vendorId endpoint
 
-## Backend Deployment
+2. **CloudFront Static Files** (Infrastructure)
+   - ✅ Diagnostic script created
+   - ⚠️  Manual CloudFront behavior update needed (see below)
 
-### Files to Deploy:
-- [ ] `backend/lambda/src/endpoints/auth-enhanced.ts`
+3. **Vendor App Redirect** (Frontend)
+   - ✅ Root page redirect fix (router.replace → window.location.href)
 
-### Steps:
-1. [ ] Verify fix is in code:
+## 📋 Deployment Steps
+
+### Step 1: Deploy Vendor Web Frontend (Current Fix)
+
+```bash
+cd /Users/ketan/Documents/warmpawzecodev
+./scripts/deploy-vendor-web.sh
+```
+
+This will:
+- Build the Next.js app with the redirect fix
+- Upload to S3
+- Invalidate CloudFront cache
+
+**Expected time:** 5-10 minutes
+
+### Step 2: Verify Deployment
+
+After deployment completes, test:
+
+1. **Root URL redirect:**
+   ```
+   https://d1s6ykkj381k58.cloudfront.net/
+   ```
+   - Should redirect to `/auth` if no session
+   - No more stuck "Loading..." screen
+
+2. **Auth page:**
+   ```
+   https://d1s6ykkj381k58.cloudfront.net/auth
+   ```
+   - Should load login page immediately
+
+3. **Check console:**
+   - No JavaScript syntax errors
+   - Runtime config loads correctly
+   - Session check works
+
+### Step 3: Deploy Backend Fixes (If Not Already Done)
+
+The UAT critical fixes need to be deployed to the Lambda backend:
+
+```bash
+# Option 1: Deploy via CDK (if configured)
+cd infrastructure/cdk
+npm run deploy
+
+# Option 2: Direct Lambda deployment
+cd backend/lambda
+./deploy.sh
+```
+
+**Backend fixes to verify:**
+- ✅ Service update endpoint (no SQL errors)
+- ✅ Facility provisioning on approval
+- ✅ PUT /vendor/facility/:vendorId endpoint exists
+
+### Step 4: Fix CloudFront Static Files (Manual - Recommended)
+
+To prevent JavaScript files from returning HTML:
+
+1. **Go to AWS Console → CloudFront**
+2. **Select Distribution:** `E95171GX1I6HN`
+3. **Behaviors tab → Create Behavior**
+   - Path Pattern: `/_next/*`
+   - Priority: Higher than default (place before default)
+   - Origin: Same as default behavior
+   - Custom Error Responses: **None**
+   - Cache Policy: `CachingOptimized`
+4. **Save and wait for deployment** (5-15 minutes)
+
+Or run diagnostic script:
+```bash
+./scripts/fix-cloudfront-static-files.sh
+```
+
+### Step 5: Run Test Suite (Optional)
+
+Verify all fixes are working:
+
+```bash
+# Test UAT fixes
+./scripts/test-uat-fixes.sh
+
+# Or comprehensive test
+API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com \
+  npx ts-node tests/uat-critical-fixes.test.ts
+```
+
+## 🎯 Quick Start (Priority Order)
+
+### Immediate (Do Now)
+1. ✅ **Deploy vendor web frontend** - Fixes the loading screen issue
    ```bash
-   grep -A 5 "full_name.*Customer" backend/lambda/src/endpoints/auth-enhanced.ts
+   ./scripts/deploy-vendor-web.sh
    ```
 
-2. [ ] Build lambda function:
-   ```bash
-   cd backend/lambda
-   npm run build
-   ```
+### Next (Today)
+2. ⚠️  **Fix CloudFront behaviors** - Prevents JS files returning HTML
+   - Manual: AWS Console (recommended)
+   - Or: Run diagnostic script for instructions
 
-3. [ ] Deploy lambda:
-   ```bash
-   # Your deployment command
-   npm run deploy
-   # OR
-   ./scripts/deploy-lambda.sh
-   ```
+3. ✅ **Deploy backend fixes** - UAT critical fixes
+   - Only if not already deployed
 
-4. [ ] Verify deployment:
-   ```bash
-   # Test customer OTP verify
-   curl -X POST "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/auth/verify-otp" \
-     -H "Content-Type: application/json" \
-     -d '{"phone": "9876543210", "otp": "123456", "role": "customer"}'
-   ```
-   - Should return token (not database error)
+### Later (This Week)
+4. ✅ **Re-run UAT scenarios** - Verify all fixes end-to-end
+5. ✅ **Monitor production** - Check for any SQL errors or issues
 
-## Frontend Deployment
+## 📊 Verification Checklist
 
-### Customer Web:
-- [ ] `apps/customer-web/lib/session-utils.ts`
-- [ ] `apps/customer-web/app/auth/page.tsx`
-- [ ] `apps/customer-web/app/page.tsx`
+After deployment, verify:
 
-**Steps**:
-1. [ ] Build:
-   ```bash
-   cd apps/customer-web
-   npm run build
-   ```
+- [ ] Root URL redirects to `/auth` (no stuck loading)
+- [ ] Auth page loads correctly
+- [ ] Login flow works
+- [ ] Vendor dashboard loads after login
+- [ ] Service updates work (no SQL errors)
+- [ ] Facility profile saves successfully
+- [ ] No JavaScript syntax errors in console
+- [ ] Static files load correctly (not HTML)
 
-2. [ ] Deploy:
-   ```bash
-   npm run deploy
-   # OR your deployment command
-   ```
+## ⚠️  Known Issues
 
-### Vendor Web:
-- [ ] `apps/vendor-web/lib/session-utils.ts`
-- [ ] `apps/vendor-web/components/vendor/VendorAuth.tsx`
-- [ ] `apps/vendor-web/app/page.tsx`
+1. **Font preload warning** - Non-critical, performance optimization
+2. **CloudFront static files** - Manual fix needed (see Step 4)
+3. **Cache propagation** - Changes may take 5-15 minutes
 
-**Steps**:
-1. [ ] Build:
-   ```bash
-   cd apps/vendor-web
-   npm run build
-   ```
+## 🆘 Troubleshooting
 
-2. [ ] Deploy:
-   ```bash
-   npm run deploy
-   ```
+### Still seeing "Loading..." screen?
+- Wait 5-15 minutes for CloudFront cache invalidation
+- Hard refresh browser (Cmd+Shift+R)
+- Check browser console for errors
 
-### Admin Web:
-- [ ] `apps/admin-web/lib/session-utils.ts`
-- [ ] `apps/admin-web/app/page.tsx`
-- [ ] `apps/admin-web/components/admin/AdminAuth.tsx`
+### JavaScript files still returning HTML?
+- Complete Step 4 (CloudFront behavior fix)
+- Wait for CloudFront deployment to complete
 
-**Steps**:
-1. [ ] Build:
-   ```bash
-   cd apps/admin-web
-   npm run build
-   ```
+### Backend endpoints not working?
+- Verify Lambda deployment completed
+- Check API Gateway is updated
+- Review CloudWatch logs
 
-2. [ ] Deploy:
-   ```bash
-   npm run deploy
-   ```
+---
 
-## Post-Deployment Testing
-
-### API Tests:
-- [ ] Run `./test-login-flows.sh`
-- [ ] Verify all tests pass
-- [ ] Check CloudWatch logs for errors
-
-### Browser Tests:
-- [ ] Customer login + hard refresh
-- [ ] Vendor login + hard refresh
-- [ ] Admin login + hard refresh
-- [ ] Soft navigation (all user types)
-
-### Verification:
-- [ ] Hard refresh clears session (all user types)
-- [ ] Soft navigation preserves session (all user types)
-- [ ] State-based routing works
-- [ ] No console errors
-- [ ] No false positives
-
-## Rollback Plan
-
-If issues occur:
-
-1. [ ] Revert backend to previous version
-2. [ ] Revert frontend to previous version
-3. [ ] Verify system works with previous version
-4. [ ] Document issues encountered
-
-## Sign-off
-
-- [ ] Backend deployed and tested
-- [ ] Frontend deployed and tested
-- [ ] All tests passing
-- [ ] Hard refresh working correctly
-- [ ] Ready for production
-
-**Deployed by**: _______________
-**Date**: _______________
-**Verified by**: _______________
+**Ready to deploy?** Start with Step 1: `./scripts/deploy-vendor-web.sh`

@@ -221,7 +221,7 @@ export function RegionManager() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-blue-100 rounded-xl">
             <MapPin className="w-6 h-6 text-blue-600" />
           </div>
@@ -232,7 +232,7 @@ export function RegionManager() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Add Region
@@ -243,7 +243,7 @@ export function RegionManager() {
         {regions.map((region) => (
           <div key={region.regionId} className="bg-white rounded-xl border-2 border-gray-200 p-0">
             <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <div className="p-0 bg-blue-100 rounded-lg">
                   <Globe className="w-5 h-5 text-blue-600" />
                 </div>
@@ -265,33 +265,33 @@ export function RegionManager() {
             </div>
 
             <div className="space-y-2 mb-4">
-              <div className="flex items-center gap-0 text-sm">
+              <div className="flex items-center gap-3 text-sm">
                 <DollarSign className="w-4 h-4 text-gray-400" />
                 <span className="text-gray-600">
                   {region.currency.symbol} {region.currency.code} • Tax: {region.business.taxRate}%
                 </span>
               </div>
-              <div className="flex items-center gap-0 text-sm">
+              <div className="flex items-center gap-3 text-sm">
                 <Clock className="w-4 h-4 text-gray-400" />
                 <span className="text-gray-600">{region.settings.timezone}</span>
               </div>
-              <div className="flex items-center gap-0 text-sm">
+              <div className="flex items-center gap-3 text-sm">
                 <MapPin className="w-4 h-4 text-gray-400" />
                 <span className="text-gray-600">{region.coverage.cities.length} cities</span>
               </div>
             </div>
 
-            <div className="flex gap-0">
+            <div className="flex gap-3">
               <button
                 onClick={() => handleOpenModal(region)}
-                className="flex-1 flex items-center justify-center gap-0 px-0 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                className="flex-1 flex items-center justify-center gap-3 px-0 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit
               </button>
               <button
                 onClick={() => handleDelete(region.regionId)}
-                className="flex-1 flex items-center justify-center gap-0 px-0 py-0 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
+                className="flex-1 flex items-center justify-center gap-3 px-0 py-0 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -492,7 +492,7 @@ export function RegionManager() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -504,7 +504,7 @@ export function RegionManager() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -514,7 +514,7 @@ export function RegionManager() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

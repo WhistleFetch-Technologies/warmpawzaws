@@ -16,97 +16,64 @@ This document defines the additional onboarding fields needed for each vendor ro
 
 ## 🐾 Walker Role - Additional Fields
 
-### Required Fields
+### Required Fields (Simplified - Only Essential)
 1. **GPS Tracking Consent**
    - Type: Checkbox
    - Label: "Enable GPS tracking during walks"
    - Description: "Allow customers to track your location during active walks"
    - Required: Yes
    - Default: true
+   - **Used in:** Live tracking during active walks
 
-2. **Service Radius**
-   - Type: Number (km)
-   - Label: "Maximum service radius"
-   - Description: "Maximum distance you're willing to travel for walks"
-   - Required: Yes
-   - Min: 1 km
-   - Max: 50 km
-   - Default: 5 km
-
-3. **Maximum Dogs Per Walk**
-   - Type: Number
-   - Label: "Maximum dogs per walk"
-   - Description: "How many dogs can you walk simultaneously?"
-   - Required: Yes
-   - Min: 1
-   - Max: 10
-   - Default: 3
-
-4. **Walk Duration Options**
-   - Type: Multi-select
-   - Label: "Available walk durations"
-   - Options: ["15 minutes", "20 minutes", "30 minutes", "45 minutes", "60 minutes"]
-   - Required: Yes
-   - Default: ["30 minutes"]
-
-5. **Experience Level**
-   - Type: Select
-   - Label: "Years of experience"
-   - Options: ["Less than 1 year", "1-2 years", "3-5 years", "5+ years"]
-   - Required: Yes
-
-6. **Dog Size Preferences**
-   - Type: Multi-select
-   - Label: "Dog sizes you can handle"
-   - Options: ["Small (under 20 lbs)", "Medium (20-50 lbs)", "Large (50-100 lbs)", "Extra Large (100+ lbs)"]
-   - Required: Yes
-
-7. **Special Needs Experience**
-   - Type: Multi-select
-   - Label: "Special needs experience"
-   - Options: ["Senior dogs", "Puppies", "Aggressive dogs", "Disabled dogs", "Medical conditions"]
-   - Required: No
-
-8. **Background Check**
+2. **Background Check**
    - Type: File upload
    - Label: "Background check certificate"
    - Description: "Upload your background check certificate"
    - Required: Yes
    - Accepted formats: PDF, JPG, PNG
+   - **Used in:** Vendor verification
 
-9. **Insurance Certificate**
+3. **Insurance Certificate**
    - Type: File upload
    - Label: "Pet care insurance certificate"
    - Description: "Upload your insurance certificate"
    - Required: Yes
    - Accepted formats: PDF, JPG, PNG
+   - **Used in:** Vendor verification
 
-10. **Emergency Contact**
-    - Type: Text
-    - Label: "Emergency contact name"
-    - Required: Yes
+4. **Emergency Contact Name**
+   - Type: Text
+   - Label: "Emergency contact name"
+   - Required: Yes
+   - **Used in:** Safety and emergency situations
 
-11. **Emergency Phone**
-    - Type: Tel
-    - Label: "Emergency contact phone"
-    - Required: Yes
+5. **Emergency Contact Phone**
+   - Type: Tel
+   - Label: "Emergency contact phone"
+   - Required: Yes
+   - **Used in:** Safety and emergency situations
 
-### Optional Fields
-- References (name, phone, relationship)
-- Certifications (dog training, pet first aid, etc.)
-- Languages spoken
-- Availability schedule (preferred times)
+### Removed Fields (Not Used in Operations)
+- ❌ Service Radius - Can be set in service catalog per service
+- ❌ Maximum Dogs Per Walk - Can be set in service catalog per service
+- ❌ Walk Duration Options - Can be set in service catalog when creating services
+- ❌ Experience Level - Not used in operations
+- ❌ Dog Size Preferences - Not used in booking logic
+- ❌ Special Needs Experience - Not used in operations
+
+**Note:** Service-specific details (radius, max dogs, durations) should be configured in the **service catalog** when creating walk services, not during onboarding.
 
 ---
 
 ## 🛍️ E-commerce/Seller Role - Additional Fields
 
-### Required Fields
+### Required Fields (Simplified - Only Essential)
 1. **Business Type**
    - Type: Select
    - Label: "Business type"
    - Options: ["Individual seller", "Small business", "Retail store", "Online store", "Manufacturer"]
    - Required: Yes
+   - **Used in:** Vendor categorization
 
 2. **Product Categories**
    - Type: Multi-select
@@ -129,78 +96,59 @@ This document defines the additional onboarding fields needed for each vendor ro
     ]
    - Required: Yes
    - Min selections: 1
+   - **Used in:** Product catalog, search, and categorization
 
-3. **Shipping Options**
+3. **Payment Methods Accepted**
    - Type: Multi-select
-   - Label: "Shipping methods offered"
-   - Options: ["Standard shipping", "Express shipping", "Same-day delivery", "Pickup available"]
+   - Label: "Payment methods"
+   - Options: ["Cash on delivery", "Credit/Debit card", "UPI", "Net banking", "Wallet"]
    - Required: Yes
-   - Default: ["Standard shipping"]
+   - Default: ["UPI", "Credit/Debit card"]
+   - **Used in:** Order processing
 
-4. **Shipping Radius (for local delivery)**
-   - Type: Number (km)
-   - Label: "Local delivery radius"
-   - Description: "Maximum distance for same-day/local delivery (0 = shipping only)"
-   - Required: Yes
-   - Min: 0
-   - Max: 100 km
-   - Default: 0
-
-5. **Inventory Management**
-   - Type: Select
-   - Label: "Inventory management system"
-   - Options: ["Manual", "Automated", "Third-party integration"]
-   - Required: Yes
-   - Default: "Manual"
-
-6. **Return Policy**
-   - Type: Textarea
-   - Label: "Return policy"
-   - Description: "Describe your return and refund policy"
-   - Required: Yes
-   - Min length: 50 characters
-   - Placeholder: "e.g., 7-day return policy, items must be unused..."
-
-7. **GST/VAT Number**
+4. **GST/VAT Number**
    - Type: Text
    - Label: "GST/VAT registration number"
-   - Description: "Your tax registration number for e-commerce"
-   - Required: Yes (if applicable in your region)
+   - Description: "Your tax registration number for e-commerce (if applicable)"
+   - Required: No (optional)
+   - **Used in:** Tax compliance
 
-8. **Product Catalog Sample**
+5. **Product Catalog Sample**
    - Type: File upload
    - Label: "Product catalog (PDF or images)"
    - Description: "Upload a sample of your product catalog"
    - Required: Yes
    - Accepted formats: PDF, ZIP (for multiple images)
    - Max size: 10 MB
+   - **Used in:** Vendor verification
 
-9. **Warehouse Address** (if different from business address)
-   - Type: Address + Map pin
-   - Label: "Warehouse/Storage location"
-   - Description: "Where products are stored and shipped from"
-   - Required: No (if same as business address)
+### Removed Fields (Handled by Platform)
+- ❌ **Shipping Options** - Removed
+  - **Reason:** Delivery handled by Warmpawz via Shiprocket/Nimbus Posts
+  - Platform manages all delivery logistics
+  - No need for vendor to specify
 
-10. **Minimum Order Value**
-    - Type: Number
-    - Label: "Minimum order value (₹)"
-    - Description: "Minimum order amount for free shipping"
-    - Required: No
-    - Default: 0
+- ❌ **Shipping Radius** - Removed
+  - **Reason:** Delivery handled by platform delivery partners
+  - Platform manages delivery radius and logistics
+  - Vendor doesn't need to specify
 
-11. **Payment Methods Accepted**
-    - Type: Multi-select
-    - Label: "Payment methods"
-    - Options: ["Cash on delivery", "Credit/Debit card", "UPI", "Net banking", "Wallet"]
-    - Required: Yes
-    - Default: ["UPI", "Credit/Debit card"]
+- ❌ **Return Policy** - Removed
+  - **Reason:** 
+    - Most products don't allow returns
+    - Return delivery charges handled by platform (back and forth)
+    - Platform manages return logistics and policies
+    - No need for vendor to specify policy
 
-### Optional Fields
-- Social media links (Instagram, Facebook, etc.)
-- Product warranty information
-- Bulk order discounts policy
-- Gift wrapping service
-- Product installation service availability
+- ❌ **Inventory Management** - Removed
+  - **Reason:** Not needed for onboarding
+  - Can be configured later if needed
+
+**Note:** 
+- Delivery is handled by **Warmpawz via Shiprocket/Nimbus Posts**
+- Delivery charges are charged by platform (successful delivery + return charges)
+- Most products don't allow returns
+- Return logistics handled by platform
 
 ---
 

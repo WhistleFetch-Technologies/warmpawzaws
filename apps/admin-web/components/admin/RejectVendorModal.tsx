@@ -39,7 +39,7 @@ export function RejectVendorModal({
     <Dialog open={isOpen} onOpenChange={(open: boolean) => !open && handleClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
@@ -87,7 +87,7 @@ export function RejectVendorModal({
             />
           </div>
           
-          <div className="flex gap-0 justify-end pt-0">
+          <div className="flex gap-3 justify-end pt-0">
             <Button
               variant="outline"
               onClick={handleClose}

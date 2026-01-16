@@ -55,7 +55,7 @@ export function RegionActivePackagesTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <div className="flex-1 flex gap-0">
+        <div className="flex-1 flex gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
@@ -78,7 +78,7 @@ export function RegionActivePackagesTab() {
           </select>
         </div>
         <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-          <Plus className="w-4 h-4 mr-0" />
+          <Plus className="w-4 h-4 mr-2" />
           Add Package
         </Button>
       </div>
@@ -91,7 +91,7 @@ export function RegionActivePackagesTab() {
             <div key={pkg.id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-0 mb-0">
+                  <div className="flex items-center gap-3 mb-0">
                     <MapPin className="w-5 h-5 text-gray-400" />
                     <h4 className="font-semibold text-gray-900">{pkg.name}</h4>
                     <StatusBadge status={pkg.status} />
@@ -118,7 +118,7 @@ export function RegionActivePackagesTab() {
                   </div>
 
                   {pkg.services.length > 0 && (
-                    <div className="flex flex-wrap gap-0">
+                    <div className="flex flex-wrap gap-3">
                       {pkg.services.slice(0, 5).map((service, idx) => (
                         <span key={idx} className="px-0 py-0 text-xs bg-gray-100 text-gray-700 rounded-full">
                           {service}
@@ -133,9 +133,9 @@ export function RegionActivePackagesTab() {
                   )}
                 </div>
                 
-                <div className="flex gap-0 ml-4">
+                <div className="flex gap-3 ml-4">
                   <Button size="sm" variant="outline">
-                    <Edit className="w-4 h-4 mr-0" />
+                    <Edit className="w-4 h-4 mr-2" />
                     Edit
                   </Button>
                 </div>

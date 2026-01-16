@@ -42,7 +42,7 @@ export function IntegrationSettingsTab() {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4 space-y-4">
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <Plug className="w-5 h-5 text-orange-600" />
           <h3 className="font-semibold text-gray-900">Integration Settings</h3>
         </div>
@@ -70,7 +70,7 @@ export function IntegrationSettingsTab() {
       <button
         onClick={handleSave}
         disabled={loading}
-        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-0 disabled:opacity-50"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-3 disabled:opacity-50"
       >
         {loading ? (
           <>

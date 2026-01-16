@@ -497,6 +497,23 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       }
 
       const vendor = vendors[0];
+      // ✅ FIX: Check if metadata column exists before using it
+      try {
+        const columnCheck = await query(
+          `SELECT column_name FROM information_schema.columns 
+           WHERE table_name = 'vendors' AND column_name = 'metadata'`
+        );
+        
+        if (columnCheck.rows.length === 0) {
+          // Column doesn't exist, add it
+          console.log('[VACATION] Metadata column missing, adding it...');
+          await query('ALTER TABLE vendors ADD COLUMN IF NOT EXISTS metadata JSONB');
+          console.log('[VACATION] Metadata column added successfully');
+        }
+      } catch (metadataError: any) {
+        console.error('[VACATION] Error checking/adding metadata column:', metadataError);
+      }
+
       const metadata = (vendor.metadata || {}) as any;
 
       // Update vacation mode

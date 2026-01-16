@@ -76,7 +76,7 @@ export function GeneralSettingsTab() {
       <button
         onClick={handleSave}
         disabled={loading}
-        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-0 disabled:opacity-50"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-3 disabled:opacity-50"
       >
         {loading ? (
           <>

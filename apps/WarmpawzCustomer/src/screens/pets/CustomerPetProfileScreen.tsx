@@ -379,7 +379,7 @@ export function CustomerPetProfileScreen({
                 Type <Text style={styles.required}>*</Text>
               </Text>
               <View style={styles.typeButtons}>
-                {['Dog', 'Cat', 'Bird', 'Rabbit', 'Other'].map((type) => (
+                {['Dog', 'Cat'].map((type) => (
                   <TouchableOpacity
                     key={type}
                     style={[

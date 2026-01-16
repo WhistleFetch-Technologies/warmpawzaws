@@ -97,7 +97,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden bg-white rounded-2xl shadow-2xl">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-3 overflow-hidden bg-white rounded-2xl shadow-2xl">
         {/* Header */}
         <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex justify-between items-center">

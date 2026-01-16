@@ -77,7 +77,7 @@ export function VendorStaffPage({ vendorId }: VendorStaffPageProps) {
         <h1 className="text-2xl font-bold text-gray-900">Staff Management</h1>
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-0"
+          className="px-4 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-3"
         >
           <span>➕</span> Add Staff
         </button>
@@ -103,7 +103,7 @@ export function VendorStaffPage({ vendorId }: VendorStaffPageProps) {
               className="bg-white rounded-xl p-4 shadow-sm"
             >
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                     {member.name.charAt(0).toUpperCase()}
                   </div>
@@ -120,18 +120,18 @@ export function VendorStaffPage({ vendorId }: VendorStaffPageProps) {
               </div>
               
               <div className="mt-4 space-y-2 text-sm">
-                <div className="flex items-center gap-0 text-gray-500">
+                <div className="flex items-center gap-3 text-gray-500">
                   <span>📱</span>
                   <span>{member.phone}</span>
                 </div>
                 {member.email && (
-                  <div className="flex items-center gap-0 text-gray-500">
+                  <div className="flex items-center gap-3 text-gray-500">
                     <span>✉️</span>
                     <span>{member.email}</span>
                   </div>
                 )}
                 {member.experience_years && (
-                  <div className="flex items-center gap-0 text-gray-500">
+                  <div className="flex items-center gap-3 text-gray-500">
                     <span>⭐</span>
                     <span>{member.experience_years} years experience</span>
                   </div>
@@ -141,7 +141,7 @@ export function VendorStaffPage({ vendorId }: VendorStaffPageProps) {
               {member.services && member.services.length > 0 && (
                 <div className="mt-0">
                   <p className="text-xs text-gray-400 mb-0">Services:</p>
-                  <div className="flex flex-wrap gap-0">
+                  <div className="flex flex-wrap gap-3">
                     {member.services.slice(0, 3).map((s: any) => (
                       <span key={s.id} className="text-xs px-0 py-0 bg-orange-50 text-orange-600 rounded">
                         {s.service_name || s.name}
@@ -156,7 +156,7 @@ export function VendorStaffPage({ vendorId }: VendorStaffPageProps) {
                 </div>
               )}
 
-              <div className="flex gap-0 mt-4 pt-4 border-t">
+              <div className="flex gap-3 mt-4 pt-4 border-t">
                 <button
                   onClick={() => handleToggleStaff(member.id, member.is_active)}
                   className={`flex-1 py-0 text-sm rounded-lg ${
@@ -305,7 +305,7 @@ function StaffModal({
               min="0"
             />
           </div>
-          <div className="flex gap-0 pt-4">
+          <div className="flex gap-3 pt-4">
             <button
               type="button"
               onClick={onClose}

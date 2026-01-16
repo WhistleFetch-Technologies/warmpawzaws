@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -19,9 +19,11 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const [loading, setLoading] = useState(true);
   const [featuredGroomers, setFeaturedGroomers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [previousGroomer, setPreviousGroomer] = useState<any>(null);
 
   useEffect(() => {
     loadGroomingData();
+    loadPreviousGroomer();
   }, []);
 
   const loadGroomingData = async () => {
@@ -62,6 +64,43 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       setStats({ activeGroomers: 0, sessions: '0', rating: '-' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPreviousGroomer = async () => {
+    try {
+      // Try to get previous groomer from booking history or packages
+      const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=grooming`).catch(() => null);
+      
+      if (response?.provider) {
+        setPreviousGroomer({
+          id: response.provider.id,
+          name: response.provider.businessName || response.provider.name,
+          photo: response.provider.photo || null,
+          rating: response.provider.rating || 4.9,
+          lastVisit: response.provider.lastVisit,
+          sessionsCount: response.provider.sessionsCount || 5
+        });
+      } else {
+        // Try getting from active packages
+        const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=grooming`).catch(() => null);
+        if (packagesResponse?.packages && packagesResponse.packages.length > 0) {
+          const pkg = packagesResponse.packages[0];
+          if (pkg.vendorId && pkg.vendorName) {
+            setPreviousGroomer({
+              id: pkg.vendorId,
+              name: pkg.vendorName,
+              photo: null,
+              rating: 4.9,
+              lastVisit: pkg.lastUsed || '3 weeks ago',
+              sessionsCount: pkg.sessionsUsed || 5
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Silently fail - not having a previous groomer is not an error
+      console.log('No previous groomer found:', error);
     }
   };
 
@@ -133,6 +172,56 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
+          {/* YOUR GROOMER Section - As per Master Plan */}
+          {previousGroomer && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-orange-500" />
+                <h2 className="text-lg font-bold text-slate-900">🔄 YOUR GROOMER</h2>
+              </div>
+              
+              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-4">
+                <div className="flex items-center gap-4">
+                  {previousGroomer.photo ? (
+                    <img 
+                      src={previousGroomer.photo} 
+                      alt={previousGroomer.name}
+                      className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                      {previousGroomer.name?.charAt(0) || 'G'}
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h3 className="font-bold text-slate-900 text-lg">{previousGroomer.name}</h3>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                      <div className="flex items-center gap-1 text-orange-600 font-bold">
+                        <Star className="w-4 h-4 fill-orange-500" />
+                        {previousGroomer.rating}
+                      </div>
+                      <span>•</span>
+                      <span>Last visit: {previousGroomer.lastVisit || '3 weeks ago'}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {previousGroomer.sessionsCount || 5} sessions with you
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm"
+                    className="bg-orange-600 text-white hover:bg-orange-700 whitespace-nowrap"
+                    onClick={() => onNavigate?.('create-booking', { 
+                      vendorId: previousGroomer.id,
+                      serviceType: 'grooming'
+                    })}
+                  >
+                    Book Again
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          )}
+
           {/* Spotlight Offers */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">

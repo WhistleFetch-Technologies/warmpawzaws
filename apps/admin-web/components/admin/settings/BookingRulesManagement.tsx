@@ -115,7 +115,7 @@ export function BookingRulesManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-blue-100 rounded-xl">
             <BookOpen className="w-6 h-6 text-blue-600" />
           </div>
@@ -127,7 +127,7 @@ export function BookingRulesManagement() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
         >
           {saving ? (
             <>
@@ -179,7 +179,7 @@ export function BookingRulesManagement() {
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
-            <label className="flex items-center gap-0">
+            <label className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={rules.general.allowSameDayBooking}
@@ -194,7 +194,7 @@ export function BookingRulesManagement() {
         <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
           <h3 className="font-semibold text-gray-900 mb-4">Cancellation Rules</h3>
           <div className="space-y-4">
-            <label className="flex items-center gap-0">
+            <label className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={rules.cancellation.allowCancellation}
@@ -246,7 +246,7 @@ export function BookingRulesManagement() {
         <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
           <h3 className="font-semibold text-gray-900 mb-4">Modification Rules</h3>
           <div className="space-y-4">
-            <label className="flex items-center gap-0">
+            <label className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={rules.modification.allowModification}
@@ -285,7 +285,7 @@ export function BookingRulesManagement() {
         <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
           <h3 className="font-semibold text-gray-900 mb-4">Payment Rules</h3>
           <div className="space-y-4">
-            <label className="flex items-center gap-0">
+            <label className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={rules.payment.requireFullPayment}

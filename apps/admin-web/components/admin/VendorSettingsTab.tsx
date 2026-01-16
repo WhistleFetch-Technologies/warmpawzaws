@@ -135,7 +135,7 @@ export function VendorSettingsTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-green-100 rounded-xl">
             <Settings className="w-6 h-6 text-green-600" />
           </div>
@@ -147,7 +147,7 @@ export function VendorSettingsTab() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
         >
           {saving ? (
             <>

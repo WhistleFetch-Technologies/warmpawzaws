@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 interface CustomerSession {
   phone: string;
@@ -129,5 +130,10 @@ export default function HomePage() {
     return null; // Will redirect to /auth via useEffect
   }
 
-  return <CustomerApp initialSession={session} />;
+  // ✅ FIX: Wrap app with error boundary to prevent crashes (NUT-CUST-001, VET-CUST-001)
+  return (
+    <ErrorBoundary>
+      <CustomerApp initialSession={session} />
+    </ErrorBoundary>
+  );
 }

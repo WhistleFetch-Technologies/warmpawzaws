@@ -504,7 +504,7 @@ export function UnifiedBookingEngine({
             ) : (
               <p className="text-gray-600">Service selection not implemented in this view</p>
             )}
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={onCancel}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -540,7 +540,7 @@ export function UnifiedBookingEngine({
                 </button>
               ))}
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -580,7 +580,7 @@ export function UnifiedBookingEngine({
                 <div className="text-sm text-gray-600">Book for a specific date and time</div>
               </button>
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -620,7 +620,7 @@ export function UnifiedBookingEngine({
                 ))}
               </div>
             )}
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -647,7 +647,7 @@ export function UnifiedBookingEngine({
             {selectedDate && (
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-0">Time</label>
-                <div className="grid grid-cols-4 gap-0">
+                <div className="grid grid-cols-4 gap-3">
                   {timeSlots.map((slot) => (
                     <button
                       key={slot.time}
@@ -667,7 +667,7 @@ export function UnifiedBookingEngine({
                 </div>
               </div>
             )}
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -705,7 +705,7 @@ export function UnifiedBookingEngine({
                 </button>
               ))}
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -737,7 +737,7 @@ export function UnifiedBookingEngine({
                 </button>
               ))}
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -771,7 +771,7 @@ export function UnifiedBookingEngine({
                 placeholder="Any special instructions..."
               />
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"

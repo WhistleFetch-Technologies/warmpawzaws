@@ -54,9 +54,26 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
                        primaryTax?.taxType === 'service_tax' ? 'Service Tax' :
                        primaryTax?.taxType || 'Tax';
 
-  const handleAddressChange = () => {
-    // Navigate to address book - in real implementation, this would open AddressBookPage
-    toast.info('Address book coming soon - using default address');
+  const handleAddressChange = async () => {
+    try {
+      // Reload addresses to get latest
+      await loadAddresses();
+      
+      // Show address selection - in a real implementation, this would open a modal
+      // For now, we'll just reload and let user see updated addresses
+      if (addresses.length > 1) {
+        // Cycle through addresses or show selection
+        const currentIndex = addresses.findIndex(a => a.id === selectedAddress?.id);
+        const nextIndex = (currentIndex + 1) % addresses.length;
+        setSelectedAddress(addresses[nextIndex]);
+        toast.success('Address changed');
+      } else {
+        toast.info('Add more addresses in your account settings');
+      }
+    } catch (error) {
+      console.error('Error changing address:', error);
+      toast.error('Failed to load addresses');
+    }
   };
 
   const handlePayment = async () => {

@@ -1,7 +1,0 @@
-Infrastructure Verification Report
-Generated: Mon Jan 12 20:04:18 IST 2026
-Environment: dev
-Region: ap-south-1
-
-═══════════════════════════════════════════════════════════════
-

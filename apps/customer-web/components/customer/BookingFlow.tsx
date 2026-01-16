@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { X, Camera, Upload, MapPin, Plus } from 'lucide-react';
 // Removed SpecializedServiceRouter - now integrated into unified flow
 
 interface Service {
@@ -15,6 +16,7 @@ interface Service {
   vendor_id: string;
   vendor_name: string;
   vendor_address?: string;
+  category?: string;
 }
 
 interface TimeSlot {
@@ -27,16 +29,29 @@ interface Pet {
   name: string;
   species: string;
   breed: string;
+  type?: string;
+  age?: string;
+  gender?: string;
+  weight?: string;
+  color?: string;
+  photo?: string;
 }
 
 interface Address {
   id: string;
   label: string;
   address: string;
+  addressLine1?: string;
+  addressLine2?: string;
   city: string;
+  state?: string;
   pincode: string;
   latitude?: number;
   longitude?: number;
+  isDefault?: boolean;
+  name?: string;
+  phone?: string;
+  landmark?: string;
 }
 
 interface BookingFlowProps {
@@ -75,6 +90,57 @@ const getSpecializedServiceType = (service: Service | null): string | null => {
   return null;
 };
 
+// Services that require pet profile selection
+const PET_REQUIRED_SERVICES = [
+  'veterinary', 'vet', 'grooming', 'groomer', 'training', 'trainer', 'behaviourist',
+  'walking', 'walker', 'boarding', 'resort', 'daycare', 'pet_cafe', 'cafe',
+  'nutritionist', 'insurance', 'vaccination', 'consultation', 'checkup',
+  'diagnostics', 'lab', 'ambulance', 'emergency'
+];
+
+// Services that require address (home services, delivery, etc.)
+const ADDRESS_REQUIRED_SERVICES = [
+  'at_home', 'home_visit', 'delivery', 'medicine_delivery', 'pharmacy',
+  'ambulance', 'emergency', 'walking', 'walker', 'training', 'trainer',
+  'behaviourist', 'nutritionist', 'grooming_home'
+];
+
+// Helper to check if service requires pet
+const requiresPetProfile = (service: Service | null): boolean => {
+  if (!service) return false;
+  const serviceName = (service.name || '').toLowerCase();
+  const serviceStyle = (service.service_style || '').toLowerCase();
+  const category = (service.category || '').toLowerCase();
+  
+  // Products don't require pet profile
+  if (category.includes('product') || category.includes('shop') || category.includes('ecommerce')) {
+    return false;
+  }
+  
+  return PET_REQUIRED_SERVICES.some(type => 
+    serviceName.includes(type) || serviceStyle.includes(type) || category.includes(type)
+  ) || serviceStyle !== 'product';
+};
+
+// Helper to check if service requires address
+const requiresAddress = (service: Service | null, specializedType: string | null): boolean => {
+  if (!service) return false;
+  const serviceName = (service.name || '').toLowerCase();
+  const serviceStyle = (service.service_style || '').toLowerCase();
+  
+  // Home services always require address
+  if (serviceStyle === 'at_home' || serviceStyle === 'home_visit') return true;
+  
+  // Delivery services require address
+  if (serviceName.includes('delivery') || specializedType?.includes('delivery')) return true;
+  
+  // Ambulance/emergency require address
+  if (specializedType === 'ambulance' || specializedType === 'emergency') return true;
+  
+  // Home-based specialized services
+  return ADDRESS_REQUIRED_SERVICES.some(type => serviceName.includes(type) || serviceStyle.includes(type));
+};
+
 export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
   const router = useRouter();
   const [step, setStep] = useState<'details' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmed'>('details');
@@ -96,6 +162,14 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
   
   // Specialized service specific state
   const [specializedData, setSpecializedData] = useState<any>({});
+  
+  // Modal states for adding pet/address inline
+  const [showAddPetModal, setShowAddPetModal] = useState(false);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+  
+  // Check if pet/address is needed
+  const needsPet = requiresPetProfile(service);
+  const needsAddress = requiresAddress(service, specializedType);
 
   useEffect(() => {
     loadServiceDetails();
@@ -193,11 +267,67 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`),
         apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`),
       ]);
-      if (petsRes.pets) setPets(petsRes.pets);
-      if (addressRes.addresses) setAddresses(addressRes.addresses);
+      
+      // Handle pets response
+      if (petsRes.pets) {
+        setPets(petsRes.pets);
+        // Auto-select first pet if only one exists
+        if (petsRes.pets.length === 1) {
+          setSelectedPet(petsRes.pets[0].id);
+        }
+      }
+      
+      // Handle addresses response
+      if (addressRes.addresses) {
+        setAddresses(addressRes.addresses);
+        // Auto-select default address if available
+        const defaultAddr = addressRes.addresses.find((a: Address) => a.isDefault);
+        if (defaultAddr) {
+          setSelectedAddress(defaultAddr.id);
+        } else if (addressRes.addresses.length === 1) {
+          // Auto-select if only one address
+          setSelectedAddress(addressRes.addresses[0].id);
+        }
+      }
+      
       if (walletRes.wallet) setWallet(walletRes.wallet);
     } catch (err) {
       console.error('Error loading customer data:', err);
+    }
+  };
+  
+  // Refresh pets after adding new one
+  const refreshPets = async () => {
+    try {
+      const petsRes = await apiClient.get<any>(`/customer/pets?phone=${encodeURIComponent(customerPhone)}`);
+      if (petsRes.pets) {
+        setPets(petsRes.pets);
+        // Auto-select newly added pet (last one)
+        if (petsRes.pets.length > 0) {
+          setSelectedPet(petsRes.pets[petsRes.pets.length - 1].id);
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing pets:', err);
+    }
+  };
+  
+  // Refresh addresses after adding new one
+  const refreshAddresses = async () => {
+    try {
+      const addressRes = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+      if (addressRes.addresses) {
+        setAddresses(addressRes.addresses);
+        // Auto-select newly added address (last one) or default
+        const defaultAddr = addressRes.addresses.find((a: Address) => a.isDefault);
+        if (defaultAddr) {
+          setSelectedAddress(defaultAddr.id);
+        } else if (addressRes.addresses.length > 0) {
+          setSelectedAddress(addressRes.addresses[addressRes.addresses.length - 1].id);
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing addresses:', err);
     }
   };
 
@@ -440,8 +570,15 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
 
       {/* Progress */}
       <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex items-center gap-0">
-          {['details', 'datetime', 'pet', service.service_style === 'at_home' ? 'address' : null, 'payment'].filter(Boolean).map((s, i, arr) => (
+        <div className="flex items-center gap-3">
+          {(() => {
+            // Build steps dynamically based on service requirements
+            const steps: string[] = ['details', 'datetime'];
+            if (needsPet) steps.push('pet');
+            if (needsAddress) steps.push('address');
+            steps.push('payment');
+            return steps;
+          })().map((s, i, arr) => (
             <React.Fragment key={s}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 step === s ? 'bg-orange-500 text-white' :
@@ -454,6 +591,14 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
               )}
             </React.Fragment>
           ))}
+        </div>
+        {/* Step Labels */}
+        <div className="flex justify-between mt-2 text-xs text-gray-500">
+          <span>Details</span>
+          <span>Schedule</span>
+          {needsPet && <span>Pet</span>}
+          {needsAddress && <span>Address</span>}
+          <span>Payment</span>
         </div>
       </div>
 
@@ -497,7 +642,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             {/* Date Selection */}
             <div className="mb-0">
               <h3 className="font-medium text-gray-700 mb-0">Select Date</h3>
-              <div className="flex gap-0 overflow-x-auto pb-0">
+              <div className="flex gap-3 overflow-x-auto pb-0">
                 {getNextDays().map((day) => (
                   <button
                     key={day.date}
@@ -521,7 +666,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             {selectedDate && (
               <div>
                 <h3 className="font-medium text-gray-700 mb-0">Select Time</h3>
-                <div className="grid grid-cols-4 gap-0">
+                <div className="grid grid-cols-4 gap-3">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (
                       <button
@@ -573,7 +718,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                               <p className="font-medium text-gray-900">
                                 {staff.name}
                                 {staff.isPreviousProvider && (
-                                  <span className="ml-0 text-xs bg-green-100 text-green-700 px-0 py-0.5 rounded">Previous</span>
+                                  <span className="ml-2 text-xs bg-green-100 text-green-700 px-0 py-0.5 rounded">Previous</span>
                                 )}
                               </p>
                               {staff.commuteTime && (
@@ -606,61 +751,119 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             )}
 
             <button
-              onClick={() => setStep('pet')}
+              onClick={() => {
+                // Navigate to next required step
+                if (needsPet) {
+                  setStep('pet');
+                } else if (needsAddress) {
+                  setStep('address');
+                } else {
+                  setStep('payment');
+                }
+              }}
               disabled={!selectedDate || !selectedTime}
-              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
+              className="w-full mt-6 py-4 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
             >
               Continue
             </button>
           </div>
         )}
 
-        {step === 'pet' && (
-          <div className="bg-white rounded-2xl p-0 shadow-sm">
-            <h2 className="text-xl font-bold mb-4">Select Pet (Optional)</h2>
+        {step === 'pet' && needsPet && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Select Your Pet</h2>
+              <button
+                onClick={() => setShowAddPetModal(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
+              >
+                <Plus className="w-4 h-4" />
+                Add Pet
+              </button>
+            </div>
+            
+            {/* Required notice */}
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                🐾 A pet profile is required for this service to provide the best care.
+              </p>
+            </div>
+            
             <div className="space-y-3">
               {pets.length > 0 ? (
                 <>
                   {pets.map((pet) => (
                     <button
                       key={pet.id}
-                      onClick={() => setSelectedPet(pet.id === selectedPet ? '' : pet.id)}
+                      onClick={() => setSelectedPet(pet.id)}
                       className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition ${
                         selectedPet === pet.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'
                       }`}
                     >
-                      <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center text-2xl">
-                        {pet.species === 'dog' ? '🐕' : pet.species === 'cat' ? '🐈' : '🐾'}
+                      <div className="w-14 h-14 bg-orange-100 rounded-full flex items-center justify-center text-2xl overflow-hidden">
+                        {pet.photo ? (
+                          <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
+                        ) : (
+                          (pet.species || pet.type || '').toLowerCase().includes('dog') ? '🐕' : 
+                          (pet.species || pet.type || '').toLowerCase().includes('cat') ? '🐈' : '🐾'
+                        )}
                       </div>
-                      <div className="text-left">
+                      <div className="text-left flex-1">
                         <p className="font-medium text-gray-900">{pet.name}</p>
                         <p className="text-sm text-gray-500">{pet.breed}</p>
+                        {pet.age && <p className="text-xs text-gray-400">{pet.age} years old</p>}
                       </div>
                       {selectedPet === pet.id && (
-                        <span className="ml-auto text-orange-500 text-xl">✓</span>
+                        <span className="text-orange-500 text-xl">✓</span>
                       )}
                     </button>
                   ))}
                 </>
               ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">No pets added yet</p>
-                  <a href="/pets/add" className="text-orange-500 font-medium">+ Add Pet</a>
+                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                  <div className="text-5xl mb-3">🐾</div>
+                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
+                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
+                  <button
+                    onClick={() => setShowAddPetModal(true)}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
+                  >
+                    + Add Your First Pet
+                  </button>
                 </div>
               )}
             </div>
+            
             <button
-              onClick={() => setStep(service.service_style === 'at_home' ? 'address' : 'payment')}
-              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium"
+              onClick={() => setStep(needsAddress ? 'address' : 'payment')}
+              disabled={!selectedPet}
+              className="w-full mt-6 py-4 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {selectedPet ? 'Continue' : 'Skip'}
+              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
             </button>
           </div>
         )}
 
-        {step === 'address' && service.service_style === 'at_home' && (
-          <div className="bg-white rounded-2xl p-0 shadow-sm">
-            <h2 className="text-xl font-bold mb-4">Select Address</h2>
+        {step === 'address' && needsAddress && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Select Delivery Address</h2>
+              <button
+                onClick={() => setShowAddAddressModal(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
+              >
+                <Plus className="w-4 h-4" />
+                Add Address
+              </button>
+            </div>
+            
+            {/* Required notice */}
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                📍 An address is required for {service?.service_style === 'at_home' ? 'home service delivery' : 'this service'}.
+              </p>
+            </div>
+            
             <div className="space-y-3">
               {addresses.length > 0 ? (
                 addresses.map((addr) => (
@@ -671,24 +874,61 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                       selectedAddress === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'
                     }`}
                   >
-                    <p className="font-medium text-gray-900">{addr.label}</p>
-                    <p className="text-sm text-gray-500">{addr.address}</p>
-                    <p className="text-sm text-gray-400">{addr.city} - {addr.pincode}</p>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">
+                            {addr.label?.toLowerCase() === 'home' ? '🏠' : 
+                             addr.label?.toLowerCase() === 'work' ? '🏢' : '📍'}
+                          </span>
+                          <p className="font-medium text-gray-900">{addr.label || 'Address'}</p>
+                          {addr.isDefault && (
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {addr.addressLine1 || addr.address}
+                          {addr.addressLine2 && `, ${addr.addressLine2}`}
+                        </p>
+                        <p className="text-sm text-gray-500">{addr.city}{addr.state && `, ${addr.state}`} - {addr.pincode}</p>
+                        {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                      </div>
+                      {selectedAddress === addr.id && (
+                        <span className="text-orange-500 text-xl ml-2">✓</span>
+                      )}
+                    </div>
                   </button>
                 ))
               ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">No addresses saved</p>
-                  <a href="/addresses/add" className="text-orange-500 font-medium">+ Add Address</a>
+                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                  <div className="text-5xl mb-3">📍</div>
+                  <p className="text-gray-600 font-medium mb-2">No addresses saved</p>
+                  <p className="text-sm text-gray-500 mb-4">Add an address to continue with the booking</p>
+                  <button
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
+                  >
+                    + Add Your Address
+                  </button>
                 </div>
               )}
             </div>
+            
+            {/* Confirm selected address */}
+            {selectedAddress && addresses.length > 0 && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800 font-medium">
+                  ✓ Service will be delivered to: {addresses.find(a => a.id === selectedAddress)?.label || 'Selected Address'}
+                </p>
+              </div>
+            )}
+            
             <button
               onClick={() => setStep('payment')}
               disabled={!selectedAddress}
-              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
+              className="w-full mt-6 py-4 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Continue
+              {selectedAddress ? 'Continue to Payment' : 'Select an Address to Continue'}
             </button>
           </div>
         )}
@@ -741,7 +981,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                       useWallet ? 'border-green-500 bg-green-50' : 'border-gray-100'
                     }`}
                   >
-                    <div className="flex items-center gap-0">
+                    <div className="flex items-center gap-3">
                       <span className="text-2xl">💰</span>
                       <div className="text-left">
                         <p className="font-medium">Use Wallet Balance</p>
@@ -795,7 +1035,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
               </div>
             </div>
 
-            <div className="flex gap-0 mt-0">
+            <div className="flex gap-3 mt-0">
               <a href="/bookings" className="flex-1 py-0 border rounded-xl font-medium">
                 View Bookings
               </a>
@@ -821,6 +1061,539 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
           </div>
         </div>
       )}
+      
+      {/* Add Pet Modal */}
+      {showAddPetModal && (
+        <AddPetModalInline 
+          phone={customerPhone}
+          onClose={() => setShowAddPetModal(false)}
+          onSuccess={() => {
+            refreshPets();
+            setShowAddPetModal(false);
+          }}
+        />
+      )}
+      
+      {/* Add Address Modal */}
+      {showAddAddressModal && (
+        <AddAddressModalInline
+          phone={customerPhone}
+          onClose={() => setShowAddAddressModal(false)}
+          onSuccess={() => {
+            refreshAddresses();
+            setShowAddAddressModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Inline Add Pet Modal Component
+function AddPetModalInline({ phone, onClose, onSuccess }: { phone: string; onClose: () => void; onSuccess: () => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string>('');
+  
+  const [petData, setPetData] = useState({
+    id: `pet_${Date.now()}`,
+    name: '',
+    type: 'Dog',
+    breed: '',
+    age: '',
+    gender: '',
+    weight: '',
+    color: '',
+    photo: '',
+  });
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result as string);
+        setPetData({ ...petData, photo: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSavePet = async () => {
+    if (!petData.name || !petData.type || !petData.breed || !petData.age) {
+      alert('Please fill in all required fields (Name, Type, Breed, Age)');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Get existing pets
+      const getPetsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      let existingPets = [];
+      if (Array.isArray(getPetsData)) {
+        existingPets = getPetsData;
+      } else if (Array.isArray(getPetsData.pets)) {
+        existingPets = getPetsData.pets;
+      } else if (getPetsData.pets?.pets && Array.isArray(getPetsData.pets.pets)) {
+        existingPets = getPetsData.pets.pets;
+      }
+      
+      const updatedPets = [...existingPets, petData];
+      
+      await apiClient.post('/customer/pets', {
+        phone: phone,
+        pets: updatedPets
+      });
+      
+      onSuccess();
+    } catch (error) {
+      console.error('Error saving pet:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to save pet. Please try again.'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={onClose}>
+      <div 
+        className="bg-white rounded-t-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-4 rounded-t-3xl sticky top-0">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white">Add New Pet 🐾</h3>
+            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-5 space-y-4">
+          {/* Photo Upload */}
+          <div className="flex flex-col items-center">
+            <div 
+              onClick={() => fileInputRef.current?.click()}
+              className="w-20 h-20 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:opacity-80 border-4 border-white shadow-lg"
+            >
+              {photoPreview ? (
+                <img src={photoPreview} alt="Pet" className="w-full h-full object-cover" />
+              ) : (
+                <Upload className="w-8 h-8 text-orange-500" />
+              )}
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+            <p className="text-xs text-gray-500 mt-1">Upload photo (Optional)</p>
+          </div>
+
+          {/* Pet Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pet Name <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              value={petData.name}
+              onChange={(e) => setPetData({ ...petData, name: e.target.value })}
+              placeholder="e.g., Oreo, Max, Bella"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Pet Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pet Type <span className="text-red-500">*</span></label>
+            <div className="grid grid-cols-3 gap-2">
+              {['Dog', 'Cat', 'Other'].map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setPetData({ ...petData, type })}
+                  className={`py-2.5 px-3 border-2 rounded-xl transition font-medium text-sm ${
+                    petData.type === type ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-gray-200 text-gray-700'
+                  }`}
+                >
+                  {type === 'Dog' ? '🐕' : type === 'Cat' ? '🐈' : '🐾'} {type}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Breed */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Breed <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              value={petData.breed}
+              onChange={(e) => setPetData({ ...petData, breed: e.target.value })}
+              placeholder="e.g., Golden Retriever, Persian"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Age and Gender */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Age (years) <span className="text-red-500">*</span></label>
+              <input
+                type="number"
+                value={petData.age}
+                onChange={(e) => setPetData({ ...petData, age: e.target.value })}
+                placeholder="e.g., 3"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+              <select
+                value={petData.gender}
+                onChange={(e) => setPetData({ ...petData, gender: e.target.value })}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+              >
+                <option value="">Select</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Weight and Color */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={petData.weight}
+                onChange={(e) => setPetData({ ...petData, weight: e.target.value })}
+                placeholder="e.g., 12.5"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+              <input
+                type="text"
+                value={petData.color}
+                onChange={(e) => setPetData({ ...petData, color: e.target.value })}
+                placeholder="e.g., Golden"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSavePet}
+              disabled={loading}
+              className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 rounded-xl text-white font-medium disabled:opacity-50"
+            >
+              {loading ? 'Saving...' : 'Add Pet'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Inline Add Address Modal Component
+function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; onClose: () => void; onSuccess: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  
+  const [formData, setFormData] = useState({
+    id: `addr_${Date.now()}`,
+    label: 'Home',
+    name: '',
+    phone: phone,
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    pincode: '',
+    landmark: '',
+    isDefault: true,
+    latitude: 0,
+    longitude: 0,
+  });
+
+  const detectCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setDetectingLocation(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setFormData(prev => ({ ...prev, latitude, longitude }));
+        
+        // Try reverse geocoding
+        try {
+          const response = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}`
+          );
+          const data = await response.json();
+
+          if (data.results && data.results[0]) {
+            const addressComponents = data.results[0].address_components;
+            let street = '', city = '', state = '', pincode = '';
+
+            addressComponents.forEach((component: any) => {
+              if (component.types.includes('street_number') || component.types.includes('route')) {
+                street += component.long_name + ' ';
+              }
+              if (component.types.includes('locality') || component.types.includes('administrative_area_level_2')) {
+                city = component.long_name;
+              }
+              if (component.types.includes('administrative_area_level_1')) {
+                state = component.long_name;
+              }
+              if (component.types.includes('postal_code')) {
+                pincode = component.long_name;
+              }
+            });
+
+            setFormData(prev => ({
+              ...prev,
+              addressLine1: street.trim(),
+              city,
+              state,
+              pincode
+            }));
+          }
+        } catch (error) {
+          console.error('Error reverse geocoding:', error);
+        } finally {
+          setDetectingLocation(false);
+        }
+      },
+      () => {
+        setDetectingLocation(false);
+        alert('Unable to get location. Please enter address manually.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSaveAddress = async () => {
+    if (!formData.addressLine1 || !formData.city || !formData.pincode) {
+      alert('Please fill in required fields (Address, City, Pincode)');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Get existing addresses
+      const getAddressData = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+      let existingAddresses = [];
+      if (Array.isArray(getAddressData)) {
+        existingAddresses = getAddressData;
+      } else if (Array.isArray(getAddressData.addresses)) {
+        existingAddresses = getAddressData.addresses;
+      }
+      
+      // If this is default, unset other defaults
+      if (formData.isDefault) {
+        existingAddresses = existingAddresses.map((a: any) => ({ ...a, isDefault: false }));
+      }
+      
+      const updatedAddresses = [...existingAddresses, {
+        ...formData,
+        address: formData.addressLine1 + (formData.addressLine2 ? ', ' + formData.addressLine2 : ''),
+      }];
+      
+      await apiClient.post('/customer/addresses', {
+        phone: phone,
+        addresses: updatedAddresses
+      });
+      
+      onSuccess();
+    } catch (error) {
+      console.error('Error saving address:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to save address. Please try again.'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={onClose}>
+      <div 
+        className="bg-white rounded-t-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 rounded-t-3xl sticky top-0">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white">Add New Address 📍</h3>
+            <button onClick={onClose} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-5 space-y-4">
+          {/* Detect Location Button */}
+          <button
+            type="button"
+            onClick={detectCurrentLocation}
+            disabled={detectingLocation}
+            className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {detectingLocation ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Detecting Location...
+              </>
+            ) : (
+              <>
+                <MapPin className="w-5 h-5" />
+                Detect My Current Location
+              </>
+            )}
+          </button>
+
+          <div className="relative">
+            <div className="absolute inset-x-0 flex items-center">
+              <div className="w-full border-t border-gray-200"></div>
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-4 text-sm text-gray-500">or enter manually</span>
+            </div>
+          </div>
+
+          {/* Label */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
+            <select
+              value={formData.label}
+              onChange={(e) => setFormData({ ...formData, label: e.target.value })}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            >
+              <option value="Home">🏠 Home</option>
+              <option value="Work">🏢 Work</option>
+              <option value="Other">📍 Other</option>
+            </select>
+          </div>
+
+          {/* Address Line 1 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 1 <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              value={formData.addressLine1}
+              onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
+              placeholder="House/Flat No., Building Name, Street"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Address Line 2 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
+            <input
+              type="text"
+              value={formData.addressLine2}
+              onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
+              placeholder="Area, Locality (Optional)"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* City and Pincode */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={formData.city}
+                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                placeholder="e.g., Mumbai"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pincode <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={formData.pincode}
+                onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                placeholder="e.g., 400001"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* State */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+            <input
+              type="text"
+              value={formData.state}
+              onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+              placeholder="e.g., Maharashtra"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Landmark */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Landmark</label>
+            <input
+              type="text"
+              value={formData.landmark}
+              onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+              placeholder="Near..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Default Address Toggle */}
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+            <input
+              type="checkbox"
+              id="isDefault"
+              checked={formData.isDefault}
+              onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+            />
+            <label htmlFor="isDefault" className="text-sm font-medium text-gray-700">Set as default address</label>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveAddress}
+              disabled={loading}
+              className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl text-white font-medium disabled:opacity-50"
+            >
+              {loading ? 'Saving...' : 'Add Address'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

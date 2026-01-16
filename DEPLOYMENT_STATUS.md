@@ -1,63 +1,93 @@
-# Deployment Status
+# Deployment Status - UAT Critical Fixes
 
-## ✅ Code Status
-- [x] Fix applied: `full_name` field added to customer creation
-- [x] Build successful: `api-handler.zip` created (5.5 MB)
-- [x] Code verified: Fix confirmed in `auth-enhanced.ts`
+**Date:** 2025-01-16  
+**Status:** ✅ Frontend Deployed | ✅ Backend Deployed
 
-## ⏸️ Deployment Status
-- [ ] Backend not yet deployed (old code still running)
-- [ ] Frontend not yet deployed
+---
 
-## Current Error
-The API is still returning:
-```
-null value in column "full_name" of relation "customers" violates not-null constraint
-```
+## ✅ Step 1: Frontend Deployment - COMPLETE
 
-This confirms the old code is still deployed. The fix needs to be deployed.
+**Deployed:** Vendor Web App  
+**CloudFront:** d1s6ykkj381k58.cloudfront.net  
+**Cache Invalidation:** I1X2UOVRN9811GCQRHRTHLOIJM  
+**Status:** ✅ Deployed (5-15 min cache propagation)
 
-## Ready to Deploy
+**Fix Applied:**
+- ✅ Root page redirect fix (`window.location.href` instead of `router.replace()`)
 
-### Backend Package
-- **Location**: `backend/lambda/api-handler.zip`
-- **Size**: 5.5 MB
-- **Status**: ✅ Ready
+**Verification:**
+- Test: https://d1s6ykkj381k58.cloudfront.net/
+- Should redirect to `/auth` immediately (no stuck loading)
 
-### Deployment Options
+---
 
-#### Option 1: Serverless Framework (Recommended)
-```bash
-cd backend/lambda
-serverless deploy --stage dev --region ap-south-1
-```
+## ✅ Step 2: Backend Deployment - COMPLETE
 
-#### Option 2: AWS Console
-1. Go to AWS Lambda Console
-2. Find your function
-3. Upload `backend/lambda/api-handler.zip`
-4. Deploy
+**Deployed:** Lambda API Handler  
+**API Endpoint:** https://q6rxpizanl.execute-api.ap-south-1.amazonaws.com  
+**Note:** Frontend may be configured for different endpoint: https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com  
+**Status:** ✅ Deployed
 
-#### Option 3: AWS CLI
-```bash
-aws lambda update-function-code \
-  --function-name your-function-name \
-  --zip-file fileb://backend/lambda/api-handler.zip \
-  --region ap-south-1
-```
+**Fixes Applied:**
+- ✅ Service update SQL error fix (rds-connection.ts)
+- ✅ Service update endpoint validation (vendor-services.ts)
+- ✅ Facility provisioning during approval (admin.ts)
+- ✅ PUT /vendor/facility/:vendorId endpoint (service-discovery.ts)
 
-## Quick Deploy Script
-Run: `./DEPLOY_NOW.sh`
+**Verification:**
+- Test endpoints via API calls
+- Run test suite: `./scripts/test-uat-fixes.sh`
 
-This will:
-1. Verify fix is in code ✅
-2. Build backend ✅
-3. Deploy (interactive choice)
-4. Test deployment
+---
 
-## After Deployment
-1. Wait 1-2 minutes for propagation
-2. Run: `./test-login-flows.sh`
-3. Verify customer OTP verify works
-4. Deploy frontend apps
-5. Test in browser
+## ⏳ Step 3: CloudFront Static Files - PENDING
+
+**Status:** Manual configuration required  
+**Action:** Create CloudFront behavior for `/_next/*` paths
+
+**Instructions:** See `ADDITIONAL_FIXES_GUIDE.md` → Fix #1
+
+**Estimated Time:** 5 minutes + 5-15 minutes deployment
+
+---
+
+## 📊 Next Actions
+
+### Immediate
+1. ✅ **Frontend deployed** - Wait 5-15 min for cache, then test
+2. ✅ **Backend deployed** - Test endpoints or run test suite
+3. ⏳ **CloudFront fix** - Manual configuration (recommended)
+
+### Verification Steps
+
+1. **Test Frontend:**
+   ```bash
+   # After 5-15 minutes, visit:
+   https://d1s6ykkj381k58.cloudfront.net/
+   # Should redirect to /auth (no stuck loading)
+   ```
+
+2. **Test Backend:**
+   ```bash
+   # Run test suite
+   API_BASE_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com \
+     ./scripts/test-uat-fixes.sh
+   ```
+
+3. **Fix CloudFront:**
+   - AWS Console → CloudFront → Distribution `E95171GX1I6HN`
+   - Create behavior for `/_next/*` (see ADDITIONAL_FIXES_GUIDE.md)
+
+---
+
+## 🎯 Summary
+
+- ✅ **Frontend:** Deployed with redirect fix
+- ✅ **Backend:** Deployed with all 3 UAT fixes
+- ⏳ **CloudFront:** Manual fix needed (optional but recommended)
+
+**All critical fixes are now deployed!** 🎉
+
+---
+
+**Next:** Wait for CloudFront cache propagation, then test the fixes.

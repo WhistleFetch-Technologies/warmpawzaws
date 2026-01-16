@@ -81,11 +81,11 @@ export function TicketsTab() {
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <Ticket className="w-4 h-4 text-gray-400" />
                   <h3 className="font-semibold text-gray-900">{ticket.subject}</h3>
                 </div>
-                <div className="flex items-center gap-0 mt-0">
+                <div className="flex items-center gap-3 mt-0">
                   {getStatusIcon(ticket.status)}
                   <span className={`text-xs px-0 py-0 rounded ${
                     ticket.status === 'open' ? 'bg-red-100 text-red-700' :

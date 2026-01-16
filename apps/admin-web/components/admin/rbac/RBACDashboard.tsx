@@ -105,7 +105,7 @@ export function RBACDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-0">
+      <div className="flex items-center gap-3">
         <div className="p-0 bg-purple-100 rounded-xl">
           <Shield className="w-6 h-6 text-purple-600" />
         </div>
@@ -117,7 +117,7 @@ export function RBACDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Shield className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Total Roles</p>
           </div>
@@ -125,7 +125,7 @@ export function RBACDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Key className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Permissions</p>
           </div>
@@ -133,7 +133,7 @@ export function RBACDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Users className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Total Users</p>
           </div>
@@ -141,7 +141,7 @@ export function RBACDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Activity className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Active Roles</p>
           </div>
@@ -149,7 +149,7 @@ export function RBACDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <TrendingUp className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Recent Changes</p>
           </div>
@@ -157,7 +157,7 @@ export function RBACDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <AlertCircle className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Security Alerts</p>
           </div>
@@ -165,7 +165,7 @@ export function RBACDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="bg-white rounded-xl border-2 border-gray-200">
           <div className="border-b border-gray-200 px-0 py-4">
             <h3 className="font-semibold text-gray-900">Recent Activity</h3>
@@ -176,7 +176,7 @@ export function RBACDashboard() {
             ) : (
               <div className="space-y-3">
                 {recentActivity.slice(0, 8).map((activity) => (
-                  <div key={activity.activityId} className="flex items-start gap-0 p-0 bg-gray-50 rounded-lg">
+                  <div key={activity.activityId} className="flex items-start gap-3 p-0 bg-gray-50 rounded-lg">
                     <span className="text-2xl">{getActivityIcon(activity.type)}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-900">{activity.action}</p>
@@ -205,14 +205,14 @@ export function RBACDashboard() {
             ) : (
               <div className="space-y-3">
                 {securityAlerts.slice(0, 8).map((alert) => (
-                  <div key={alert.alertId} className="flex items-start gap-0 p-0 bg-gray-50 rounded-lg">
+                  <div key={alert.alertId} className="flex items-start gap-3 p-0 bg-gray-50 rounded-lg">
                     <AlertCircle className={`w-5 h-5 flex-shrink-0 ${
                       alert.severity === 'high' ? 'text-red-600' :
                       alert.severity === 'medium' ? 'text-yellow-600' :
                       'text-blue-600'
                     }`} />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-0 mb-0">
+                      <div className="flex items-center gap-3 mb-0">
                         <span className={`px-0 py-0.5 text-xs font-medium rounded ${getSeverityColor(alert.severity)}`}>
                           {alert.severity.toUpperCase()}
                         </span>
@@ -238,19 +238,19 @@ export function RBACDashboard() {
           <div className="flex-1">
             <h3 className="font-semibold text-gray-900 mb-0">Security Best Practices</h3>
             <ul className="space-y-2 text-sm text-gray-700">
-              <li className="flex items-start gap-0">
+              <li className="flex items-start gap-3">
                 <span className="text-purple-600 mt-0.5">•</span>
                 <span>Regularly review and audit role assignments</span>
               </li>
-              <li className="flex items-start gap-0">
+              <li className="flex items-start gap-3">
                 <span className="text-purple-600 mt-0.5">•</span>
                 <span>Follow the principle of least privilege</span>
               </li>
-              <li className="flex items-start gap-0">
+              <li className="flex items-start gap-3">
                 <span className="text-purple-600 mt-0.5">•</span>
                 <span>Monitor for unusual permission changes</span>
               </li>
-              <li className="flex items-start gap-0">
+              <li className="flex items-start gap-3">
                 <span className="text-purple-600 mt-0.5">•</span>
                 <span>Keep role definitions up to date with business needs</span>
               </li>

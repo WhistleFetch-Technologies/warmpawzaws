@@ -50,8 +50,8 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
       {/* Header */}
       <div className="bg-white sticky top-0 z-10 border-b border-gray-200">
-        <div className="px-4 py-0 flex items-center gap-0">
-          <button onClick={onBack} className="p-0 -ml-0 hover:bg-gray-100 rounded-full">
+        <div className="px-4 py-0 flex items-center gap-3">
+          <button onClick={onBack} className="p-0 -ml-2 hover:bg-gray-100 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
@@ -88,7 +88,7 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
               onClick={() => onNavigate('center-details', center)}
               className="bg-white rounded-xl p-4 border border-gray-200 hover:border-primary transition-colors cursor-pointer"
             >
-              <div className="flex gap-0">
+              <div className="flex gap-3">
                 {center.logo ? (
                   <img
                     src={center.logo}
@@ -104,7 +104,7 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
                   <h3 className="font-semibold truncate">{center.businessName}</h3>
                   
                   {center.rating && (
-                    <div className="flex items-center gap-0 mt-0">
+                    <div className="flex items-center gap-3 mt-0">
                       <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                       <span className="text-sm font-medium">{center.rating}</span>
                       <span className="text-xs text-gray-500">
@@ -113,13 +113,13 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
                     </div>
                   )}
                   
-                  <div className="flex items-center gap-0 mt-0 text-gray-600">
+                  <div className="flex items-center gap-3 mt-0 text-gray-600">
                     <MapPin className="w-3 h-3" />
                     <span className="text-xs truncate">{center.address}</span>
                   </div>
                   
                   {center.operatingHours && (
-                    <div className="flex items-center gap-0 mt-0 text-gray-600">
+                    <div className="flex items-center gap-3 mt-0 text-gray-600">
                       <Clock className="w-3 h-3" />
                       <span className="text-xs">{center.operatingHours}</span>
                     </div>
@@ -130,7 +130,7 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
               {/* Services Preview */}
               {center.services && center.services.length > 0 && (
                 <div className="mt-0 pt-0 border-t border-gray-100">
-                  <div className="flex flex-wrap gap-0">
+                  <div className="flex flex-wrap gap-3">
                     {center.services.slice(0, 3).map((service: any, idx: number) => (
                       <span
                         key={idx}

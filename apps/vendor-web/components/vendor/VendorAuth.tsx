@@ -250,9 +250,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         localStorage.setItem('vendorUser', JSON.stringify(user));
       }
       
-      // Set sessionStorage flag to track that user is logged in
-      // This flag is cleared on hard refresh, allowing us to detect it
+      // Set sessionStorage flags to track that user is logged in
+      // These flags are cleared on hard refresh, allowing us to detect it
       sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true'); // ✅ FIX: Added for better detection
+      console.log('✅ [Vendor Session] sessionStorage flags set after login');
       
       // ✅ FIX: Use onboarding_status from verify-otp response directly (no separate API call needed)
       // The verify-otp endpoint already returns the correct onboarding_status

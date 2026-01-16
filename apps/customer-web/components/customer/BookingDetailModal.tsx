@@ -522,9 +522,37 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               {/* Download Invoice Button - For completed bookings */}
               {booking.status === 'completed' && (
                 <Button
-                  onClick={() => {
-                    // TODO: Implement actual invoice download
-                    alert(`Invoice for booking ${booking.id.slice(0, 8)} will be generated. Coming soon!`);
+                  onClick={async () => {
+                    try {
+                      const apiBaseUrl = apiClient['baseUrl'] || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+                      const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+                      const url = `${apiBaseUrl}/bookings/${booking.id}/invoice`;
+                      
+                      const response = await fetch(url, {
+                        headers: {
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                      });
+                      
+                      if (!response.ok) {
+                        throw new Error('Failed to download invoice');
+                      }
+                      
+                      const blob = await response.blob();
+                      const downloadUrl = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = downloadUrl;
+                      link.download = `invoice-${booking.id.slice(0, 8)}.pdf`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(downloadUrl);
+                      
+                      toast.success('Invoice downloaded successfully');
+                    } catch (error: any) {
+                      console.error('Error downloading invoice:', error);
+                      toast.error('Failed to download invoice. Please try again later.');
+                    }
                   }}
                   className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                 >

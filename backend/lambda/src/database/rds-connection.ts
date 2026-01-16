@@ -325,18 +325,44 @@ export async function update(
   // Build SET clause
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
-      setClause.push(`${key} = $${paramIndex}`);
-      params.push(value);
+      // ✅ FIX: Handle JSONB columns (metadata, operating_hours, etc.) by casting to JSONB
+      // Check if this is likely a JSONB column based on common patterns
+      const isJsonbColumn = key === 'metadata' || 
+                           key === 'operating_hours' || 
+                           key === 'config' || 
+                           key.endsWith('_config') ||
+                           (typeof value === 'object' && value !== null && !(value instanceof Date));
+      
+      if (isJsonbColumn && typeof value === 'object' && value !== null) {
+        // Cast to JSONB for PostgreSQL
+        setClause.push(`${key} = $${paramIndex}::jsonb`);
+        params.push(JSON.stringify(value));
+      } else {
+        setClause.push(`${key} = $${paramIndex}`);
+        params.push(value);
+      }
       paramIndex++;
     }
+  }
+
+  // ✅ FIX: Validate that at least one field is being updated
+  if (setClause.length === 0) {
+    throw new Error('No fields to update. At least one field must be provided.');
   }
 
   // Build WHERE clause
   const whereClause: string[] = [];
   for (const [key, value] of Object.entries(filters)) {
-    whereClause.push(`${key} = $${paramIndex}`);
-    params.push(value);
-    paramIndex++;
+    if (value !== undefined) {
+      whereClause.push(`${key} = $${paramIndex}`);
+      params.push(value);
+      paramIndex++;
+    }
+  }
+
+  // ✅ FIX: Validate that at least one filter condition exists
+  if (whereClause.length === 0) {
+    throw new Error('No filter conditions provided. At least one filter must be specified for safety.');
   }
 
   const queryText = `UPDATE ${table} SET ${setClause.join(', ')} WHERE ${whereClause.join(' AND ')} RETURNING *`;
@@ -437,13 +463,23 @@ export async function withTransaction<T>(
 
 /**
  * Check database connection health
+ * Used by health check endpoint to verify database connectivity
  */
 export async function checkDbHealth(): Promise<boolean> {
   try {
-    await query('SELECT 1');
+    // Try to get connection pool (will create if doesn't exist)
+    const pool = await getRdsPool();
+    
+    // Test with a simple query with timeout
+    const testQuery = pool.query('SELECT 1 as health_check');
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Health check timeout')), 5000);
+    });
+    
+    await Promise.race([testQuery, timeoutPromise]);
     return true;
   } catch (error) {
-    console.error('[DB] Health check failed:', error);
+    console.error('[DB] Health check failed:', error instanceof Error ? error.message : error);
     return false;
   }
 }

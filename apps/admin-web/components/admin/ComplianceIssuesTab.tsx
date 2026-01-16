@@ -95,7 +95,7 @@ export function ComplianceIssuesTab() {
           <div key={issue.id} className="bg-white border rounded-lg p-4">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <Badge className={getSeverityColor(issue.severity)}>
                     {issue.severity.toUpperCase()}
                   </Badge>
@@ -116,14 +116,14 @@ export function ComplianceIssuesTab() {
                 </p>
               </div>
               
-              <div className="flex gap-0 ml-4">
+              <div className="flex gap-3 ml-4">
                 {issue.status === 'open' && (
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => handleInvestigate(issue.id)}
                   >
-                    <Eye className="w-4 h-4 mr-0" />
+                    <Eye className="w-4 h-4 mr-2" />
                     Investigate
                   </Button>
                 )}
@@ -134,7 +134,7 @@ export function ComplianceIssuesTab() {
                     onClick={() => handleResolve(issue.id)}
                     className="text-green-600 hover:bg-green-50"
                   >
-                    <CheckCircle className="w-4 h-4 mr-0" />
+                    <CheckCircle className="w-4 h-4 mr-2" />
                     Resolve
                   </Button>
                 )}

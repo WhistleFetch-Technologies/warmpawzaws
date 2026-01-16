@@ -216,14 +216,32 @@ export function VendorDashboardScreen({
     loadDashboardData();
   };
 
-  const capabilityButtons = [
-    { id: 'bookings', label: 'Bookings', icon: '📅', action: () => onNavigate('bookings') },
-    { id: 'services', label: 'Services', icon: '⚙️', action: () => onNavigate('services') },
-    { id: 'staff', label: 'Staff', icon: '👥', action: () => onNavigate('staff') },
-    { id: 'schedule', label: 'Schedule', icon: '📆', action: () => onNavigate('schedule') },
-    { id: 'analytics', label: 'Analytics', icon: '📊', action: () => onNavigate('analytics') },
-    { id: 'settings', label: 'Settings', icon: '⚙️', action: () => onNavigate('settings') },
+  // ✅ FIX: Get vendor capabilities from vendorData to filter buttons
+  const vendorCapabilities = vendorData?.capabilities || [];
+  const hasCapability = (cap: string) => {
+    if (!vendorCapabilities || vendorCapabilities.length === 0) return false;
+    return vendorCapabilities.includes(cap) || 
+           vendorCapabilities.includes(cap.replace(/_/g, '')) ||
+           vendorCapabilities.includes(cap + '_management');
+  };
+
+  // Define all possible buttons with their required capabilities
+  const allCapabilityButtons = [
+    { id: 'bookings', label: 'Bookings', icon: '📅', action: () => onNavigate('bookings'), capability: 'booking' },
+    { id: 'services', label: 'Services', icon: '⚙️', action: () => onNavigate('services'), capability: 'service_pricing' },
+    { id: 'staff', label: 'Staff', icon: '👥', action: () => onNavigate('staff'), capability: 'staff_management' },
+    { id: 'schedule', label: 'Schedule', icon: '📆', action: () => onNavigate('schedule'), capability: 'schedule' },
+    { id: 'analytics', label: 'Analytics', icon: '📊', action: () => onNavigate('analytics'), capability: null }, // Always show
+    { id: 'settings', label: 'Settings', icon: '⚙️', action: () => onNavigate('settings'), capability: null }, // Always show
   ];
+
+  // ✅ FIX: Filter buttons based on vendor's actual capabilities
+  const capabilityButtons = allCapabilityButtons.filter(button => {
+    // If no capability required, always show
+    if (!button.capability) return true;
+    // Check if vendor has the required capability
+    return hasCapability(button.capability);
+  });
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {

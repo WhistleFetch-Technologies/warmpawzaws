@@ -149,7 +149,7 @@ export function NotificationTemplateManager() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-yellow-100 rounded-xl">
             <Bell className="w-6 h-6 text-yellow-600" />
           </div>
@@ -160,7 +160,7 @@ export function NotificationTemplateManager() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Create Template
@@ -172,7 +172,7 @@ export function NotificationTemplateManager() {
           <div key={template.templateId} className="bg-white rounded-xl border-2 border-gray-200 p-0">
             <div className="flex items-start justify-between mb-0">
               <div>
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <h3 className="font-semibold text-gray-900">{template.name}</h3>
                   <span className={`px-0 py-0 text-xs font-medium rounded ${
                     template.channel === 'email' ? 'bg-blue-100 text-blue-700' :
@@ -190,7 +190,7 @@ export function NotificationTemplateManager() {
                 </div>
                 <p className="text-sm text-gray-600 font-mono">{template.code}</p>
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => handleOpenModal(template)}
                   className="p-0 hover:bg-gray-100 rounded-lg"
@@ -210,7 +210,7 @@ export function NotificationTemplateManager() {
             )}
             <p className="text-sm text-gray-600 mb-0 line-clamp-0">{template.body}</p>
             {template.variables.length > 0 && (
-              <div className="flex flex-wrap gap-0">
+              <div className="flex flex-wrap gap-3">
                 {template.variables.map(variable => (
                   <span key={variable} className="px-0 py-0 bg-gray-100 text-gray-700 text-xs font-mono rounded">
                     {`{{${variable}}}`}
@@ -305,7 +305,7 @@ export function NotificationTemplateManager() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -317,7 +317,7 @@ export function NotificationTemplateManager() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -327,7 +327,7 @@ export function NotificationTemplateManager() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

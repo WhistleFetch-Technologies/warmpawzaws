@@ -95,11 +95,18 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
   };
 
   const handleBookService = (serviceId: string, serviceStyle: string) => {
+    // ✅ FIX B4: Pass both serviceType and serviceStyle to preserve context
+    // Also pass service details if available from the services list
+    const service = doctor?.services?.find((s: any) => s.id === serviceId || s.serviceId === serviceId);
     onNavigate('vet-booking', {
       doctorId: doctor?.id,
       doctor: doctor,
       serviceId,
       serviceType: serviceStyle,
+      serviceStyle: serviceStyle, // ✅ FIX: Explicitly pass serviceStyle
+      serviceName: service?.name,
+      price: service?.price,
+      duration: service?.duration,
     });
   };
 

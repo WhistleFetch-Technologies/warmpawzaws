@@ -81,7 +81,7 @@ export function SubCategorySelector({
         disabled={loading || subCategories.length === 0}
         className="w-full min-h-[44px] px-4 py-0.5 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all disabled:bg-gray-50 disabled:cursor-not-allowed"
       >
-        <div className="flex items-center gap-0 flex-1 text-left">
+        <div className="flex items-center gap-3 flex-1 text-left">
           {selectedSubCategory ? (
             <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 truncate">{selectedSubCategory.name}</div>
@@ -119,7 +119,7 @@ export function SubCategorySelector({
                     onChange(null);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
+                  className={`w-full px-4 py-0.5 text-left flex items-center gap-3 hover:bg-gray-50 transition-colors ${
                     value === null ? 'bg-orange-50' : ''
                   }`}
                 >
@@ -136,7 +136,7 @@ export function SubCategorySelector({
                       onChange(subCategory.id);
                       setIsOpen(false);
                     }}
-                    className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
+                    className={`w-full px-4 py-0.5 text-left flex items-center gap-3 hover:bg-gray-50 transition-colors ${
                       value === subCategory.id ? 'bg-orange-50' : ''
                     }`}
                   >

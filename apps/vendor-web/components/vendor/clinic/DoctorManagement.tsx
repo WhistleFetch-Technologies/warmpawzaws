@@ -42,6 +42,8 @@ interface Staff {
   consultationFee: number;
   photo: string;
   isActive: boolean;
+  mobileVerified?: boolean;
+  mobileVerifiedAt?: string;
   totalAppointments: number;
   completedAppointments: number;
   totalEarnings: number;
@@ -71,6 +73,9 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [verifyingStaff, setVerifyingStaff] = useState<Staff | null>(null);
+  const [otp, setOtp] = useState('');
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     fetchStaff();
@@ -112,12 +117,60 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
     }
 
     try {
-      await apiClient.delete(`/staff/${staffId}`);
+      await apiClient.delete<any>(`/staff/${staffId}`);
       toast.success('Staff member removed successfully');
       fetchStaff();
     } catch (error) {
       console.error('[REMOVE STAFF] Error:', error);
       toast.error('Failed to remove staff member. Please try again.');
+    }
+  };
+
+  const handleVerifyMobile = async (staffMember: Staff) => {
+    setVerifyingStaff(staffMember);
+    setOtp('');
+  };
+
+  const handleSubmitVerification = async () => {
+    if (!verifyingStaff || !otp || otp.length !== 6) {
+      toast.error('Please enter a valid 6-digit OTP');
+      return;
+    }
+
+    try {
+      setVerifying(true);
+      const response = await apiClient.post<any>(`/staff/${verifyingStaff.id}/verify-mobile`, { otp });
+      
+      if (response.success) {
+        toast.success('Mobile number verified successfully! Staff can now go live.');
+        setVerifyingStaff(null);
+        setOtp('');
+        fetchStaff();
+      } else {
+        throw new Error(response.error || 'Verification failed');
+      }
+    } catch (error: any) {
+      console.error('[VERIFY MOBILE] Error:', error);
+      toast.error(error.message || 'Failed to verify mobile number. Please check the OTP.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (!verifyingStaff) return;
+
+    try {
+      const response = await apiClient.post<any>(`/staff/${verifyingStaff.id}/resend-verification-otp`);
+      if (response.success) {
+        toast.success('OTP resent successfully!');
+        if (response.debug_otp) {
+          toast.info(`UAT Mode: OTP is ${response.debug_otp}`);
+        }
+      }
+    } catch (error: any) {
+      console.error('[RESEND OTP] Error:', error);
+      toast.error(error.message || 'Failed to resend OTP');
     }
   };
 
@@ -227,12 +280,24 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
                   </div>
                 </div>
 
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  staffMember.isActive 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-red-100 text-red-800'
-                }`}>
-                  {staffMember.isActive ? 'Active' : 'Inactive'}
+                <div className="flex flex-col items-end gap-1">
+                  <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    staffMember.isActive 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {staffMember.isActive ? 'Active' : 'Inactive'}
+                  </div>
+                  {staffMember.mobileVerified ? (
+                    <div className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      Verified
+                    </div>
+                  ) : (
+                    <div className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      Unverified
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -283,6 +348,21 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
                 </div>
               )}
 
+              {/* Verification Warning */}
+              {!staffMember.mobileVerified && (
+                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-xs text-yellow-800 mb-2">
+                    <strong>⚠️ Mobile Not Verified:</strong> This staff member cannot appear in customer searches for home/tele services until mobile is verified.
+                  </p>
+                  <button
+                    onClick={() => handleVerifyMobile(staffMember)}
+                    className="w-full bg-yellow-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-yellow-700 transition-colors"
+                  >
+                    Verify Mobile Number
+                  </button>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex gap-2">
                 <button
@@ -321,6 +401,68 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
             fetchStaff();
           }}
         />
+      )}
+
+      {/* Mobile Verification Modal */}
+      {verifyingStaff && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Verify Mobile Number</h2>
+              <button
+                onClick={() => {
+                  setVerifyingStaff(null);
+                  setOtp('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  An OTP has been sent to <strong>{verifyingStaff.phone}</strong>
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  Enter the 6-digit code to verify the mobile number
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Enter OTP
+                </label>
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent text-center text-2xl tracking-widest"
+                  placeholder="000000"
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleResendOTP}
+                  className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Resend OTP
+                </button>
+                <button
+                  onClick={handleSubmitVerification}
+                  disabled={verifying || otp.length !== 6}
+                  className="flex-1 py-2 bg-[#FF8C42] text-white rounded-lg font-medium hover:bg-[#FF7A29] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {verifying ? 'Verifying...' : 'Verify'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -450,18 +592,27 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
       return;
     }
 
+    // ⚠️ MANDATORY: Specializations
     if (selectedSpecializations.length === 0) {
-      toast.error('Please select at least one specialization');
+      toast.error('Please select at least one specialization (MANDATORY)');
       return;
     }
 
-    if (!formData.degree) {
-      toast.error('Degree/qualifications are required');
+    // ⚠️ MANDATORY: Qualifications
+    if (!formData.degree || formData.degree.trim() === '') {
+      toast.error('Degree/qualifications are MANDATORY');
       return;
     }
 
+    // ⚠️ MANDATORY: Photo
     if (!staff && !photoFile && !photoPreview) {
-      toast.error('Photo is required for new staff members');
+      toast.error('Photo is MANDATORY for new staff members');
+      return;
+    }
+    
+    // For existing staff, photo should exist
+    if (staff && !photoPreview && !photoFile) {
+      toast.error('Photo is MANDATORY. Please upload a photo.');
       return;
     }
 
@@ -514,7 +665,7 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
       if (staff) {
         response = await apiClient.put(`/staff/${staff.id}`, payload);
       } else {
-        response = await apiClient.post('/staff/create', payload);
+        response = await apiClient.post<any>('/staff/create', payload);
       }
 
       if (response.success !== false) {
@@ -523,13 +674,17 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
         // Update services if needed
         if (selectedServices.length > 0 && staffId) {
           try {
-            await apiClient.put(`/staff/${staffId}/services`, { serviceIds: selectedServices });
+            await apiClient.put<any>(`/staff/${staffId}/services`, { serviceIds: selectedServices });
           } catch (err) {
             console.error('Failed to update services, but staff was saved');
           }
         }
         
-        toast.success(staff ? 'Staff updated successfully' : 'Staff added successfully. They can now login with their phone number.');
+        if (staff) {
+          toast.success('Staff updated successfully');
+        } else {
+          toast.success('Staff added successfully. OTP sent to mobile for verification. Staff must verify before going live.');
+        }
         onSuccess();
       } else {
         throw new Error(response.error || 'Failed to save staff');
@@ -565,9 +720,9 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
           {/* Photo Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Photo <span className="text-red-500">*</span>
+              Photo <span className="text-red-500">*</span> <span className="text-red-500 font-semibold">(MANDATORY)</span>
             </label>
-            <p className="text-xs text-gray-500 mb-2">Max size: 5MB. Required for new staff.</p>
+            <p className="text-xs text-gray-500 mb-2">Max size: 5MB. Photo is mandatory for all staff members.</p>
             <div className="flex items-center gap-4">
               <div className="relative">
                 {photoPreview ? (
@@ -648,9 +803,9 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
           {/* Specializations - Checkbox Grid */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Specializations <span className="text-red-500">*</span>
+              Specializations <span className="text-red-500">*</span> <span className="text-red-500 font-semibold">(MANDATORY - At least one)</span>
             </label>
-            <p className="text-xs text-gray-500 mb-3">Select areas of expertise. Staff will appear in customer searches for these problems.</p>
+            <p className="text-xs text-gray-500 mb-3">Select areas of expertise. At least one specialization is mandatory. Staff will appear in customer searches for these problems.</p>
             
             <div className="space-y-2 border border-gray-200 rounded-lg p-3 max-h-64 overflow-y-auto">
               {SPECIALIZATION_OPTIONS.map((spec) => {
@@ -698,14 +853,15 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
           {/* Degree */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Degree/Qualifications <span className="text-red-500">*</span>
+              Degree/Qualifications <span className="text-red-500">*</span> <span className="text-red-500 font-semibold">(MANDATORY)</span>
             </label>
+            <p className="text-xs text-gray-500 mb-2">Enter your professional qualifications, degrees, or certifications.</p>
             <input
               type="text"
               value={formData.degree}
               onChange={(e) => setFormData({ ...formData, degree: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent"
-              placeholder="e.g., BVSc, MVSc"
+              placeholder="e.g., BVSc, MVSc, Certified Groomer, etc."
               required
             />
           </div>

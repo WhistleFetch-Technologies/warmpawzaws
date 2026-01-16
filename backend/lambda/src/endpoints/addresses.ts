@@ -22,6 +22,253 @@ import { isValidUUID } from '../types/entities';
 
 export function registerAddressEndpoints(app: Hono) {
   /**
+   * GET /customer/addresses?phone=...
+   * Get all addresses for a customer by phone (convenience endpoint)
+   * Must be registered BEFORE /customer/:customerId/addresses to avoid route conflicts
+   */
+  app.get("/customer/addresses", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      
+      if (!phone) {
+        return c.json({ error: 'phone parameter is required' }, 400);
+      }
+
+      // Resolve customer ID from phone
+      let customer = await select('customers', { phone: phone });
+      if (customer.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const addresses = await query(
+        `SELECT * FROM customer_addresses
+         WHERE customer_id = $1
+         ORDER BY is_default DESC, created_at DESC`,
+        [customer[0].id]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        addresses: addresses.rows.map((addr: any) => ({
+          id: addr.id,
+          customerId: addr.customer_id,
+          label: addr.address_type,
+          name: addr.full_name,
+          phone: addr.phone,
+          addressLine1: addr.address_line1,
+          addressLine2: addr.address_line2,
+          city: addr.city,
+          state: addr.state,
+          pincode: addr.pincode,
+          landmark: addr.landmark,
+          coordinates: addr.coordinates || null,
+          isDefault: addr.is_default,
+          createdAt: addr.created_at,
+          updatedAt: addr.updated_at,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching addresses:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/addresses
+   * Add a new address by phone (convenience endpoint)
+   * Must be registered BEFORE /customer/:customerId/addresses to avoid route conflicts
+   * 
+   * Request body can contain:
+   * - phone: customer phone number (required)
+   * - OR addresses: array of addresses to save (legacy format)
+   * - OR individual address fields: label, name, phone, addressLine1, etc.
+   */
+  app.post("/customer/addresses", async (c) => {
+    try {
+      const body = await c.req.json();
+      
+      // Support legacy format where body contains { phone, addresses: [...] }
+      // Also support new format where body contains individual address fields + phone
+      let customerPhone: string | undefined;
+      let addressData: any;
+      
+      if (body.phone && body.addresses && Array.isArray(body.addresses)) {
+        // Legacy format: { phone, addresses: [...] }
+        // Take the last address from the array (most recent)
+        customerPhone = body.phone;
+        const addressesArray = body.addresses;
+        const lastAddress = addressesArray[addressesArray.length - 1];
+        
+        // Extract individual fields from address object
+        addressData = {
+          label: lastAddress.label || lastAddress.addressType || 'home',
+          name: lastAddress.name || lastAddress.fullName,
+          phone: lastAddress.phone || customerPhone,
+          addressLine1: lastAddress.addressLine1 || lastAddress.address_line1 || lastAddress.address?.split(',')[0],
+          addressLine2: lastAddress.addressLine2 || lastAddress.address_line2 || (lastAddress.address?.split(',').slice(1).join(',').trim() || null),
+          city: lastAddress.city,
+          state: lastAddress.state,
+          pincode: lastAddress.pincode || lastAddress.pincode,
+          landmark: lastAddress.landmark || null,
+          coordinates: lastAddress.coordinates || null,
+          isDefault: lastAddress.isDefault !== undefined ? lastAddress.isDefault : (addressesArray.length === 1),
+        };
+      } else {
+        // New format: individual fields in body with phone
+        customerPhone = body.phone;
+        addressData = {
+          label: body.label || 'home',
+          name: body.name || body.fullName,
+          phone: body.phone || customerPhone,
+          addressLine1: body.addressLine1 || body.address_line1,
+          addressLine2: body.addressLine2 || body.address_line2 || null,
+          city: body.city,
+          state: body.state,
+          pincode: body.pincode,
+          landmark: body.landmark || null,
+          coordinates: body.coordinates || null,
+          isDefault: body.isDefault !== undefined ? body.isDefault : false,
+        };
+      }
+
+      if (!customerPhone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // ✅ FIX B5: More flexible validation - check for name or fullName
+      // Also handle cases where address might be in a single 'address' field
+      const name = addressData.name || addressData.fullName || body.name || body.fullName;
+      
+      // ✅ FIX B5: Handle address field variations - addressLine1, address_line1, or address
+      let addressLine1 = addressData.addressLine1 || addressData.address_line1 || body.addressLine1 || body.address_line1;
+      if (!addressLine1 && body.address) {
+        // If address is a single string, use it as addressLine1
+        addressLine1 = typeof body.address === 'string' ? body.address.split(',')[0].trim() : body.address;
+      }
+      
+      // ✅ FIX B5: More flexible phone handling
+      const phone = addressData.phone || body.phone || customerPhone;
+      
+      if (!name || !phone || !addressLine1 || !addressData.city || !addressData.state || !addressData.pincode) {
+        const missingFields = [];
+        if (!name) missingFields.push('name');
+        if (!phone) missingFields.push('phone');
+        if (!addressLine1) missingFields.push('addressLine1');
+        if (!addressData.city) missingFields.push('city');
+        if (!addressData.state) missingFields.push('state');
+        if (!addressData.pincode) missingFields.push('pincode');
+        
+        console.error('Address validation failed. Missing fields:', missingFields);
+        console.error('Received data:', JSON.stringify(body, null, 2));
+        console.error('Parsed addressData:', JSON.stringify(addressData, null, 2));
+        return c.json({ 
+          error: `Missing required fields: ${missingFields.join(', ')}`,
+          missingFields,
+          receivedData: body,
+          parsedData: addressData
+        }, 400);
+      }
+      
+      // ✅ FIX B5: Normalize fields
+      addressData.name = name;
+      addressData.phone = phone;
+      addressData.addressLine1 = addressLine1;
+
+      // Resolve customer ID from phone
+      let customer = await select('customers', { phone: customerPhone });
+      if (customer.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      // Check if first address (auto-default)
+      const existingAddresses = await query(
+        'SELECT COUNT(*) as count FROM customer_addresses WHERE customer_id = $1',
+        [customer[0].id]
+      ).catch(() => ({ rows: [{ count: '0' }] }));
+
+      const shouldBeDefault = addressData.isDefault || parseInt(existingAddresses.rows[0]?.count || '0', 10) === 0;
+
+      // If setting as default, unset all others
+      if (shouldBeDefault) {
+        await query(
+          'UPDATE customer_addresses SET is_default = false WHERE customer_id = $1',
+          [customer[0].id]
+        ).catch(() => {});
+      }
+
+      // ✅ FIX: Create address with better error handling
+      let address;
+      try {
+        address = await insert('customer_addresses', {
+          customer_id: customer[0].id,
+          address_type: addressData.label || 'home',
+          full_name: addressData.name,
+          phone: addressData.phone,
+          address_line1: addressData.addressLine1,
+          address_line2: addressData.addressLine2 || null,
+          city: addressData.city,
+          state: addressData.state,
+          pincode: addressData.pincode,
+          landmark: addressData.landmark || null,
+          coordinates: addressData.coordinates ? (typeof addressData.coordinates === 'string' ? addressData.coordinates : JSON.stringify(addressData.coordinates)) : null,
+          is_default: shouldBeDefault,
+        });
+      } catch (insertError: any) {
+        console.error('Error inserting address:', insertError);
+        console.error('Address data:', JSON.stringify({
+          customer_id: customer[0].id,
+          address_type: addressData.label || 'home',
+          full_name: addressData.name,
+          phone: addressData.phone,
+          address_line1: addressData.addressLine1,
+          address_line2: addressData.addressLine2 || null,
+          city: addressData.city,
+          state: addressData.state,
+          pincode: addressData.pincode,
+          landmark: addressData.landmark || null,
+          coordinates: addressData.coordinates,
+          is_default: shouldBeDefault,
+        }, null, 2));
+        return c.json({ 
+          error: `Error saving address: ${insertError.message || 'Database error'}`,
+          details: insertError.message
+        }, 500);
+      }
+
+      // Get all addresses
+      const allAddresses = await query(
+        'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
+        [customer[0].id]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        address: address[0],
+        addresses: allAddresses.rows.map((addr: any) => ({
+          id: addr.id,
+          customerId: addr.customer_id,
+          label: addr.address_type,
+          name: addr.full_name,
+          phone: addr.phone,
+          addressLine1: addr.address_line1,
+          addressLine2: addr.address_line2,
+          city: addr.city,
+          state: addr.state,
+          pincode: addr.pincode,
+          landmark: addr.landmark,
+          coordinates: addr.coordinates || null,
+          isDefault: addr.is_default,
+          createdAt: addr.created_at,
+          updatedAt: addr.updated_at,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error adding address:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /customer/:customerId/addresses
    * Get all addresses for a customer
    */

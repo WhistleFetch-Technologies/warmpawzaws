@@ -132,7 +132,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-0 rounded-lg text-sm font-medium transition flex items-center gap-0 ${
+            className={`px-4 py-0 rounded-lg text-sm font-medium transition flex items-center gap-3 ${
               activeTab === tab.id
                 ? 'bg-orange-500 text-white'
                 : 'text-gray-600 hover:bg-gray-100'
@@ -351,7 +351,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Bank Account Details</h2>
             {bankDetails?.is_verified && (
-              <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-0">
+              <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-3">
                 ✓ Verified
               </span>
             )}
@@ -478,7 +478,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
           <div className="w-28">
             <span className="font-medium text-gray-700">{days[day.day_of_week]}</span>
           </div>
-          <label className="flex items-center gap-0 cursor-pointer">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={day.is_open}
@@ -590,7 +590,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
           ].map((channel) => (
             <label
               key={channel.key}
-              className={`flex-1 flex items-center justify-center gap-0 p-0 rounded-lg cursor-pointer border-2 transition ${
+              className={`flex-1 flex items-center justify-center gap-3 p-0 rounded-lg cursor-pointer border-2 transition ${
                 (prefs as any)[channel.key] ? 'border-orange-500 bg-orange-50' : 'border-gray-200'
               }`}
             >

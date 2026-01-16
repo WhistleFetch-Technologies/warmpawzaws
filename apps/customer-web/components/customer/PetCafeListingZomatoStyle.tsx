@@ -265,7 +265,7 @@ export function PetCafeListingZomatoStyle(props: PetCafeListingZomatoStyleProps)
             <div className="flex justify-between items-start">
               <h1 className="text-2xl font-bold text-gray-900">{cafe.name}</h1>
               <div className="bg-green-600 text-white text-sm font-bold px-2 py-1 rounded-lg flex flex-col items-center leading-none">
-                <span className="text-lg flex items-center gap-0.5">{cafe.rating} <Star className="w-3 h-3 fill-white" /></span>
+                <span className="text-lg flex items-center gap-3.5">{cafe.rating} <Star className="w-3 h-3 fill-white" /></span>
                 <span className="text-[10px] font-normal opacity-90">{cafe.reviewsCount} reviews</span>
               </div>
             </div>

@@ -76,7 +76,7 @@ export function VendorServicesPage({ vendorId }: VendorServicesPageProps) {
         <h1 className="text-2xl font-bold text-gray-900">Service Management</h1>
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-0"
+          className="px-4 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition flex items-center gap-3"
         >
           <span>➕</span> Add Service
         </button>
@@ -102,7 +102,7 @@ export function VendorServicesPage({ vendorId }: VendorServicesPageProps) {
               className="bg-white rounded-xl p-4 shadow-sm flex items-center justify-between"
             >
               <div className="flex-1">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <h3 className="font-semibold text-gray-900">{service.name}</h3>
                   <span className={`text-xs px-0 py-0 rounded-full ${
                     service.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
@@ -119,7 +119,7 @@ export function VendorServicesPage({ vendorId }: VendorServicesPageProps) {
                   <span className="text-gray-500">{service.category}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => handleToggleService(service.id, service.is_active)}
                   className={`p-0 rounded-lg ${
@@ -268,7 +268,7 @@ function ServiceModal({
               <option value="diagnostic">Diagnostic</option>
             </select>
           </div>
-          <div className="flex gap-0 pt-4">
+          <div className="flex gap-3 pt-4">
             <button
               type="button"
               onClick={onClose}

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Package, Download, FileText, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface ServiceBookingHistoryProps {
@@ -122,8 +123,36 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
   };
 
   const handleDownloadInvoice = async (booking: Booking) => {
-    // TODO: Implement invoice download
-    alert(`Invoice download for booking ${booking.id.slice(0, 8)} - Coming soon!`);
+    try {
+      const apiBaseUrl = (apiClient as any)['baseUrl'] || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+      const url = `${apiBaseUrl}/bookings/${booking.id}/invoice`;
+      
+      const response = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download invoice');
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `invoice-${booking.id.slice(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast.success('Invoice downloaded successfully');
+    } catch (error: any) {
+      console.error('Error downloading invoice:', error);
+      toast.error('Failed to download invoice. Please try again later.');
+    }
   };
 
   return (

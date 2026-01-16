@@ -488,8 +488,18 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
 
       default:
         return (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-white">Step {currentStep} - Coming soon</p>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center">
+              <p className="text-white text-lg font-medium mb-2">Step {currentStep}</p>
+              <p className="text-white/80 text-sm">This step is being configured</p>
+              <Button
+                onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
+                variant="outline"
+                className="mt-4 bg-white/10 text-white border-white/20 hover:bg-white/20"
+              >
+                Go Back
+              </Button>
+            </div>
           </div>
         );
     }

@@ -26,13 +26,13 @@ export function RegionsManagement({ onBack }: RegionsManagementProps) {
           {onBack && (
             <button
               onClick={onBack}
-              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0"
+              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3"
             >
               ← Back
             </button>
           )}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <div className="p-0 bg-orange-100 rounded-lg">
                 <Globe className="w-6 h-6 text-orange-600" />
               </div>
@@ -43,7 +43,7 @@ export function RegionsManagement({ onBack }: RegionsManagementProps) {
             </div>
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-0 text-sm font-medium"
+              className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-3 text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
               Add

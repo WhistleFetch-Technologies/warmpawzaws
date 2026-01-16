@@ -31,11 +31,11 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
       </div>
 
       <div className="p-4">
-        <div className="flex gap-0 mb-4">
+        <div className="flex gap-3 mb-4">
           {isVet && (
             <button
               onClick={() => setActiveTab('vet-services')}
-              className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-0 ${
+              className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-3 ${
                 activeTab === 'vet-services'
                   ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
@@ -47,7 +47,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
           )}
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-0 ${
+            className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-3 ${
               activeTab === 'inventory'
                 ? 'bg-[primary] text-white'
                 : 'bg-gray-100 text-gray-600'
@@ -61,7 +61,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
         {activeTab === 'vet-services' && isVet && (
           <div className="space-y-3">
             <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-3 mb-0">
                 <Stethoscope className="w-6 h-6 text-blue-600" />
                 <div>
                   <h3 className="font-semibold text-gray-900">Consultation Services</h3>
@@ -70,7 +70,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
               </div>
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-3 mb-0">
                 <Ambulance className="w-6 h-6 text-red-600" />
                 <div>
                   <h3 className="font-semibold text-gray-900">Ambulance Services</h3>
@@ -79,7 +79,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
               </div>
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-3 mb-0">
                 <Microscope className="w-6 h-6 text-green-600" />
                 <div>
                   <h3 className="font-semibold text-gray-900">Diagnostics</h3>
@@ -92,7 +92,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
 
         {activeTab === 'inventory' && (
           <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-0 mb-0">
+            <div className="flex items-center gap-3 mb-0">
               <Package className="w-6 h-6 text-orange-600" />
               <div>
                 <h3 className="font-semibold text-gray-900">{isVet ? 'Pharmacy' : 'Inventory'}</h3>

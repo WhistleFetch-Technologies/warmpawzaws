@@ -77,11 +77,22 @@ SELECT insert_role_permissions('diagnostics_center', ARRAY[
 ]);
 
 -- 5. Pharmacy
+-- ✅ PHARMACY FIX: Add all required capabilities for Pharmacy role
+-- Core: inventory, catalog, orders, delivery
+-- Healthcare: prescription verification
+-- Operations: expiry management, order dispatch, availability check
 SELECT insert_role_permissions('pharmacy', ARRAY[
     'inventory_manage',
     'product_catalog',
+    'orders',
+    'order_dispatch',
+    'order_broadcast',
+    'availability_check',
     'prescription_create',
-    'booking_create'
+    'prescription_verification',
+    'delivery',
+    'expiry_management',
+    'controlled_substances'
 ]);
 
 -- 6. Pet Nutritionist

@@ -50,6 +50,7 @@ function getCategoryFromRole(roleId: string): string {
     'boarding_resort': 'boarding',
     'pet_boarding': 'boarding',
     'nutritionist': 'nutrition',
+    'pet_nutritionist': 'nutrition',
     'ngo': 'adoption',
     'shelter': 'adoption',
     'breeder': 'adoption',
@@ -95,7 +96,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           'training': ['trainer', 'pet_trainer'],
           'walker': ['dog_walker', 'pet_walker'],
           'boarding': ['boarding_resort', 'pet_boarding'],
-          'nutrition': ['nutritionist'],
+          'nutrition': ['nutritionist', 'pet_nutritionist'],
           'adoption': ['ngo', 'shelter', 'breeder'],
           'marketplace': ['pet_store'],
         };
@@ -195,7 +196,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           'training': ['trainer', 'pet_trainer'],
           'walker': ['dog_walker', 'pet_walker'],
           'boarding': ['boarding_resort', 'pet_boarding'],
-          'nutrition': ['nutritionist'],
+          'nutrition': ['nutritionist', 'pet_nutritionist'],
           'adoption': ['ngo', 'shelter', 'breeder'],
           'marketplace': ['pet_store'],
         };
@@ -370,8 +371,145 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/vendor/:vendorId/available-slots
+   * Get available time slots for a vendor based on their operating hours
+   * ✅ FIX: Must be registered BEFORE /customer/vendor/:vendorId to avoid route conflict
+   * ✅ FIX B6: Returns slots based on vendor timings instead of static slots
+   */
+  app.get("/customer/vendor/:vendorId/available-slots", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const date = c.req.query('date');
+      const serviceStyle = c.req.query('serviceStyle') || 'at_home';
+
+      if (!date) {
+        return c.json({ error: 'date parameter is required' }, 400);
+      }
+
+      // Get vendor with operating hours
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+      
+      // ✅ FIX: Try to get operating hours from multiple sources
+      let operatingHours: any = null;
+      
+      // 1. Try vendor.operating_hours column (if exists)
+      if (vendor.operating_hours) {
+        try {
+          operatingHours = typeof vendor.operating_hours === 'string' 
+            ? JSON.parse(vendor.operating_hours) 
+            : vendor.operating_hours;
+        } catch (e) {
+          console.warn('[SLOTS] Failed to parse vendor.operating_hours:', e);
+        }
+      }
+
+      // 2. Try metadata.operatingHours (fallback)
+      if (!operatingHours && vendor.metadata) {
+        try {
+          const metadata = typeof vendor.metadata === 'string' 
+            ? JSON.parse(vendor.metadata) 
+            : vendor.metadata;
+          operatingHours = metadata?.operatingHours || metadata?.operating_hours;
+        } catch (e) {
+          console.warn('[SLOTS] Failed to parse metadata:', e);
+        }
+      }
+      
+      // 3. Try vendor_facilities table (primary source for center profile)
+      if (!operatingHours) {
+        try {
+          const facilities = await query(
+            `SELECT operating_hours FROM vendor_facilities WHERE vendor_id = $1 LIMIT 1`,
+            [vendorId]
+          );
+          if (facilities.rows.length > 0 && facilities.rows[0].operating_hours) {
+            const facilityHours = facilities.rows[0].operating_hours;
+            operatingHours = typeof facilityHours === 'string' 
+              ? JSON.parse(facilityHours) 
+              : facilityHours;
+            console.log('[SLOTS] Loaded operating hours from vendor_facilities');
+          }
+        } catch (e) {
+          console.warn('[SLOTS] Failed to load from vendor_facilities:', e);
+        }
+      }
+
+      // Get day of week (0 = Sunday, 6 = Saturday)
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayName = dayNames[dayOfWeek];
+
+      // Generate slots based on operating hours
+      const slots: any[] = [];
+      
+      if (operatingHours && operatingHours[dayName]) {
+        const daySchedule = operatingHours[dayName];
+        
+        if (daySchedule.isOpen && daySchedule.open && daySchedule.close) {
+          // Generate 30-minute slots between open and close
+          const [openHour, openMin] = daySchedule.open.split(':').map(Number);
+          const [closeHour, closeMin] = daySchedule.close.split(':').map(Number);
+          
+          let currentHour = openHour;
+          let currentMin = openMin;
+          
+          while (currentHour < closeHour || (currentHour === closeHour && currentMin < closeMin)) {
+            const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
+            
+            // Check if slot is in the past (for today)
+            const now = new Date();
+            const slotDateTime = new Date(requestedDate);
+            slotDateTime.setHours(currentHour, currentMin, 0, 0);
+            const isPast = slotDateTime < now;
+            
+            slots.push({
+              time: timeStr,
+              available: !isPast,
+            });
+            
+            // Increment by 30 minutes
+            currentMin += 30;
+            if (currentMin >= 60) {
+              currentMin -= 60;
+              currentHour += 1;
+            }
+          }
+        }
+      } else {
+        // Fallback: If no operating hours, return default slots (9 AM - 6 PM)
+        const defaultSlots = [
+          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
+        ];
+        slots.push(...defaultSlots.map(time => ({
+          time,
+          available: true
+        })));
+      }
+
+      return c.json({
+        success: true,
+        slots,
+        date,
+        vendorId,
+        serviceStyle
+      });
+    } catch (error: any) {
+      console.error('Error fetching available slots:', error);
+      return c.json({ error: error.message || 'Failed to fetch available slots' }, 500);
+    }
+  });
+
+  /**
    * GET /customer/vendor/:vendorId
    * Get detailed vendor profile with all services
+   * ✅ FIX: Must be registered AFTER /customer/vendor/:vendorId/available-slots to avoid route conflict
    */
   app.get("/customer/vendor/:vendorId", async (c) => {
     try {
@@ -861,6 +999,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         [vendorId]
       );
 
+      // ✅ FIX: Extract facility data from vendor metadata and operating_hours
+      const metadata = (vendor.metadata as any) || {};
+      const operatingHours = vendor.operating_hours 
+        ? (typeof vendor.operating_hours === 'string' 
+            ? JSON.parse(vendor.operating_hours) 
+            : vendor.operating_hours)
+        : null;
+
       return c.json({
         success: true,
         vendor: {
@@ -879,6 +1025,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           pincode: vendor.pincode,
           latitude: vendor.latitude,
           longitude: vendor.longitude,
+          description: vendor.description || '',
+          amenities: metadata.amenities || [],
+          photos: metadata.facility_photos || [],
+          specializations: metadata.specializations || [],
+          operatingHours: operatingHours || null,
         },
         services: services.rows || [],
         rating: {
@@ -892,6 +1043,145 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * PUT /vendor/facility/:vendorId
+   * Update vendor facility details (address, timings, amenities, etc.)
+   * ✅ FIX: This endpoint was missing, causing 404 errors in UAT
+   */
+  app.put("/vendor/facility/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const facilityData = await c.req.json();
+
+      // Verify vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // ✅ FIX: Build update data object, mapping frontend fields to database columns
+      const updateData: any = {};
+      
+      // Address fields
+      if (facilityData.address !== undefined) updateData.address = facilityData.address;
+      if (facilityData.city !== undefined) updateData.city = facilityData.city;
+      if (facilityData.state !== undefined) updateData.state = facilityData.state;
+      if (facilityData.pincode !== undefined) updateData.pincode = facilityData.pincode;
+      if (facilityData.country !== undefined) updateData.country = facilityData.country;
+      
+      // Location coordinates
+      if (facilityData.latitude !== undefined) updateData.latitude = facilityData.latitude;
+      if (facilityData.longitude !== undefined) updateData.longitude = facilityData.longitude;
+      
+      // Operating hours (stored as JSONB)
+      if (facilityData.operatingHours !== undefined || facilityData.operating_hours !== undefined) {
+        updateData.operating_hours = facilityData.operatingHours || facilityData.operating_hours;
+      }
+      
+      // ✅ FIX: Build metadata object once to avoid overwriting
+      const existingMetadata = (vendor.metadata as any) || {};
+      const updatedMetadata: any = { ...existingMetadata };
+      let metadataChanged = false;
+      
+      // Amenities (stored in metadata)
+      if (facilityData.amenities !== undefined) {
+        updatedMetadata.amenities = facilityData.amenities;
+        metadataChanged = true;
+      }
+      
+      // Custom amenities
+      if (facilityData.customAmenities !== undefined) {
+        updatedMetadata.customAmenities = facilityData.customAmenities;
+        metadataChanged = true;
+      }
+      
+      // Specializations (stored in metadata)
+      if (facilityData.specializations !== undefined) {
+        updatedMetadata.specializations = facilityData.specializations;
+        metadataChanged = true;
+      }
+      
+      // Facility photos (stored in metadata)
+      if (facilityData.photos !== undefined || facilityData.facility_photos !== undefined) {
+        updatedMetadata.facility_photos = facilityData.photos || facilityData.facility_photos;
+        metadataChanged = true;
+      }
+      
+      // Update metadata if any metadata fields changed
+      if (metadataChanged) {
+        // ✅ FIX B1: Check if metadata column exists before trying to update it
+        // If column doesn't exist, we'll use a raw SQL query to add it first
+        try {
+          // Check if metadata column exists
+          const { query } = await import('../database/rds-connection');
+          const columnCheck = await query(
+            `SELECT column_name FROM information_schema.columns 
+             WHERE table_name = 'vendors' AND column_name = 'metadata'`
+          );
+          
+          if (columnCheck.rows.length === 0) {
+            // Column doesn't exist, add it
+            console.log('[FACILITY] Metadata column missing, adding it...');
+            await query('ALTER TABLE vendors ADD COLUMN IF NOT EXISTS metadata JSONB');
+            console.log('[FACILITY] Metadata column added successfully');
+          }
+          
+          updateData.metadata = updatedMetadata;
+        } catch (metadataError: any) {
+          console.error('[FACILITY] Error handling metadata column:', metadataError);
+          // If metadata update fails, continue with other fields but log the error
+          // Don't fail the entire request if metadata column is missing
+          if (!metadataError.message?.includes('does not exist')) {
+            throw metadataError;
+          }
+          // Skip metadata update if column truly doesn't exist
+          console.warn('[FACILITY] Skipping metadata update - column may not exist');
+        }
+      }
+      
+      // Facility description
+      if (facilityData.description !== undefined) updateData.description = facilityData.description;
+
+      // ✅ FIX: Validate that at least one field is being updated
+      if (Object.keys(updateData).length === 0) {
+        return c.json({ error: 'No valid fields to update. Please provide at least one facility field' }, 400);
+      }
+
+      // Always update the updated_at timestamp
+      updateData.updated_at = new Date().toISOString();
+
+      // Update vendor record with facility information
+      const { update } = await import('../database/rds-connection');
+      const updated = await update('vendors', { id: vendorId }, updateData);
+
+      if (updated.length === 0) {
+        return c.json({ error: 'Failed to update facility' }, 500);
+      }
+
+      return c.json({
+        success: true,
+        message: 'Facility updated successfully',
+        facility: {
+          address: updated[0].address,
+          city: updated[0].city,
+          state: updated[0].state,
+          pincode: updated[0].pincode,
+          latitude: updated[0].latitude,
+          longitude: updated[0].longitude,
+          operating_hours: updated[0].operating_hours,
+          amenities: (updated[0].metadata as any)?.amenities || [],
+          photos: (updated[0].metadata as any)?.facility_photos || [],
+        },
+      });
+    } catch (error: any) {
+      console.error('Error updating vendor facility:', error);
+      return c.json({ error: error.message || 'Failed to update facility' }, 500);
+    }
+  });
+
 
   /**
    * GET /customer/facility/:vendorId

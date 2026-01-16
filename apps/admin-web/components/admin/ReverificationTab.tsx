@@ -96,7 +96,7 @@ export function ReverificationTab() {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   {isUrgent && (
-                    <div className="flex items-center gap-0 text-red-600 mb-0">
+                    <div className="flex items-center gap-3 text-red-600 mb-0">
                       <AlertTriangle className="w-4 h-4" />
                       <span className="text-xs font-semibold">URGENT - Expires in {daysUntilExpiry} days</span>
                     </div>
@@ -119,14 +119,14 @@ export function ReverificationTab() {
                 </div>
                 
                 {(request.status as any) === 'pending' && (
-                  <div className="flex gap-0 ml-4">
+                  <div className="flex gap-3 ml-4">
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => handleVerify(request.id)}
                       className="text-green-600 hover:bg-green-50"
                     >
-                      <Check className="w-4 h-4 mr-0" />
+                      <Check className="w-4 h-4 mr-2" />
                       Verify
                     </Button>
                     <Button
@@ -135,7 +135,7 @@ export function ReverificationTab() {
                       onClick={() => handleReject(request.id)}
                       className="text-red-600 hover:bg-red-50"
                     >
-                      <X className="w-4 h-4 mr-0" />
+                      <X className="w-4 h-4 mr-2" />
                       Reject
                     </Button>
                   </div>

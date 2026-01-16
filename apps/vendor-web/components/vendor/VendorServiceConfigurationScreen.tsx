@@ -37,6 +37,7 @@ interface Service {
   subCategoryName?: string;
   duration: number;
   price: number;
+  basePrice?: number; // ✅ FIX: Add basePrice for API compatibility
   isPlatformManaged: boolean;
   isEnabled: boolean;
   customPrice?: number;
@@ -158,6 +159,16 @@ export function VendorServiceConfigurationScreen({
   };
 
   const updateServicePrice = (serviceId: string, price: number) => {
+    // ✅ NEW: Validate price
+    if (price < 0) {
+      toast.error('Price cannot be negative');
+      return;
+    }
+    if (price > 1000000) {
+      toast.error('Price is too high. Maximum is ₹10,00,000');
+      return;
+    }
+    
     setServices(services.map(s => 
       s.id === serviceId ? { ...s, customPrice: price } : s
     ));
@@ -165,6 +176,16 @@ export function VendorServiceConfigurationScreen({
   };
 
   const updateServiceDuration = (serviceId: string, duration: number) => {
+    // ✅ NEW: Validate duration
+    if (duration < 5) {
+      toast.error('Duration must be at least 5 minutes');
+      return;
+    }
+    if (duration > 1440) {
+      toast.error('Duration cannot exceed 24 hours (1440 minutes)');
+      return;
+    }
+    
     setServices(services.map(s => 
       s.id === serviceId ? { ...s, customDuration: duration } : s
     ));
@@ -201,6 +222,59 @@ export function VendorServiceConfigurationScreen({
     toast.success('All services disabled');
   };
 
+  // ✅ NEW: Batch publish/unpublish functions
+  const batchPublishServices = async () => {
+    const enabledServices = services.filter(s => s.isEnabled && s.publishStatus !== 'published');
+    if (enabledServices.length === 0) {
+      toast.info('No enabled services to publish');
+      return;
+    }
+
+    try {
+      setIsPublishing(true);
+      const publishPromises = enabledServices.map(service =>
+        apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+          publish_status: 'published'
+        })
+      );
+
+      await Promise.all(publishPromises);
+      toast.success(`${enabledServices.length} service(s) published successfully!`);
+      await loadServices();
+    } catch (error) {
+      console.error('Error batch publishing:', error);
+      toast.error('Error publishing services');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const batchUnpublishServices = async () => {
+    const publishedServices = services.filter(s => s.publishStatus === 'published');
+    if (publishedServices.length === 0) {
+      toast.info('No published services to unpublish');
+      return;
+    }
+
+    try {
+      setIsPublishing(true);
+      const unpublishPromises = publishedServices.map(service =>
+        apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+          publish_status: 'draft'
+        })
+      );
+
+      await Promise.all(unpublishPromises);
+      toast.success(`${publishedServices.length} service(s) unpublished successfully!`);
+      await loadServices();
+    } catch (error) {
+      console.error('Error batch unpublishing:', error);
+      toast.error('Error unpublishing services');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const enableCategory = (category: string) => {
     setServices(services.map(s => 
       s.categoryName === category ? { ...s, isEnabled: true } : s
@@ -217,7 +291,7 @@ export function VendorServiceConfigurationScreen({
     toast.success(`All ${category} services disabled`);
   };
 
-  // ✅ NEW: Delete Service (for custom services only)
+  // ✅ NEW: Delete Service (for custom services and services added via service management)
   const deleteService = async (serviceId: string) => {
     try {
       const data = await apiClient.delete(`/vendor/${vendorId}/services/${serviceId}`) as any;
@@ -226,6 +300,9 @@ export function VendorServiceConfigurationScreen({
         toast.success('Service deleted successfully');
         setServices(services.filter(s => s.id !== serviceId));
         setShowDeleteDialog(null);
+        setHasChanges(false);
+        // Reload services to ensure UI is in sync
+        await loadServices();
       } else {
         toast.error(data?.error || 'Failed to delete service');
       }
@@ -258,6 +335,7 @@ export function VendorServiceConfigurationScreen({
       setSaving(true);
       console.log('💾 Saving service configuration...');
       
+      // ✅ NEW: Validate services before saving
       const servicesToSave = services.map(s => ({
         serviceId: s.id,
         serviceName: s.name || s.serviceName || 'Unnamed Service',
@@ -268,6 +346,19 @@ export function VendorServiceConfigurationScreen({
         price: s.price || s.basePrice || 0, // Include base price for validation fallback
         isNewService: s.isCustomService || false
       }));
+
+      // ✅ NEW: Validate enabled services
+      const invalidServices = servicesToSave.filter(s => {
+        if (!s.isEnabled) return false;
+        const price = s.customPrice || s.price;
+        const duration = s.customDuration || 30;
+        return price <= 0 || duration < 5;
+      });
+
+      if (invalidServices.length > 0) {
+        toast.error(`Please fix ${invalidServices.length} service(s) with invalid price or duration`);
+        return false;
+      }
 
       // Update services individually or in batch
       // For now, update each service that has changes
@@ -734,25 +825,50 @@ export function VendorServiceConfigurationScreen({
               </button>
               
               {showBulkActions && (
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={enableAllServices}
-                    className="text-xs"
-                  >
-                    <Check className="w-3 h-3 mr-1" />
-                    Enable All
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={disableAllServices}
-                    className="text-xs"
-                  >
-                    <X className="w-3 h-3 mr-1" />
-                    Disable All
-                  </Button>
+                <div className="mt-2 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={enableAllServices}
+                      className="text-xs"
+                    >
+                      <Check className="w-3 h-3 mr-1" />
+                      Enable All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={disableAllServices}
+                      className="text-xs"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Disable All
+                    </Button>
+                  </div>
+                  {/* ✅ NEW: Batch Publish/Unpublish */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={batchPublishServices}
+                      disabled={isPublishing || services.filter(s => s.isEnabled && s.publishStatus !== 'published').length === 0}
+                      className="text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                    >
+                      <Check className="w-3 h-3 mr-1" />
+                      Publish All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={batchUnpublishServices}
+                      disabled={isPublishing || publishedCount === 0}
+                      className="text-xs bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Unpublish All
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -921,6 +1037,21 @@ export function VendorServiceConfigurationScreen({
                             {/* ✅ NEW: Service Action Buttons */}
                             {service.isEnabled && (
                               <div className="flex gap-1 mt-2">
+                                {/* Edit Button - Available for all services */}
+                                <button
+                                  onClick={() => {
+                                    setEditingService(service);
+                                    if (!expandedServices.has(service.id)) {
+                                      toggleExpanded(service.id);
+                                    }
+                                  }}
+                                  className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors flex items-center gap-1"
+                                  title="Edit service"
+                                >
+                                  <Edit className="w-3 h-3" />
+                                  Edit
+                                </button>
+                                
                                 {/* Unpublish Button - Only for published services */}
                                 {service.publishStatus === 'published' && (
                                   <button
@@ -933,12 +1064,12 @@ export function VendorServiceConfigurationScreen({
                                 )
                                 } 
                                 
-                                {/* Delete Button - Only for custom services that are NOT published */}
-                                {service.isCustomService && service.publishStatus !== 'published' && (
+                                {/* Delete Button - Available for all services that are not published */}
+                                {service.publishStatus !== 'published' && (
                                   <button
                                     onClick={() => setShowDeleteDialog(service)}
                                     className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
-                                    title="Delete custom service"
+                                    title="Delete service"
                                   >
                                     <Trash2 className="w-3 h-3" />
                                     Delete
@@ -1011,11 +1142,18 @@ export function VendorServiceConfigurationScreen({
                                       type="number"
                                       value={service.customPrice || service.price || 0}
                                       onChange={(e) => updateServicePrice(service.id, parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm pl-8"
+                                      className={`h-8 text-sm pl-8 ${
+                                        (service.customPrice || service.price || 0) <= 0 
+                                          ? 'border-red-300 focus:border-red-500' 
+                                          : ''
+                                      }`}
                                       min="0"
-                                      placeholder="0"
+                                      max="1000000"
                                     />
                                   </div>
+                                  {(service.customPrice || service.price || 0) <= 0 && (
+                                    <p className="text-xs text-red-500 mt-1">Price must be greater than 0</p>
+                                  )}
                                   {service.price && service.customPrice && service.customPrice !== service.price && (
                                     <p className="text-xs text-gray-500 mt-1">Base: ₹{Number(service.price).toLocaleString('en-IN')}</p>
                                   )}
@@ -1027,10 +1165,18 @@ export function VendorServiceConfigurationScreen({
                                       type="number"
                                       value={service.customDuration || service.duration}
                                       onChange={(e) => updateServiceDuration(service.id, parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm"
+                                      className={`h-8 text-sm ${
+                                        (service.customDuration || service.duration || 0) < 5 
+                                          ? 'border-red-300 focus:border-red-500' 
+                                          : ''
+                                      }`}
                                       min="5"
+                                      max="1440"
                                       step="5"
                                     />
+                                    {(service.customDuration || service.duration || 0) < 5 && (
+                                      <p className="text-xs text-red-500 mt-1">Minimum 5 minutes</p>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1040,7 +1186,7 @@ export function VendorServiceConfigurationScreen({
                                 <Textarea
                                   value={service.customDescription || ''}
                                   onChange={(e) => updateServiceDescription(service.id, e.target.value)}
-                                  placeholder="Add specific details about how you deliver this service..."
+                                  placeholder="Enter service description details..."
                                   className="text-xs"
                                   rows={2}
                                 />
@@ -1103,7 +1249,7 @@ export function VendorServiceConfigurationScreen({
           <DialogHeader>
             <DialogTitle>Delete Service?</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <strong>{showDeleteDialog?.name}</strong>? This action cannot be undone.
+              Are you sure you want to delete <strong>{showDeleteDialog?.name || showDeleteDialog?.serviceName || 'this service'}</strong>? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

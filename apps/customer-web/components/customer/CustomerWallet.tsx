@@ -279,7 +279,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
 
       {/* Quick Actions */}
       <div className="mb-6">
-        <div className="bg-white rounded-2xl shadow-sm p-4 flex gap-0 overflow-x-auto">
+        <div className="bg-white rounded-2xl shadow-sm p-4 flex gap-3 overflow-x-auto">
           <button
             onClick={() => setShowTopUpModal(true)}
             className="flex flex-col items-center p-0 hover:bg-orange-50 rounded-xl min-w-[80px] border-2 border-orange-500 bg-orange-50"
@@ -391,7 +391,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
               />
             </div>
 
-            <div className="grid grid-cols-4 gap-0 mb-4">
+            <div className="grid grid-cols-4 gap-3 mb-4">
               {[100, 500, 1000, 2000].map((amount) => (
                 <button
                   key={amount}
@@ -407,7 +407,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
               ))}
             </div>
 
-            <div className="flex gap-0">
+            <div className="flex gap-3">
               <button
                 onClick={() => {
                   setShowTopUpModal(false);

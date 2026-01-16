@@ -17,10 +17,10 @@ export function ModeSwitcher({ currentMode, isSoloProvider, onSwitch }: ModeSwit
   }
 
   return (
-    <div className="flex items-center gap-0 bg-gray-100 rounded-lg p-0">
+    <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-0">
       <button
         onClick={() => onSwitch('CENTER')}
-        className={`px-0 py-0.5 rounded-md text-sm font-medium transition-colors flex items-center gap-0 ${
+        className={`px-0 py-0.5 rounded-md text-sm font-medium transition-colors flex items-center gap-3 ${
           currentMode === 'CENTER'
             ? 'bg-white text-orange-600 shadow-sm'
             : 'text-gray-600 hover:text-gray-900'
@@ -31,7 +31,7 @@ export function ModeSwitcher({ currentMode, isSoloProvider, onSwitch }: ModeSwit
       </button>
       <button
         onClick={() => onSwitch('STAFF')}
-        className={`px-0 py-0.5 rounded-md text-sm font-medium transition-colors flex items-center gap-0 ${
+        className={`px-0 py-0.5 rounded-md text-sm font-medium transition-colors flex items-center gap-3 ${
           currentMode === 'STAFF'
             ? 'bg-white text-orange-600 shadow-sm'
             : 'text-gray-600 hover:text-gray-900'

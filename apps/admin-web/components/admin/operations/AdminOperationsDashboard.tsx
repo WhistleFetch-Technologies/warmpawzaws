@@ -64,7 +64,7 @@ export function AdminOperationsDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-0">
+      <div className="flex items-center gap-3">
         <div className="p-0 bg-purple-100 rounded-xl">
           <Activity className="w-6 h-6 text-purple-600" />
         </div>
@@ -76,7 +76,7 @@ export function AdminOperationsDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Calendar className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Today's Bookings</p>
           </div>
@@ -84,7 +84,7 @@ export function AdminOperationsDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Users className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Active Vendors</p>
           </div>
@@ -92,7 +92,7 @@ export function AdminOperationsDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <DollarSign className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Total Revenue</p>
           </div>
@@ -100,7 +100,7 @@ export function AdminOperationsDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <TrendingUp className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Completion Rate</p>
           </div>
@@ -108,7 +108,7 @@ export function AdminOperationsDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Package className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Avg Rating</p>
           </div>
@@ -116,7 +116,7 @@ export function AdminOperationsDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <DollarSign className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Pending Payouts</p>
           </div>
@@ -134,7 +134,7 @@ export function AdminOperationsDashboard() {
           ) : (
             <div className="space-y-3">
               {recentActivity.map((activity) => (
-                <div key={activity.activityId} className="flex items-start gap-0 p-0 bg-gray-50 rounded-lg">
+                <div key={activity.activityId} className="flex items-start gap-3 p-0 bg-gray-50 rounded-lg">
                   <Activity className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-900">{activity.description}</p>

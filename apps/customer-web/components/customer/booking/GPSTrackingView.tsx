@@ -182,10 +182,10 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl p-0 shadow-sm">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <div className="flex items-center justify-center py-8">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-0 text-gray-600">Loading tracking...</span>
+          <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin"></div>
+          <span className="ml-3 text-gray-600">Loading tracking...</span>
         </div>
       </div>
     );
@@ -193,14 +193,16 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
 
   if (error || !tracking) {
     return (
-      <div className="bg-white rounded-2xl p-0 shadow-sm">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <div className="text-center py-8">
-          <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 mb-4">{error || 'GPS tracking not available'}</p>
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <MapPin className="w-8 h-8 text-gray-400" />
+          </div>
+          <p className="text-gray-600 mb-4 font-medium">{error || 'GPS tracking not available'}</p>
           {onClose && (
             <button
               onClick={onClose}
-              className="px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-medium transition-colors"
             >
               Close
             </button>
@@ -211,11 +213,19 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-0 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-0">
-          <Navigation className="w-5 h-5 text-primary" />
-          <h3 className="font-bold text-gray-900">Live Tracking</h3>
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+            <Navigation className="w-5 h-5 text-green-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900">Live Tracking</h3>
+            <p className="text-xs text-green-600 flex items-center gap-1">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Active
+            </p>
+          </div>
         </div>
         {onClose && (
           <button
@@ -230,40 +240,40 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
       {tracking.currentLocation && (
         <div className="space-y-4">
           {/* Current Location */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="flex items-center gap-0 mb-0">
-              <MapPin className="w-4 h-4 text-primary" />
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+            <div className="flex items-center gap-2 mb-2">
+              <MapPin className="w-4 h-4 text-blue-600" />
               <span className="font-semibold text-gray-900">Current Location</span>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-700 font-mono">
               {tracking.currentLocation.latitude?.toFixed(6)}, {tracking.currentLocation.longitude?.toFixed(6)}
             </p>
-            <p className="text-xs text-gray-500 mt-0">
-              Updated: {new Date(tracking.currentLocation.timestamp).toLocaleTimeString()}
+            <p className="text-xs text-blue-600 mt-2">
+              Last updated: {new Date(tracking.currentLocation.timestamp).toLocaleTimeString()}
             </p>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4">
             {tracking.distanceTraveled !== undefined && (
-              <div className="bg-gray-50 rounded-lg p-0">
-                <div className="flex items-center gap-0 mb-0">
-                  <Route className="w-4 h-4 text-primary" />
-                  <span className="text-xs text-gray-600">Distance</span>
+              <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Route className="w-4 h-4 text-[#FF8C42]" />
+                  <span className="text-xs text-gray-600 font-medium">Distance</span>
                 </div>
-                <p className="text-lg font-bold text-gray-900">
-                  {tracking.distanceTraveled.toFixed(2)} km
+                <p className="text-2xl font-bold text-gray-900">
+                  {tracking.distanceTraveled.toFixed(2)} <span className="text-sm text-gray-500">km</span>
                 </p>
               </div>
             )}
 
             {tracking.duration !== undefined && (
-              <div className="bg-gray-50 rounded-lg p-0">
-                <div className="flex items-center gap-0 mb-0">
-                  <Clock className="w-4 h-4 text-primary" />
-                  <span className="text-xs text-gray-600">Duration</span>
+              <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-4 h-4 text-green-600" />
+                  <span className="text-xs text-gray-600 font-medium">Duration</span>
                 </div>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-2xl font-bold text-gray-900">
                   {Math.floor(tracking.duration / 60)}m {tracking.duration % 60}s
                 </p>
               </div>
@@ -272,13 +282,13 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
 
           {/* Route Info */}
           {tracking.route && tracking.route.length > 0 && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm font-semibold text-gray-900 mb-0">
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <p className="text-sm font-semibold text-gray-900 mb-3">
                 Route Points: {tracking.route.length}
               </p>
               <div className="max-h-32 overflow-y-auto space-y-1">
                 {tracking.route.slice(-5).map((point: any, idx: number) => (
-                  <div key={idx} className="text-xs text-gray-600">
+                  <div key={idx} className="text-xs text-gray-600 font-mono bg-white px-2 py-1 rounded">
                     Point {idx + 1}: {point.latitude?.toFixed(4)}, {point.longitude?.toFixed(4)}
                   </div>
                 ))}
@@ -286,20 +296,23 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
             </div>
           )}
 
-          {/* Map Integration Placeholder */}
-          <div className="bg-gray-100 rounded-lg p-8 text-center">
-            <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-0" />
-            <p className="text-sm text-gray-600">
-              Map view will be integrated with Google Maps
+          {/* Map Integration */}
+          <div className="bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl p-8 text-center border border-slate-300">
+            <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+              <MapPin className="w-7 h-7 text-[#FF8C42]" />
+            </div>
+            <p className="text-sm text-gray-700 font-medium mb-4">
+              View on Interactive Map
             </p>
             {tracking.currentLocation && (
               <a
                 href={`https://www.google.com/maps?q=${tracking.currentLocation.latitude},${tracking.currentLocation.longitude}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-0 inline-block text-primary hover:underline text-sm"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl font-medium transition-colors"
               >
-                Open in Google Maps →
+                Open in Google Maps
+                <span className="text-lg">→</span>
               </a>
             )}
           </div>

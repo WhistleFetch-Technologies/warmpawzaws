@@ -102,8 +102,8 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
     try {
       setLoading(true);
       
-      // Load facility data
-      const facilityData = await apiClient.get('/vendor/endpoint') as any;
+      // ✅ FIX: Load facility data using correct endpoint
+      const facilityData = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
 
       if (facilityData && facilityData.success && facilityData.facility) {
         setProfile(prev => ({
@@ -117,9 +117,22 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         }));
       }
 
-      // Load center availability (timings)
+      // ✅ FIX: Load operating hours from facility data (already loaded above)
+      // Extract operatingHours from facility data if available
+      if (facilityData && facilityData.facility && facilityData.facility.operatingHours) {
+        const opsHours = facilityData.facility.operatingHours;
+        // If operatingHours is already in the correct format, use it
+        if (typeof opsHours === 'object' && !Array.isArray(opsHours)) {
+          setProfile(prev => ({
+            ...prev,
+            operatingHours: opsHours
+          }));
+        }
+      }
+
+      // Also try loading from availability endpoint as fallback
       try {
-        const availabilityData = await apiClient.get(`/vendor/${vendorId}/center-availability`) as any;
+        const availabilityData = await apiClient.get(`/vendor/${vendorId}/availability`) as any;
         if (availabilityData && availabilityData.availability) {
           setProfile(prev => ({
             ...prev,
@@ -128,7 +141,8 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
           }));
         }
       } catch (error) {
-        console.warn('Failed to load center availability:', error);
+        console.warn('Failed to load center availability (non-critical):', error);
+        // Non-critical - operating hours may be in facility data
       }
     } catch (error) {
       console.error('Error loading center profile:', error);
@@ -139,55 +153,99 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   };
 
   const handleSave = async () => {
+    // ✅ FIX: Add validation
+    if (!profile.centerName.trim()) {
+      toast.error('Center name is required');
+      return;
+    }
+    if (!profile.address.trim()) {
+      toast.error('Address is required');
+      return;
+    }
+
     try {
       setSaving(true);
-
+      console.log('💾 Saving center profile for vendor:', vendorId);
+      
       // 1. Upload new photos if any
       let uploadedPhotoUrls: string[] = [];
       if (newPhotos.length > 0) {
         setUploading(true);
-        const formData = new FormData();
-        newPhotos.forEach(photo => formData.append('photos', photo));
+        try {
+          const formData = new FormData();
+          newPhotos.forEach(photo => formData.append('photos', photo));
 
-        // Upload photos using apiClient
-        const uploadData = await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData) as any;
-        if (uploadData && uploadData.success) {
-          uploadedPhotoUrls = uploadData.photoUrls || [];
+          // Upload photos using apiClient
+          const uploadData = await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData) as any;
+          if (uploadData && uploadData.success) {
+            uploadedPhotoUrls = uploadData.photoUrls || [];
+            console.log('✅ Photos uploaded:', uploadedPhotoUrls.length);
+          } else {
+            console.warn('⚠️ Photo upload returned no success, continuing without photos');
+          }
+        } catch (photoError) {
+          console.error('⚠️ Photo upload failed, continuing without photos:', photoError);
+          // Continue without photos - not critical
+        } finally {
+          setUploading(false);
         }
-        setUploading(false);
       }
 
       const allPhotos = [...profile.photos, ...uploadedPhotoUrls];
 
-      // 2. Save facility data
-      await apiClient.put(`/vendor/facility/${vendorId}`, {
-        description: profile.description,
-        address: profile.address,
-        operatingHours: generateOperatingHoursText(profile.operatingHours),
+      // 2. Save facility data - ✅ FIX: Include centerName, operatingHours (both text and JSON), and better error handling
+      const facilityData = {
+        centerName: profile.centerName.trim(),
+        description: profile.description.trim(),
+        address: profile.address.trim(),
+        city: profile.city.trim(),
+        state: profile.state.trim(),
+        pincode: profile.pincode.trim(),
+        operatingHours: profile.operatingHours, // ✅ FIX: Save as JSON object for availability checks
+        operatingHoursText: generateOperatingHoursText(profile.operatingHours), // Keep text version for display
         amenities: profile.amenities,
         customAmenities: profile.customAmenities,
         photos: allPhotos,
         specializations: profile.specializations,
-        city: profile.city,
-        state: profile.state,
-        pincode: profile.pincode
-      });
+        emergencyServices: profile.emergencyServices // ✅ FIX: Include emergency services in facility data
+      };
 
-      // 3. Save center availability (detailed timings)
-      const availabilityRes = await apiClient.put(`/vendor/${vendorId}/center-availability`, {
-        operatingHours: profile.operatingHours,
-        emergencyServices: profile.emergencyServices
-      });
+      console.log('📤 Saving facility data:', facilityData);
+      const facilityRes = await apiClient.put(`/vendor/facility/${vendorId}`, facilityData) as any;
+      
+      if (facilityRes && facilityRes.error) {
+        throw new Error(facilityRes.error || 'Failed to save facility data');
+      }
+      console.log('✅ Facility data saved with operating hours');
 
-      if (!availabilityRes || (availabilityRes as any).error) {
-        throw new Error('Failed to save availability settings');
+      // 3. Save center availability (detailed timings) - ✅ FIX: Use correct endpoint name
+      // This is redundant now since we save operating hours in facility data, but keep for backwards compatibility
+      try {
+        const availabilityRes = await apiClient.put(`/vendor/${vendorId}/availability`, {
+          operatingHours: profile.operatingHours,
+          emergencyServices: profile.emergencyServices
+        }) as any;
+
+        if (availabilityRes && availabilityRes.error) {
+          console.warn('⚠️ Availability save (redundant) failed:', availabilityRes.error);
+          // Non-critical, continue - we already saved in facility data
+        } else {
+          console.log('✅ Availability settings saved (redundant)');
+        }
+      } catch (availError) {
+        console.warn('⚠️ Availability save (redundant) failed - continuing:', availError);
+        // Continue - we already saved in facility data above
       }
 
       toast.success('✅ Center profile saved successfully!');
       setNewPhotos([]);
+      
+      // Reload profile to get updated data
+      await loadCenterProfile();
     } catch (error: any) {
-      console.error('Error saving center profile:', error);
-      toast.error(error.message || 'Failed to save center profile');
+      console.error('❌ Error saving center profile:', error);
+      const errorMessage = error.message || error.error || 'Failed to save center profile. Please check all required fields.';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
       setUploading(false);

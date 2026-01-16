@@ -225,7 +225,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
 
   return (
     <div className="max-w-2xl mx-auto p-0">
-      <h2 className="text-2xl font-bold text-gray-900 mb-0 flex items-center gap-0">
+      <h2 className="text-2xl font-bold text-gray-900 mb-0 flex items-center gap-3">
         <Coffee className="text-orange-500" size={28} />
         Book Pet Cafe Table
       </h2>
@@ -237,7 +237,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Calendar className="inline mr-0" size={16} />
+                <Calendar className="inline mr-2" size={16} />
                 Date *
               </label>
               <input
@@ -251,7 +251,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Clock className="inline mr-0" size={16} />
+                <Clock className="inline mr-2" size={16} />
                 Time *
               </label>
               <input
@@ -271,7 +271,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Users className="inline mr-0" size={16} />
+                <Users className="inline mr-2" size={16} />
                 Number of Guests *
               </label>
               <input
@@ -335,7 +335,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="flex items-center gap-0">
+                        <div className="flex items-center gap-3">
                           <span className="font-semibold text-gray-900">
                             Table {table.table_number}
                           </span>
@@ -344,7 +344,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
                           </span>
                         </div>
                         <div className="mt-0 flex items-center gap-4 text-sm text-gray-600">
-                          <span className="flex items-center gap-0">
+                          <span className="flex items-center gap-3">
                             <Users size={14} />
                             Capacity: {table.capacity}
                           </span>
@@ -415,7 +415,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
         )}
 
         {/* Actions */}
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           {onCancel && (
             <button
               type="button"

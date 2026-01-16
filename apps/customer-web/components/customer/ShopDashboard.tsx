@@ -393,9 +393,26 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
                     </div>
                   )}
                   <button 
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      // TODO: Add to wishlist
+                      try {
+                        const customerId = localStorage.getItem('warmpawz_customer_id');
+                        if (!customerId) {
+                          toast.info('Please login to add items to wishlist');
+                          return;
+                        }
+                        await apiClient.post('/customer/wishlist', {
+                          customerId,
+                          productId: product.id,
+                          productName: product.name,
+                          price: product.price,
+                          image: product.image,
+                        });
+                        toast.success('Added to wishlist');
+                      } catch (error: any) {
+                        console.error('Error adding to wishlist:', error);
+                        toast.error('Failed to add to wishlist');
+                      }
                     }}
                     className="absolute bottom-2 right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
                   >
@@ -520,9 +537,26 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
                   <div className="h-36 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-5xl relative">
                     {product.image || '🐾'}
                     <button 
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        // TODO: Add to wishlist
+                        try {
+                          const customerId = localStorage.getItem('warmpawz_customer_id');
+                          if (!customerId) {
+                            toast.info('Please login to add items to wishlist');
+                            return;
+                          }
+                          await apiClient.post('/customer/wishlist', {
+                            customerId,
+                            productId: product.id,
+                            productName: product.name,
+                            price: product.price,
+                            image: product.image,
+                          });
+                          toast.success('Added to wishlist');
+                        } catch (error: any) {
+                          console.error('Error adding to wishlist:', error);
+                          toast.error('Failed to add to wishlist');
+                        }
                       }}
                       className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-transform"
                     >

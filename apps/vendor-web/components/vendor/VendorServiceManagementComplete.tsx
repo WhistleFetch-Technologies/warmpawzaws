@@ -83,25 +83,31 @@ export function VendorServiceManagementComplete({
           tele: 0
         };
         
+        // ✅ FIX B3: Fix double-counting - use grouped services OR allServices, not both
         if (data.services) {
-          // Services might be grouped by style
-          if (data.services.at_home) counts.at_home = data.services.at_home.count || data.services.at_home.services?.length || 0;
-          if (data.services.at_center) counts.at_center = data.services.at_center.count || data.services.at_center.services?.length || 0;
-          if (data.services.tele) counts.tele = data.services.tele.count || data.services.tele.services?.length || 0;
+          // Services grouped by style - use this as primary source
+          if (data.services.at_home) {
+            counts.at_home = data.services.at_home.count || data.services.at_home.services?.length || 0;
+          }
+          if (data.services.at_center) {
+            counts.at_center = data.services.at_center.count || data.services.at_center.services?.length || 0;
+          }
+          if (data.services.tele) {
+            counts.tele = data.services.tele.count || data.services.tele.services?.length || 0;
+          }
         }
         
-        // Also check allServices for total count verification
-        if (data.allServices && Array.isArray(data.allServices)) {
+        // ✅ FIX B3: Only use allServices as fallback if grouped counts are all 0
+        // This prevents double-counting when both sources have data
+        if ((counts.at_home === 0 && counts.at_center === 0 && counts.tele === 0) && 
+            data.allServices && Array.isArray(data.allServices)) {
+          // Fallback: count from allServices only if grouped counts are empty
           data.allServices.forEach((svc: any) => {
             const style = svc.serviceStyle || svc.service_style;
             if (style === 'at_home') counts.at_home++;
             else if (style === 'at_center') counts.at_center++;
             else if (style === 'tele') counts.tele++;
           });
-          // Only use this if grouped counts were 0
-          if (counts.at_home === 0 && counts.at_center === 0 && counts.tele === 0) {
-            // Already counted above
-          }
         }
         
         console.log('✅ [ROLE-CONFIG] Service counts:', counts);

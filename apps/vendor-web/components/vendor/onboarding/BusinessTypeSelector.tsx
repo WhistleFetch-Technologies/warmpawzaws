@@ -57,7 +57,7 @@ export function BusinessTypeSelector({ selectedType, onSelect }: BusinessTypeSel
         <p className="text-sm text-gray-600">Choose the type that best describes your business</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-0">
+      <div className="grid grid-cols-2 gap-3">
         {businessTypes.map((type) => {
           const Icon = iconMap[type.icon];
           const isSelected = selectedType === type.id;

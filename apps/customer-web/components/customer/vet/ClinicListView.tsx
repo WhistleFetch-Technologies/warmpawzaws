@@ -39,23 +39,31 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
       setLoading(true);
       try {
         const response = await apiClient.get('/vendors?role=veterinary_clinic') as any;
-        if (response.vendors && response.vendors.length > 0) {
-          setClinics(response.vendors.map((v: any) => ({
+        console.log('📋 [CLINIC-LIST] API Response:', response);
+        
+        if (response && response.vendors && response.vendors.length > 0) {
+          console.log(`✅ [CLINIC-LIST] Found ${response.vendors.length} clinics from API`);
+          const mappedClinics = response.vendors.map((v: any) => ({
             id: v.id,
-            name: v.business_name || v.name,
-            address: v.address || 'Location available on booking',
-            rating: v.rating || 4.5,
-            review_count: v.review_count || 0,
-            distance: v.distance || '2.5 km',
-            timing: v.timing || '9 AM - 8 PM',
-            services: v.services?.map((s: any) => s.name) || ['General Consultation', 'Vaccination'],
-            price_range: v.price_range || '₹399 - ₹2999',
-            is_open: true,
-          })));
+            name: v.businessName || v.business_name || v.name || 'Unnamed Clinic',
+            address: v.address || `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() || 'Location available on booking',
+            rating: parseFloat(v.rating || v.avgRating || '4.5'),
+            review_count: parseInt(v.reviewCount || v.review_count || '0', 10),
+            distance: v.distance || '2.5 km', // TODO: Calculate actual distance from user location
+            timing: v.timing || v.businessHours || '9 AM - 8 PM',
+            services: v.services?.map((s: any) => typeof s === 'string' ? s : s.name) || ['General Consultation', 'Vaccination'],
+            price_range: v.price_range || v.priceRange || '₹399 - ₹2999',
+            is_open: v.is_open !== undefined ? v.is_open : true,
+          }));
+          setClinics(mappedClinics);
+          console.log('🏥 [CLINIC-LIST] Mapped clinics:', mappedClinics);
           return;
+        } else {
+          console.warn('⚠️ [CLINIC-LIST] No vendors in response, using mock data');
         }
-      } catch (err) {
-        console.log('Using mock data for clinics');
+      } catch (err: any) {
+        console.error('❌ [CLINIC-LIST] API Error:', err);
+        console.log('📝 [CLINIC-LIST] Using mock data for clinics');
       }
 
       // Mock data

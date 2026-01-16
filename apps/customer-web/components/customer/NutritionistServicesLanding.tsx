@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Apple, Star, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Apple, Star, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -13,14 +13,35 @@ interface NutritionistServicesLandingProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+/**
+ * ✅ FIX: Added pet context validation to prevent crashes (NUT-CUST-001)
+ * Nutrition services require a pet to be selected before booking
+ */
 export function NutritionistServicesLanding({ phone, onBack, onNavigate }: NutritionistServicesLandingProps) {
   const [loading, setLoading] = useState(true);
   const [nutritionists, setNutritionists] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [pets, setPets] = useState<any[]>([]);
+  const [hasPets, setHasPets] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    loadPets();
     loadNutritionists();
   }, []);
+
+  const loadPets = async () => {
+    try {
+      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsList = petsData?.pets || [];
+      setPets(petsList);
+      setHasPets(petsList.length > 0);
+    } catch (err: any) {
+      console.error('Error loading pets:', err);
+      setError('Failed to load pets. Please try again.');
+      setHasPets(false);
+    }
+  };
 
   const loadNutritionists = async () => {
     try {
@@ -47,7 +68,41 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   };
 
   const handleNutritionistSelect = (nutritionist: any) => {
-    onNavigate?.('create-booking', { vendorId: nutritionist.id || nutritionist.vendorId, serviceId: 'pet_nutritionist' });
+    // ✅ FIX: Validate pet context before navigation
+    if (!hasPets || pets.length === 0) {
+      toast.error('Please add a pet first before booking nutrition services');
+      onNavigate?.('pets', { action: 'add' });
+      return;
+    }
+    
+    try {
+      onNavigate?.('create-booking', { 
+        vendorId: nutritionist.id || nutritionist.vendorId, 
+        serviceId: 'pet_nutritionist' 
+      });
+    } catch (err: any) {
+      console.error('Navigation error:', err);
+      toast.error('Failed to navigate. Please try again.');
+    }
+  };
+
+  const handleBookNow = (data?: any) => {
+    // ✅ FIX: Validate pet context before navigation
+    if (!hasPets || pets.length === 0) {
+      toast.error('Please add a pet first before booking nutrition services');
+      onNavigate?.('pets', { action: 'add' });
+      return;
+    }
+    
+    try {
+      onNavigate?.('create-booking', { 
+        serviceId: 'pet_nutritionist',
+        ...data 
+      });
+    } catch (err: any) {
+      console.error('Navigation error:', err);
+      toast.error('Failed to navigate. Please try again.');
+    }
   };
 
   const serviceTypes = [
@@ -61,6 +116,35 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     return (
       <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+      </div>
+    );
+  }
+
+  // ✅ FIX: Show error state if pets failed to load
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
+        <div className="px-6 pt-12 pb-6">
+          <div className="flex items-center gap-4 mb-6">
+            <button 
+              onClick={onBack}
+              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+            <h1 className="text-2xl font-bold text-white">Pet Nutrition</h1>
+          </div>
+        </div>
+        <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+          <Card className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <Button onClick={loadPets} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+              Try Again
+            </Button>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -128,7 +212,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                     <span className="line-through text-slate-400 text-xs">₹999</span>
                     <span className="ml-2 font-bold text-slate-900">₹699</span>
                   </div>
-                  <Button size="sm" className="bg-green-600 text-white hover:bg-green-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_nutritionist' })}>
+                  <Button size="sm" className="bg-green-600 text-white hover:bg-green-700 h-8 text-xs px-4 rounded-lg" onClick={() => handleBookNow()}>
                     Book Now
                   </Button>
                 </div>
@@ -143,7 +227,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
               {serviceTypes.map((service, idx) => (
                 <button
                   key={idx}
-                  onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_nutritionist', serviceType: service.label })}
+                  onClick={() => handleBookNow({ serviceType: service.label })}
                   className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                 >
                   <div className={`w-10 h-10 rounded-xl ${service.color.split(' ')[0]} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
@@ -162,7 +246,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
               <h2 className="text-lg font-bold text-slate-900">Expert Nutritionists</h2>
               <button 
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_nutritionist' })}
+                onClick={() => handleBookNow()}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>

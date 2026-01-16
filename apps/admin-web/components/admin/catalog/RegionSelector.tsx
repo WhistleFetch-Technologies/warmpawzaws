@@ -90,7 +90,7 @@ export function RegionSelector({
   if (multiple) {
     return (
       <div className={className}>
-        <div className="flex items-center gap-0 mb-0">
+        <div className="flex items-center gap-3 mb-0">
           <Globe className="w-5 h-5 text-orange-600" />
           <span className="font-medium text-gray-900">Select Regions</span>
           <span className="text-sm text-gray-500">({selectedRegions?.length || 0} selected)</span>
@@ -108,7 +108,7 @@ export function RegionSelector({
               return (
                 <label
                   key={region.regionId}
-                  className={`flex items-center gap-0 p-0 border-2 rounded-lg cursor-pointer transition-all ${
+                  className={`flex items-center gap-3 p-0 border-2 rounded-lg cursor-pointer transition-all ${
                     isSelected
                       ? 'bg-orange-50 border-orange-300'
                       : 'border-gray-200 hover:bg-gray-50'
@@ -146,7 +146,7 @@ export function RegionSelector({
         onClick={() => setIsOpen(!isOpen)}
         className="w-full min-h-[44px] px-4 py-0.5 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all"
       >
-        <div className="flex items-center gap-0 flex-1 text-left">
+        <div className="flex items-center gap-3 flex-1 text-left">
           {selectedRegion ? (
             <>
               <span className="text-xl">{REGION_FLAGS[selectedRegion.regionCode] || '🌍'}</span>
@@ -183,7 +183,7 @@ export function RegionSelector({
                     onChange(null);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
+                  className={`w-full px-4 py-0.5 text-left flex items-center gap-3 hover:bg-gray-50 transition-colors ${
                     value === null ? 'bg-orange-50' : ''
                   }`}
                 >
@@ -202,7 +202,7 @@ export function RegionSelector({
                         onChange(region.regionId);
                         setIsOpen(false);
                       }}
-                      className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
+                      className={`w-full px-4 py-0.5 text-left flex items-center gap-3 hover:bg-gray-50 transition-colors ${
                         value === region.regionId ? 'bg-orange-50' : ''
                       }`}
                     >

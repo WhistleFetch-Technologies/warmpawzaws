@@ -461,11 +461,13 @@ export function VendorCustomServiceCreation({
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
+          {/* ✅ FIX: Improved back button styling to match theme */}
           <button 
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center bg-white rounded-lg border border-gray-200"
+            className="w-10 h-10 flex items-center justify-center bg-white rounded-xl border-2 border-[#FF8C42] hover:bg-orange-50 transition-colors shadow-sm"
+            aria-label="Back to dashboard"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
+            <ArrowLeft className="w-5 h-5 text-[#FF8C42]" />
           </button>
           <h1 className="text-2xl font-bold text-gray-900 flex-1">
             Custom Services
@@ -606,13 +608,16 @@ export function VendorCustomServiceCreation({
         </div>
       )}
 
-      {/* Create Service Dialog */}
+      {/* ✅ FIX: Improved Dialog styling to match theme */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-[400px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Custom Service</DialogTitle>
-            <DialogDescription>
-              Add a new custom service for your center. All services require admin approval.
+        <DialogContent className="max-w-[420px] max-h-[90vh] overflow-y-auto bg-gradient-to-b from-white to-orange-50/30 border-2 border-[#FF8C42]/20">
+          <DialogHeader className="border-b border-orange-100 pb-4 mb-4">
+            <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#FF8C42]" />
+              Create Custom Service
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 mt-1">
+              Add a new custom service for your center. All services require admin approval before going live.
             </DialogDescription>
           </DialogHeader>
 
@@ -898,20 +903,22 @@ export function VendorCustomServiceCreation({
             </div>
           </div>
 
-          <DialogFooter>
+          {/* ✅ FIX: Improved DialogFooter styling */}
+          <DialogFooter className="border-t border-orange-100 pt-4 mt-4">
             <Button
               variant="outline"
               onClick={() => {
                 resetForm();
                 setShowCreateDialog(false);
               }}
+              className="border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </Button>
             <Button
               onClick={handleCreateService}
               disabled={saving}
-              className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white"
+              className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white hover:from-[#FF7A2E] hover:to-[#FF5A1F] shadow-md"
             >
               {saving ? (
                 <>

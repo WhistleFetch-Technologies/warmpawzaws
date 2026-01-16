@@ -86,7 +86,13 @@ export function EnhancedSearchBar({
         // AWS Serverless compatible - use apiClient
         const data = await apiClient.get<{ data?: { history?: any[] }, history?: any[] }>(`/customer/${customerId}/search-history`);
         const history = data.data?.history || data.history || [];
-        setRecentSearches(history.map((h: any) => h.query).slice(0, 5));
+        // Safely extract query string from history
+        setRecentSearches(
+          history
+            .map((h: any) => String(h.query || h.text || h || ''))
+            .filter(q => q) // Remove empty strings
+            .slice(0, 5)
+        );
         return;
       } catch (error) {
         console.error('Error loading search history:', error);
@@ -97,7 +103,14 @@ export function EnhancedSearchBar({
     const saved = localStorage.getItem('warmpawz_recent_searches');
     if (saved) {
       try {
-        setRecentSearches(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // Ensure all items are strings
+        setRecentSearches(
+          (Array.isArray(parsed) ? parsed : [])
+            .map(item => String(item || ''))
+            .filter(q => q)
+            .slice(0, 10)
+        );
       } catch (err) {
         console.error('Error loading recent searches from localStorage:', err);
       }
@@ -110,9 +123,20 @@ export function EnhancedSearchBar({
       if (customerId) params.append('customerId', customerId);
 
       // AWS Serverless compatible - use apiClient
-      const result = await apiClient.get<{ data?: { suggestions?: string[] }, suggestions?: string[] }>(`/customer/search-suggestions?${params.toString()}`);
+      const result = await apiClient.get<{ data?: { suggestions?: any[] }, suggestions?: any[] }>(`/customer/search-suggestions?${params.toString()}`);
       const suggestionsData = result.data?.suggestions || result.suggestions || [];
-      setSuggestions(suggestionsData.map((s: string) => ({ text: s, type: 'trending' as const })));
+      
+      // Handle both string[] and object[] suggestions
+      setSuggestions(suggestionsData.map((s: any) => {
+        // If s is already an object with text, use it; otherwise convert to string
+        if (typeof s === 'object' && s !== null) {
+          return { 
+            text: String(s.text || s.name || s.query || ''), 
+            type: 'trending' as const 
+          };
+        }
+        return { text: String(s || ''), type: 'trending' as const };
+      }).filter(s => s.text)); // Remove empty suggestions
     } catch (error) {
       console.error('Error loading suggestions:', error);
     }
@@ -121,12 +145,10 @@ export function EnhancedSearchBar({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setQuery(value);
-    // Only open dropdown if there's content to show or we're searching
-    if (value.trim().length > 0 || showRecentSearches || showSuggestions) {
-      setIsOpen(true);
-    } else {
-      setIsOpen(false);
-    }
+    
+    // Only open dropdown if we have content to show
+    const hasContent = value.trim().length > 0 || recentSearches.length > 0 || suggestions.length > 0;
+    setIsOpen(hasContent);
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -137,10 +159,6 @@ export function EnhancedSearchBar({
         performSearch(value.trim());
       } else {
         setResults([]);
-        // Close dropdown if no query and no recent/suggestions
-        if (!value.trim() && !showRecentSearches && !showSuggestions) {
-          setIsOpen(false);
-        }
       }
     }, 300);
   };
@@ -162,10 +180,75 @@ export function EnhancedSearchBar({
         params.append('customerId', customerId);
       }
 
-      const data = await apiClient.get<{ data?: { results?: any[] }, results?: any[] }>(`/customer/search?${params.toString()}`);
-      setResults(data.data?.results || data.results || []);
+      // Use universal search endpoint (OpenSearch + SQL fallback)
+      const data = await apiClient.get<{ 
+        data?: { vendors?: any[], services?: any[], results?: any[] }, 
+        vendors?: any[], 
+        services?: any[], 
+        results?: any[] 
+      }>(`/search?${params.toString()}`);
+      
+      // Transform results from universal search format to SearchResult format
+      const transformedResults: SearchResult[] = [];
+      
+      // Add vendors
+      const vendors = data.data?.vendors || data.vendors || [];
+      vendors.forEach((vendor: any) => {
+        transformedResults.push({
+          id: vendor.id || vendor.vendorId,
+          type: 'vendor',
+          category: vendor.category || vendor.roleId,
+          data: {
+            name: vendor.businessName || vendor.name,
+            businessName: vendor.businessName,
+            ownerName: vendor.ownerName,
+            specialization: vendor.specialization,
+            serviceType: vendor.category,
+            description: vendor.specialization || vendor.description,
+            rating: vendor.rating,
+            photoUrl: vendor.photoUrl || vendor.photo,
+            city: vendor.city,
+            state: vendor.state
+          },
+          relevanceScore: vendor.relevanceScore || vendor.rating * 20 || 50,
+          distance: vendor.distance_km || vendor.distance,
+          matchedFields: []
+        });
+      });
+      
+      // Add services
+      const services = data.data?.services || data.services || [];
+      services.forEach((service: any) => {
+        transformedResults.push({
+          id: service.id || service.serviceId,
+          type: 'service',
+          category: service.category || service.serviceType,
+          data: {
+            name: service.serviceName || service.name,
+            businessName: service.vendorName,
+            serviceType: service.category,
+            description: service.description,
+            price: service.price,
+            vendorId: service.vendorId,
+            city: service.city,
+            state: service.state
+          },
+          relevanceScore: service.relevanceScore || 50,
+          distance: service.distance_km || service.distance,
+          matchedFields: []
+        });
+      });
+      
+      // Fallback to old format if available
+      if (transformedResults.length === 0) {
+        const oldResults = data.data?.results || data.results || [];
+        setResults(oldResults);
+      } else {
+        setResults(transformedResults);
+      }
     } catch (error) {
       console.error('Error performing search:', error);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -217,17 +300,14 @@ export function EnhancedSearchBar({
 
   const showRecentSearches = !query && recentSearches.length > 0;
   const showSuggestions = !query && suggestions.length > 0;
+  const hasContent = showRecentSearches || showSuggestions || results.length > 0 || loading;
   
-  // Close dropdown if there's no content to show (prevents empty white window)
+  // Auto-close dropdown if there's no content to show (prevents empty white space)
   useEffect(() => {
-    if (isOpen && !loading && !showRecentSearches && !showSuggestions && results.length === 0 && !query.trim()) {
-      // Small delay to allow for typing
-      const timer = setTimeout(() => {
-        setIsOpen(false);
-      }, 100);
-      return () => clearTimeout(timer);
+    if (isOpen && !hasContent) {
+      setIsOpen(false);
     }
-  }, [isOpen, loading, showRecentSearches, showSuggestions, results.length, query]);
+  }, [isOpen, hasContent]);
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
@@ -238,7 +318,11 @@ export function EnhancedSearchBar({
             type="text"
             value={query}
             onChange={handleInputChange}
-            onFocus={() => setIsOpen(true)}
+            onFocus={() => {
+              // Only open if we have content to show
+              const hasContent = query.trim().length > 0 || recentSearches.length > 0 || suggestions.length > 0 || results.length > 0;
+              setIsOpen(hasContent);
+            }}
             placeholder={placeholder}
             className="w-full pl-12 pr-12 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
           />
@@ -278,13 +362,14 @@ export function EnhancedSearchBar({
                 <button
                   key={idx}
                   onClick={() => {
-                    setQuery(term);
-                    handleSearch(term);
+                    const searchTerm = String(term || '');
+                    setQuery(searchTerm);
+                    handleSearch(searchTerm);
                   }}
                   className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg text-left transition-colors group"
                 >
                   <Clock className="w-4 h-4 text-gray-400 group-hover:text-orange-500" />
-                  <span className="text-gray-700 group-hover:text-gray-900">{term}</span>
+                  <span className="text-gray-700 group-hover:text-gray-900">{String(term || '')}</span>
                 </button>
               ))}
             </div>
@@ -307,7 +392,7 @@ export function EnhancedSearchBar({
                 >
                   <TrendingUp className="w-4 h-4 text-orange-500" />
                   <span className="text-gray-700 group-hover:text-gray-900 capitalize">
-                    {suggestion.text}
+                    {String(suggestion.text || '')}
                   </span>
                 </button>
               ))}
@@ -327,16 +412,16 @@ export function EnhancedSearchBar({
                   className="w-full flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left group"
                 >
                   {/* Icon/Image */}
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-orange-500 to-pink-500 overflow-hidden flex-shrink-0 flex items-center justify-center text-white">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-orange-500 to-pink-500 overflow-hidden flex-shrink-0 flex items-center justify-center text-white font-semibold">
                     {result.data?.photoUrl || result.data?.imageUrl ? (
                       <img 
                         src={result.data.photoUrl || result.data.imageUrl} 
-                        alt={result.data.name || result.data.businessName}
+                        alt={String(result.data.name || result.data.businessName || 'Service')}
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <span className="text-lg">
-                        {(result.data?.name || result.data?.businessName || '?')[0]}
+                      <span className="text-xl uppercase">
+                        {String(result.data?.name || result.data?.businessName || result.type || '?')[0]}
                       </span>
                     )}
                   </div>
@@ -344,32 +429,44 @@ export function EnhancedSearchBar({
                   {/* Result Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <h4 className="text-gray-900 line-clamp-1 group-hover:text-orange-600">
-                        {result.data?.name || result.data?.businessName}
+                      <h4 className="text-gray-900 line-clamp-1 group-hover:text-orange-600 font-medium">
+                        {String(result.data?.name || result.data?.businessName || 'Service')}
                       </h4>
-                      <Badge variant="secondary" className="text-xs capitalize">
-                        {result.type}
+                      <Badge variant="secondary" className="text-xs capitalize flex-shrink-0">
+                        {String(result.type || 'service')}
                       </Badge>
                     </div>
 
                     <p className="text-sm text-gray-500 line-clamp-1 mt-1">
-                      {result.data?.specialization || result.data?.serviceType || result.data?.description}
+                      {(() => {
+                        // Safely convert to string to avoid rendering objects
+                        const spec = result.data?.specialization;
+                        const serviceType = result.data?.serviceType;
+                        const desc = result.data?.description;
+                        
+                        const value = spec || serviceType || desc || '';
+                        // If it's an object, extract meaningful text
+                        if (typeof value === 'object' && value !== null) {
+                          return String(value.name || value.type || value.text || '');
+                        }
+                        return String(value || '');
+                      })()}
                     </p>
 
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                      {result.data?.rating && (
+                      {result.data?.rating && typeof result.data.rating === 'number' && (
                         <span className="flex items-center gap-1 text-yellow-500">
                           <Star className="w-3 h-3 fill-current" />
                           {result.data.rating.toFixed(1)}
                         </span>
                       )}
-                      {result.distance !== undefined && (
+                      {typeof result.distance === 'number' && (
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {result.distance.toFixed(1)} km
                         </span>
                       )}
-                      {result.relevanceScore && result.relevanceScore > 80 && (
+                      {typeof result.relevanceScore === 'number' && result.relevanceScore > 80 && (
                         <Badge className="bg-green-100 text-green-700 text-xs">
                           Best Match
                         </Badge>

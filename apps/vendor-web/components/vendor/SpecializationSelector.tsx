@@ -31,6 +31,10 @@ export function SpecializationSelector({
   useEffect(() => {
     if (roleId) {
       loadSpecializations();
+    } else {
+      // ✅ FIX B2: If roleId is not provided, stop loading and show error
+      setLoading(false);
+      setError('Role ID is required to load specializations');
     }
   }, [roleId]);
 

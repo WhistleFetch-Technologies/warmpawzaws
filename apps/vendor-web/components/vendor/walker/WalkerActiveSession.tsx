@@ -18,7 +18,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   MapPin, Navigation, Clock, Footprints, Camera, Play, Square,
   MessageCircle, Phone, ChevronLeft, Upload, CheckCircle, Dog,
-  AlertTriangle, Plus, Trash2, Battery, Signal
+  AlertTriangle, Plus, Trash2, Battery, Signal, AlertCircle
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -414,6 +414,40 @@ export function WalkerActiveSession({
 
           {/* Actions */}
           <div className="p-4 space-y-3">
+            {/* Emergency SOS Button - As per Master Plan */}
+            <Button
+              onClick={async () => {
+                try {
+                  // Send emergency alert
+                  await apiClient.post(`/walker/${walkerId}/emergency`, {
+                    bookingId: booking?.id,
+                    latitude: currentPosition?.lat,
+                    longitude: currentPosition?.lng,
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                  // Also try to call emergency contact
+                  const emergencyNumber = '100'; // Emergency services
+                  window.location.href = `tel:${emergencyNumber}`;
+                  
+                  toast.error('🚨 Emergency alert sent! Emergency services notified.', {
+                    duration: 10000,
+                  });
+                } catch (error: any) {
+                  console.error('Emergency alert error:', error);
+                  // Still try to call even if API fails
+                  window.location.href = 'tel:100';
+                  toast.error('Emergency services called. Please stay safe!', {
+                    duration: 10000,
+                  });
+                }
+              }}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 text-base shadow-lg animate-pulse"
+            >
+              <AlertCircle className="w-6 h-6 mr-3" />
+              🆘 EMERGENCY SOS
+            </Button>
+
             {/* Add Photo */}
             <Button
               variant="outline"

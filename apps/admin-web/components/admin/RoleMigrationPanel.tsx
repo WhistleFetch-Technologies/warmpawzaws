@@ -133,7 +133,7 @@ export function RoleMigrationPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-0">
+      <div className="flex items-center gap-3">
         <div className="p-0 bg-cyan-100 rounded-xl">
           <RefreshCw className="w-6 h-6 text-cyan-600" />
         </div>
@@ -143,9 +143,9 @@ export function RoleMigrationPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
-          <div className="flex items-center gap-0 mb-4">
+          <div className="flex items-center gap-3 mb-4">
             <div className="p-0 bg-blue-100 rounded-lg">
               <Download className="w-5 h-5 text-blue-600" />
             </div>
@@ -159,15 +159,15 @@ export function RoleMigrationPanel() {
             <div className="p-4 bg-blue-50 rounded-lg">
               <p className="text-sm text-blue-900 mb-0 font-medium">Export includes:</p>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li className="flex items-center gap-0">
+                <li className="flex items-center gap-3">
                   <CheckCircle className="w-4 h-4" />
                   All roles and permissions
                 </li>
-                <li className="flex items-center gap-0">
+                <li className="flex items-center gap-3">
                   <CheckCircle className="w-4 h-4" />
                   Role-permission mappings
                 </li>
-                <li className="flex items-center gap-0">
+                <li className="flex items-center gap-3">
                   <CheckCircle className="w-4 h-4" />
                   User-role assignments
                 </li>
@@ -177,7 +177,7 @@ export function RoleMigrationPanel() {
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="w-full flex items-center justify-center gap-0 px-4 py-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-3 px-4 py-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
             >
               {exporting ? (
                 <>
@@ -195,7 +195,7 @@ export function RoleMigrationPanel() {
         </div>
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
-          <div className="flex items-center gap-0 mb-4">
+          <div className="flex items-center gap-3 mb-4">
             <div className="p-0 bg-green-100 rounded-lg">
               <Upload className="w-5 h-5 text-green-600" />
             </div>
@@ -207,7 +207,7 @@ export function RoleMigrationPanel() {
 
           <div className="space-y-4">
             <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-              <div className="flex items-start gap-0">
+              <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-yellow-900 font-medium mb-0">Warning</p>
@@ -238,7 +238,7 @@ export function RoleMigrationPanel() {
             <button
               onClick={handleImport}
               disabled={!selectedFile || importing}
-              className="w-full flex items-center justify-center gap-0 px-4 py-0 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-3 px-4 py-0 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
             >
               {importing ? (
                 <>
@@ -272,7 +272,7 @@ export function RoleMigrationPanel() {
                 <div key={item.migrationId} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
                   {getStatusIcon(item.status)}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-0 mb-0">
+                    <div className="flex items-center gap-3 mb-0">
                       <span className={`px-0 py-0 text-xs font-medium rounded ${
                         item.type === 'export' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                       }`}>

@@ -78,7 +78,7 @@ export function CategorySelector({
         onClick={() => setIsOpen(!isOpen)}
         className="w-full min-h-[44px] px-4 py-0.5 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all"
       >
-        <div className="flex items-center gap-0 flex-1 text-left">
+        <div className="flex items-center gap-3 flex-1 text-left">
           {selectedCategory ? (
             <>
               <span className="text-lg">{getCategoryIcon(selectedCategory.icon)}</span>
@@ -115,7 +115,7 @@ export function CategorySelector({
                     onChange(null);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
+                  className={`w-full px-4 py-0.5 text-left flex items-center gap-3 hover:bg-gray-50 transition-colors ${
                     value === null ? 'bg-orange-50' : ''
                   }`}
                 >
@@ -132,7 +132,7 @@ export function CategorySelector({
                       onChange(category.id);
                       setIsOpen(false);
                     }}
-                    className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
+                    className={`w-full px-4 py-0.5 text-left flex items-center gap-3 hover:bg-gray-50 transition-colors ${
                       value === category.id ? 'bg-orange-50' : ''
                     }`}
                   >

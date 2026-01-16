@@ -72,7 +72,7 @@ export function SupportVendorTab() {
         {filteredTickets.map((ticket) => (
           <div key={ticket.ticketId} className="bg-white rounded-xl border-2 border-gray-200 p-0 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-0">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <div className="p-0 bg-orange-100 rounded-lg">
                   <Store className="w-5 h-5 text-orange-600" />
                 </div>
@@ -97,7 +97,7 @@ export function SupportVendorTab() {
             )}
             <div className="flex items-center justify-between text-sm text-gray-600">
               <span>{new Date(ticket.createdAt).toLocaleString()}</span>
-              <div className="flex gap-0">
+              <div className="flex gap-3">
                 <button className="p-0 hover:bg-gray-100 rounded-lg">
                   <MessageCircle className="w-4 h-4" />
                 </button>

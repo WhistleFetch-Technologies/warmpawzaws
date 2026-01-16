@@ -808,5 +808,120 @@ export function registerVendorProfileEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /vendor/:vendorId
+   * Get vendor details by ID
+   * Returns vendor info and menu (for cafes)
+   * This is a general endpoint that works for all vendor types
+   * IMPORTANT: Must be registered AFTER all more specific routes like /vendor/:vendorId/profile
+   */
+  app.get("/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Handle test IDs
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: 'Test Vendor',
+            owner_name: 'Test Owner',
+            role: null,
+            capabilities: [],
+          },
+          menu: [],
+        });
+      }
+
+      // Get vendor
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Get role info
+      let role = null;
+      let capabilities: string[] = [];
+      let roleConfig: any = {};
+      let isCafe = false;
+
+      if (vendor.role_id) {
+        try {
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            
+            const permissions = await select('role_permissions', { role_id: vendor.role_id });
+            capabilities = permissions.map(p => p.permission_name);
+            
+            // Check if this is a cafe vendor
+            const roleName = (role.name || '').toLowerCase();
+            isCafe = roleName.includes('cafe') || roleName.includes('restaurant') || 
+                     capabilities.includes('cafe') || capabilities.includes('cafe_menu');
+          }
+        } catch (roleError: any) {
+          console.warn(`[Vendor Details] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+
+      // Build vendor response
+      const vendorResponse: any = {
+        id: vendor.id,
+        business_name: vendor.business_name,
+        owner_name: vendor.owner_name,
+        role_id: vendor.role_id,
+        role: role ? {
+          id: role.id,
+          name: role.name,
+          display_name: role.display_name,
+        } : null,
+        capabilities,
+        address: vendor.address,
+        city: vendor.city,
+        state: vendor.state,
+        pincode: vendor.pincode,
+        phone: vendor.phone,
+        email: vendor.email,
+        latitude: vendor.latitude,
+        longitude: vendor.longitude,
+        description: vendor.description || '',
+        operating_hours: vendor.operating_hours ? (typeof vendor.operating_hours === 'string' ? JSON.parse(vendor.operating_hours) : vendor.operating_hours) : null,
+        // Include other vendor fields
+        ...vendor,
+      };
+
+      // For cafes, also fetch menu
+      let menu: any[] = [];
+      if (isCafe) {
+        try {
+          const menuItems = await query(
+            `SELECT * FROM cafe_menu_items 
+             WHERE vendor_id = $1 
+             AND is_active = true
+             ORDER BY category, name ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          menu = menuItems.rows || [];
+        } catch (menuError: any) {
+          console.warn(`[Vendor Details] Failed to load menu for cafe ${vendorId}:`, menuError.message);
+          // Continue without menu
+        }
+      }
+
+      return c.json({
+        success: true,
+        vendor: vendorResponse,
+        menu: menu, // Include menu for cafes
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor details:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

@@ -247,12 +247,12 @@ export function ProblemGridNavigation({
 
               {/* Title */}
               <h3 className={`text-sm ${config.textColor} mb-1 pr-8`}>
-                {problem.title}
+                {String(problem.title || '')}
               </h3>
 
               {/* Description */}
               <p className="text-xs text-gray-600 line-clamp-2 mb-2">
-                {problem.description}
+                {String(problem.description || '')}
               </p>
 
               {/* Tags */}
@@ -260,7 +260,7 @@ export function ProblemGridNavigation({
                 <div className="flex flex-wrap gap-1 mb-2">
                   {problem.tags.slice(0, 2).map((tag, idx) => (
                     <span key={idx} className="text-xs bg-white bg-opacity-50 px-2 py-0.5 rounded-full">
-                      {tag}
+                      {String(typeof tag === 'object' ? (tag as any).name || (tag as any).text || '' : tag || '')}
                     </span>
                   ))}
                 </div>

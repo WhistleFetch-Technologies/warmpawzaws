@@ -15,12 +15,12 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
           {onBack && (
             <button
               onClick={onBack}
-              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0"
+              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3"
             >
               ← Back
             </button>
           )}
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="p-0 bg-orange-100 rounded-lg">
               <Settings className="w-6 h-6 text-orange-600" />
             </div>

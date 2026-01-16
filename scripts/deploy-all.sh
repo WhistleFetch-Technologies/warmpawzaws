@@ -100,7 +100,7 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 
 cd "$PROJECT_ROOT/backend/lambda"
 echo "  Installing dependencies..."
-npm install --silent
+npm install --silent --legacy-peer-deps
 echo "  Compiling TypeScript..."
 npm run build
 echo -e "  ${GREEN}✓${NC} Backend build complete"

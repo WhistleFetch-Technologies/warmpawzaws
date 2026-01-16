@@ -159,14 +159,14 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                     {getServiceTypeIcon(booking.service_type)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-0">
+                    <div className="flex items-center gap-3">
                       <h3 className="font-semibold text-gray-900">{booking.customer_name}</h3>
                       <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(booking.status)}`}>
                         {booking.status.replace('_', ' ')}
                       </span>
                     </div>
                     <p className="text-sm text-gray-500">{booking.service_name}</p>
-                    <div className="flex items-center gap-0 mt-0 text-sm text-gray-500">
+                    <div className="flex items-center gap-3 mt-0 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
                       <span>⏰ {booking.booking_time}</span>
                       <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
@@ -176,7 +176,7 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                     )}
                   </div>
                 </div>
-                <div className="flex flex-col gap-0">
+                <div className="flex flex-col gap-3">
                   {booking.status === 'pending' && (
                     <>
                       <button

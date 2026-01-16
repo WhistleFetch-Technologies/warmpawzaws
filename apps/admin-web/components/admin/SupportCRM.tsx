@@ -112,7 +112,7 @@ export function SupportCRM() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-0">
+      <div className="flex items-center gap-3">
         <div className="p-0 bg-blue-100 rounded-xl">
           <Headphones className="w-6 h-6 text-blue-600" />
         </div>
@@ -161,7 +161,7 @@ export function SupportCRM() {
               className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
-          <div className="flex gap-0">
+          <div className="flex gap-3">
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}

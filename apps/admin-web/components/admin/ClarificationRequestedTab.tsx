@@ -92,10 +92,10 @@ export function ClarificationRequestedTab() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-0 mb-0">
+                  <div className="flex items-center gap-3 mb-0">
                     {isOverdue && (
                       <Badge variant="warning" className="bg-orange-200 text-orange-800">
-                        <Clock className="w-3 h-3 mr-0" />
+                        <Clock className="w-3 h-3 mr-2" />
                         Overdue
                       </Badge>
                     )}
@@ -134,14 +134,14 @@ export function ClarificationRequestedTab() {
                   )}
                 </div>
                 
-                <div className="flex gap-0 ml-4">
+                <div className="flex gap-3 ml-4">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleReview(request.id)}
                     disabled={request.status === 'reviewed'}
                   >
-                    <Eye className="w-4 h-4 mr-0" />
+                    <Eye className="w-4 h-4 mr-2" />
                     Review
                   </Button>
                 </div>

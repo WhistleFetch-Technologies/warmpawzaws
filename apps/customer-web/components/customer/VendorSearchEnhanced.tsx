@@ -277,9 +277,15 @@ export function VendorSearchEnhanced() {
             ) : (
               <div className="space-y-4">
                 {/* Map View Placeholder */}
-                <div className="bg-gray-200 rounded-xl p-12 text-center">
-                  <p className="text-gray-600">Map view coming soon</p>
-                  <p className="text-sm text-gray-500 mt-2">Use list view to see vendors</p>
+                <div className="bg-gray-100 rounded-xl p-12 text-center border-2 border-dashed border-gray-300">
+                  <div className="space-y-2">
+                    <div className="w-16 h-16 bg-gray-300 rounded-lg mx-auto flex items-center justify-center">
+                      <span className="text-2xl">🗺️</span>
+                    </div>
+                    <p className="text-gray-600 font-medium">Interactive Map View</p>
+                    <p className="text-sm text-gray-500">Map integration will show vendor locations</p>
+                    <p className="text-xs text-gray-400 mt-2">Use list view below to browse vendors</p>
+                  </div>
                 </div>
                 
                 {/* Vendor List Below Map */}

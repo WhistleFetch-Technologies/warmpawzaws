@@ -141,7 +141,7 @@ export function RateChangesTab() {
                 </td>
                 <td className="px-0 py-4 text-right">
                   {change.status === 'pending' && (
-                    <div className="flex items-center justify-end gap-0">
+                    <div className="flex items-center justify-end gap-3">
                       <button
                         onClick={() => handleApprove(change.changeId)}
                         className="px-0 py-0 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 text-sm font-medium"

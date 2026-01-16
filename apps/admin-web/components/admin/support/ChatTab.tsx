@@ -50,7 +50,7 @@ export function ChatTab() {
           key={session.id}
           className="bg-white rounded-lg border-2 border-gray-200 p-4 hover:border-gray-300 cursor-pointer transition-colors"
         >
-          <div className="flex items-start gap-0">
+          <div className="flex items-start gap-3">
             <MessageSquare className="w-5 h-5 text-orange-600 mt-0.5" />
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900">{session.customerName}</h3>

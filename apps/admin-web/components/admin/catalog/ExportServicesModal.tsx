@@ -49,7 +49,7 @@ export function ExportServicesModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
         <div className="flex items-center justify-between p-0 border-b">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="p-0 bg-blue-100 rounded-lg">
               <Download className="w-5 h-5 text-blue-600" />
             </div>
@@ -69,7 +69,7 @@ export function ExportServicesModal({
             <label className="block text-sm font-medium text-gray-700 mb-0">
               Export Format
             </label>
-            <div className="flex gap-0">
+            <div className="flex gap-3">
               <button
                 onClick={() => setFormat('csv')}
                 className={`flex-1 p-0 border-2 rounded-lg transition-colors ${
@@ -100,7 +100,7 @@ export function ExportServicesModal({
           </p>
         </div>
 
-        <div className="flex items-center justify-end gap-0 p-0 border-t">
+        <div className="flex items-center justify-end gap-3 p-0 border-t">
           <Button
             variant="outline"
             onClick={onClose}

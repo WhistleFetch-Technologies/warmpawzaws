@@ -35,7 +35,7 @@ interface TicketDetailModalProps {
 interface Message {
   id: string;
   message: string;
-  responder_type: 'vendor' | 'agent' | 'system';
+  responder_type: 'customer' | 'agent' | 'system'; // 'customer' = vendor in this context
   created_at: string;
   responder_id?: string;
 }
@@ -265,11 +265,11 @@ export function TicketDetailModal({
               ticket.messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex ${msg.responder_type === 'vendor' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${msg.responder_type === 'customer' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className={`max-w-[70%] rounded-lg p-4 ${
-                      msg.responder_type === 'vendor'
+                      msg.responder_type === 'customer'
                         ? 'bg-blue-600 text-white'
                         : msg.responder_type === 'agent'
                         ? 'bg-white border border-gray-200'
@@ -278,7 +278,7 @@ export function TicketDetailModal({
                   >
                     <div className="flex justify-between items-center mb-1 text-xs opacity-75">
                       <span className="font-semibold">
-                        {msg.responder_type === 'vendor'
+                        {msg.responder_type === 'customer'
                           ? 'You'
                           : msg.responder_type === 'agent'
                           ? 'Support Agent'

@@ -66,7 +66,7 @@ export function RolesTab() {
             setEditingRole(null);
             setShowAddModal(true);
           }}
-          className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-0 text-sm font-medium"
+          className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-3 text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           Add Role
@@ -81,7 +81,7 @@ export function RolesTab() {
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <Shield className="w-5 h-5 text-orange-600" />
                   <h3 className="font-semibold text-gray-900">{role.name}</h3>
                   {role.isSystem && (
@@ -97,7 +97,7 @@ export function RolesTab() {
                 </div>
               </div>
               {!role.isSystem && (
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
                       setEditingRole(role);

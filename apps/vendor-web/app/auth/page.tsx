@@ -13,12 +13,14 @@ export default function AuthPage() {
   const hasRedirected = useRef(false); // Prevent multiple redirects
 
   useEffect(() => {
-    // Only check session once on mount
-    if (hasRedirected.current) return;
+    // ✅ FIX: Prevent redirect loop - only check once
+    if (hasRedirected.current) {
+      setIsCheckingSession(false);
+      return;
+    }
 
-    // Initialize session (clears on hard refresh)
-    const { initializeSession, isTokenExpired } = require('@/lib/session-utils');
-    initializeSession();
+    // Clear redirect flag when we're on auth page
+    sessionStorage.removeItem('_vendor_redirected_to_auth');
 
     // Check if user is already authenticated
     const checkSession = () => {
@@ -27,11 +29,26 @@ export default function AuthPage() {
         const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
         
         if (storedPhone && storedToken) {
+          const { isTokenExpired } = require('@/lib/session-utils');
           // Check token expiry
           if (!isTokenExpired(storedToken) && storedToken.length > 10) {
-            // User is already authenticated, redirect to onboarding
+            // User is already authenticated, redirect appropriately
             hasRedirected.current = true;
-            router.replace('/onboarding');
+            
+            // Check onboarding status to route correctly
+            const storedVendor = localStorage.getItem('vendorData');
+            const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
+            const onboardingStatus = vendorData?.onboarding_status || localStorage.getItem('vendorApplicationStatus');
+            
+            // Active vendors go to home, others to onboarding
+            const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
+            
+            // ✅ FIX: Use window.location for reliable redirect to prevent loops
+            if (isActiveVendor) {
+              window.location.href = '/';
+            } else {
+              window.location.href = '/onboarding';
+            }
             return;
           } else {
             // Token expired or invalid, clear stale data
@@ -144,14 +161,15 @@ export default function AuthPage() {
     const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '') || 
                            (responseState === 'existing' && session.vendorId && !onboardingStatus);
     
+    // ✅ FIX: Use window.location for reliable redirect to prevent loops
     if (isActiveVendor) {
       // Existing active vendor - go directly to home (dashboard)
       console.log('✅ [AuthPage] Active vendor - routing to home (dashboard)');
-      router.replace('/');
+      window.location.href = '/';
     } else {
       // All other cases - go to onboarding (which will route based on status)
       console.log('🔄 [AuthPage] Routing to onboarding (status:', onboardingStatus, ')');
-      router.replace('/onboarding');
+      window.location.href = '/onboarding';
     }
   };
 

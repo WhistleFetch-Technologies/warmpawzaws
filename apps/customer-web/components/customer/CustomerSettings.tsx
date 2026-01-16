@@ -143,7 +143,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         {/* Notification Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-0">
+            <h2 className="text-lg font-semibold flex items-center gap-3">
               <span className="text-2xl">🔔</span> Notifications
             </h2>
           </div>
@@ -203,7 +203,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         {/* Account Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-0">
+            <h2 className="text-lg font-semibold flex items-center gap-3">
               <span className="text-2xl">👤</span> Account
             </h2>
           </div>
@@ -226,7 +226,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         {/* Support */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-0">
+            <h2 className="text-lg font-semibold flex items-center gap-3">
               <span className="text-2xl">❓</span> Support
             </h2>
           </div>

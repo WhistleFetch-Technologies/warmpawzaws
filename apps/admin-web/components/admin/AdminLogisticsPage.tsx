@@ -239,7 +239,7 @@ export function AdminLogisticsPage() {
                     ₹{order.total_amount.toLocaleString()}
                   </td>
                   <td className="p-4">
-                    <div className="flex gap-0">
+                    <div className="flex gap-3">
                       {(order.status as any) === 'pending' && (
                         <button
                           onClick={() => handleCreateShipment(order.order_id)}
@@ -368,7 +368,7 @@ function OrderDetailModal({
           </div>
         </div>
 
-        <div className="flex gap-0 pt-4 border-t">
+        <div className="flex gap-3 pt-4 border-t">
           {(order.status as any) === 'pending' && (
             <button
               onClick={() => onCreateShipment(order.order_id)}

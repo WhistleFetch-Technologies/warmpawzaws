@@ -114,20 +114,54 @@ export function VendorBookingManagement({
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
 
-  // Generate time slots for the day (10:00 AM to 6:00 PM)
-  const generateTimeSlots = (): TimeSlot[] => {
+  // ✅ FIX: Load time slots from vendor operating hours and actual bookings
+  const generateTimeSlots = (operatingHours?: any, existingBookings?: Booking[]): TimeSlot[] => {
     const slots: TimeSlot[] = [];
-    for (let hour = 10; hour <= 18; hour++) {
-      slots.push({
-        time: `${hour}:00`,
-        available: Math.random() > 0.3, // Random availability for demo
-        booked: Math.random() > 0.7
-      });
+    
+    // Get operating hours for selected date
+    const selectedDateObj = new Date(selectedDate);
+    const dayOfWeek = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    
+    let startHour = 9;
+    let endHour = 18;
+    
+    // Use operating hours if available
+    if (operatingHours && operatingHours[dayOfWeek]) {
+      const dayHours = operatingHours[dayOfWeek];
+      if (dayHours.isOpen && dayHours.open && dayHours.close) {
+        const [openH] = dayHours.open.split(':').map(Number);
+        const [closeH] = dayHours.close.split(':').map(Number);
+        startHour = openH;
+        endHour = closeH;
+      } else if (!dayHours.isOpen) {
+        // Clinic closed on this day
+        return [];
+      }
     }
+    
+    // Generate slots with 30-minute intervals
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        
+        // Check if this slot is booked
+        const isBooked = existingBookings?.some(b => {
+          const bookingTime = b.time.replace(/\s*(AM|PM)/, '');
+          return bookingTime === timeStr;
+        }) || false;
+        
+        slots.push({
+          time: timeStr,
+          available: !isBooked,
+          booked: isBooked
+        });
+      }
+    }
+    
     return slots;
   };
 
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(generateTimeSlots());
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
 
   useEffect(() => {
     loadBookings();
@@ -143,19 +177,20 @@ export function VendorBookingManagement({
         vendorId
       });
       
-      // Don't pass activeFilter (today/week/month) as status filter - it's just for UI display
-      // Pass empty string to get all statuses
-      const data = await apiClient.get(`/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`) as any;
+      // ✅ FIX: Load both bookings and operating hours
+      const [bookingsData, facilityData] = await Promise.all([
+        apiClient.get(`/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/facility`).catch(() => null) as Promise<any>
+      ]);
 
-      if (data && data.success) {
-        // data already available
-        
-        console.log('📦 [VENDOR-UI] Raw booking data from API:', data);
-        console.log('📊 [VENDOR-UI] Debug info:', data.debug);
+      if (bookingsData && bookingsData.success) {
+        console.log('📦 [VENDOR-UI] Raw booking data from API:', bookingsData);
+        console.log('📊 [VENDOR-UI] Debug info:', bookingsData.debug);
         
         // Map bookings to expected format
-        const mappedBookings = (data.bookings || []).map((booking: any) => ({
+        const mappedBookings = (bookingsData.bookings || []).map((booking: any) => ({
           id: booking.id,
+          bookingId: booking.id, // ✅ ADD: Main booking ID
           time: booking.scheduledTime || booking.time || '10:00 AM',
           customerName: booking.customerName || 'Customer',
           customerId: booking.customerId || null, // ✅ ADD: Customer ID for chat
@@ -186,13 +221,25 @@ export function VendorBookingManagement({
         
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
+        
+        // ✅ FIX: Load operating hours and regenerate time slots based on real data
+        let operatingHours = null;
+        if (facilityData && facilityData.facility && facilityData.facility.operatingHours) {
+          operatingHours = facilityData.facility.operatingHours;
+        }
+        
+        // Generate time slots based on operating hours and existing bookings
+        const newSlots = generateTimeSlots(operatingHours, mappedBookings);
+        setTimeSlots(newSlots);
       } else {
-        console.error('Failed to load bookings:', data);
+        console.error('Failed to load bookings:', bookingsData);
         setBookings([]);
+        setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
+      setTimeSlots([]);
     } finally {
       setLoading(false);
     }

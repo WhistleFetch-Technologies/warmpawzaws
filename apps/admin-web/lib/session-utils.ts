@@ -6,37 +6,97 @@
 /**
  * Check if this is a hard refresh
  * Strategy: If localStorage has tokens but sessionStorage doesn't have the flag,
- * it means localStorage persisted but sessionStorage was cleared = hard refresh
+ * AND navigation type is 'reload', then it's a hard refresh
+ * 
+ * FIXED: Made detection less aggressive - won't clear on new tab
  */
 export function isHardRefresh(): boolean {
   if (typeof window === 'undefined') return false;
   
   const hasToken = !!localStorage.getItem('adminAuthToken');
   const hasSessionFlag = !!sessionStorage.getItem('_warmpawz_admin_has_session');
+  const justLoggedIn = !!sessionStorage.getItem('_warmpawz_admin_just_logged_in');
   
-  // If we have tokens but no session flag = hard refresh (sessionStorage was cleared)
-  if (hasToken && !hasSessionFlag) {
-    return true;
-  }
+  // Add debug logging for troubleshooting
+  const debugInfo = {
+    hasToken,
+    hasSessionFlag,
+    justLoggedIn,
+    pathname: window.location.pathname,
+    navigationType: 'unknown'
+  };
   
-  // Check navigation type
   try {
     const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
     if (perfEntries.length > 0) {
-      const navType = perfEntries[0].type;
-      if (navType === 'reload') {
-        return true;
-      }
+      debugInfo.navigationType = perfEntries[0].type;
     }
   } catch (e) {
     // Performance API not available
   }
   
-  // Set flag for future checks
-  if (hasToken && !hasSessionFlag) {
-    sessionStorage.setItem('_warmpawz_admin_page_loaded', 'true');
+  console.log('[Admin Session Debug] isHardRefresh check:', debugInfo);
+  
+  // CRITICAL: Check if user just logged in - never clear session in this case
+  if (justLoggedIn) {
+    sessionStorage.removeItem('_warmpawz_admin_just_logged_in');
+    console.log('[Admin Session] Just logged in - preserving session');
+    return false;
   }
   
+  // If session flag exists, preserve the session
+  if (hasSessionFlag) {
+    console.log('[Admin Session] Session flag exists - preserving session');
+    return false;
+  }
+  
+  // Check if we're on the auth page - if so, don't clear (user is logging in)
+  if (window.location.pathname.includes('/auth')) {
+    console.log('[Admin Session] On auth page - preserving session');
+    return false;
+  }
+  
+  // Check navigation type - only clear on explicit reload (F5)
+  try {
+    const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    if (perfEntries.length > 0) {
+      const navType = perfEntries[0].type;
+      
+      if (navType === 'reload') {
+        // This is an actual hard refresh (F5)
+        // Only clear if we had a session before
+        if (hasToken) {
+          console.log('[Admin Session] Hard refresh detected with existing token - CLEARING SESSION');
+          return true;
+        }
+      }
+      
+      if (navType === 'navigate') {
+        // This is a new tab or direct navigation
+        // DON'T clear session - let app logic handle redirect
+        console.log('[Admin Session] New tab/navigation detected - preserving session (will redirect if needed)');
+        return false;
+      }
+      
+      if (navType === 'back_forward') {
+        // Browser back/forward button
+        console.log('[Admin Session] Back/forward navigation - preserving session');
+        return false;
+      }
+    }
+  } catch (e) {
+    console.warn('[Admin Session] Performance API not available:', e);
+  }
+  
+  // Conservative fallback: If we have tokens but no session flag
+  // This is likely a new tab - DON'T clear session
+  // The app will handle login redirect if needed
+  if (hasToken && !hasSessionFlag) {
+    console.log('[Admin Session] Has token but no session flag - treating as new tab, preserving session');
+    return false;
+  }
+  
+  console.log('[Admin Session] No hard refresh detected - preserving session');
   return false;
 }
 

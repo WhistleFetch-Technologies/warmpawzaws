@@ -15,6 +15,8 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, Context } from 'aws-la
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
+import { validateEnvironmentOrThrow, getValidationReport, validateEnvironment } from '../utils/env-validation';
+import { checkDbHealth } from '../database/rds-connection';
 // Enhanced handlers (Phase 2-5)
 import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
@@ -190,9 +192,61 @@ initializeErrorTracking({
   // No Sentry DSN - CloudWatch only for India compliance
 });
 
-// Health check
-app.get('/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Validate environment variables at startup (fail fast)
+try {
+  validateEnvironmentOrThrow();
+} catch (error) {
+  console.error('[STARTUP] Environment validation failed:');
+  console.error(getValidationReport());
+  // In Lambda, we can't prevent startup, but we'll fail on first request
+  // This ensures errors are caught early in development
+  if (process.env.NODE_ENV !== 'production') {
+    console.error('[STARTUP] ⚠️  Continuing with invalid environment (non-production mode)');
+  }
+}
+
+// Health check endpoint with database connectivity check
+app.get('/health', async (c) => {
+  const healthStatus: {
+    status: string;
+    timestamp: string;
+    database?: { connected: boolean; error?: string };
+    environment?: { valid: boolean; warnings?: string[] };
+  } = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  };
+  
+  // Check database connectivity
+  try {
+    const dbHealthy = await checkDbHealth();
+    healthStatus.database = { connected: dbHealthy };
+    if (!dbHealthy) {
+      healthStatus.status = 'degraded';
+      healthStatus.database.error = 'Database connection check failed';
+    }
+  } catch (error) {
+    healthStatus.status = 'degraded';
+    healthStatus.database = {
+      connected: false,
+      error: error instanceof Error ? error.message : 'Unknown database error',
+    };
+  }
+  
+  // Check environment validation (non-blocking)
+  try {
+    const envResult = validateEnvironment();
+    healthStatus.environment = {
+      valid: envResult.valid,
+      warnings: envResult.warnings.length > 0 ? envResult.warnings : undefined,
+    };
+  } catch (error) {
+    // Non-critical, don't fail health check
+    console.warn('[HEALTH] Environment validation check failed:', error);
+  }
+  
+  const statusCode = healthStatus.status === 'ok' ? 200 : 503;
+  return c.json(healthStatus, statusCode);
 });
 
 // Register all endpoints
@@ -241,7 +295,7 @@ registerPetEndpoints(app);
 registerVendorServicesEndpoints(app);
 registerVendorProductsEndpoints(app);
 registerVendorOrdersEndpoints(app);
-registerServiceCatalogEndpoints(app);
+// registerServiceCatalogEndpoints(app); // REMOVED: Already registered at line 215 (before parameterized routes)
 registerSettlementEndpoints(app);
 registerRegionEndpoints(app);
 registerChatEndpoints(app);

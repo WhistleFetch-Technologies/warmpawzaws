@@ -99,7 +99,7 @@ export function ServiceModeSelector({
                 {option.icon}
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <h3 className="font-bold text-gray-900">{option.title}</h3>
                   {option.badge && (
                     <span className="px-0 py-0 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
@@ -115,7 +115,7 @@ export function ServiceModeSelector({
                 <p className="text-sm text-gray-600 mb-0">{option.description}</p>
                 <ul className="space-y-1">
                   {option.features.map((feature, idx) => (
-                    <li key={idx} className="text-xs text-gray-500 flex items-center gap-0">
+                    <li key={idx} className="text-xs text-gray-500 flex items-center gap-3">
                       <span className="w-1.5 h-1.5 bg-primary rounded-full"></span>
                       {feature}
                     </li>

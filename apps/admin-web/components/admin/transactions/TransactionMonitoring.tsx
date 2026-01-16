@@ -103,7 +103,7 @@ export function TransactionMonitoring() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-green-100 rounded-xl">
             <CreditCard className="w-6 h-6 text-green-600" />
           </div>
@@ -114,7 +114,7 @@ export function TransactionMonitoring() {
         </div>
         <button
           onClick={handleExport}
-          className="flex items-center gap-0 px-4 py-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="flex items-center gap-3 px-4 py-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <Download className="w-4 h-4" />
           Export
@@ -156,7 +156,7 @@ export function TransactionMonitoring() {
               className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
-          <div className="flex gap-0">
+          <div className="flex gap-3">
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}

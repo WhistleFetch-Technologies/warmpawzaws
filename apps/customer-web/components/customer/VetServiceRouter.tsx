@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,10 @@ interface VetServiceRouterProps {
   data?: any;
 }
 
+/**
+ * ✅ FIX: Added pet context validation to prevent crashes (VET-CUST-001)
+ * Vet services require a pet to be selected before booking
+ */
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
   const [loading, setLoading] = useState(true);
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
@@ -23,11 +27,28 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [stats, setStats] = useState<any>(null);
   const [showBookingHistory, setShowBookingHistory] = useState(false);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
+  const [pets, setPets] = useState<any[]>([]);
+  const [hasPets, setHasPets] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    loadPets();
     loadVetData();
     loadDashboardConfig();
   }, []);
+
+  const loadPets = async () => {
+    try {
+      const petsData = await apiClient.get(`/customer/pets/${phone}`) as any;
+      const petsList = petsData?.pets || [];
+      setPets(petsList);
+      setHasPets(petsList.length > 0);
+    } catch (err: any) {
+      console.error('Error loading pets:', err);
+      setError('Failed to load pets. Please try again.');
+      setHasPets(false);
+    }
+  };
 
   const loadDashboardConfig = async () => {
     try {
@@ -200,10 +221,64 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const serviceTypes = getFilteredServiceTypes();
 
+  // ✅ FIX: Validate pet context before allowing navigation
+  const handleNavigate = (screen: string, navData?: any) => {
+    // Check if navigation requires a pet (booking-related screens)
+    const requiresPet = ['vet-booking', 'vet-doctor-details', 'vet-clinic-booking', 'vet-services-by-style'].includes(screen);
+    
+    if (requiresPet && (!hasPets || pets.length === 0)) {
+      toast.error('Please add a pet first before booking vet services');
+      onNavigate('pets', { action: 'add' });
+      return;
+    }
+    
+    try {
+      onNavigate(screen, navData);
+    } catch (err: any) {
+      console.error('Navigation error:', err);
+      toast.error('Failed to navigate. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
+      </div>
+    );
+  }
+
+  // ✅ FIX: Show error state if pets failed to load
+  if (error) {
+    return (
+      <div className="min-h-screen bg-white max-w-md mx-auto">
+        <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-16 relative">
+          <button 
+            onClick={onBack}
+            className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Back</span>
+          </button>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+              <Stethoscope className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Vet Services</h1>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 pt-8">
+          <Card className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <Button onClick={loadPets} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+              Try Again
+            </Button>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -290,7 +365,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <Button 
                   size="sm" 
                   className="bg-blue-600 text-white hover:bg-blue-700 h-8"
-                  onClick={() => onNavigate('vet-booking', { serviceType: 'tele' })}
+                  onClick={() => handleNavigate('vet-booking', { serviceType: 'tele' })}
                 >
                   Book Now
                 </Button>
@@ -314,7 +389,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <Button 
                   size="sm" 
                   className="bg-purple-600 text-white hover:bg-purple-700 h-8"
-                  onClick={() => onNavigate('vet-lab-tests')}
+                  onClick={() => handleNavigate('vet-lab-tests')}
                 >
                   Book Test
                 </Button>
@@ -354,16 +429,16 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   
                   // Navigate to services listing page for this style
                   if (service.id === 'clinic') {
-                    onNavigate('vet-clinic-list');
+                    handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele' || service.id === 'home') {
                     // Navigate to service listing by style - shows actual configured services
-                    onNavigate('vet-services-by-style', { 
+                    handleNavigate('vet-services-by-style', { 
                       serviceStyle, 
                       serviceTypeName: service.name,
                       category: 'vet'
                     });
                   } else {
-                    onNavigate('vet-booking', { serviceType: service.id });
+                    handleNavigate('vet-booking', { serviceType: service.id });
                   }
                 }}
               >
@@ -397,7 +472,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           problems={VET_PROBLEMS}
           onNavigate={(screen, data) => {
             console.log('🔵 [Vet] Problem grid navigation:', screen, data);
-            onNavigate(screen, data);
+            handleNavigate(screen, data);
           }}
         />
 
@@ -407,7 +482,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
             <h2 className="text-lg font-semibold">Featured Vets</h2>
             <button 
               className="text-sm text-[#FF8C42] flex items-center gap-1"
-              onClick={() => onNavigate('vet-all-doctors')}
+              onClick={() => handleNavigate('vet-all-doctors')}
             >
               View All
               <ChevronRight className="w-4 h-4" />
@@ -420,7 +495,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <Card 
                   key={index}
                   className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => onNavigate('vet-doctor-details', { doctorId: vet.id })}
+                  onClick={() => handleNavigate('vet-doctor-details', { doctorId: vet.id })}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">

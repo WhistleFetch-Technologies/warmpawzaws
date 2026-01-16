@@ -241,7 +241,7 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
                     }`}
                   >
                     <div className="flex items-start justify-between mb-0">
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         {getStatusIcon(vaccination.status)}
                         <div>
                           <h4 className="font-semibold text-gray-900">{vaccination.name}</h4>
@@ -253,11 +253,11 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
                       </div>
                     </div>
                     <div className="space-y-2 text-sm text-gray-600">
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         <Calendar className="w-4 h-4" />
                         <span>Given: {formatDate(vaccination.dateGiven)}</span>
                       </div>
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         <Calendar className="w-4 h-4" />
                         <span>Next Due: {formatDate(vaccination.nextDueDate)}</span>
                       </div>

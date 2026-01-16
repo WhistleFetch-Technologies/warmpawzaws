@@ -318,7 +318,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       </div>
 
       {/* Filters */}
-      <div className="mb-4 flex gap-0 items-center">
+      <div className="mb-4 flex gap-3 items-center">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
@@ -355,7 +355,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
         />
         
         <Button variant="outline" size="sm" onClick={loadVendors}>
-          <RefreshCw className="w-4 h-4 mr-0" />
+          <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
         </Button>
       </div>
@@ -374,7 +374,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
               <div key={vendor.id || vendor.vendorId} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-0 mb-0">
+                    <div className="flex items-center gap-3 mb-0">
                       <h4 className="font-semibold text-gray-900">
                         {vendor.fullName || vendor.businessName || vendor.vendorName}
                       </h4>
@@ -403,7 +403,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                     </div>
                   </div>
                   
-                  <div className="flex gap-0 ml-4">
+                  <div className="flex gap-3 ml-4">
                     <Button
                       size="sm"
                       variant="outline"
@@ -412,7 +412,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                         if (onViewDetails) onViewDetails(vendor);
                       }}
                     >
-                      <Eye className="w-4 h-4 mr-0" />
+                      <Eye className="w-4 h-4 mr-2" />
                       View
                     </Button>
                     
@@ -424,7 +424,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           onClick={() => handleRequestInfo(vendor)}
                           className="text-blue-600 hover:bg-blue-50"
                         >
-                          <FileText className="w-4 h-4 mr-0" />
+                          <FileText className="w-4 h-4 mr-2" />
                           Request Info
                         </Button>
                         <Button
@@ -434,7 +434,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           className="text-red-600 hover:bg-red-50"
                           disabled={isProcessing}
                         >
-                          <X className="w-4 h-4 mr-0" />
+                          <X className="w-4 h-4 mr-2" />
                           Reject
                         </Button>
                         <Button
@@ -443,7 +443,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           disabled={isProcessing}
                           className="bg-green-600 hover:bg-green-700"
                         >
-                          <Check className="w-4 h-4 mr-0" />
+                          <Check className="w-4 h-4 mr-2" />
                           {isProcessing ? 'Processing...' : 'Approve'}
                         </Button>
                       </>

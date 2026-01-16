@@ -142,9 +142,11 @@ export default function AuthPage() {
           localStorage.setItem('authToken', response.accessToken);
         }
         
-        // Set sessionStorage flag to track that user is logged in
-        // This flag is cleared on hard refresh, allowing us to detect it
+        // Set sessionStorage flags to track that user is logged in
+        // These flags are cleared on hard refresh, allowing us to detect it
         sessionStorage.setItem('_warmpawz_has_session', 'true');
+        sessionStorage.setItem('_warmpawz_just_logged_in', 'true'); // ✅ FIX: Prevent session clearing right after login
+        console.log('✅ [Auth] sessionStorage flags set after OTP verification');
         
         // Get customer profile and pets to check onboarding status
         try {

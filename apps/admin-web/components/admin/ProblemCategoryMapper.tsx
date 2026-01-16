@@ -165,7 +165,7 @@ export function ProblemCategoryMapper() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-pink-100 rounded-xl">
             <Tag className="w-6 h-6 text-pink-600" />
           </div>
@@ -176,7 +176,7 @@ export function ProblemCategoryMapper() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Add Category
@@ -235,7 +235,7 @@ export function ProblemCategoryMapper() {
                     </span>
                   </td>
                   <td className="px-0 py-4 text-right">
-                    <div className="flex items-center justify-end gap-0">
+                    <div className="flex items-center justify-end gap-3">
                       <button
                         onClick={() => handleOpenModal(category)}
                         className="p-0 hover:bg-gray-200 rounded-lg"
@@ -333,7 +333,7 @@ export function ProblemCategoryMapper() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.autoAssign}
@@ -361,7 +361,7 @@ export function ProblemCategoryMapper() {
               )}
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -373,7 +373,7 @@ export function ProblemCategoryMapper() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -383,7 +383,7 @@ export function ProblemCategoryMapper() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

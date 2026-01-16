@@ -107,7 +107,7 @@ export function AddRoleModal({ role, onClose, onSuccess }: AddRoleModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-0">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-3">
             <Shield className="w-5 h-5 text-orange-600" />
             {role ? 'Edit Role' : 'Add Role'}
           </h2>
@@ -153,7 +153,7 @@ export function AddRoleModal({ role, onClose, onSuccess }: AddRoleModalProps) {
                   <h4 className="font-medium text-sm text-gray-700 mb-0">{category}</h4>
                   <div className="space-y-2">
                     {perms.map(perm => (
-                      <label key={perm.id} className="flex items-start gap-0 cursor-pointer">
+                      <label key={perm.id} className="flex items-start gap-3 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={formData.permissions.includes(perm.id)}
@@ -172,11 +172,11 @@ export function AddRoleModal({ role, onClose, onSuccess }: AddRoleModalProps) {
             </div>
           </div>
 
-          <div className="flex gap-0 pt-4 border-t">
+          <div className="flex gap-3 pt-4 border-t">
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="flex-1 py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+              className="flex-1 py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {loading ? (
                 <>

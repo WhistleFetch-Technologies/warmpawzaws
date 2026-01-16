@@ -50,7 +50,7 @@ export function SettlementsTab() {
         <div key={settlement.id} className="bg-white rounded-lg border-2 border-gray-200 p-4">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-3 mb-0">
                 <DollarSign className="w-4 h-4 text-gray-400" />
                 <span className="font-semibold text-gray-900">{settlement.vendorName}</span>
               </div>

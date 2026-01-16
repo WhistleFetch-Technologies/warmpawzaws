@@ -46,7 +46,10 @@ import {
   Shield,
   Truck,
   MapPin,
-  HelpCircle
+  HelpCircle,
+  CheckCircle2,
+  User,
+  X
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -218,6 +221,11 @@ export function VendorDashboard({
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
+  // ✅ NEW: OTP modal state for completing appointments
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [processingOtp, setProcessingOtp] = useState(false);
 
   const router = useRouter();
   
@@ -227,6 +235,8 @@ export function VendorDashboard({
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
+  // ✅ PHARMACY FIX: Check if vendor is Pharmacy role
+  const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
 
   // ✅ INTEGRATION: Check if solo provider and route to solo dashboard
   const isSoloProvider = vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
@@ -365,6 +375,44 @@ export function VendorDashboard({
     }
   }, [vendorId, activeTab, capsLoading, capabilities.booking, capabilities.medical_records]);
 
+  // ✅ NEW: OTP handler for completing appointments
+  const handleCompleteWithOtp = async () => {
+    if (!selectedAppointment) return;
+    if (otp.length !== 6) {
+      setOtpError('Please enter a valid 6-digit OTP');
+      return;
+    }
+
+    setProcessingOtp(true);
+    setOtpError(null);
+
+    try {
+      const data = await apiClient.post(`/vendor/bookings/${selectedAppointment.bookingId}/otp/verify`, {
+        otp,
+        action: 'complete'
+      }) as any;
+      
+      setShowOtpModal(false);
+      setOtp('');
+      setOtpError(null);
+      setSelectedAppointment(null);
+      
+      // Refresh dashboard data
+      fetchDashboardData(true);
+      
+      // Show success message
+      if (data.message) {
+        // Using a simple alert for now - can be replaced with toast
+        alert(data.message || 'Service completed successfully!');
+      }
+    } catch (error: any) {
+      console.error('Error completing service:', error);
+      setOtpError(error.message || 'OTP verification failed. Please try again.');
+    } finally {
+      setProcessingOtp(false);
+    }
+  };
+
   // Format time ago
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -446,8 +494,8 @@ export function VendorDashboard({
             </div>
           </div>
 
-          {/* Service Summary */}
-          {capabilities.booking && (
+          {/* Service Summary - Hide for Pharmacy (they don't do appointments) */}
+          {capabilities.booking && !isPharmacy && (
             <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-orange-600" />
@@ -463,13 +511,8 @@ export function VendorDashboard({
         <div className="p-4 border-b border-gray-100">
           <div className="flex flex-wrap gap-3">
             {/* Staff Management - For Clinics/Hospitals */}
-            {/* ✅ FIX: Show staff management based on capability OR role check OR if handler exists */}
-            {onNavigateToStaffManagement && (
-              capabilities.staff_management || 
-              capabilities.staff || 
-              capabilities.staffManagement || 
-              hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet', 'pet_groomer', 'pet_trainer', 'pet_clinic', 'clinic'])
-            ) && (
+            {/* ✅ FIX: Only show if vendor has staff_management capability */}
+            {onNavigateToStaffManagement && CapabilityHelper.hasStaffManagement(capabilities) && (
               <button
                 onClick={onNavigateToStaffManagement}
                 className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
@@ -479,17 +522,8 @@ export function VendorDashboard({
               </button>
             )}
             
-            {/* ✅ FIX: Center Profile - Use capability-based check with fallbacks */}
-            {onNavigateToCenterProfile && (
-              capabilities.facility_management ||  // ✅ PRIMARY: Check capability
-              capabilities.facility ||  // ✅ Alias check
-              capabilities.facilityManagement ||  // ✅ Alias check (camelCase)
-              hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet', 'pet_groomer', 'pet_trainer', 'clinic', 'pet_boarder', 'pet_resort']) ||  // ✅ FALLBACK: Check if role can offer center services
-              vendorData?.serviceStyle === 'at_center' ||  // ✅ FALLBACK: Check service style
-              vendorData?.serviceStyles?.includes('at_center') ||  // ✅ FALLBACK: Check if array includes at_center
-              vendorData?.service_style === 'at_center' ||  // ✅ FALLBACK: Check snake_case
-              (vendorData as any)?.serviceTypes?.includes('at_center')  // ✅ FALLBACK: Check alternative field name
-            ) && (
+            {/* ✅ FIX: Center Profile/Facility - Only show if vendor has facility_management capability */}
+            {onNavigateToCenterProfile && CapabilityHelper.hasFacilityManagement(capabilities) && (
               <button
                 onClick={onNavigateToCenterProfile}
                 className="flex-1 min-w-[140px] bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
@@ -500,14 +534,19 @@ export function VendorDashboard({
             )}
             
             {/* Inventory/Store - For Pet Stores/Pharmacies */}
-            {onNavigateToBusinessHub && (capabilities.inventory || hasVendorRole(vendorData, ['pet_products_store', 'pet_pharmacy', 'seller', 'retailer'])) && (
-              <button
-                onClick={onNavigateToBusinessHub}
-                className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
-              >
-                <Package className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Inventory & Store</span>
-              </button>
+            {/* ✅ PHARMACY FIX: Always show for pharmacy role - use role check first, then capability */}
+            {onNavigateToBusinessHub && (
+              (hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy', 'pet_products_store', 'seller', 'retailer']) || 
+               capabilities.inventory || 
+               capabilities.catalog) && (
+                <button
+                  onClick={onNavigateToBusinessHub}
+                  className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
+                >
+                  <Package className="w-6 h-6 mb-2" />
+                  <span className="font-semibold text-sm">Inventory & Store</span>
+                </button>
+              )
             )}
           </div>
         </div>
@@ -568,10 +607,12 @@ export function VendorDashboard({
         )}
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS */}
-        {(capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.controlled_substances || 
-          capabilities.prescription || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services ||
-          capabilities.prescription_verification || capabilities.delivery || capabilities.diet_charts || 
-          capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) && (
+        {/* ✅ PHARMACY FIX: Filter out irrelevant capabilities for Pharmacy */}
+        {((!isPharmacy && (capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing)) ||
+          capabilities.controlled_substances ||
+          capabilities.prescription ||
+          capabilities.prescription_verification ||
+          capabilities.delivery) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
@@ -643,8 +684,8 @@ export function VendorDashboard({
                 </button>
               )}
               
-              {/* Package Management */}
-              {onNavigateToPackages && capabilities.package_management && (
+              {/* Package Management - Hidden for Pharmacy */}
+              {!isPharmacy && onNavigateToPackages && capabilities.package_management && (
                 <button
                   onClick={onNavigateToPackages}
                   className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
@@ -654,8 +695,8 @@ export function VendorDashboard({
                 </button>
               )}
               
-              {/* Custom Services */}
-              {onNavigateToCustomServices && capabilities.custom_services && (
+              {/* Custom Services - Hidden for Pharmacy */}
+              {!isPharmacy && onNavigateToCustomServices && capabilities.custom_services && (
                 <button
                   onClick={onNavigateToCustomServices}
                   className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-yellow-100 transition-colors"
@@ -854,31 +895,71 @@ export function VendorDashboard({
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            {/* Appointments Stat */}
-            {capabilities.booking && (
-              <div key="stat-appointments" className={`text-center p-3 ${colorScheme.secondary} rounded-lg`}>
-                <Calendar className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
-                <div className="text-xs text-gray-500">Appointments</div>
-              </div>
-            )}
+            {/* ✅ PHARMACY FIX: Show Orders first for Pharmacy, Appointments for others */}
+            {isPharmacy ? (
+              <>
+                {/* Orders Stat - Primary for Pharmacy */}
+                <div key="stat-orders" className="text-center p-3 bg-blue-50 rounded-lg">
+                  <ShoppingBag className="w-5 h-5 text-blue-600 mx-auto mb-1" />
+                  <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
+                  <div className="text-xs text-gray-500">Orders</div>
+                </div>
+                {/* Prescriptions Stat - Secondary for Pharmacy */}
+                <div key="stat-prescriptions" className="text-center p-3 bg-purple-50 rounded-lg">
+                  <FileText className="w-5 h-5 text-purple-600 mx-auto mb-1" />
+                  <div className="text-2xl font-bold text-gray-900">{stats.completedServices || 0}</div>
+                  <div className="text-xs text-gray-500">Rx Verified</div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* ✅ FIX: Appointments Stat - Now Clickable - Hidden for Pharmacy */}
+                {capabilities.booking && (
+                  <button
+                    key="stat-appointments"
+                    onClick={() => {
+                      setActiveBottomTab('bookings');
+                      onNavigateToBookingManagement?.();
+                    }}
+                    className={`text-center p-3 ${colorScheme.secondary} rounded-lg hover:shadow-md transition-all cursor-pointer border-2 border-transparent hover:border-[#FF8C42]`}
+                  >
+                    <Calendar className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
+                    <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
+                    <div className="text-xs text-gray-500">Appointments</div>
+                    <div className="text-[10px] text-[#FF8C42] mt-1">Tap to view</div>
+                  </button>
+                )}
 
-            {/* Orders Stat (if booking is disabled or orders enabled) */}
-            {capabilities.orders && (
-              <div key="stat-orders" className={`text-center p-3 bg-blue-50 rounded-lg`}>
-                <ShoppingBag className={`w-5 h-5 text-blue-600 mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
-                <div className="text-xs text-gray-500">Orders</div>
-              </div>
-            )}
+                {/* Orders Stat (if booking is disabled or orders enabled) */}
+                {capabilities.orders && (
+                  <div key="stat-orders" className={`text-center p-3 bg-blue-50 rounded-lg`}>
+                    <ShoppingBag className={`w-5 h-5 text-blue-600 mx-auto mb-1`} />
+                    <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
+                    <div className="text-xs text-gray-500">Orders</div>
+                  </div>
+                )}
 
-            {/* Consultations Stat */}
-            {(capabilities.tele || capabilities.booking) && (
-              <div key="stat-consultations" className={`text-center p-3 ${colorScheme.secondary} rounded-lg`}>
-                <Users className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
-                <div className="text-xs text-gray-500">Consultations</div>
-              </div>
+                {/* ✅ FIX: Consultations Stat - Now Clickable - Hidden for Pharmacy */}
+                {(capabilities.tele || capabilities.booking) && (
+                  <button
+                    key="stat-consultations"
+                    onClick={() => {
+                      if (capabilities.tele) {
+                        onNavigateToTeleConsultation?.();
+                      } else {
+                        setActiveBottomTab('bookings');
+                        onNavigateToBookingManagement?.();
+                      }
+                    }}
+                    className={`text-center p-3 ${colorScheme.secondary} rounded-lg hover:shadow-md transition-all cursor-pointer border-2 border-transparent hover:border-[#FF8C42]`}
+                  >
+                    <Users className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
+                    <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
+                    <div className="text-xs text-gray-500">Consultations</div>
+                    <div className="text-[10px] text-[#FF8C42] mt-1">Tap to view</div>
+                  </button>
+                )}
+              </>
             )}
 
             {/* Earnings Stat - Always show */}
@@ -890,8 +971,8 @@ export function VendorDashboard({
           </div>
         </div>
 
-        {/* 🗓️ TODAY'S SCHEDULE (Conditional) */}
-        {capabilities.booking && (
+        {/* 🗓️ TODAY'S SCHEDULE (Conditional) - Hidden for Pharmacy */}
+        {capabilities.booking && !isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">Today's Schedule</h2>
             
@@ -1006,33 +1087,55 @@ export function VendorDashboard({
                                    </div>
                                    <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">{appointment.status}</span>
                                 </div>
-                                <div className="text-sm font-medium text-gray-900">{appointment.petName}</div>
-                                <div className="text-xs text-gray-500">{appointment.customerName} • {appointment.petBreed || 'Pet'}</div>
-                                <div className="text-xs font-medium text-[#FF8C42] mt-1 mb-2">{appointment.serviceName}</div>
+                                {/* ✅ FIX: Add labels for better clarity */}
+                                <div className="flex items-center gap-1 mb-1">
+                                  <User className="w-3 h-3 text-gray-400" />
+                                  <span className="text-xs text-gray-500">Customer:</span>
+                                  <span className="text-sm font-medium text-gray-900">{appointment.customerName}</span>
+                                </div>
+                                <div className="text-sm font-medium text-gray-900 mb-1">{appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}</div>
+                                <div className="flex items-center gap-1 mb-2">
+                                  <span className="text-xs text-gray-500">Service:</span>
+                                  <span className="text-xs font-medium text-[#FF8C42]">{appointment.serviceName}</span>
+                                </div>
                                 
-                                 <div className="flex gap-2">
+                                 <div className="flex gap-2 flex-wrap">
                                    <button 
                                      onClick={() => {
                                         setSelectedAppointment(appointment);
                                         setAppointmentDetailModalOpen(true);
                                      }}
-                                     className="flex-1 py-1.5 px-3 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                     className="flex-1 min-w-[80px] py-1.5 px-3 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                    >
                                       Details
                                    </button>
                                    <button 
                                      onClick={() => window.location.href = `tel:${appointment.customerPhone}`}
-                                     className="flex-1 py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                     className="flex-1 min-w-[80px] py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                    >
                                       <Phone className="w-3.5 h-3.5" /> Call
                                    </button>
+                                   {/* ✅ NEW: Complete Service button with OTP */}
+                                   {(appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'arrived') && (
+                                     <button 
+                                       onClick={() => {
+                                         setSelectedAppointment(appointment);
+                                         setShowOtpModal(true);
+                                         setOtp('');
+                                         setOtpError(null);
+                                       }}
+                                       className="flex-1 min-w-[100px] py-1.5 px-3 bg-green-500 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-green-600"
+                                     >
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Complete
+                                     </button>
+                                   )}
                                    {capabilities.chat && (
                                      <button 
                                        onClick={() => {
                                           setSelectedAppointment(appointment);
                                           setCommunicationMode('chat');
                                        }}
-                                       className="relative flex-1 py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                       className="relative flex-1 min-w-[80px] py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                      >
                                         <MessageSquare className="w-3.5 h-3.5" /> Chat
                                         {appointment.hasUnreadMessages && (
@@ -1046,7 +1149,7 @@ export function VendorDashboard({
                                         href={`https://meet.jit.si/warmpawz-${appointment.bookingId}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex-1 py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                        className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                         onClick={(e) => e.stopPropagation()} 
                                       >
                                          <Video className="w-3.5 h-3.5" /> Join
@@ -1144,7 +1247,22 @@ export function VendorDashboard({
               <span className="text-xs">Home</span>
             </button>
             
-            {capabilities.booking && (
+            {/* ✅ PHARMACY FIX: Hide Bookings tab for Pharmacy, show Orders instead */}
+            {isPharmacy && capabilities.orders ? (
+              <button 
+                onClick={() => {
+                  // Navigate to orders page for pharmacy
+                  onNavigateToDeliveryManagement?.();
+                  setActiveBottomTab('bookings'); // Reuse bookings tab state
+                }}
+                className={`flex flex-col items-center gap-1 ${
+                  activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+              >
+                <ShoppingBag className="w-6 h-6" />
+                <span className="text-xs">Orders</span>
+              </button>
+            ) : capabilities.booking && (
               <button 
                 onClick={() => {
                   onNavigateToBookingManagement?.();
@@ -1222,6 +1340,77 @@ export function VendorDashboard({
           }}
           onRefresh={() => fetchDashboardData(true)}
         />
+      )}
+
+      {/* ✅ NEW: OTP Modal for Completing Appointments */}
+      {showOtpModal && selectedAppointment && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Complete Service</h3>
+              <button
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtp('');
+                  setOtpError(null);
+                  setSelectedAppointment(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Ask the customer for the 6-digit OTP sent to their phone to complete the service.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Enter OTP
+              </label>
+              <input
+                type="text"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Enter 6-digit OTP"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                maxLength={6}
+              />
+              {otpError && (
+                <p className="text-sm text-red-600 mt-2">{otpError}</p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtp('');
+                  setOtpError(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                disabled={processingOtp}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCompleteWithOtp}
+                disabled={otp.length !== 6 || processingOtp}
+                className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {processingOtp ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    Verify & Complete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Vendor Analytics */}

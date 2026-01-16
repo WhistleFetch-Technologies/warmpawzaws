@@ -21,7 +21,7 @@ export function CenterModeContent({
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <Building2 className="w-6 h-6 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Center Mode</h2>
         </div>

@@ -71,7 +71,7 @@ INSERT INTO roles (name, display_name, description, is_system_role, is_active, c
   "category": "retail",
   "vendorTypes": ["center"],
   "serviceStyles": ["at_center"],
-  "capabilities": ["inventory_manage", "product_catalog", "prescription_create", "booking_create"],
+  "capabilities": ["inventory_manage", "product_catalog", "orders", "order_dispatch", "order_broadcast", "availability_check", "prescription_create", "prescription_verification", "delivery", "expiry_management", "controlled_substances"],
   "onboardingFields": {"version": 1, "sections": [], "fields": []}
 }'),
 

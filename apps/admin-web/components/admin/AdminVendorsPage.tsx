@@ -104,7 +104,7 @@ export function AdminVendorsPage() {
     <div className="p-0">
       <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Vendor Management</h1>
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           <input
             type="search"
             placeholder="Search vendors..."
@@ -268,7 +268,7 @@ function VendorDetailModal({
         {(vendor.status as any) === 'pending' && (
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-0">Take Action</h3>
-            <div className="flex gap-0 mb-4">
+            <div className="flex gap-3 mb-4">
               <button
                 onClick={() => setAction('approve')}
                 className={`px-4 py-0 rounded-lg font-medium ${
@@ -347,7 +347,7 @@ function VendorDetailModal({
           </div>
         )}
 
-        <div className="flex justify-end gap-0 mt-0 pt-4 border-t">
+        <div className="flex justify-end gap-3 mt-0 pt-4 border-t">
           <button
             onClick={onClose}
             className="px-4 py-0 border rounded-lg hover:bg-gray-50"

@@ -42,7 +42,6 @@ const SERVICE_STYLE_MAP: Record<string, 'at_home' | 'at_center' | 'tele'> = {
   // Backend variations
   'at_clinic': 'at_center',
   'clinic': 'at_center',
-  'at_center': 'at_center',
   'video_consultation': 'tele',
   'tele_consultation': 'tele',
   'teleconsultation': 'tele',

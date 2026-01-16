@@ -1,219 +1,337 @@
-# Testing Guide - Customer App API Integration
+# Testing Guide - Immediate Fixes
 
-## 🧪 Test Results Summary
+**Date:** 2026-01-28
 
-### ✅ Deployment Status
-- **Lambda Function**: ✅ Deployed and Active
-- **API Endpoints**: ✅ Responding correctly
-- **Parameter Compatibility**: ✅ Working (problemGridId supported)
-- **Backward Compatibility**: ✅ Maintained (problemId still works)
+This guide helps you test the immediate fixes that were implemented.
 
-### ⚠️ Database Issue Found
-**Issue**: `problem_grid_mappings` table does not exist
-- **Impact**: `/customer/vendors/by-problem` endpoint returns error for this table
-- **Status**: Code handles gracefully, but needs table or alternative approach
-- **Solution**: Either create the table or use alternative endpoints
+---
 
-## 📋 Testing Checklist
+## Quick Test Commands
 
-### 1. Test Service Discovery Endpoint (Working)
+### 1. Test Environment Validation
+
 ```bash
-curl "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/discover-services?category=vet"
+cd backend/lambda
+
+# Option A: Run test script (requires build)
+npm run build
+npx ts-node test-env-validation.ts
+
+# Option B: Run shell test script
+./test-immediate-fixes.sh
 ```
 
-**Expected**: Returns vendors with services, ratings, availability
+### 2. Test Health Check Endpoint
 
-### 2. Test Vendor Search (Working)
 ```bash
-curl "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/vendors/search?roleId=veterinarian"
+cd backend/lambda
+
+# Start server locally
+npm run start:local
+
+# In another terminal, test health endpoint
+curl http://localhost:3000/health | jq
+
+# Or use the test script
+npx ts-node test-health-endpoint.ts
 ```
 
-**Expected**: Returns vendors matching the role
+### 3. Test Route Ordering
 
-### 3. Test Problem-Based Discovery (Needs Table)
 ```bash
-# This will work once problem_grid_mappings table exists
-curl "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/vendors/by-problem?problemGridId=health-checkup&roleId=veterinarian"
+# Test specific routes (should work, not return 404)
+curl http://localhost:3000/customer/notifications
+curl http://localhost:3000/customer/behavior-journal
+curl http://localhost:3000/customer/profile
+
+# These should return 200, 401, or 403 (not 404)
+# If they return 404, route ordering may be wrong
 ```
 
-**Current Status**: Returns error about missing table
-**Action Needed**: Create `problem_grid_mappings` table or use alternative endpoints
+---
 
-## 🔧 Database Setup Options
+## Detailed Test Scenarios
 
-### Option 1: Create problem_grid_mappings Table
-```sql
-CREATE TABLE IF NOT EXISTS problem_grid_mappings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  problem_id TEXT NOT NULL,
-  problem_name TEXT NOT NULL,
-  problem_display_name TEXT,
-  role_id TEXT NOT NULL,
-  sub_category_id TEXT,
-  sub_category_name TEXT,
-  order_index INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+### Test 1: Environment Variable Validation
 
-CREATE INDEX IF NOT EXISTS idx_problem_grid_problem_id ON problem_grid_mappings(problem_id);
-CREATE INDEX IF NOT EXISTS idx_problem_grid_role_id ON problem_grid_mappings(role_id);
-```
+**Purpose:** Verify that missing environment variables are detected.
 
-### Option 2: Use Alternative Endpoints (Immediate Solution)
-Instead of `/customer/vendors/by-problem`, use:
-- `/customer/discover-services?category=vet` - Works now
-- `/customer/vendors/search?roleId=veterinarian` - Works now
-- `/customer/services/by-problem` - May need table, but has fallback
+**Steps:**
 
-## 🧪 Frontend Testing Steps
+1. **Test with valid environment:**
+   ```bash
+   export DB_HOST=localhost
+   export DB_NAME=warmpawz
+   export DB_USER=postgres
+   export DB_PASSWORD=password
+   
+   cd backend/lambda
+   npx ts-node test-env-validation.ts
+   ```
+   
+   **Expected:** ✅ Validation passes
 
-### Step 1: Test Service Discovery
-1. Open customer app
-2. Navigate to Vet service
-3. Verify vendors appear
-4. Check browser console for API calls
-5. Verify real vendor names (not placeholders)
+2. **Test with missing required variables:**
+   ```bash
+   unset DB_HOST
+   unset DB_NAME
+   
+   npx ts-node test-env-validation.ts
+   ```
+   
+   **Expected:** ⚠️ Validation fails, lists missing variables
 
-### Step 2: Test Vendor Details
-1. Click on a vendor
-2. Verify vendor profile loads
-3. Check services are listed
-4. Verify ratings and reviews show
+3. **Test database credentials validation:**
+   ```bash
+   # Test with DB_SECRET_ARN (should pass)
+   export DB_SECRET_ARN=arn:aws:secretsmanager:...
+   unset DB_USER
+   unset DB_PASSWORD
+   
+   npx ts-node test-env-validation.ts
+   ```
+   
+   **Expected:** ✅ Validation passes (using Secrets Manager)
 
-### Step 3: Test Problem Grid (If Table Exists)
-1. Navigate to problem grid
-2. Select a problem
-3. Verify vendors/specialists appear
-4. Check schedule availability
-5. Test filters
+4. **Test with neither credentials method:**
+   ```bash
+   unset DB_SECRET_ARN
+   unset DB_USER
+   unset DB_PASSWORD
+   
+   npx ts-node test-env-validation.ts
+   ```
+   
+   **Expected:** ❌ Validation fails with credential error
 
-### Step 4: Test Specialists Display
-1. For vet clinics, verify doctors/specialists appear
-2. Check specialization details
-3. Verify services per specialist
-4. Test booking flow
+---
 
-## 📊 API Response Verification
+### Test 2: Health Check Endpoint
 
-### Expected Response Format - /customer/discover-services
-```json
-{
-  "success": true,
-  "vendors": [
-    {
-      "id": "vendor-id",
-      "businessName": "Real Clinic Name",
-      "rating": 4.5,
-      "totalReviews": 120,
-      "isAvailableToday": true,
-      "distance": 2.5,
-      "featuredOfferings": [...]
-    }
-  ]
-}
-```
+**Purpose:** Verify the enhanced `/health` endpoint returns database and environment status.
 
-### Expected Response Format - /customer/vendors/by-problem (Once Table Exists)
-```json
-{
-  "success": true,
-  "vendors": [
-    {
-      "id": "vendor-id",
-      "businessName": "Clinic Name",
-      "specialists": [
-        {
-          "staffId": "staff-id",
-          "fullName": "Dr. Name",
-          "specializationDetails": [...],
-          "services": [...]
-        }
-      ],
-      "nextAvailable": {
-        "date": "Monday",
-        "time": "10:00 AM"
-      }
-    }
-  ],
-  "specialists": [...]
-}
-```
+**Steps:**
 
-## 🔍 Monitoring & Debugging
+1. **Start the server:**
+   ```bash
+   cd backend/lambda
+   npm run start:local
+   ```
 
-### Check Lambda Logs
+2. **Test health endpoint:**
+   ```bash
+   curl http://localhost:3000/health
+   ```
+
+3. **Expected Response (Healthy):**
+   ```json
+   {
+     "status": "ok",
+     "timestamp": "2026-01-28T...",
+     "database": {
+       "connected": true
+     },
+     "environment": {
+       "valid": true
+     }
+   }
+   ```
+
+4. **Expected Response (Degraded - DB down):**
+   ```json
+   {
+     "status": "degraded",
+     "timestamp": "2026-01-28T...",
+     "database": {
+       "connected": false,
+       "error": "Database connection timeout or refused..."
+     },
+     "environment": {
+       "valid": true
+     }
+   }
+   ```
+
+5. **Test with invalid environment:**
+   ```bash
+   # Stop server, remove env vars, restart
+   unset DB_HOST
+   unset DB_NAME
+   npm run start:local
+   
+   curl http://localhost:3000/health
+   ```
+   
+   **Expected:** Environment validation shows warnings/errors
+
+---
+
+### Test 3: Route Ordering
+
+**Purpose:** Verify specific routes work correctly (not caught by parameterized routes).
+
+**Steps:**
+
+1. **Start the server:**
+   ```bash
+   cd backend/lambda
+   npm run start:local
+   ```
+
+2. **Test specific customer routes:**
+   ```bash
+   # These should NOT return 404 (even if they return 401/403)
+   curl -v http://localhost:3000/customer/notifications
+   curl -v http://localhost:3000/customer/behavior-journal
+   curl -v http://localhost:3000/customer/profile
+   ```
+
+3. **Expected Results:**
+   - ✅ HTTP 200, 401, or 403 = Route is correctly matched
+   - ❌ HTTP 404 = Route may be caught by parameterized route (ordering issue)
+
+4. **Test parameterized route:**
+   ```bash
+   # This should work with a valid customer ID
+   curl -v http://localhost:3000/customer/123e4567-e89b-12d3-a456-426614174000
+   ```
+   
+   **Expected:** Returns customer data or appropriate error (not 404)
+
+---
+
+### Test 4: Duplicate Endpoint Registration
+
+**Purpose:** Verify `registerServiceCatalogEndpoints` is only registered once.
+
+**Steps:**
+
+1. **Check handler file:**
+   ```bash
+   cd backend/lambda
+   grep -n "registerServiceCatalogEndpoints" src/handler/index.ts
+   ```
+   
+   **Expected:** Should appear only once (around line 270)
+
+2. **Verify no duplicate routes:**
+   ```bash
+   # Count occurrences
+   grep -c "registerServiceCatalogEndpoints" src/handler/index.ts
+   ```
+   
+   **Expected:** Output is `1` (only one registration)
+
+---
+
+## Automated Test Script
+
+Run the comprehensive test script:
+
 ```bash
-aws logs tail /aws/lambda/warmpawz-dev-api-handler --follow --region ap-south-1
+cd backend/lambda
+./test-immediate-fixes.sh
 ```
 
-### Check API Gateway Logs
-```bash
-aws apigatewayv2 get-logs --api-id YOUR_API_ID --region ap-south-1
+**What it tests:**
+- ✅ TypeScript compilation
+- ✅ Health check endpoint
+- ✅ Route ordering
+- ✅ Environment validation
+
+---
+
+## Integration with Existing Tests
+
+### Add to Test Suite
+
+You can add these tests to your existing test suite:
+
+```typescript
+// tests/health-check.test.ts
+describe('Health Check Endpoint', () => {
+  it('should return database status', async () => {
+    const response = await fetch('http://localhost:3000/health');
+    const data = await response.json();
+    expect(data).toHaveProperty('database');
+    expect(data.database).toHaveProperty('connected');
+  });
+  
+  it('should return environment validation status', async () => {
+    const response = await fetch('http://localhost:3000/health');
+    const data = await response.json();
+    expect(data).toHaveProperty('environment');
+  });
+});
+
+// tests/env-validation.test.ts
+describe('Environment Validation', () => {
+  it('should validate required variables', () => {
+    const result = validateEnvironment();
+    // Test based on your environment
+  });
+  
+  it('should detect missing database credentials', () => {
+    // Test credential validation logic
+  });
+});
 ```
 
-### Browser Console Checks
-1. Open DevTools → Network tab
-2. Filter by "vendors" or "by-problem"
-3. Check request/response
-4. Verify no 404/500 errors
-5. Check response contains real data
+---
 
-## ✅ Success Criteria
+## Troubleshooting
 
-### API Level
-- [x] Endpoints respond (not 404/500)
-- [x] Parameter compatibility works
-- [ ] Problem-based discovery works (needs table)
-- [x] Service discovery works
-- [x] Vendor search works
+### Issue: Environment validation fails
 
-### Frontend Level
-- [ ] Real vendor data displays
-- [ ] No placeholder data visible
-- [ ] Specialists appear for vet clinics
-- [ ] Schedule availability shows
-- [ ] Filters work correctly
+**Solution:**
+1. Check required environment variables are set
+2. Review validation report: `getValidationReport()`
+3. Ensure either `DB_SECRET_ARN` OR (`DB_USER` + `DB_PASSWORD`) is set
 
-### Data Quality
-- [ ] Vendor names are real (not "Test Vendor")
-- [ ] Ratings are realistic (0-5 range)
-- [ ] Services have real prices
-- [ ] Locations are valid addresses
+### Issue: Health check shows database as unhealthy
 
-## 🚨 Troubleshooting
+**Solution:**
+1. Verify database is running and accessible
+2. Check `DB_HOST`, `DB_NAME` are correct
+3. Verify network connectivity (security groups, VPC)
+4. Check database credentials are valid
 
-### Issue: "problem_grid_mappings does not exist"
-**Solution**: 
-1. Create the table (see SQL above)
-2. OR use alternative endpoints (`/customer/discover-services`)
-3. OR populate table with problem mappings
+### Issue: Routes return 404
 
-### Issue: No vendors returned
-**Check**:
-- Vendor status is 'approved'
-- Vendor is_active = true
-- Role matches query parameter
+**Solution:**
+1. Verify route is registered in `handler/index.ts`
+2. Check route ordering (specific before parameterized)
+3. Review `ROUTE_ORDERING_GUIDE.md`
+4. Test with `curl -v` to see full HTTP response
 
-### Issue: No specialists returned
-**Check**:
-- Staff table has data for vendors
-- Staff is_active = true
-- Staff linked to vendors correctly
+### Issue: TypeScript compilation fails
 
-## 📝 Next Actions
+**Solution:**
+1. Run `npm install` to ensure dependencies
+2. Check for import errors
+3. Verify `tsconfig.json` is correct
+4. Run `npm run build:ts` to see detailed errors
 
-1. **Immediate**: Test `/customer/discover-services` endpoint (works now)
-2. **Short-term**: Create `problem_grid_mappings` table or use alternatives
-3. **Testing**: Verify frontend displays real data
-4. **Monitoring**: Check CloudWatch logs for errors
+---
 
-## 🎯 Current Status
+## Success Criteria
 
-- ✅ **Backend Deployed**: Lambda function active
-- ✅ **API Endpoints**: Responding correctly
-- ✅ **Parameter Support**: problemGridId working
-- ⚠️ **Database**: problem_grid_mappings table needed
-- ✅ **Alternative Endpoints**: Available and working
+✅ **All tests pass if:**
+1. Environment validation detects missing variables
+2. Health endpoint returns database and environment status
+3. Specific routes work correctly (not caught by parameterized routes)
+4. No duplicate endpoint registrations
+5. TypeScript compiles without errors
 
-**Recommendation**: Use `/customer/discover-services` and `/customer/vendors/search` endpoints while setting up problem_grid_mappings table.
+---
+
+## Next Steps After Testing
+
+1. ✅ Fix any issues found during testing
+2. ✅ Add tests to CI/CD pipeline
+3. ✅ Monitor health endpoint in production
+4. ✅ Document any environment-specific findings
+
+---
+
+**Happy Testing! 🧪**

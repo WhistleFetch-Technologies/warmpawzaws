@@ -49,28 +49,28 @@ export function OverviewTab() {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <Users className="w-5 h-5 text-orange-600" />
             <span className="text-sm text-gray-600">Total Users</span>
           </div>
           <div className="text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</div>
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <DollarSign className="w-5 h-5 text-orange-600" />
             <span className="text-sm text-gray-600">Revenue</span>
           </div>
           <div className="text-2xl font-bold text-gray-900">${stats.totalRevenue.toLocaleString()}</div>
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <TrendingUp className="w-5 h-5 text-orange-600" />
             <span className="text-sm text-gray-600">Bookings</span>
           </div>
           <div className="text-2xl font-bold text-gray-900">{stats.totalBookings.toLocaleString()}</div>
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-          <div className="flex items-center gap-0 mb-0">
+          <div className="flex items-center gap-3 mb-0">
             <TrendingUp className="w-5 h-5 text-green-600" />
             <span className="text-sm text-gray-600">Growth</span>
           </div>

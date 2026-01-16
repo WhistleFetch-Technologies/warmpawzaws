@@ -104,7 +104,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-0">
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
               <span className="text-lg">💰</span>
             </div>
@@ -115,7 +115,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
               <span className="text-lg">⏳</span>
             </div>
@@ -126,7 +126,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
               <span className="text-lg">✅</span>
             </div>
@@ -137,7 +137,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
               <span className="text-lg">📊</span>
             </div>
@@ -184,7 +184,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
               <div key={settlement.id} className="p-4 hover:bg-gray-50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center gap-0">
+                    <div className="flex items-center gap-3">
                       <span className="font-medium text-gray-900">
                         Settlement #{settlement.id.slice(0, 8)}
                       </span>

@@ -1,139 +1,64 @@
-# Migration Status & Instructions
+# 🔄 Migration Status
 
-## ⚠️ Current Status
+## Current Status
 
-**Database Connection:** Not available locally at the moment
+✅ **Code Changes**: Applied and ready
+✅ **Dependencies**: Installed in `db/` directory
+⚠️ **Database Connection**: Not configured
 
-The migration script is ready but requires database access to run. 
+## ⚡ Action Required
 
-## 📋 Migration Instructions
+To run migrations, you need to provide your database connection string.
 
-### Option 1: Run on Local Database (When Available)
+### Option 1: Set Environment Variable
 
 ```bash
-# Make sure PostgreSQL is running locally
-# Then run:
-./scripts/run-migration-and-verify.sh
+export DATABASE_URL="postgresql://user:password@host:port/database"
 ```
 
-### Option 2: Run on AWS RDS
-
+Then run:
 ```bash
-# Set your RDS connection string
-export DATABASE_URL="postgresql://username:password@your-rds-endpoint.region.rds.amazonaws.com:5432/warmpawz"
-
-# Run migration
 cd db
-node run-migration.js migrations/053_admin_endpoints_tables.sql
-
-# Verify tables
-cd ..
-./scripts/verify-admin-tables.sh
+npm run migrate:up
 ```
 
-### Option 3: Manual SQL Execution
+### Option 2: Use Individual Components
 
-1. Connect to your database:
-   ```bash
-   psql $DATABASE_URL
-   ```
+The migration script also accepts:
+```bash
+export DB_HOST="your-db-host"
+export DB_PORT="5432"
+export DB_NAME="your-database-name"
+export DB_USER="your-username"
+export DB_PASSWORD="your-password"
+```
 
-2. Run the migration file:
-   ```sql
-   \i db/migrations/053_admin_endpoints_tables.sql
-   ```
+### Option 3: Supabase
 
-3. Verify tables:
-   ```sql
-   SELECT table_name 
-   FROM information_schema.tables 
-   WHERE table_schema = 'public' 
-   AND table_name IN (
-     'support_tickets', 
-     'chat_sessions', 
-     'transactions', 
-     'vendor_payment_rules', 
-     'vendor_refund_tiers',
-     'vendor_support_requests',
-     'compliance_issues'
-   )
-   ORDER BY table_name;
-   ```
-
-## ✅ What's Ready
-
-1. **Migration Script:** `db/migrations/053_admin_endpoints_tables.sql`
-   - Creates 7 required tables
-   - Uses `IF NOT EXISTS` (safe to run multiple times)
-   - Includes proper indexes and constraints
-
-2. **Verification Script:** `scripts/verify-admin-tables.sh`
-   - Checks if all tables exist
-   - Reports missing tables
-
-3. **Test Script:** `scripts/test-admin-endpoints.sh`
-   - Tests all endpoints after migration
-
-4. **All Endpoints:** Already implemented and ready
-   - Will work once tables are created
-   - Have graceful fallbacks (return empty arrays if tables missing)
-
-## 🔄 Next Steps (When Database is Available)
-
-1. **Run Migration:**
-   ```bash
-   ./scripts/run-migration-and-verify.sh
-   ```
-
-2. **Verify Tables:**
-   ```bash
-   ./scripts/verify-admin-tables.sh
-   ```
-
-3. **Test Endpoints:**
-   ```bash
-   ./scripts/test-admin-endpoints.sh
-   ```
-
-4. **Test UI:**
-   - Open admin web UI
-   - Navigate through sections
-   - Verify data loads
-
-## 📝 Notes
-
-- **Endpoints will work even without tables** - they return empty arrays gracefully
-- **Migration is idempotent** - safe to run multiple times
-- **All tables have proper indexes** - optimized for queries
-- **Foreign keys are set up** - data integrity maintained
-
-## 🆘 If Migration Fails
-
-1. **Check database connection:**
-   ```bash
-   psql $DATABASE_URL -c "SELECT 1;"
-   ```
-
-2. **Check permissions:**
-   - User needs CREATE TABLE permission
-   - May need to run as superuser
-
-3. **Check for conflicts:**
-   - Some tables might already exist
-   - Migration uses IF NOT EXISTS, so this is OK
-
-4. **Check logs:**
-   - Look at full error message
-   - Check database logs
-
-## ✅ Success Criteria
-
-You'll know migration succeeded when:
-- ✅ Migration script completes without errors
-- ✅ Verification script shows all 7 tables exist
-- ✅ Endpoints return 200 status codes
-- ✅ UI loads without errors
+```bash
+export SUPABASE_DB_URL="postgresql://postgres:password@db.project.supabase.co:5432/postgres"
+```
 
 ---
 
-**All code is ready. Just need database access to run migration!** 🎉
+## 📋 What Happens After Connection is Set
+
+Once you set the database connection and run `npm run migrate:up`, it will:
+
+1. ✅ Connect to your database
+2. ✅ Run migration 047 (update Pharmacy role capabilities)
+3. ✅ Run migration 051 (add Pharmacy role permissions)
+4. ✅ Verify all 11 capabilities are configured
+
+---
+
+## 🎯 Next Steps
+
+1. **Set database connection** (one of the options above)
+2. **Run migrations**: `cd db && npm run migrate:up`
+3. **Verify**: Check console output for success messages
+4. **Test**: Clear browser cache and login as Pharmacy vendor
+
+---
+
+**Ready when you provide the database connection!** 🚀

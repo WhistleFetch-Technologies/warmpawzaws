@@ -95,6 +95,14 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
         customer: data.customer
       });
       
+      // ✅ FIX: Set sessionStorage flags for hard refresh detection
+      // These flags help distinguish between:
+      // - Hard refresh (F5) - sessionStorage is cleared
+      // - Soft navigation - sessionStorage persists
+      sessionStorage.setItem('_warmpawz_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
+      console.log('✅ [Session] sessionStorage flags set for customer login');
+      
       // Pass complete session data
       onAuthSuccess({
         phone: cleanPhone,

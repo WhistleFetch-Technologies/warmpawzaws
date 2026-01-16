@@ -184,6 +184,41 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
+          {/* FREE TRIAL ENTRY POINT - As per Master Plan */}
+          {activePackages.length === 0 && (
+            <Card className="bg-gradient-to-br from-orange-50 via-amber-50 to-orange-100 border-2 border-orange-200 p-6 shadow-lg relative overflow-hidden">
+              <div className="absolute top-2 right-2">
+                <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  FREE
+                </span>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-md border-2 border-orange-200 flex-shrink-0">
+                  <GraduationCap className="w-8 h-8 text-orange-600" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">🎁 FREE TRIAL SESSION</h2>
+                  <p className="text-slate-700 mb-1">
+                    Meet a trainer, assess your dog's needs, and get a training plan!
+                  </p>
+                  <p className="text-sm text-slate-600 mb-4">
+                    ✅ 30 min evaluation session<br />
+                    ✅ Personalized training plan<br />
+                    ✅ No commitment required
+                  </p>
+                  <Button 
+                    className="bg-orange-600 text-white hover:bg-orange-700 font-bold text-base px-6 py-3 rounded-xl shadow-md"
+                    onClick={() => onNavigate?.('training-trial-booking')}
+                  >
+                    <GraduationCap className="w-5 h-5 mr-2" />
+                    Book Free Trial - 30 min
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+          
           {/* Active Training Package with Progress */}
           {activePackages.length > 0 && (
             <div className="space-y-3">

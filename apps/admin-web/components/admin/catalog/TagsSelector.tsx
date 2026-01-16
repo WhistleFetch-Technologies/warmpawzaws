@@ -89,18 +89,18 @@ export function TagsSelector({
   return (
     <div className={className}>
       <div className="min-h-[44px] px-0 py-0 bg-white border-2 border-gray-200 rounded-lg focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-200 transition-all">
-        <div className="flex flex-wrap gap-0 items-center">
+        <div className="flex flex-wrap gap-3 items-center">
           {value.map((tag) => (
             <span
               key={tag}
-              className={`inline-flex items-center gap-0.5 px-0.5 py-0 rounded-full text-sm font-medium ${getTagColor(tag)}`}
+              className={`inline-flex items-center gap-3.5 px-0.5 py-0 rounded-full text-sm font-medium ${getTagColor(tag)}`}
             >
               <Tag className="w-3 h-3" />
               {tag}
               <button
                 type="button"
                 onClick={() => handleRemoveTag(tag)}
-                className="ml-0 hover:bg-black/10 rounded-full p-0.5 transition-colors"
+                className="ml-2 hover:bg-black/10 rounded-full p-0.5 transition-colors"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -134,7 +134,7 @@ export function TagsSelector({
                         key={suggestion}
                         type="button"
                         onClick={() => handleAddTag(suggestion)}
-                        className="w-full px-4 py-0 text-left hover:bg-gray-50 transition-colors flex items-center gap-0"
+                        className="w-full px-4 py-0 text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
                       >
                         <Tag className="w-4 h-4 text-gray-400" />
                         <span className="text-sm">{suggestion}</span>
@@ -144,7 +144,7 @@ export function TagsSelector({
                       <button
                         type="button"
                         onClick={() => handleAddTag(inputValue)}
-                        className="w-full px-4 py-0 text-left hover:bg-gray-50 transition-colors flex items-center gap-0 border-t border-gray-200"
+                        className="w-full px-4 py-0 text-left hover:bg-gray-50 transition-colors flex items-center gap-3 border-t border-gray-200"
                       >
                         <Plus className="w-4 h-4 text-orange-600" />
                         <span className="text-sm text-orange-600 font-medium">

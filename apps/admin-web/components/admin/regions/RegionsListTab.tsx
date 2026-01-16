@@ -107,10 +107,10 @@ export function RegionsListTab() {
                 className="bg-white rounded-lg border-2 border-gray-200 p-4 hover:border-gray-300 transition-colors"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-0 flex-1">
+                  <div className="flex items-start gap-3 flex-1">
                     <span className="text-3xl">{flag}</span>
                     <div className="flex-1">
-                      <div className="flex items-center gap-0 mb-0">
+                      <div className="flex items-center gap-3 mb-0">
                         <h3 className="font-semibold text-gray-900">{region.regionName}</h3>
                         <span className="text-xs px-0 py-0.5 bg-gray-100 text-gray-600 rounded">
                           {region.regionCode}
@@ -119,14 +119,14 @@ export function RegionsListTab() {
                       <div className="text-sm text-gray-500">
                         {region.currency.symbol} {region.currency.code}
                       </div>
-                      <div className="flex items-center gap-0 mt-0">
+                      <div className="flex items-center gap-3 mt-0">
                         {region.isActive ? (
-                          <span className="inline-flex items-center gap-0 text-xs text-green-700 bg-green-50 px-0 py-0 rounded">
+                          <span className="inline-flex items-center gap-3 text-xs text-green-700 bg-green-50 px-0 py-0 rounded">
                             <CheckCircle className="w-3 h-3" />
                             Active
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-0 text-xs text-gray-700 bg-gray-50 px-0 py-0 rounded">
+                          <span className="inline-flex items-center gap-3 text-xs text-gray-700 bg-gray-50 px-0 py-0 rounded">
                             <XCircle className="w-3 h-3" />
                             Inactive
                           </span>
@@ -134,7 +134,7 @@ export function RegionsListTab() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-0">
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={() => handleToggleStatus(region.regionId, region.isActive)}
                       className={`p-0 rounded-lg transition-colors ${

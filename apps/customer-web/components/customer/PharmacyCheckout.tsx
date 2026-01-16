@@ -184,8 +184,24 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  toast.info('Address book coming soon - using default address');
+                onClick={async () => {
+                  try {
+                    // Reload addresses
+                    const response = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+                    const addressList = response.addresses || response || [];
+                    
+                    if (addressList.length > 1) {
+                      const currentIndex = addressList.findIndex((a: any) => a.id === selectedAddress?.id);
+                      const nextIndex = (currentIndex + 1) % addressList.length;
+                      setSelectedAddress(addressList[nextIndex]);
+                      toast.success('Address changed');
+                    } else {
+                      toast.info('Add more addresses in your account settings');
+                    }
+                  } catch (error) {
+                    console.error('Error changing address:', error);
+                    toast.error('Failed to load addresses');
+                  }
                 }}
                 className="text-[#FF8C42] hover:text-[#FF6B9D]"
               >

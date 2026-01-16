@@ -128,7 +128,7 @@ export function TimeSlotSelector({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-0">
+      <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-3">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -161,7 +161,7 @@ export function TimeSlotSelector({
           </div>
 
           {/* Date Picker */}
-          <div className="grid grid-cols-7 gap-0">
+          <div className="grid grid-cols-7 gap-3">
             {weekDates.map((date) => {
               const dateStr = formatDate(date);
               const isSelected = selectedDate === dateStr;
@@ -213,7 +213,7 @@ export function TimeSlotSelector({
               <p className="text-sm text-gray-500 mt-0">Please select another date</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-0">
+            <div className="grid grid-cols-3 gap-3">
               {slots.map((time) => {
                 const isSelected = selectedTime === time;
                 return (

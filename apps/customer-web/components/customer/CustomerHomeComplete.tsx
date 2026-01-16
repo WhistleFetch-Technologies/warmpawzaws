@@ -653,8 +653,8 @@ export function CustomerHomeComplete({
 
       {/* Main Scrollable Content */}
       <div className="bg-white rounded-t-[32px] -mt-6 pt-6 pb-24">
-        {/* ✅ NEW: Enhanced Search Bar */}
-        <div className="px-6 mb-6">
+        {/* ✅ Enhanced Search Bar */}
+        <div className="px-6 mb-4">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={phone}
@@ -701,8 +701,8 @@ export function CustomerHomeComplete({
           />
         </div>
 
-        {/* ✅ NEW: Trending Problems Section */}
-        <div className="px-6 mb-6">
+        {/* ✅ Trending Problems Section */}
+        <div className="px-6 mb-4">
           <TrendingProblems
             onProblemSelect={(problemId, title) => {
               // Navigate to services by problem
@@ -712,9 +712,9 @@ export function CustomerHomeComplete({
           />
         </div>
 
-        {/* ✅ NEW: Problem Grid Navigation */}
-        <div className="px-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+        {/* ✅ Problem Grid Navigation */}
+        <div className="px-6 mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-gray-900">What's Your Pet's Need?</h2>
             <span className="text-xs text-gray-500">Problem-based search</span>
           </div>
@@ -1387,11 +1387,8 @@ export function CustomerHomeComplete({
                 >
                   <option value="Dog">🐕 Dog</option>
                   <option value="Cat">🐱 Cat</option>
-                  <option value="Bird">🐦 Bird</option>
-                  <option value="Fish">🐟 Fish</option>
-                  <option value="Rabbit">🐰 Rabbit</option>
-                  <option value="Other">🐾 Other</option>
                 </select>
+                <p className="text-xs text-gray-500 mt-1.5">Platform supports Dogs and Cats only</p>
               </div>
 
               <div>

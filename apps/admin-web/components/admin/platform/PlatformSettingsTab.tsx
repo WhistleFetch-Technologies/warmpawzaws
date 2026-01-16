@@ -110,7 +110,7 @@ export function PlatformSettingsTab() {
     <div className="space-y-6">
       {/* AWS & Cloud Settings */}
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <Cloud className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Cloud & Maps</h2>
         </div>
@@ -160,7 +160,7 @@ export function PlatformSettingsTab() {
 
       {/* Payment Gateway Settings */}
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <CreditCard className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Payment Gateway</h2>
         </div>
@@ -210,7 +210,7 @@ export function PlatformSettingsTab() {
 
       {/* Logistics Settings */}
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <Truck className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Logistics Integration</h2>
         </div>
@@ -242,7 +242,7 @@ export function PlatformSettingsTab() {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {saving ? (
           <>

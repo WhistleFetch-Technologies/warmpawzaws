@@ -62,14 +62,20 @@ function capabilitiesToMap(capabilities: string[]): Record<string, boolean> {
   const aliases: Record<string, string[]> = {
     'bookings': ['booking', 'bookings'],
     'services': ['service', 'services', 'catalog'], // Also treat services as catalog capability
-    'prescriptions': ['prescription', 'prescriptions', 'rx'],
+    'prescriptions': ['prescription', 'prescriptions', 'rx', 'prescription_create'],
     'notifications': ['notification', 'notifications'],
     'medical_records': ['medical_record', 'medical_records', 'medicalRecords', 'medicalRecord'],
     'custom_services': ['custom_service', 'custom_services', 'customServices', 'customService'],
-    'staff_management': ['staff', 'staff_management', 'staffManagement', 'manage_staff'],
+    'staff_management': ['staff', 'staff_management', 'staffManagement', 'manage_staff', 'staff_create'],
     'package_management': ['packages', 'package_management', 'packageManagement'],
     'schedule_management': ['schedule', 'schedule_management', 'scheduleManagement'],
     'facility_management': ['facility', 'facility_management', 'facilityManagement'],
+    'inventory': ['inventory', 'inventory_manage', 'inventoryManagement', 'stock_management'],
+    'orders': ['orders', 'order_management', 'order_dispatch', 'order_broadcast'],
+    'delivery': ['delivery', 'delivery_management', 'order_dispatch'],
+    'prescription_verification': ['prescription_verification', 'rx_verification', 'verify_prescription'],
+    'expiry_management': ['expiry_management', 'expiry_tracking', 'expiry_monitoring'],
+    'product_catalog': ['product_catalog', 'catalog', 'products', 'product_management'],
   };
   
   // ✅ FIX: Filter out null/undefined capabilities before processing
@@ -88,6 +94,25 @@ function capabilitiesToMap(capabilities: string[]): Record<string, boolean> {
       aliases[normalized].forEach(alias => {
         map[alias] = true;
       });
+    }
+    
+    // ✅ PHARMACY FIX: Map backend capability names to frontend capability names
+    // e.g., inventory_manage -> inventory, product_catalog -> catalog
+    if (normalized === 'inventory_manage') {
+      map['inventory'] = true;
+      map['catalog'] = true; // Inventory implies catalog management
+    }
+    if (normalized === 'product_catalog') {
+      map['catalog'] = true;
+      map['products'] = true;
+    }
+    if (normalized === 'prescription_create') {
+      map['prescriptions'] = true;
+      map['prescription'] = true;
+    }
+    if (normalized === 'order_dispatch' || normalized === 'order_broadcast') {
+      map['orders'] = true;
+      map['delivery'] = true;
     }
   });
   

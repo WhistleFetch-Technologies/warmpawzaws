@@ -235,22 +235,25 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         <label className="block text-xs font-medium text-gray-700 mb-1.5">
           Pet Type <span className="text-red-500">*</span>
         </label>
-        <div className="grid grid-cols-3 gap-2">
-          {['Dog', 'Cat', 'Other'].map((type) => (
+        <div className="grid grid-cols-2 gap-3">
+          {['Dog', 'Cat'].map((type) => (
             <button
               key={type}
               type="button"
               onClick={() => setPetData({ ...petData, type })}
-              className={`py-2.5 px-3 border-2 rounded-xl transition-all font-medium text-xs ${
+              className={`py-3 px-4 border-2 rounded-xl transition-all font-medium text-sm ${
                 petData.type === type
-                  ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
+                  ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42] shadow-sm'
                   : 'border-gray-200 text-gray-700 hover:border-gray-300'
               }`}
             >
-              {type === 'Dog' ? '🐕' : type === 'Cat' ? '🐈' : '🐾'} {type}
+              {type === 'Dog' ? '🐕' : '🐈'} {type}
             </button>
           ))}
         </div>
+        <p className="text-xs text-gray-500 mt-2 text-center">
+          Platform currently supports Dogs and Cats only
+        </p>
       </div>
 
       {/* Breed */}

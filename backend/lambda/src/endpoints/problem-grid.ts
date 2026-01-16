@@ -135,6 +135,65 @@ export function registerProblemGridEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/problem-grid-specializations/:roleId
+   * Get specializations (problems) for a vendor role - used for center profile specialization selection
+   * ✅ FIX: Added missing endpoint for SpecializationSelector component
+   */
+  app.get("/vendor/problem-grid-specializations/:roleId", async (c) => {
+    try {
+      const { roleId } = c.req.param();
+      
+      // Clean roleId (remove 'role_' prefix if present)
+      const cleanRoleId = roleId.replace(/^role_/, '');
+
+      // Get problems for this role from problem_grid_mappings
+      const problemsResult = await query(
+        `SELECT DISTINCT
+          problem_id as id,
+          problem_name as name,
+          problem_display_name as displayName,
+          MIN(order_index) as min_order
+        FROM problem_grid_mappings
+        WHERE role_id = $1 OR role_id = $2
+        GROUP BY problem_id, problem_name, problem_display_name
+        ORDER BY min_order ASC, problem_name ASC`,
+        [cleanRoleId, roleId] // Try both with and without prefix
+      ).catch(() => ({ rows: [] }));
+
+      if (problemsResult.rows.length === 0) {
+        // Return empty array if no problems found
+        return c.json({
+          success: true,
+          specializations: [],
+          message: 'No specializations available for this vendor type'
+        });
+      }
+
+      // Map to format expected by SpecializationSelector
+      const specializations = problemsResult.rows.map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        displayName: row.displayName || row.name,
+        icon: getProblemIconEmoji(row.id), // Use emoji for UI
+        shortDescription: `${row.displayName || row.name} services`,
+      }));
+
+      return c.json({
+        success: true,
+        specializations,
+        count: specializations.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching problem grid specializations:', error);
+      return c.json({ 
+        success: false,
+        error: error.message,
+        specializations: []
+      }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/problem-grid/:vendorType
    * Get problems filtered by vendor type
    */
@@ -861,6 +920,52 @@ function getProblemCategory(problemId: string): string {
     return 'behavioral';
   }
   return 'veterinary';
+}
+
+/**
+ * Helper: Get problem icon emoji for UI display
+ */
+function getProblemIconEmoji(problemId: string): string {
+  const emojiMap: Record<string, string> = {
+    'health_checkup': '🏥',
+    'vaccination': '💉',
+    'deworming': '🐛',
+    'dental_care': '🦷',
+    'skin_allergies': '🔴',
+    'ear_infection': '👂',
+    'eye_problems': '👁️',
+    'digestive_issues': '🤢',
+    'respiratory': '🫁',
+    'orthopedic': '🦴',
+    'neurological': '🧠',
+    'cardiac': '❤️',
+    'cancer_treatment': '🎗️',
+    'surgery': '⚕️',
+    'emergency': '🚨',
+    'grooming': '✂️',
+    'bath': '🛁',
+    'nail_care': '💅',
+    'training': '🎓',
+    'walking': '🐕',
+    'boarding': '🏠',
+    'nutrition': '🥗',
+  };
+  
+  // Try exact match first
+  if (emojiMap[problemId]) {
+    return emojiMap[problemId];
+  }
+  
+  // Try partial matches
+  if (problemId.includes('health') || problemId.includes('checkup')) return '🏥';
+  if (problemId.includes('vaccine')) return '💉';
+  if (problemId.includes('groom') || problemId.includes('bath')) return '✂️';
+  if (problemId.includes('train')) return '🎓';
+  if (problemId.includes('walk')) return '🐕';
+  if (problemId.includes('board')) return '🏠';
+  if (problemId.includes('nutrition') || problemId.includes('diet')) return '🥗';
+  
+  return '🏥'; // Default icon
 }
 
 /**

@@ -55,7 +55,7 @@ export function UsersTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-0">
+        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-3">
           <Users className="w-5 h-5 text-orange-600" />
           Admin Users
         </h2>
@@ -85,7 +85,7 @@ export function UsersTab() {
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900">{user.name}</h3>
                 <p className="text-sm text-gray-600 mb-0">{user.email}</p>
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <span className="text-xs px-0 py-0 bg-blue-100 text-blue-700 rounded">
                     {user.role}
                   </span>

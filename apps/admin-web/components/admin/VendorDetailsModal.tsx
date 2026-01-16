@@ -86,7 +86,7 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
           <>
             {/* Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <h2 className="text-lg">{vendor.name}</h2>
                 <span className={`px-0 py-0 text-xs rounded-full ${
                   vendor.tierColor === 'gold' ? 'bg-yellow-100 text-yellow-700' :
@@ -103,15 +103,15 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
             </div>
 
             {/* Quick Info Bar */}
-            <div className="px-0 py-0 bg-gray-50 border-b border-gray-200 flex items-center gap-0 text-sm">
-              <div className="flex items-center gap-0">
+            <div className="px-0 py-0 bg-gray-50 border-b border-gray-200 flex items-center gap-3 text-sm">
+              <div className="flex items-center gap-3">
                 <Star className="w-4 h-4 text-orange-500 fill-orange-500" />
                 <span>{vendor.rating}/5</span>
               </div>
               <div className="text-gray-600">
                 {vendor.complaints} complaints
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <MapPin className="w-4 h-4 text-gray-400" />
                 <span>{vendor.location} | {vendor.experience} | {vendor.lastActive}</span>
               </div>
@@ -168,7 +168,7 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
             </div>
 
             {/* Information Sections */}
-            <div className="px-0 pb-0 grid grid-cols-3 gap-0">
+            <div className="px-0 pb-0 grid grid-cols-3 gap-3">
               {/* Basic Information */}
               <div>
                 <h3 className="text-sm mb-4">Basic Information</h3>
@@ -256,11 +256,11 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
 function InfoItem({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <div className="text-sm">
-      <div className="flex items-center gap-0 text-gray-600 mb-0">
+      <div className="flex items-center gap-3 text-gray-600 mb-0">
         <span className="text-blue-600">{icon}</span>
         <span className="text-xs">{label}</span>
       </div>
-      <div className="text-gray-900 ml-0">{value}</div>
+      <div className="text-gray-900 ml-2">{value}</div>
     </div>
   );
 }

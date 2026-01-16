@@ -64,9 +64,12 @@ export class ApiGatewayStack extends Construct {
     );
 
     // Create HTTP API v2 (better performance and lower cost than REST API)
+    // FIXED: When using wildcard origins, we cannot use allowCredentials
     const allowedOrigins = props.environment === 'prod'
       ? ['https://warmpawz.com', 'https://www.warmpawz.com', 'https://customer.warmpawz.com', 'https://vendor.warmpawz.com', 'https://admin.warmpawz.com']
-      : ['*']; // Allow all origins in dev/test for easier development
+      : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:3002']; // Specific origins for dev
+    
+    const allowCredentials = props.environment === 'prod' || props.environment === 'staging'; // Only use credentials in prod/staging
 
     this.api = new apigateway.HttpApi(this, 'WarmpawzApi', {
       apiName: `warmpawz-api-${props.environment || 'dev'}`,
@@ -95,7 +98,7 @@ export class ApiGatewayStack extends Construct {
           'X-UAT-Mode',
           'X-UAT-Token',
         ],
-        allowCredentials: true,
+        allowCredentials: allowCredentials,
         maxAge: cdk.Duration.days(1),
       },
     });

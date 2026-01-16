@@ -43,7 +43,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 bottom-0 w-64 bg-slate-900 text-white overflow-y-auto z-40">
         <div className="p-0 border-b border-slate-700">
-          <Link href="/" className="flex items-center gap-0">
+          <Link href="/" className="flex items-center gap-3">
             <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center text-xl">
               🐾
             </div>
@@ -59,7 +59,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <Link
               key={item.id}
               href={item.href}
-              className={`w-full flex items-center gap-0 px-4 py-0 rounded-lg transition ${
+              className={`w-full flex items-center gap-3 px-4 py-0 rounded-lg transition ${
                 isActive(item.href)
                   ? 'bg-orange-500 text-white'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -73,7 +73,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center">
               👤
             </div>

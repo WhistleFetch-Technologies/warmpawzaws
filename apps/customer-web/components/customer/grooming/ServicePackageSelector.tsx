@@ -78,7 +78,7 @@ export function ServicePackageSelector({
           >
             <div className="flex items-start justify-between mb-0">
               <div className="flex-1">
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <h3 className="font-bold text-gray-900">{pkg.name}</h3>
                   {pkg.popular && (
                     <span className="px-0 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
@@ -88,7 +88,7 @@ export function ServicePackageSelector({
                 </div>
                 <p className="text-sm text-gray-600 mb-0">{pkg.description}</p>
                 {pkg.services && pkg.services.length > 0 && (
-                  <div className="flex flex-wrap gap-0 mb-0">
+                  <div className="flex flex-wrap gap-3 mb-0">
                     {pkg.services.map((service, idx) => (
                       <span
                         key={idx}
@@ -108,11 +108,11 @@ export function ServicePackageSelector({
             </div>
 
             <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <Package className="w-4 h-4" />
                 <span>{pkg.sessions} sessions</span>
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <Clock className="w-4 h-4" />
                 <span>{pkg.duration} min each</span>
               </div>

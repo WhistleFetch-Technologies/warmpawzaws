@@ -278,8 +278,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
     else if (service === 'photography') setCurrentScreen('photography');
     else if (service === 'breeder') setCurrentScreen('breeder');
-    else if (service === 'ambulance') setCurrentScreen('integrated-services'); // Use new integrated hub
-    else if (service === 'nutritionist') setCurrentScreen('integrated-services');
+    else if (service === 'ambulance') setCurrentScreen('ambulance');
+    else if (service === 'nutritionist') setCurrentScreen('nutritionist');
     else if (service === 'diagnostics') setCurrentScreen('integrated-services');
     else if (service === 'home-service') setCurrentScreen('home-service-selection');
     else if (service === 'relocation') setCurrentScreen('relocation');
@@ -461,10 +461,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       handleVetNavigate(screen, data);
     }
   }} data={vetServiceData} />;
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.doctorId} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType || 'clinic'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
-  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); setCurrentScreen('vet-clinic-profile'); } }} />;
-  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { if (screen === 'appointment') { setVetServiceData({ vendorId: data?.clinicId, serviceType: 'clinic' }); setCurrentScreen('vet-booking'); } }} />;
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { 
+    if (screen === 'clinic-profile' || screen === 'clinic-details') { 
+      setVetServiceData({ id: data?.clinicId, ...data }); 
+      setCurrentScreen('vet-clinic-profile'); 
+    } 
+  }} />;
+  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { if (screen === 'appointment' || screen === 'vet-booking') { setVetServiceData({ vendorId: data?.clinicId || vetServiceData?.id, serviceType: 'clinic' }); setCurrentScreen('vet-booking'); } }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-services-by-style') return <VetServicesByStyle phone={phone} serviceStyle={vetServiceData?.serviceStyle || 'tele'} serviceTypeName={vetServiceData?.serviceTypeName} category={vetServiceData?.category || 'vet'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { 

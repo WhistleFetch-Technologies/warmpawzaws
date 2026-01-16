@@ -98,14 +98,14 @@ export function PackageList({
           <h1 className="text-xl font-bold text-gray-900">Packages</h1>
           <button
             onClick={onCreateNew}
-            className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-0 text-sm font-medium"
+            className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-3 text-sm font-medium"
           >
             <Plus className="w-4 h-4" />
             New
           </button>
         </div>
 
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           {['all', 'approved', 'pending', 'rejected'].map((status) => (
             <button
               key={status}
@@ -133,7 +133,7 @@ export function PackageList({
             <div key={pkg.id} className="bg-white rounded-lg border-2 border-gray-200 p-4">
               <div className="flex items-start justify-between mb-0">
                 <div className="flex-1">
-                  <div className="flex items-center gap-0 mb-0">
+                  <div className="flex items-center gap-3 mb-0">
                     <Package className="w-5 h-5 text-orange-600" />
                     <h3 className="font-semibold text-gray-900">{pkg.packageName}</h3>
                   </div>
@@ -148,7 +148,7 @@ export function PackageList({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => handleDelete(pkg.id)}
                     className="p-0 text-red-600 hover:bg-red-50 rounded-lg"
@@ -157,8 +157,8 @@ export function PackageList({
                   </button>
                 </div>
               </div>
-              <div className="flex items-center gap-0">
-                <span className={`text-xs px-0 py-0 rounded-full flex items-center gap-0 ${getStatusColor(pkg.status)}`}>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs px-0 py-0 rounded-full flex items-center gap-3 ${getStatusColor(pkg.status)}`}>
                   {getStatusIcon(pkg.status)}
                   {pkg.status}
                 </span>

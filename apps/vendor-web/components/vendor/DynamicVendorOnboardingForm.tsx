@@ -21,6 +21,7 @@ interface FormField {
   section: string;
   placeholder?: string;
   helpText?: string;
+  defaultValue?: any;
   validation?: {
     required?: boolean;
     minLength?: number;
@@ -1363,7 +1364,7 @@ export function DynamicVendorOnboardingForm({
                         <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                           {field.label}
                           {field.validation?.required && (
-                            <span className="text-red-500 ml-0.5">*</span>
+                            <span className="text-red-500 ml-2.5">*</span>
                           )}
                         </Label>
                       )}
@@ -1402,7 +1403,7 @@ export function DynamicVendorOnboardingForm({
                       <Label className="text-sm font-semibold text-gray-900 mb-2 block ml-1">
                         {field.label}
                         {field.validation?.required && (
-                          <span className="text-red-500 ml-0.5">*</span>
+                          <span className="text-red-500 ml-2.5">*</span>
                         )}
                       </Label>
                       

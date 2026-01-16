@@ -442,20 +442,41 @@ export function registerVendorServicesEndpoints(app: Hono) {
       
       const serviceData = await c.req.json();
 
+      // ✅ FIX: Build update data object, only including defined values
+      // Support multiple field name variations from frontend
+      const updateData: any = {};
+      
+      if (serviceData.price !== undefined || serviceData.customPrice !== undefined) {
+        updateData.price = serviceData.price || serviceData.customPrice;
+      }
+      if (serviceData.customPrice !== undefined) {
+        updateData.custom_price = serviceData.customPrice;
+      }
+      if (serviceData.duration !== undefined || serviceData.customDuration !== undefined) {
+        updateData.duration_minutes = serviceData.duration || serviceData.customDuration;
+      }
+      if (serviceData.customDuration !== undefined) {
+        updateData.custom_duration = serviceData.customDuration;
+      }
+      if (serviceData.isEnabled !== undefined || serviceData.is_enabled !== undefined) {
+        updateData.is_enabled = serviceData.isEnabled !== undefined ? serviceData.isEnabled : serviceData.is_enabled;
+      }
+      if (serviceData.publishStatus !== undefined || serviceData.publish_status !== undefined) {
+        updateData.publish_status = serviceData.publishStatus || serviceData.publish_status;
+      }
+
+      // ✅ FIX: Validate that at least one field is being updated
+      if (Object.keys(updateData).length === 0) {
+        return c.json({ error: 'No valid fields to update. Please provide at least one field: price, duration, isEnabled, or publishStatus' }, 400);
+      }
+
       const updated = await update('vendor_services',
         { id: serviceId, vendor_id: vendorId },
-        {
-          price: serviceData.price || serviceData.customPrice,
-          custom_price: serviceData.customPrice,
-          duration_minutes: serviceData.duration || serviceData.customDuration,
-          custom_duration: serviceData.customDuration,
-          is_enabled: serviceData.isEnabled,
-          publish_status: serviceData.publishStatus,
-        }
+        updateData
       );
 
       if (updated.length === 0) {
-        return c.json({ error: 'Service not found' }, 404);
+        return c.json({ error: 'Service not found or you do not have permission to update it' }, 404);
       }
 
       return c.json({

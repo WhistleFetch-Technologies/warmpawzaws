@@ -17,12 +17,12 @@ export function EnhancedOnboardingFormBuilder({ onBack }: EnhancedOnboardingForm
           {onBack && (
             <button
               onClick={onBack}
-              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0"
+              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3"
             >
               ← Back
             </button>
           )}
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="p-0 bg-orange-100 rounded-lg">
               <FileText className="w-6 h-6 text-orange-600" />
             </div>
@@ -38,7 +38,7 @@ export function EnhancedOnboardingFormBuilder({ onBack }: EnhancedOnboardingForm
         <div className="bg-white rounded-lg border-2 border-gray-200 p-8 text-center">
           <FileText className="w-12 h-12 text-gray-400 mx-auto mb-0" />
           <p className="text-gray-500 mb-4">Form builder interface coming soon</p>
-          <button className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-0 mx-auto">
+          <button className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-3 mx-auto">
             <Plus className="w-4 h-4" />
             Add Field
           </button>

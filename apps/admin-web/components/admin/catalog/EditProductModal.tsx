@@ -90,7 +90,7 @@ export function EditProductModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-0 border-b sticky top-0 bg-white">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="p-0 bg-green-100 rounded-lg">
               <ShoppingBag className="w-5 h-5 text-green-600" />
             </div>
@@ -171,7 +171,7 @@ export function EditProductModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-0 p-0 border-t">
+        <div className="flex items-center justify-end gap-3 p-0 border-t">
           <Button
             variant="outline"
             onClick={onClose}

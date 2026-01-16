@@ -112,25 +112,25 @@ export function ActiveVendorsTab() {
   });
 
   return (
-    <div>
-      <div className="mb-4">
+    <div className="p-4">
+      <div className="mb-6">
         <div className="text-sm text-gray-600 mb-4">Manage Vendors Active Right Now</div>
         
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base">Active Vendors</h3>
-          <div className="flex gap-0">
-            <Button variant="outline" className="gap-0" onClick={loadActiveVendors}>
+          <h3 className="text-lg font-semibold text-gray-900">Active Vendors</h3>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2" onClick={loadActiveVendors}>
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
-            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-0">
+            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2">
               <Plus className="w-4 h-4" />
               Add Vendor
             </Button>
           </div>
         </div>
 
-        <div className="flex gap-0 mb-4">
+        <div className="flex gap-3 mb-4">
           <CustomDropdown
             options={[
               { value: 'all', label: 'All Categories' },
@@ -159,21 +159,28 @@ export function ActiveVendorsTab() {
       </div>
 
       {loading ? (
-        <div className="p-0 text-center text-gray-500">Loading vendors...</div>
+        <div className="p-8 text-center text-gray-500">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#FF8C42]" />
+          Loading vendors...
+        </div>
       ) : filteredVendors.length === 0 ? (
-        <div className="p-0 text-center text-gray-500">No active vendors found</div>
+        <div className="p-12 text-center text-gray-500 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+          <Eye className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+          <p className="font-medium">No active vendors found</p>
+          <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
+        </div>
       ) : (
         <div className="space-y-3">
           {filteredVendors.map((vendor) => (
-            <div key={vendor.id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div key={vendor.id} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg hover:border-[#FF8C42]/30 transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-0 mb-0">
-                    <h4 className="font-semibold text-gray-900">{vendor.name}</h4>
-                    <span className={`px-0 py-0 text-xs rounded-full ${getCategoryColor(vendor.category)}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <h4 className="font-semibold text-gray-900 text-lg">{vendor.name}</h4>
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full border ${getCategoryColor(vendor.category)}`}>
                       {vendor.category}
                     </span>
-                    <span className={`text-xs font-medium ${getTierColor(vendor.tierColor)}`}>
+                    <span className={`text-xs font-semibold ${getTierColor(vendor.tierColor)}`}>
                       {vendor.tier}
                     </span>
                   </div>
@@ -181,38 +188,40 @@ export function ActiveVendorsTab() {
                   <div className="grid grid-cols-4 gap-4 text-sm">
                     <div>
                       <span className="text-gray-500">Location:</span>
-                      <span className="ml-0 text-gray-900">{vendor.location}</span>
+                      <span className="ml-2 text-gray-900 font-medium">{vendor.location}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Rating:</span>
-                      <span className="ml-0 text-gray-900">{typeof vendor.rating === 'number' ? vendor.rating.toFixed(1) : '0.0'} ⭐</span>
+                      <span className="ml-2 text-gray-900 font-medium">{typeof vendor.rating === 'number' ? vendor.rating.toFixed(1) : '0.0'} ⭐</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Revenue:</span>
-                      <span className="ml-0 text-gray-900">₹{vendor.revenue.toLocaleString()}</span>
+                      <span className="ml-2 text-gray-900 font-medium">₹{vendor.revenue.toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Last Active:</span>
-                      <span className="ml-0 text-gray-900">{vendor.lastActive}</span>
+                      <span className="ml-2 text-gray-900 font-medium">{vendor.lastActive}</span>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex gap-0 ml-4">
+                <div className="flex gap-2 ml-6">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="hover:bg-gray-50"
                     onClick={() => handleViewVendor(vendor.id)}
                   >
-                    <Eye className="w-4 h-4 mr-0" />
+                    <Eye className="w-4 h-4 mr-2" />
                     View
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
+                    className="hover:bg-green-50 hover:border-green-200 text-green-600"
                     onClick={() => handleCallVendor(vendor.id)}
                   >
-                    <Phone className="w-4 h-4 mr-0" />
+                    <Phone className="w-4 h-4 mr-2" />
                     Call
                   </Button>
                 </div>

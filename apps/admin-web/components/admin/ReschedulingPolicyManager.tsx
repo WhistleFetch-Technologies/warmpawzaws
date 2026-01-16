@@ -188,7 +188,7 @@ export function ReschedulingPolicyManager() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-teal-100 rounded-xl">
             <Calendar className="w-6 h-6 text-teal-600" />
           </div>
@@ -199,7 +199,7 @@ export function ReschedulingPolicyManager() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Add Policy
@@ -211,7 +211,7 @@ export function ReschedulingPolicyManager() {
           <div key={policy.policyId} className="bg-white rounded-xl border-2 border-gray-200 p-0">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <h3 className="font-semibold text-gray-900">{policy.policyName}</h3>
                   <span className="px-0 py-0 bg-blue-100 text-blue-700 text-xs font-medium rounded">
                     {policy.serviceCategory}
@@ -223,7 +223,7 @@ export function ReschedulingPolicyManager() {
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => handleOpenModal(policy)}
                   className="p-0 hover:bg-gray-100 rounded-lg"
@@ -319,7 +319,7 @@ export function ReschedulingPolicyManager() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.allowRescheduling}
@@ -370,7 +370,7 @@ export function ReschedulingPolicyManager() {
 
                   <div className="border-t pt-4">
                     <div className="mb-0">
-                      <label className="flex items-center gap-0">
+                      <label className="flex items-center gap-3">
                         <input
                           type="checkbox"
                           checked={formData.chargeRescheduleFee}
@@ -410,7 +410,7 @@ export function ReschedulingPolicyManager() {
 
                   <div className="border-t pt-4">
                     <div className="mb-0">
-                      <label className="flex items-center gap-0">
+                      <label className="flex items-center gap-3">
                         <input
                           type="checkbox"
                           checked={formData.refundOnReschedule}
@@ -438,7 +438,7 @@ export function ReschedulingPolicyManager() {
               )}
 
               <div className="border-t pt-4">
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -450,7 +450,7 @@ export function ReschedulingPolicyManager() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -460,7 +460,7 @@ export function ReschedulingPolicyManager() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

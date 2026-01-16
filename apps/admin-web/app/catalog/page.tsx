@@ -523,7 +523,7 @@ export default function ServiceCatalogPage() {
         {/* Tabs */}
         <div className="bg-white rounded-xl border border-gray-300 shadow-sm text-gray-900">
           <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex gap-0 overflow-x-auto">
+            <div className="flex gap-3 overflow-x-auto">
               <button
                 onClick={() => setActiveTab('categories')}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${

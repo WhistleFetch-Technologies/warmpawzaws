@@ -83,7 +83,7 @@ export function RegionalAvailabilitySelector({
 
   return (
     <div className={`p-4 border-2 border-gray-200 rounded-lg bg-white ${className}`}>
-      <div className="flex items-center gap-0 mb-4">
+      <div className="flex items-center gap-3 mb-4">
         <Globe className="w-5 h-5 text-orange-600" />
         <label className="text-base font-medium text-gray-900">Regional Availability</label>
       </div>
@@ -91,7 +91,7 @@ export function RegionalAvailabilitySelector({
       {/* Availability Mode Selection */}
       <div className="space-y-3 mb-4">
         {/* Mode: All Regions */}
-        <label className="flex items-start gap-0 p-0 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+        <label className="flex items-start gap-3 p-0 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
           <input
             type="radio"
             name="availability-mode"
@@ -100,7 +100,7 @@ export function RegionalAvailabilitySelector({
             className="mt-0 w-4 h-4 text-orange-600 focus:ring-orange-500"
           />
           <div className="flex-1">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <Globe className="w-4 h-4 text-blue-600" />
               <span className="font-medium">Available in all regions</span>
             </div>
@@ -116,7 +116,7 @@ export function RegionalAvailabilitySelector({
         </label>
 
         {/* Mode: Specific Regions */}
-        <label className="flex items-start gap-0 p-0 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+        <label className="flex items-start gap-3 p-0 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
           <input
             type="radio"
             name="availability-mode"
@@ -125,7 +125,7 @@ export function RegionalAvailabilitySelector({
             className="mt-0 w-4 h-4 text-orange-600 focus:ring-orange-500"
           />
           <div className="flex-1">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <MapPin className="w-4 h-4 text-green-600" />
               <span className="font-medium">Available in specific regions</span>
             </div>
@@ -136,7 +136,7 @@ export function RegionalAvailabilitySelector({
         </label>
 
         {/* Mode: Exclude Regions */}
-        <label className="flex items-start gap-0 p-0 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+        <label className="flex items-start gap-3 p-0 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
           <input
             type="radio"
             name="availability-mode"
@@ -145,7 +145,7 @@ export function RegionalAvailabilitySelector({
             className="mt-0 w-4 h-4 text-orange-600 focus:ring-orange-500"
           />
           <div className="flex-1">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <XCircle className="w-4 h-4 text-red-600" />
               <span className="font-medium">Exclude from specific regions</span>
             </div>
@@ -162,11 +162,11 @@ export function RegionalAvailabilitySelector({
           <div className="flex items-center justify-between mb-0">
             <label className="text-sm font-medium text-gray-700">
               {value.mode === 'specific' ? 'Select Regions' : 'Exclude Regions'}
-              <span className="text-gray-500 ml-0">
+              <span className="text-gray-500 ml-2">
                 ({value.regions.length} selected)
               </span>
             </label>
-            <div className="flex gap-0">
+            <div className="flex gap-3">
               <button
                 type="button"
                 onClick={selectAllRegions}
@@ -198,7 +198,7 @@ export function RegionalAvailabilitySelector({
                 return (
                   <label
                     key={region.regionId}
-                    className={`flex items-center gap-0 p-0 border-2 rounded-lg cursor-pointer transition-all ${
+                    className={`flex items-center gap-3 p-0 border-2 rounded-lg cursor-pointer transition-all ${
                       isSelected
                         ? 'bg-orange-50 border-orange-300'
                         : 'border-gray-200 hover:bg-gray-50'
@@ -235,7 +235,7 @@ export function RegionalAvailabilitySelector({
                 <span className="font-medium">
                   {value.mode === 'specific' ? 'Will show in:' : 'Will hide in:'}
                 </span>
-                <div className="mt-0 flex flex-wrap gap-0">
+                <div className="mt-0 flex flex-wrap gap-3">
                   {value.regions.map(regionId => {
                     const region = activeRegions.find(r => r.regionId === regionId);
                     if (!region) return null;
@@ -243,7 +243,7 @@ export function RegionalAvailabilitySelector({
                     return (
                       <span
                         key={regionId}
-                        className="inline-flex items-center gap-0 px-0 py-0 bg-white border border-gray-300 rounded text-xs"
+                        className="inline-flex items-center gap-3 px-0 py-0 bg-white border border-gray-300 rounded text-xs"
                       >
                         <span>{flag}</span>
                         <span>{region.regionName}</span>
@@ -258,11 +258,11 @@ export function RegionalAvailabilitySelector({
           {/* Warning for exclude mode */}
           {value.mode === 'exclude' && value.regions.length > 0 && (
             <div className="mt-0 p-0 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
-              <div className="flex gap-0">
+              <div className="flex gap-3">
                 <XCircle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <span className="font-medium text-yellow-900">Package will be hidden in:</span>
-                  <span className="text-yellow-700 ml-0">
+                  <span className="text-yellow-700 ml-2">
                     {value.regions.map(rid => {
                       const r = activeRegions.find(ar => ar.regionId === rid);
                       return r?.regionName;

@@ -25,7 +25,7 @@ export function RequestInfoModal({ isOpen, vendorName, onSubmit, onCancel }: Req
     <Dialog open={isOpen} onOpenChange={onCancel}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <MessageSquare className="w-5 h-5 text-blue-500" />
             <DialogTitle>Request More Information</DialogTitle>
           </div>
@@ -54,7 +54,7 @@ export function RequestInfoModal({ isOpen, vendorName, onSubmit, onCancel }: Req
           </div>
         </div>
 
-        <div className="flex justify-end gap-0">
+        <div className="flex justify-end gap-3">
           <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>

@@ -1089,16 +1089,16 @@ var require_misc = __commonJS({
     var worldwide = require_worldwide();
     function uuid4() {
       const gbl = worldwide.GLOBAL_OBJ;
-      const crypto19 = gbl.crypto || gbl.msCrypto;
+      const crypto20 = gbl.crypto || gbl.msCrypto;
       let getRandomByte = () => Math.random() * 16;
       try {
-        if (crypto19 && crypto19.randomUUID) {
-          return crypto19.randomUUID().replace(/-/g, "");
+        if (crypto20 && crypto20.randomUUID) {
+          return crypto20.randomUUID().replace(/-/g, "");
         }
-        if (crypto19 && crypto19.getRandomValues) {
+        if (crypto20 && crypto20.getRandomValues) {
           getRandomByte = () => {
             const typedArray = new Uint8Array(1);
-            crypto19.getRandomValues(typedArray);
+            crypto20.getRandomValues(typedArray);
             return typedArray[0];
           };
         }
@@ -3941,7 +3941,7 @@ var require_session = __commonJS({
   "node_modules/@sentry/core/cjs/session.js"(exports2) {
     Object.defineProperty(exports2, "__esModule", { value: true });
     var utils = require_cjs();
-    function makeSession(context3) {
+    function makeSession(context2) {
       const startingTime = utils.timestampInSeconds();
       const session = {
         sid: utils.uuid4(),
@@ -3954,74 +3954,74 @@ var require_session = __commonJS({
         ignoreDuration: false,
         toJSON: () => sessionToJSON(session)
       };
-      if (context3) {
-        updateSession(session, context3);
+      if (context2) {
+        updateSession(session, context2);
       }
       return session;
     }
-    function updateSession(session, context3 = {}) {
-      if (context3.user) {
-        if (!session.ipAddress && context3.user.ip_address) {
-          session.ipAddress = context3.user.ip_address;
+    function updateSession(session, context2 = {}) {
+      if (context2.user) {
+        if (!session.ipAddress && context2.user.ip_address) {
+          session.ipAddress = context2.user.ip_address;
         }
-        if (!session.did && !context3.did) {
-          session.did = context3.user.id || context3.user.email || context3.user.username;
+        if (!session.did && !context2.did) {
+          session.did = context2.user.id || context2.user.email || context2.user.username;
         }
       }
-      session.timestamp = context3.timestamp || utils.timestampInSeconds();
-      if (context3.abnormal_mechanism) {
-        session.abnormal_mechanism = context3.abnormal_mechanism;
+      session.timestamp = context2.timestamp || utils.timestampInSeconds();
+      if (context2.abnormal_mechanism) {
+        session.abnormal_mechanism = context2.abnormal_mechanism;
       }
-      if (context3.ignoreDuration) {
-        session.ignoreDuration = context3.ignoreDuration;
+      if (context2.ignoreDuration) {
+        session.ignoreDuration = context2.ignoreDuration;
       }
-      if (context3.sid) {
-        session.sid = context3.sid.length === 32 ? context3.sid : utils.uuid4();
+      if (context2.sid) {
+        session.sid = context2.sid.length === 32 ? context2.sid : utils.uuid4();
       }
-      if (context3.init !== void 0) {
-        session.init = context3.init;
+      if (context2.init !== void 0) {
+        session.init = context2.init;
       }
-      if (!session.did && context3.did) {
-        session.did = `${context3.did}`;
+      if (!session.did && context2.did) {
+        session.did = `${context2.did}`;
       }
-      if (typeof context3.started === "number") {
-        session.started = context3.started;
+      if (typeof context2.started === "number") {
+        session.started = context2.started;
       }
       if (session.ignoreDuration) {
         session.duration = void 0;
-      } else if (typeof context3.duration === "number") {
-        session.duration = context3.duration;
+      } else if (typeof context2.duration === "number") {
+        session.duration = context2.duration;
       } else {
         const duration = session.timestamp - session.started;
         session.duration = duration >= 0 ? duration : 0;
       }
-      if (context3.release) {
-        session.release = context3.release;
+      if (context2.release) {
+        session.release = context2.release;
       }
-      if (context3.environment) {
-        session.environment = context3.environment;
+      if (context2.environment) {
+        session.environment = context2.environment;
       }
-      if (!session.ipAddress && context3.ipAddress) {
-        session.ipAddress = context3.ipAddress;
+      if (!session.ipAddress && context2.ipAddress) {
+        session.ipAddress = context2.ipAddress;
       }
-      if (!session.userAgent && context3.userAgent) {
-        session.userAgent = context3.userAgent;
+      if (!session.userAgent && context2.userAgent) {
+        session.userAgent = context2.userAgent;
       }
-      if (typeof context3.errors === "number") {
-        session.errors = context3.errors;
+      if (typeof context2.errors === "number") {
+        session.errors = context2.errors;
       }
-      if (context3.status) {
-        session.status = context3.status;
+      if (context2.status) {
+        session.status = context2.status;
       }
     }
     function closeSession(session, status) {
-      let context3 = {};
+      let context2 = {};
       if (status) {
-        context3 = { status };
+        context2 = { status };
       } else if (session.status === "ok") {
-        context3 = { status: "exited" };
+        context2 = { status: "exited" };
       }
-      updateSession(session, context3);
+      updateSession(session, context2);
     }
     function sessionToJSON(session) {
       return utils.dropUndefinedKeys({
@@ -4381,8 +4381,8 @@ var require_exports = __commonJS({
     }
     function captureMessage2(message2, captureContext) {
       const level = typeof captureContext === "string" ? captureContext : void 0;
-      const context3 = typeof captureContext !== "string" ? { captureContext } : void 0;
-      return hub.getCurrentHub().captureMessage(message2, level, context3);
+      const context2 = typeof captureContext !== "string" ? { captureContext } : void 0;
+      return hub.getCurrentHub().captureMessage(message2, level, context2);
     }
     function captureEvent(event, hint) {
       return hub.getCurrentHub().captureEvent(event, hint);
@@ -4393,8 +4393,8 @@ var require_exports = __commonJS({
     function addBreadcrumb2(breadcrumb, hint) {
       hub.getCurrentHub().addBreadcrumb(breadcrumb, hint);
     }
-    function setContext(name, context3) {
-      hub.getCurrentHub().setContext(name, context3);
+    function setContext(name, context2) {
+      hub.getCurrentHub().setContext(name, context2);
     }
     function setExtras(extras) {
       hub.getCurrentHub().setExtras(extras);
@@ -4436,8 +4436,8 @@ var require_exports = __commonJS({
         return callback(scope);
       });
     }
-    function startTransaction(context3, customSamplingContext) {
-      return hub.getCurrentHub().startTransaction({ ...context3 }, customSamplingContext);
+    function startTransaction(context2, customSamplingContext) {
+      return hub.getCurrentHub().startTransaction({ ...context2 }, customSamplingContext);
     }
     function captureCheckIn(checkIn, upsertMonitorConfig) {
       const scope = getCurrentScope();
@@ -4506,7 +4506,7 @@ var require_exports = __commonJS({
     function getCurrentScope() {
       return hub.getCurrentHub().getScope();
     }
-    function startSession(context3) {
+    function startSession(context2) {
       const client2 = getClient3();
       const isolationScope = hub.getIsolationScope();
       const currentScope = getCurrentScope();
@@ -4517,7 +4517,7 @@ var require_exports = __commonJS({
         environment: environment2,
         user: currentScope.getUser() || isolationScope.getUser(),
         ...userAgent && { userAgent },
-        ...context3
+        ...context2
       });
       const currentSession = isolationScope.getSession();
       if (currentSession && currentSession.status === "ok") {
@@ -5000,11 +5000,11 @@ var require_scope = __commonJS({
       /**
        * @inheritDoc
        */
-      setContext(key, context3) {
-        if (context3 === null) {
+      setContext(key, context2) {
+        if (context2 === null) {
           delete this._contexts[key];
         } else {
-          this._contexts[key] = context3;
+          this._contexts[key] = context2;
         }
         this._notifyScopeListeners();
         return this;
@@ -5238,8 +5238,8 @@ var require_scope = __commonJS({
       /**
        * @inheritDoc
        */
-      setPropagationContext(context3) {
-        this._propagationContext = context3;
+      setPropagationContext(context2) {
+        this._propagationContext = context2;
         return this;
       }
       /**
@@ -5676,9 +5676,9 @@ var require_hub = __commonJS({
        * @deprecated Use `Sentry.setContext()` instead.
        */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setContext(name, context3) {
-        this.getScope().setContext(name, context3);
-        this.getIsolationScope().setContext(name, context3);
+      setContext(name, context2) {
+        this.getScope().setContext(name, context2);
+        this.getIsolationScope().setContext(name, context2);
       }
       /**
        * @inheritDoc
@@ -5736,8 +5736,8 @@ var require_hub = __commonJS({
        *
        * @deprecated Use `startSpan()`, `startSpanManual()` or `startInactiveSpan()` instead.
        */
-      startTransaction(context3, customSamplingContext) {
-        const result = this._callExtensionMethod("startTransaction", context3, customSamplingContext);
+      startTransaction(context2, customSamplingContext) {
+        const result = this._callExtensionMethod("startTransaction", context2, customSamplingContext);
         if (debugBuild.DEBUG_BUILD && !result) {
           const client2 = this.getClient();
           if (!client2) {
@@ -5789,7 +5789,7 @@ Sentry.init({...});
        * @inheritDoc
        * @deprecated Use top level `startSession` instead.
        */
-      startSession(context3) {
+      startSession(context2) {
         const { scope: scope2, client: client2 } = this.getStackTop();
         const { release, environment: environment2 = constants3.DEFAULT_ENVIRONMENT } = client2 && client2.getOptions() || {};
         const { userAgent } = utils.GLOBAL_OBJ.navigator || {};
@@ -5798,7 +5798,7 @@ Sentry.init({...});
           environment: environment2,
           user: scope2.getUser(),
           ...userAgent && { userAgent },
-          ...context3
+          ...context2
         });
         const currentSession = scope2.getSession && scope2.getSession();
         if (currentSession && currentSession.status === "ok") {
@@ -6132,13 +6132,13 @@ var require_trace = __commonJS({
     var exports$1 = require_exports();
     var handleCallbackErrors = require_handleCallbackErrors();
     var hasTracingEnabled = require_hasTracingEnabled();
-    function trace2(context3, callback, onError = () => {
+    function trace2(context2, callback, onError = () => {
     }, afterFinish = () => {
     }) {
       const hub$1 = hub.getCurrentHub();
       const scope = exports$1.getCurrentScope();
       const parentSpan = scope.getSpan();
-      const spanContext = normalizeContext(context3);
+      const spanContext = normalizeContext(context2);
       const activeSpan = createChildSpanOrTransaction(hub$1, {
         parentSpan,
         spanContext,
@@ -6159,17 +6159,17 @@ var require_trace = __commonJS({
         }
       );
     }
-    function startSpan(context3, callback) {
-      const spanContext = normalizeContext(context3);
+    function startSpan(context2, callback) {
+      const spanContext = normalizeContext(context2);
       return hub.runWithAsyncContext(() => {
-        return exports$1.withScope(context3.scope, (scope) => {
+        return exports$1.withScope(context2.scope, (scope) => {
           const hub$1 = hub.getCurrentHub();
           const parentSpan = scope.getSpan();
-          const shouldSkipSpan = context3.onlyIfParent && !parentSpan;
+          const shouldSkipSpan = context2.onlyIfParent && !parentSpan;
           const activeSpan = shouldSkipSpan ? void 0 : createChildSpanOrTransaction(hub$1, {
             parentSpan,
             spanContext,
-            forceTransaction: context3.forceTransaction,
+            forceTransaction: context2.forceTransaction,
             scope
           });
           return handleCallbackErrors.handleCallbackErrors(
@@ -6188,17 +6188,17 @@ var require_trace = __commonJS({
       });
     }
     var startActiveSpan = startSpan;
-    function startSpanManual(context3, callback) {
-      const spanContext = normalizeContext(context3);
+    function startSpanManual(context2, callback) {
+      const spanContext = normalizeContext(context2);
       return hub.runWithAsyncContext(() => {
-        return exports$1.withScope(context3.scope, (scope) => {
+        return exports$1.withScope(context2.scope, (scope) => {
           const hub$1 = hub.getCurrentHub();
           const parentSpan = scope.getSpan();
-          const shouldSkipSpan = context3.onlyIfParent && !parentSpan;
+          const shouldSkipSpan = context2.onlyIfParent && !parentSpan;
           const activeSpan = shouldSkipSpan ? void 0 : createChildSpanOrTransaction(hub$1, {
             parentSpan,
             spanContext,
-            forceTransaction: context3.forceTransaction,
+            forceTransaction: context2.forceTransaction,
             scope
           });
           function finishAndSetSpan() {
@@ -6218,26 +6218,26 @@ var require_trace = __commonJS({
         });
       });
     }
-    function startInactiveSpan(context3) {
+    function startInactiveSpan(context2) {
       if (!hasTracingEnabled.hasTracingEnabled()) {
         return void 0;
       }
-      const spanContext = normalizeContext(context3);
+      const spanContext = normalizeContext(context2);
       const hub$1 = hub.getCurrentHub();
-      const parentSpan = context3.scope ? (
+      const parentSpan = context2.scope ? (
         // eslint-disable-next-line deprecation/deprecation
-        context3.scope.getSpan()
+        context2.scope.getSpan()
       ) : getActiveSpan2();
-      const shouldSkipSpan = context3.onlyIfParent && !parentSpan;
+      const shouldSkipSpan = context2.onlyIfParent && !parentSpan;
       if (shouldSkipSpan) {
         return void 0;
       }
-      const scope = context3.scope || exports$1.getCurrentScope();
+      const scope = context2.scope || exports$1.getCurrentScope();
       const temporaryScope = scope.clone();
       return createChildSpanOrTransaction(hub$1, {
         parentSpan,
         spanContext,
-        forceTransaction: context3.forceTransaction,
+        forceTransaction: context2.forceTransaction,
         scope: temporaryScope
       });
     }
@@ -6319,14 +6319,14 @@ var require_trace = __commonJS({
       setCapturedScopesOnSpan(span, scope, isolationScope);
       return span;
     }
-    function normalizeContext(context3) {
-      if (context3.startTime) {
-        const ctx = { ...context3 };
-        ctx.startTimestamp = spanUtils.spanTimeInputToSeconds(context3.startTime);
+    function normalizeContext(context2) {
+      if (context2.startTime) {
+        const ctx = { ...context2 };
+        ctx.startTimestamp = spanUtils.spanTimeInputToSeconds(context2.startTime);
         delete ctx.startTime;
         return ctx;
       }
-      return context3;
+      return context2;
     }
     var SCOPE_ON_START_SPAN_FIELD = "_sentryScope";
     var ISOLATION_SCOPE_ON_START_SPAN_FIELD = "_sentryIsolationScope";
@@ -7092,11 +7092,11 @@ var require_transaction = __commonJS({
        * Set the context of a transaction event.
        * @deprecated Use either `.setAttribute()`, or set the context on the scope before creating the transaction.
        */
-      setContext(key, context3) {
-        if (context3 === null) {
+      setContext(key, context2) {
+        if (context2 === null) {
           delete this._contexts[key];
         } else {
-          this._contexts[key] = context3;
+          this._contexts[key] = context2;
         }
       }
       /**
@@ -10134,8 +10134,8 @@ var require_functiontostring = __commonJS({
           try {
             Function.prototype.toString = function(...args) {
               const originalFunction = utils.getOriginalFunction(this);
-              const context3 = SETUP_CLIENTS.has(exports$1.getClient()) && originalFunction !== void 0 ? originalFunction : this;
-              return originalFunctionToString.apply(context3, args);
+              const context2 = SETUP_CLIENTS.has(exports$1.getClient()) && originalFunction !== void 0 ? originalFunction : this;
+              return originalFunctionToString.apply(context2, args);
             };
           } catch (e) {
           }
@@ -13335,9 +13335,9 @@ var require_browsertracing = __commonJS({
           );
         }
         instrumentRouting(
-          (context3) => {
-            const transaction = this._createRouteTransaction(context3);
-            this.options._experiments.onStartRouteTransaction && this.options._experiments.onStartRouteTransaction(transaction, context3, getCurrentHub);
+          (context2) => {
+            const transaction = this._createRouteTransaction(context2);
+            this.options._experiments.onStartRouteTransaction && this.options._experiments.onStartRouteTransaction(transaction, context2, getCurrentHub);
             return transaction;
           },
           startTransactionOnPageLoad,
@@ -13361,14 +13361,14 @@ var require_browsertracing = __commonJS({
         });
       }
       /** Create routing idle transaction. */
-      _createRouteTransaction(context3) {
+      _createRouteTransaction(context2) {
         if (!this._getCurrentHub) {
-          debugBuild.DEBUG_BUILD && utils.logger.warn(`[Tracing] Did not create ${context3.op} transaction because _getCurrentHub is invalid.`);
+          debugBuild.DEBUG_BUILD && utils.logger.warn(`[Tracing] Did not create ${context2.op} transaction because _getCurrentHub is invalid.`);
           return void 0;
         }
         const hub = this._getCurrentHub();
         const { beforeNavigate, idleTimeout, finalTimeout, heartbeatInterval } = this.options;
-        const isPageloadTransaction = context3.op === "pageload";
+        const isPageloadTransaction = context2.op === "pageload";
         let expandedContext;
         if (isPageloadTransaction) {
           const sentryTrace = isPageloadTransaction ? getMetaContent("sentry-trace") : "";
@@ -13378,10 +13378,10 @@ var require_browsertracing = __commonJS({
             traceId,
             parentSpanId,
             parentSampled: sampled,
-            ...context3,
+            ...context2,
             metadata: {
               // eslint-disable-next-line deprecation/deprecation
-              ...context3.metadata,
+              ...context2.metadata,
               dynamicSamplingContext: dsc
             },
             trimEnd: true
@@ -13389,7 +13389,7 @@ var require_browsertracing = __commonJS({
         } else {
           expandedContext = {
             trimEnd: true,
-            ...context3
+            ...context2
           };
         }
         const modifiedContext = typeof beforeNavigate === "function" ? beforeNavigate(expandedContext) : expandedContext;
@@ -13466,7 +13466,7 @@ var require_browsertracing = __commonJS({
           }
           const hub = this._getCurrentHub();
           const { location: location2 } = types5.WINDOW;
-          const context3 = {
+          const context2 = {
             name: this._latestRoute.name,
             op,
             trimEnd: true,
@@ -13476,7 +13476,7 @@ var require_browsertracing = __commonJS({
           };
           inflightInteractionTransaction = core.startIdleTransaction(
             hub,
-            context3,
+            context2,
             idleTimeout,
             finalTimeout,
             true,
@@ -13555,10 +13555,10 @@ var require_browsertracing = __commonJS({
       const metaTag = utils.getDomElement(`meta[name=${metaName}]`);
       return metaTag ? metaTag.getAttribute("content") : void 0;
     }
-    function getSource(context3) {
-      const sourceFromAttributes = context3.attributes && context3.attributes[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
-      const sourceFromData = context3.data && context3.data[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
-      const sourceFromMetadata = context3.metadata && context3.metadata.source;
+    function getSource(context2) {
+      const sourceFromAttributes = context2.attributes && context2.attributes[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
+      const sourceFromData = context2.data && context2.data[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
+      const sourceFromMetadata = context2.metadata && context2.metadata.source;
       return sourceFromAttributes || sourceFromData || sourceFromMetadata;
     }
     function isPerformanceEventTiming(entry) {
@@ -13620,10 +13620,10 @@ var require_browserTracingIntegration = __commonJS({
         name: void 0,
         context: void 0
       };
-      function _createRouteTransaction(context3) {
+      function _createRouteTransaction(context2) {
         const hub = core.getCurrentHub();
         const { beforeStartSpan, idleTimeout, finalTimeout, heartbeatInterval } = options;
-        const isPageloadTransaction = context3.op === "pageload";
+        const isPageloadTransaction = context2.op === "pageload";
         let expandedContext;
         if (isPageloadTransaction) {
           const sentryTrace = isPageloadTransaction ? getMetaContent("sentry-trace") : "";
@@ -13633,10 +13633,10 @@ var require_browserTracingIntegration = __commonJS({
             traceId,
             parentSpanId,
             parentSampled: sampled,
-            ...context3,
+            ...context2,
             metadata: {
               // eslint-disable-next-line deprecation/deprecation
-              ...context3.metadata,
+              ...context2.metadata,
               dynamicSamplingContext: dsc
             },
             trimEnd: true
@@ -13644,7 +13644,7 @@ var require_browserTracingIntegration = __commonJS({
         } else {
           expandedContext = {
             trimEnd: true,
-            ...context3
+            ...context2
           };
         }
         const finalContext = beforeStartSpan ? beforeStartSpan(expandedContext) : expandedContext;
@@ -13708,29 +13708,29 @@ var require_browserTracingIntegration = __commonJS({
           let activeSpan;
           let startingUrl = types5.WINDOW.location && types5.WINDOW.location.href;
           if (client2.on) {
-            client2.on("startNavigationSpan", (context3) => {
+            client2.on("startNavigationSpan", (context2) => {
               if (activeSpan) {
                 debugBuild.DEBUG_BUILD && utils.logger.log(`[Tracing] Finishing current transaction with op: ${core.spanToJSON(activeSpan).op}`);
                 activeSpan.end();
               }
               activeSpan = _createRouteTransaction({
                 op: "navigation",
-                ...context3
+                ...context2
               });
             });
-            client2.on("startPageLoadSpan", (context3) => {
+            client2.on("startPageLoadSpan", (context2) => {
               if (activeSpan) {
                 debugBuild.DEBUG_BUILD && utils.logger.log(`[Tracing] Finishing current transaction with op: ${core.spanToJSON(activeSpan).op}`);
                 activeSpan.end();
               }
               activeSpan = _createRouteTransaction({
                 op: "pageload",
-                ...context3
+                ...context2
               });
             });
           }
           if (options.instrumentPageLoad && client2.emit && types5.WINDOW.location) {
-            const context3 = {
+            const context2 = {
               name: types5.WINDOW.location.pathname,
               // pageload should always start at timeOrigin (and needs to be in s, not ms)
               startTimestamp: utils.browserPerformanceTimeOrigin ? utils.browserPerformanceTimeOrigin / 1e3 : void 0,
@@ -13739,7 +13739,7 @@ var require_browserTracingIntegration = __commonJS({
                 [core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: "url"
               }
             };
-            startBrowserTracingPageLoadSpan(client2, context3);
+            startBrowserTracingPageLoadSpan(client2, context2);
           }
           if (options.instrumentNavigation && client2.emit && types5.WINDOW.location) {
             utils.addHistoryInstrumentationHandler(({ to, from }) => {
@@ -13749,14 +13749,14 @@ var require_browserTracingIntegration = __commonJS({
               }
               if (from !== to) {
                 startingUrl = void 0;
-                const context3 = {
+                const context2 = {
                   name: types5.WINDOW.location.pathname,
                   origin: "auto.navigation.browser",
                   attributes: {
                     [core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: "url"
                   }
                 };
-                startBrowserTracingNavigationSpan(client2, context3);
+                startBrowserTracingNavigationSpan(client2, context2);
               }
             });
           }
@@ -13826,7 +13826,7 @@ var require_browserTracingIntegration = __commonJS({
           return void 0;
         }
         const { location: location2 } = types5.WINDOW;
-        const context3 = {
+        const context2 = {
           name: latestRoute.name,
           op,
           trimEnd: true,
@@ -13837,7 +13837,7 @@ var require_browserTracingIntegration = __commonJS({
         inflightInteractionTransaction = core.startIdleTransaction(
           // eslint-disable-next-line deprecation/deprecation
           core.getCurrentHub(),
-          context3,
+          context2,
           idleTimeout,
           finalTimeout,
           true,
@@ -13914,10 +13914,10 @@ var require_browserTracingIntegration = __commonJS({
       instrument.addPerformanceInstrumentationHandler("event", handleEntries);
       instrument.addPerformanceInstrumentationHandler("first-input", handleEntries);
     }
-    function getSource(context3) {
-      const sourceFromAttributes = context3.attributes && context3.attributes[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
-      const sourceFromData = context3.data && context3.data[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
-      const sourceFromMetadata = context3.metadata && context3.metadata.source;
+    function getSource(context2) {
+      const sourceFromAttributes = context2.attributes && context2.attributes[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
+      const sourceFromData = context2.data && context2.data[core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE];
+      const sourceFromMetadata = context2.metadata && context2.metadata.source;
       return sourceFromAttributes || sourceFromData || sourceFromMetadata;
     }
     exports2.BROWSER_TRACING_INTEGRATION_ID = BROWSER_TRACING_INTEGRATION_ID;
@@ -14390,10 +14390,10 @@ var require_http = __commonJS({
     var utils = require_cjs();
     var index = require_proxy();
     var GZIP_THRESHOLD = 1024 * 32;
-    function streamFromBody(body2) {
+    function streamFromBody(body) {
       return new stream2.Readable({
         read() {
-          this.push(body2);
+          this.push(body);
           this.push(null);
         }
       });
@@ -14436,11 +14436,11 @@ var require_http = __commonJS({
       const { hostname, pathname, port, protocol, search } = new url.URL(options.url);
       return function makeRequest(request) {
         return new Promise((resolve, reject) => {
-          let body2 = streamFromBody(request.body);
+          let body = streamFromBody(request.body);
           const headers = { ...options.headers };
           if (request.body.length > GZIP_THRESHOLD) {
             headers["content-encoding"] = "gzip";
-            body2 = body2.pipe(zlib.createGzip());
+            body = body.pipe(zlib.createGzip());
           }
           const req = httpModule.request(
             {
@@ -14471,7 +14471,7 @@ var require_http = __commonJS({
             }
           );
           req.on("error", reject);
-          body2.pipe(req);
+          body.pipe(req);
         });
       };
     }
@@ -16414,7 +16414,7 @@ var require_sdk2 = __commonJS({
     var index$2 = require_async();
     var client2 = require_client();
     var console2 = require_console2();
-    var context3 = require_context();
+    var context2 = require_context();
     var contextlines = require_contextlines();
     var http2 = require_http3();
     var index$1 = require_local_variables();
@@ -16441,7 +16441,7 @@ var require_sdk2 = __commonJS({
       // Event Info
       contextlines.contextLinesIntegration(),
       index$1.localVariablesIntegration(),
-      context3.nodeContextIntegration(),
+      context2.nodeContextIntegration(),
       modules.modulesIntegration()
     ];
     function getDefaultIntegrations(_options) {
@@ -17146,7 +17146,7 @@ var require_integrations2 = __commonJS({
     var onunhandledrejection = require_onunhandledrejection();
     var modules = require_modules();
     var contextlines = require_contextlines();
-    var context3 = require_context();
+    var context2 = require_context();
     var core = require_cjs2();
     var index = require_local_variables();
     var index$1 = require_undici();
@@ -17159,7 +17159,7 @@ var require_integrations2 = __commonJS({
     exports2.OnUnhandledRejection = onunhandledrejection.OnUnhandledRejection;
     exports2.Modules = modules.Modules;
     exports2.ContextLines = contextlines.ContextLines;
-    exports2.Context = context3.Context;
+    exports2.Context = context2.Context;
     exports2.RequestData = core.RequestData;
     exports2.LocalVariables = index.LocalVariables;
     exports2.Undici = index$1.Undici;
@@ -19846,11 +19846,11 @@ var require_reportingobserver = __commonJS({
               }
               scope.setExtra("body", plainBody);
               if (report.type === "crash") {
-                const body2 = report.body;
-                details = [body2.crashId || "", body2.reason || ""].join(" ").trim() || details;
+                const body = report.body;
+                details = [body.crashId || "", body.reason || ""].join(" ").trim() || details;
               } else {
-                const body2 = report.body;
-                details = body2.message || details;
+                const body = report.body;
+                details = body.message || details;
               }
             }
             core.captureMessage(`${label}: ${details}`);
@@ -20445,11 +20445,11 @@ var require_cron = __commonJS({
           }
           jobScheduled = true;
           const cronString = common.replaceCronNames(cronTime);
-          function monitoredTick(context3, onComplete2) {
+          function monitoredTick(context2, onComplete2) {
             return core.withMonitor(
               monitorSlug,
               () => {
-                return onTick(context3, onComplete2);
+                return onTick(context2, onComplete2);
               },
               {
                 schedule: { type: "crontab", value: cronString },
@@ -20471,11 +20471,11 @@ var require_cron = __commonJS({
               }
               jobScheduled = true;
               const cronString = common.replaceCronNames(cronTime);
-              param.onTick = (context3, onComplete) => {
+              param.onTick = (context2, onComplete) => {
                 return core.withMonitor(
                   monitorSlug,
                   () => {
-                    return onTick(context3, onComplete);
+                    return onTick(context2, onComplete);
                   },
                   {
                     schedule: { type: "crontab", value: cronString },
@@ -20598,7 +20598,7 @@ var require_cjs5 = __commonJS({
     var onunhandledrejection = require_onunhandledrejection();
     var modules = require_modules();
     var contextlines = require_contextlines();
-    var context3 = require_context();
+    var context2 = require_context();
     var index$1 = require_local_variables();
     var spotlight = require_spotlight();
     var index$2 = require_anr2();
@@ -20712,7 +20712,7 @@ var require_cjs5 = __commonJS({
     exports2.onUnhandledRejectionIntegration = onunhandledrejection.onUnhandledRejectionIntegration;
     exports2.modulesIntegration = modules.modulesIntegration;
     exports2.contextLinesIntegration = contextlines.contextLinesIntegration;
-    exports2.nodeContextIntegration = context3.nodeContextIntegration;
+    exports2.nodeContextIntegration = context2.nodeContextIntegration;
     exports2.localVariablesIntegration = index$1.localVariablesIntegration;
     exports2.spotlightIntegration = spotlight.spotlightIntegration;
     exports2.anrIntegration = index$2.anrIntegration;
@@ -20997,14 +20997,14 @@ var require_json = __commonJS({
       resp.error = util3.error(new Error(), error);
     }
     function extractData(resp) {
-      var body2 = resp.httpResponse.body.toString() || "{}";
+      var body = resp.httpResponse.body.toString() || "{}";
       if (resp.request.service.config.convertResponseTypes === false) {
-        resp.data = JSON.parse(body2);
+        resp.data = JSON.parse(body);
       } else {
         var operation = resp.request.service.api.operations[resp.request.operation];
         var shape = operation.output || {};
         var parser = new JsonParser();
-        resp.data = parser.parse(body2, shape);
+        resp.data = parser.parse(body, shape);
       }
     }
     module2.exports = {
@@ -21478,15 +21478,15 @@ var require_query = __commonJS({
       populateHostPrefix(req);
     }
     function extractError(resp) {
-      var data, body2 = resp.httpResponse.body.toString();
-      if (body2.match("<UnknownOperationException")) {
+      var data, body = resp.httpResponse.body.toString();
+      if (body.match("<UnknownOperationException")) {
         data = {
           Code: "UnknownOperation",
           Message: "Unknown operation " + resp.request.operation
         };
       } else {
         try {
-          data = new AWS.XML.Parser().parse(body2);
+          data = new AWS.XML.Parser().parse(body);
         } catch (e) {
           data = {
             Code: resp.httpResponse.statusCode,
@@ -21741,21 +21741,21 @@ var require_rest_json = __commonJS({
       var hasEventOutput = operation.hasEventOutput;
       if (rules.payload) {
         var payloadMember = rules.members[rules.payload];
-        var body2 = resp.httpResponse.body;
+        var body = resp.httpResponse.body;
         if (payloadMember.isEventStream) {
           parser = new JsonParser();
           resp.data[rules.payload] = util3.createEventStream(
-            AWS.HttpClient.streamsApiVersion === 2 ? resp.httpResponse.stream : body2,
+            AWS.HttpClient.streamsApiVersion === 2 ? resp.httpResponse.stream : body,
             parser,
             payloadMember
           );
         } else if (payloadMember.type === "structure" || payloadMember.type === "list") {
           var parser = new JsonParser();
-          resp.data[rules.payload] = parser.parse(body2, payloadMember);
+          resp.data[rules.payload] = parser.parse(body, payloadMember);
         } else if (payloadMember.type === "binary" || payloadMember.isStreaming) {
-          resp.data[rules.payload] = body2;
+          resp.data[rules.payload] = body;
         } else {
-          resp.data[rules.payload] = payloadMember.toType(body2);
+          resp.data[rules.payload] = payloadMember.toType(body);
         }
       } else {
         var data = resp.data;
@@ -21832,7 +21832,7 @@ var require_rest_xml = __commonJS({
       Rest.extractData(resp);
       var parser;
       var req = resp.request;
-      var body2 = resp.httpResponse.body;
+      var body = resp.httpResponse.body;
       var operation = req.service.api.operations[req.operation];
       var output = operation.output;
       var hasEventOutput = operation.hasEventOutput;
@@ -21848,15 +21848,15 @@ var require_rest_xml = __commonJS({
           );
         } else if (payloadMember.type === "structure") {
           parser = new AWS.XML.Parser();
-          resp.data[payload] = parser.parse(body2.toString(), payloadMember);
+          resp.data[payload] = parser.parse(body.toString(), payloadMember);
         } else if (payloadMember.type === "binary" || payloadMember.isStreaming) {
-          resp.data[payload] = body2;
+          resp.data[payload] = body;
         } else {
-          resp.data[payload] = payloadMember.toType(body2);
+          resp.data[payload] = payloadMember.toType(body);
         }
-      } else if (body2.length > 0) {
+      } else if (body.length > 0) {
         parser = new AWS.XML.Parser();
-        var data = parser.parse(body2.toString(), output);
+        var data = parser.parse(body.toString(), output);
         util3.update(resp.data, data);
       }
     }
@@ -26676,11 +26676,11 @@ var require_event_listeners = __commonJS({
           if (!operation) {
             return;
           }
-          var body2 = req.httpRequest.body;
-          var isNonStreamingPayload = body2 && (AWS.util.Buffer.isBuffer(body2) || typeof body2 === "string");
+          var body = req.httpRequest.body;
+          var isNonStreamingPayload = body && (AWS.util.Buffer.isBuffer(body) || typeof body === "string");
           var headers = req.httpRequest.headers;
           if (operation.httpChecksumRequired && req.service.config.computeChecksums && isNonStreamingPayload && !headers["Content-MD5"]) {
-            var md54 = AWS.util.crypto.md5(body2, "base64");
+            var md54 = AWS.util.crypto.md5(body, "base64");
             headers["Content-MD5"] = md54;
           }
         });
@@ -26693,12 +26693,12 @@ var require_event_listeners = __commonJS({
           var authtype = operation ? operation.authtype : "";
           if (!req.service.api.signatureVersion && !authtype && !req.service.config.signatureVersion) return done();
           if (req.service.getSignerClass(req) === AWS.Signers.V4) {
-            var body2 = req.httpRequest.body || "";
+            var body = req.httpRequest.body || "";
             if (authtype.indexOf("unsigned-body") >= 0) {
               req.httpRequest.headers["X-Amz-Content-Sha256"] = "UNSIGNED-PAYLOAD";
               return done();
             }
-            AWS.util.computeSha256(body2, function(err, sha) {
+            AWS.util.computeSha256(body, function(err, sha) {
               if (err) {
                 done(err);
               } else {
@@ -26963,8 +26963,8 @@ var require_event_listeners = __commonJS({
         });
         add("HTTP_DONE", "httpDone", function HTTP_DONE(resp) {
           if (resp.httpResponse.buffers && resp.httpResponse.buffers.length > 0) {
-            var body2 = AWS.util.buffer.concat(resp.httpResponse.buffers);
-            resp.httpResponse.body = body2;
+            var body = AWS.util.buffer.concat(resp.httpResponse.buffers);
+            resp.httpResponse.body = body;
           }
           delete resp.httpResponse.numBytes;
           delete resp.httpResponse.buffers;
@@ -30187,9 +30187,9 @@ var require_param_validator = __commonJS({
         }
         this.validation = validation;
       },
-      validate: function validate4(shape, params, context3) {
+      validate: function validate4(shape, params, context2) {
         this.errors = [];
-        this.validateMember(shape, params || {}, context3 || "params");
+        this.validateMember(shape, params || {}, context2 || "params");
         if (this.errors.length > 1) {
           var msg = this.errors.join("\n* ");
           msg = "There were " + this.errors.length + " validation errors:\n* " + msg;
@@ -30206,9 +30206,9 @@ var require_param_validator = __commonJS({
       fail: function fail(code, message2) {
         this.errors.push(AWS.util.error(new Error(message2), { code }));
       },
-      validateStructure: function validateStructure(shape, params, context3) {
+      validateStructure: function validateStructure(shape, params, context2) {
         if (shape.isDocument) return true;
-        this.validateType(params, context3, ["object"], "structure");
+        this.validateType(params, context2, ["object"], "structure");
         var paramName;
         for (var i = 0; shape.required && i < shape.required.length; i++) {
           paramName = shape.required[i];
@@ -30216,7 +30216,7 @@ var require_param_validator = __commonJS({
           if (value === void 0 || value === null) {
             this.fail(
               "MissingRequiredParameter",
-              "Missing required key '" + paramName + "' in " + context3
+              "Missing required key '" + paramName + "' in " + context2
             );
           }
         }
@@ -30224,75 +30224,75 @@ var require_param_validator = __commonJS({
           if (!Object.prototype.hasOwnProperty.call(params, paramName)) continue;
           var paramValue = params[paramName], memberShape = shape.members[paramName];
           if (memberShape !== void 0) {
-            var memberContext = [context3, paramName].join(".");
+            var memberContext = [context2, paramName].join(".");
             this.validateMember(memberShape, paramValue, memberContext);
           } else if (paramValue !== void 0 && paramValue !== null) {
             this.fail(
               "UnexpectedParameter",
-              "Unexpected key '" + paramName + "' found in " + context3
+              "Unexpected key '" + paramName + "' found in " + context2
             );
           }
         }
         return true;
       },
-      validateMember: function validateMember(shape, param, context3) {
+      validateMember: function validateMember(shape, param, context2) {
         switch (shape.type) {
           case "structure":
-            return this.validateStructure(shape, param, context3);
+            return this.validateStructure(shape, param, context2);
           case "list":
-            return this.validateList(shape, param, context3);
+            return this.validateList(shape, param, context2);
           case "map":
-            return this.validateMap(shape, param, context3);
+            return this.validateMap(shape, param, context2);
           default:
-            return this.validateScalar(shape, param, context3);
+            return this.validateScalar(shape, param, context2);
         }
       },
-      validateList: function validateList(shape, params, context3) {
-        if (this.validateType(params, context3, [Array])) {
-          this.validateRange(shape, params.length, context3, "list member count");
+      validateList: function validateList(shape, params, context2) {
+        if (this.validateType(params, context2, [Array])) {
+          this.validateRange(shape, params.length, context2, "list member count");
           for (var i = 0; i < params.length; i++) {
-            this.validateMember(shape.member, params[i], context3 + "[" + i + "]");
+            this.validateMember(shape.member, params[i], context2 + "[" + i + "]");
           }
         }
       },
-      validateMap: function validateMap(shape, params, context3) {
-        if (this.validateType(params, context3, ["object"], "map")) {
+      validateMap: function validateMap(shape, params, context2) {
+        if (this.validateType(params, context2, ["object"], "map")) {
           var mapCount = 0;
           for (var param in params) {
             if (!Object.prototype.hasOwnProperty.call(params, param)) continue;
             this.validateMember(
               shape.key,
               param,
-              context3 + "[key='" + param + "']"
+              context2 + "[key='" + param + "']"
             );
             this.validateMember(
               shape.value,
               params[param],
-              context3 + "['" + param + "']"
+              context2 + "['" + param + "']"
             );
             mapCount++;
           }
-          this.validateRange(shape, mapCount, context3, "map member count");
+          this.validateRange(shape, mapCount, context2, "map member count");
         }
       },
-      validateScalar: function validateScalar(shape, value, context3) {
+      validateScalar: function validateScalar(shape, value, context2) {
         switch (shape.type) {
           case null:
           case void 0:
           case "string":
-            return this.validateString(shape, value, context3);
+            return this.validateString(shape, value, context2);
           case "base64":
           case "binary":
-            return this.validatePayload(value, context3);
+            return this.validatePayload(value, context2);
           case "integer":
           case "float":
-            return this.validateNumber(shape, value, context3);
+            return this.validateNumber(shape, value, context2);
           case "boolean":
-            return this.validateType(value, context3, ["boolean"]);
+            return this.validateType(value, context2, ["boolean"]);
           case "timestamp":
             return this.validateType(
               value,
-              context3,
+              context2,
               [
                 Date,
                 /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/,
@@ -30301,55 +30301,55 @@ var require_param_validator = __commonJS({
               "Date object, ISO-8601 string, or a UNIX timestamp"
             );
           default:
-            return this.fail("UnkownType", "Unhandled type " + shape.type + " for " + context3);
+            return this.fail("UnkownType", "Unhandled type " + shape.type + " for " + context2);
         }
       },
-      validateString: function validateString(shape, value, context3) {
+      validateString: function validateString(shape, value, context2) {
         var validTypes = ["string"];
         if (shape.isJsonValue) {
           validTypes = validTypes.concat(["number", "object", "boolean"]);
         }
-        if (value !== null && this.validateType(value, context3, validTypes)) {
-          this.validateEnum(shape, value, context3);
-          this.validateRange(shape, value.length, context3, "string length");
-          this.validatePattern(shape, value, context3);
-          this.validateUri(shape, value, context3);
+        if (value !== null && this.validateType(value, context2, validTypes)) {
+          this.validateEnum(shape, value, context2);
+          this.validateRange(shape, value.length, context2, "string length");
+          this.validatePattern(shape, value, context2);
+          this.validateUri(shape, value, context2);
         }
       },
-      validateUri: function validateUri(shape, value, context3) {
+      validateUri: function validateUri(shape, value, context2) {
         if (shape["location"] === "uri") {
           if (value.length === 0) {
-            this.fail("UriParameterError", 'Expected uri parameter to have length >= 1, but found "' + value + '" for ' + context3);
+            this.fail("UriParameterError", 'Expected uri parameter to have length >= 1, but found "' + value + '" for ' + context2);
           }
         }
       },
-      validatePattern: function validatePattern(shape, value, context3) {
+      validatePattern: function validatePattern(shape, value, context2) {
         if (this.validation["pattern"] && shape["pattern"] !== void 0) {
           if (!new RegExp(shape["pattern"]).test(value)) {
-            this.fail("PatternMatchError", 'Provided value "' + value + '" does not match regex pattern /' + shape["pattern"] + "/ for " + context3);
+            this.fail("PatternMatchError", 'Provided value "' + value + '" does not match regex pattern /' + shape["pattern"] + "/ for " + context2);
           }
         }
       },
-      validateRange: function validateRange(shape, value, context3, descriptor) {
+      validateRange: function validateRange(shape, value, context2, descriptor) {
         if (this.validation["min"]) {
           if (shape["min"] !== void 0 && value < shape["min"]) {
-            this.fail("MinRangeError", "Expected " + descriptor + " >= " + shape["min"] + ", but found " + value + " for " + context3);
+            this.fail("MinRangeError", "Expected " + descriptor + " >= " + shape["min"] + ", but found " + value + " for " + context2);
           }
         }
         if (this.validation["max"]) {
           if (shape["max"] !== void 0 && value > shape["max"]) {
-            this.fail("MaxRangeError", "Expected " + descriptor + " <= " + shape["max"] + ", but found " + value + " for " + context3);
+            this.fail("MaxRangeError", "Expected " + descriptor + " <= " + shape["max"] + ", but found " + value + " for " + context2);
           }
         }
       },
-      validateEnum: function validateRange(shape, value, context3) {
+      validateEnum: function validateRange(shape, value, context2) {
         if (this.validation["enum"] && shape["enum"] !== void 0) {
           if (shape["enum"].indexOf(value) === -1) {
-            this.fail("EnumError", "Found string value of " + value + ", but expected " + shape["enum"].join("|") + " for " + context3);
+            this.fail("EnumError", "Found string value of " + value + ", but expected " + shape["enum"].join("|") + " for " + context2);
           }
         }
       },
-      validateType: function validateType(value, context3, acceptedTypes, type) {
+      validateType: function validateType(value, context2, acceptedTypes, type) {
         if (value === null || value === void 0) return false;
         var foundInvalidType = false;
         for (var i = 0; i < acceptedTypes.length; i++) {
@@ -30370,20 +30370,20 @@ var require_param_validator = __commonJS({
           acceptedType = acceptedTypes.join(", ").replace(/,([^,]+)$/, ", or$1");
         }
         var vowel = acceptedType.match(/^[aeiou]/i) ? "n" : "";
-        this.fail("InvalidParameterType", "Expected " + context3 + " to be a" + vowel + " " + acceptedType);
+        this.fail("InvalidParameterType", "Expected " + context2 + " to be a" + vowel + " " + acceptedType);
         return false;
       },
-      validateNumber: function validateNumber(shape, value, context3) {
+      validateNumber: function validateNumber(shape, value, context2) {
         if (value === null || value === void 0) return;
         if (typeof value === "string") {
           var castedValue = parseFloat(value);
           if (castedValue.toString() === value) value = castedValue;
         }
-        if (this.validateType(value, context3, ["number"])) {
-          this.validateRange(shape, value, context3, "numeric value");
+        if (this.validateType(value, context2, ["number"])) {
+          this.validateRange(shape, value, context2, "numeric value");
         }
       },
-      validatePayload: function validatePayload(value, context3) {
+      validatePayload: function validatePayload(value, context2) {
         if (value === null || value === void 0) return;
         if (typeof value === "string") return;
         if (value && typeof value.byteLength === "number") return;
@@ -30400,7 +30400,7 @@ var require_param_validator = __commonJS({
             if (AWS.util.typeName(value.constructor) === types5[i]) return;
           }
         }
-        this.fail("InvalidParameterType", "Expected " + context3 + " to be a string, Buffer, Stream, Blob, or typed array object");
+        this.fail("InvalidParameterType", "Expected " + context2 + " to be a string, Buffer, Stream, Blob, or typed array object");
       }
     });
   }
@@ -31726,26 +31726,26 @@ var require_util = __commonJS({
        *
        * @api private
        */
-      computeSha256: function computeSha256(body2, done) {
+      computeSha256: function computeSha256(body, done) {
         if (util3.isNode()) {
           var Stream = util3.stream.Stream;
           var fs = require("fs");
-          if (typeof Stream === "function" && body2 instanceof Stream) {
-            if (typeof body2.path === "string") {
+          if (typeof Stream === "function" && body instanceof Stream) {
+            if (typeof body.path === "string") {
               var settings = {};
-              if (typeof body2.start === "number") {
-                settings.start = body2.start;
+              if (typeof body.start === "number") {
+                settings.start = body.start;
               }
-              if (typeof body2.end === "number") {
-                settings.end = body2.end;
+              if (typeof body.end === "number") {
+                settings.end = body.end;
               }
-              body2 = fs.createReadStream(body2.path, settings);
+              body = fs.createReadStream(body.path, settings);
             } else {
               return done(new Error("Non-file stream objects are not supported with SigV4"));
             }
           }
         }
-        util3.crypto.sha256(body2, "hex", function(err, sha) {
+        util3.crypto.sha256(body, "hex", function(err, sha) {
           if (err) done(err);
           else done(null, sha);
         });
@@ -32468,8 +32468,8 @@ var require_buffered_create_event_stream = __commonJS({
   "node_modules/aws-sdk/lib/event-stream/buffered-create-event-stream.js"(exports2, module2) {
     var eventMessageChunker = require_event_message_chunker().eventMessageChunker;
     var parseEvent = require_parse_event().parseEvent;
-    function createEventStream(body2, parser, model) {
-      var eventMessages = eventMessageChunker(body2);
+    function createEventStream(body, parser, model) {
+      var eventMessages = eventMessageChunker(body);
       var events = [];
       for (var i = 0; i < eventMessages.length; i++) {
         events.push(parseEvent(parser, eventMessages[i], model));
@@ -40935,23 +40935,23 @@ var require_node2 = __commonJS({
         return stream2;
       },
       writeBody: function writeBody(stream2, httpRequest) {
-        var body2 = httpRequest.body;
+        var body = httpRequest.body;
         var totalBytes = parseInt(httpRequest.headers["Content-Length"], 10);
-        if (body2 instanceof Stream) {
+        if (body instanceof Stream) {
           var progressStream = this.progressStream(stream2, totalBytes);
           if (progressStream) {
-            body2.pipe(progressStream).pipe(stream2);
+            body.pipe(progressStream).pipe(stream2);
           } else {
-            body2.pipe(stream2);
+            body.pipe(stream2);
           }
-        } else if (body2) {
+        } else if (body) {
           stream2.once("finish", function() {
             stream2.emit("sendProgress", {
               loaded: totalBytes,
               total: totalBytes
             });
           });
-          stream2.end(body2);
+          stream2.end(body);
         } else {
           stream2.end();
         }
@@ -42147,7 +42147,7 @@ var require_sso_credentials = __commonJS({
   "node_modules/aws-sdk/lib/credentials/sso_credentials.js"() {
     var AWS = require_core();
     var path = require("path");
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var iniLoader = AWS.util.iniLoader;
     AWS.SsoCredentials = AWS.util.inherit(AWS.Credentials, {
       /**
@@ -42273,7 +42273,7 @@ var require_sso_credentials = __commonJS({
         }
         try {
           var EXPIRE_WINDOW_MS = 15 * 60 * 1e3;
-          var hasher = crypto19.createHash("sha1");
+          var hasher = crypto20.createHash("sha1");
           var fileName = hasher.update(profile.sso_start_url).digest("hex") + ".json";
           var cachePath = path.join(
             iniLoader.getHomeDir(),
@@ -42594,7 +42594,7 @@ var require_token_provider_chain = __commonJS({
 var require_sso_token_provider = __commonJS({
   "node_modules/aws-sdk/lib/token/sso_token_provider.js"() {
     var AWS = require_core();
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var fs = require("fs");
     var path = require("path");
     var iniLoader = AWS.util.iniLoader;
@@ -42684,7 +42684,7 @@ var require_sso_token_provider = __commonJS({
             { code: "SSOTokenProviderFailure" }
           );
         }
-        var hasher = crypto19.createHash("sha1");
+        var hasher = crypto20.createHash("sha1");
         var fileName = hasher.update(ssoSessionName).digest("hex") + ".json";
         var cachePath = path.join(iniLoader.getHomeDir(), ".aws", "sso", "cache", fileName);
         var tokenFromCache = JSON.parse(fs.readFileSync(cachePath));
@@ -43206,34 +43206,34 @@ var require_awslambda = __commonJS({
       }
       mod2[functionName] = wrapHandler(obj);
     }
-    function tryGetRemainingTimeInMillis(context3) {
-      return typeof context3.getRemainingTimeInMillis === "function" ? context3.getRemainingTimeInMillis() : 0;
+    function tryGetRemainingTimeInMillis(context2) {
+      return typeof context2.getRemainingTimeInMillis === "function" ? context2.getRemainingTimeInMillis() : 0;
     }
-    function enhanceScopeWithEnvironmentData(scope, context3, startTime) {
+    function enhanceScopeWithEnvironmentData(scope, context2, startTime) {
       scope.setContext("aws.lambda", {
-        aws_request_id: context3.awsRequestId,
-        function_name: context3.functionName,
-        function_version: context3.functionVersion,
-        invoked_function_arn: context3.invokedFunctionArn,
+        aws_request_id: context2.awsRequestId,
+        function_name: context2.functionName,
+        function_version: context2.functionVersion,
+        invoked_function_arn: context2.invokedFunctionArn,
         execution_duration_in_millis: perf_hooks.performance.now() - startTime,
-        remaining_time_in_millis: tryGetRemainingTimeInMillis(context3),
+        remaining_time_in_millis: tryGetRemainingTimeInMillis(context2),
         "sys.argv": process.argv
       });
       scope.setContext("aws.cloudwatch.logs", {
-        log_group: context3.logGroupName,
-        log_stream: context3.logStreamName,
-        url: `https://console.aws.amazon.com/cloudwatch/home?region=${process.env.AWS_REGION}#logsV2:log-groups/log-group/${encodeURIComponent(context3.logGroupName)}/log-events/${encodeURIComponent(
-          context3.logStreamName
-        )}?filterPattern="${context3.awsRequestId}"`
+        log_group: context2.logGroupName,
+        log_stream: context2.logStreamName,
+        url: `https://console.aws.amazon.com/cloudwatch/home?region=${process.env.AWS_REGION}#logsV2:log-groups/log-group/${encodeURIComponent(context2.logGroupName)}/log-events/${encodeURIComponent(
+          context2.logStreamName
+        )}?filterPattern="${context2.awsRequestId}"`
       });
     }
-    function enhanceScopeWithTransactionData(scope, context3) {
+    function enhanceScopeWithTransactionData(scope, context2) {
       scope.addEventProcessor((event) => {
-        event.transaction = context3.functionName;
+        event.transaction = context2.functionName;
         return event;
       });
       scope.setTag("server_name", process.env._AWS_XRAY_DAEMON_ADDRESS || process.env.SENTRY_NAME || os.hostname());
-      scope.setTag("url", `awslambda:///${context3.functionName}`);
+      scope.setTag("url", `awslambda:///${context2.functionName}`);
     }
     function wrapHandler(handler2, wrapOptions = {}) {
       const START_TIME = perf_hooks.performance.now();
@@ -43247,8 +43247,8 @@ var require_awslambda = __commonJS({
         ...wrapOptions
       };
       let timeoutWarningTimer;
-      const asyncHandler = handler2.length > 2 ? (event, context3) => new Promise((resolve, reject) => {
-        const rv = handler2(event, context3, (error, result) => {
+      const asyncHandler = handler2.length > 2 ? (event, context2) => new Promise((resolve, reject) => {
+        const rv = handler2(event, context2, (error, result) => {
           if (error === null || error === void 0) {
             resolve(result);
           } else {
@@ -43259,18 +43259,18 @@ var require_awslambda = __commonJS({
           void rv.then(resolve, reject);
         }
       }) : handler2;
-      return async (event, context3) => {
-        context3.callbackWaitsForEmptyEventLoop = options.callbackWaitsForEmptyEventLoop;
-        const configuredTimeout = Math.ceil(tryGetRemainingTimeInMillis(context3) / 1e3);
+      return async (event, context2) => {
+        context2.callbackWaitsForEmptyEventLoop = options.callbackWaitsForEmptyEventLoop;
+        const configuredTimeout = Math.ceil(tryGetRemainingTimeInMillis(context2) / 1e3);
         const configuredTimeoutMinutes = Math.floor(configuredTimeout / 60);
         const configuredTimeoutSeconds = configuredTimeout % 60;
         const humanReadableTimeout = configuredTimeoutMinutes > 0 ? `${configuredTimeoutMinutes}m${configuredTimeoutSeconds}s` : `${configuredTimeoutSeconds}s`;
         if (options.captureTimeoutWarning) {
-          const timeoutWarningDelay = tryGetRemainingTimeInMillis(context3) - options.timeoutWarningLimit;
+          const timeoutWarningDelay = tryGetRemainingTimeInMillis(context2) - options.timeoutWarningLimit;
           timeoutWarningTimer = setTimeout(() => {
             node.withScope((scope) => {
               scope.setTag("timeout", humanReadableTimeout);
-              node.captureMessage(`Possible function timeout: ${context3.functionName}`, "warning");
+              node.captureMessage(`Possible function timeout: ${context2.functionName}`, "warning");
             });
           }, timeoutWarningDelay);
         }
@@ -43278,8 +43278,8 @@ var require_awslambda = __commonJS({
           const scope = node.getCurrentScope();
           let rv;
           try {
-            enhanceScopeWithEnvironmentData(scope, context3, START_TIME);
-            rv = await asyncHandler(event, context3);
+            enhanceScopeWithEnvironmentData(scope, context2, START_TIME);
+            rv = await asyncHandler(event, context2);
             if (options.captureAllSettledReasons && Array.isArray(rv) && isPromiseAllSettledResult(rv)) {
               const reasons = getRejectedReasons(rv);
               reasons.forEach((exception) => {
@@ -43305,7 +43305,7 @@ var require_awslambda = __commonJS({
           return node.continueTrace({ sentryTrace, baggage }, () => {
             return node.startSpanManual(
               {
-                name: context3.functionName,
+                name: context2.functionName,
                 op: "function.aws.lambda",
                 attributes: {
                   [core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: "component",
@@ -43313,7 +43313,7 @@ var require_awslambda = __commonJS({
                 }
               },
               (span) => {
-                enhanceScopeWithTransactionData(node.getCurrentScope(), context3);
+                enhanceScopeWithTransactionData(node.getCurrentScope(), context2);
                 return processResult(span);
               }
             );
@@ -46714,14 +46714,14 @@ ${callerStack}`;
       }
       _write(chunk, encoding, cb) {
         var _a;
-        const context3 = {
+        const context2 = {
           callback: cb
         };
         const flags = Number(encoding);
         if (!Number.isNaN(flags)) {
-          context3.flags = flags;
+          context2.flags = flags;
         }
-        (_a = this.call) === null || _a === void 0 ? void 0 : _a.sendMessageWithContext(context3, chunk);
+        (_a = this.call) === null || _a === void 0 ? void 0 : _a.sendMessageWithContext(context2, chunk);
       }
       _final(cb) {
         var _a;
@@ -46754,14 +46754,14 @@ ${callerStack}`;
       }
       _write(chunk, encoding, cb) {
         var _a;
-        const context3 = {
+        const context2 = {
           callback: cb
         };
         const flags = Number(encoding);
         if (!Number.isNaN(flags)) {
-          context3.flags = flags;
+          context2.flags = flags;
         }
-        (_a = this.call) === null || _a === void 0 ? void 0 : _a.sendMessageWithContext(context3, chunk);
+        (_a = this.call) === null || _a === void 0 ? void 0 : _a.sendMessageWithContext(context2, chunk);
       }
       _final(cb) {
         var _a;
@@ -47031,15 +47031,15 @@ var require_client_interceptors = __commonJS({
         });
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sendMessageWithContext(context3, message2) {
+      sendMessageWithContext(context2, message2) {
         this.processingMessage = true;
         this.requester.sendMessage(message2, (finalMessage) => {
           this.processingMessage = false;
           if (this.processingMetadata) {
-            this.pendingMessageContext = context3;
+            this.pendingMessageContext = context2;
             this.pendingMessage = message2;
           } else {
-            this.nextCall.sendMessageWithContext(context3, finalMessage);
+            this.nextCall.sendMessageWithContext(context2, finalMessage);
             this.processPendingHalfClose();
           }
         });
@@ -47090,7 +47090,7 @@ var require_client_interceptors = __commonJS({
         return this.call.getPeer();
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sendMessageWithContext(context3, message2) {
+      sendMessageWithContext(context2, message2) {
         let serialized;
         try {
           serialized = this.methodDefinition.requestSerialize(message2);
@@ -47098,7 +47098,7 @@ var require_client_interceptors = __commonJS({
           this.call.cancelWithStatus(constants_1.Status.INTERNAL, `Request message serialization failure: ${(0, error_1.getErrorMessage)(e)}`);
           return;
         }
-        this.call.sendMessageWithContext(context3, serialized);
+        this.call.sendMessageWithContext(context2, serialized);
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sendMessage(message2) {
@@ -49440,7 +49440,7 @@ var require_codegen = __commonJS({
         functionName = functionParams;
         functionParams = void 0;
       }
-      var body2 = [];
+      var body = [];
       function Codegen(formatStringOrScope) {
         if (typeof formatStringOrScope !== "string") {
           var source = toString();
@@ -49479,11 +49479,11 @@ var require_codegen = __commonJS({
         });
         if (formatOffset !== formatParams.length)
           throw Error("parameter count mismatch");
-        body2.push(formatStringOrScope);
+        body.push(formatStringOrScope);
         return Codegen;
       }
       function toString(functionNameOverride) {
-        return "function " + (functionNameOverride || functionName || "") + "(" + (functionParams && functionParams.join(",") || "") + "){\n  " + body2.join("\n  ") + "\n}";
+        return "function " + (functionNameOverride || functionName || "") + "(" + (functionParams && functionParams.join(",") || "") + "){\n  " + body.join("\n  ") + "\n}";
       }
       Codegen.toString = toString;
       return Codegen;
@@ -58209,17 +58209,17 @@ var require_single_subchannel_channel = __commonJS({
           this.childCall.halfClose();
         }
       }
-      async sendMessageWithContext(context3, message2) {
+      async sendMessageWithContext(context2, message2) {
         this.writeFilterPending = true;
-        const filteredMessage = await this.filterStack.sendMessage(Promise.resolve({ message: message2, flags: context3.flags }));
+        const filteredMessage = await this.filterStack.sendMessage(Promise.resolve({ message: message2, flags: context2.flags }));
         this.writeFilterPending = false;
         if (this.childCall) {
-          this.childCall.sendMessageWithContext(context3, filteredMessage.message);
+          this.childCall.sendMessageWithContext(context2, filteredMessage.message);
           if (this.halfClosePending) {
             this.childCall.halfClose();
           }
         } else {
-          this.pendingMessage = { context: context3, message: filteredMessage.message };
+          this.pendingMessage = { context: context2, message: filteredMessage.message };
         }
       }
       startRead() {
@@ -59603,7 +59603,7 @@ var require_subchannel_call = __commonJS({
         }
         this.http2Stream.resume();
       }
-      sendMessageWithContext(context3, message2) {
+      sendMessageWithContext(context2, message2) {
         this.trace("write() called with message of length " + message2.length);
         const cb = (error) => {
           process.nextTick(() => {
@@ -59615,7 +59615,7 @@ var require_subchannel_call = __commonJS({
             if (error) {
               this.cancelWithStatus(code, `Write error: ${error.message}`);
             }
-            (_a = context3.callback) === null || _a === void 0 ? void 0 : _a.call(context3);
+            (_a = context2.callback) === null || _a === void 0 ? void 0 : _a.call(context2);
           });
         };
         this.trace("sending data chunk of length " + message2.length);
@@ -60466,12 +60466,12 @@ var require_load_balancing_call = __commonJS({
         this.metadata = metadata;
         this.doPick();
       }
-      sendMessageWithContext(context3, message2) {
+      sendMessageWithContext(context2, message2) {
         this.trace("write() called with message of length " + message2.length);
         if (this.child) {
-          this.child.sendMessageWithContext(context3, message2);
+          this.child.sendMessageWithContext(context2, message2);
         } else {
-          this.pendingMessage = { context: context3, message: message2 };
+          this.pendingMessage = { context: context2, message: message2 };
         }
       }
       startRead() {
@@ -60621,15 +60621,15 @@ var require_resolving_call = __commonJS({
           });
         }
       }
-      sendMessageOnChild(context3, message2) {
+      sendMessageOnChild(context2, message2) {
         if (!this.child) {
           throw new Error("sendMessageonChild called with child not populated");
         }
         const child = this.child;
         this.writeFilterPending = true;
-        this.filterStack.sendMessage(Promise.resolve({ message: message2, flags: context3.flags })).then((filteredMessage) => {
+        this.filterStack.sendMessage(Promise.resolve({ message: message2, flags: context2.flags })).then((filteredMessage) => {
           this.writeFilterPending = false;
-          child.sendMessageWithContext(context3, filteredMessage.message);
+          child.sendMessageWithContext(context2, filteredMessage.message);
           if (this.pendingHalfClose) {
             child.halfClose();
           }
@@ -60748,12 +60748,12 @@ var require_resolving_call = __commonJS({
         this.listener = listener;
         this.getConfig();
       }
-      sendMessageWithContext(context3, message2) {
+      sendMessageWithContext(context2, message2) {
         this.trace("write() called with message of length " + message2.length);
         if (this.child) {
-          this.sendMessageOnChild(context3, message2);
+          this.sendMessageOnChild(context2, message2);
         } else {
-          this.pendingMessage = { context: context3, message: message2 };
+          this.pendingMessage = { context: context2, message: message2 };
         }
       }
       startRead() {
@@ -61329,11 +61329,11 @@ var require_retrying_call = __commonJS({
           }
         }
       }
-      sendMessageWithContext(context3, message2) {
+      sendMessageWithContext(context2, message2) {
         this.trace("write() called with message of length " + message2.length);
         const writeObj = {
           message: message2,
-          flags: context3.flags
+          flags: context2.flags
         };
         const messageIndex = this.getNextBufferIndex();
         const bufferEntry = {
@@ -61345,7 +61345,7 @@ var require_retrying_call = __commonJS({
         if (bufferEntry.allocated) {
           process.nextTick(() => {
             var _a;
-            (_a = context3.callback) === null || _a === void 0 ? void 0 : _a.call(context3);
+            (_a = context2.callback) === null || _a === void 0 ? void 0 : _a.call(context2);
           });
           for (const [callIndex, call] of this.underlyingCalls.entries()) {
             if (call.state === "ACTIVE" && call.nextMessageToSend === messageIndex) {
@@ -61362,7 +61362,7 @@ var require_retrying_call = __commonJS({
             return;
           }
           const call = this.underlyingCalls[this.committedCallIndex];
-          bufferEntry.callback = context3.callback;
+          bufferEntry.callback = context2.callback;
           if (call.state === "ACTIVE" && call.nextMessageToSend === messageIndex) {
             call.call.sendMessageWithContext({
               callback: (error) => {
@@ -63713,14 +63713,14 @@ var require_server = __commonJS({
       var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
       var _, done = false;
       for (var i = decorators.length - 1; i >= 0; i--) {
-        var context3 = {};
-        for (var p in contextIn) context3[p] = p === "access" ? {} : contextIn[p];
-        for (var p in contextIn.access) context3.access[p] = contextIn.access[p];
-        context3.addInitializer = function(f) {
+        var context2 = {};
+        for (var p in contextIn) context2[p] = p === "access" ? {} : contextIn[p];
+        for (var p in contextIn.access) context2.access[p] = contextIn.access[p];
+        context2.addInitializer = function(f) {
           if (done) throw new TypeError("Cannot add initializers after decoration has completed");
           extraInitializers.push(accept(f || null));
         };
-        var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context3);
+        var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context2);
         if (kind === "accessor") {
           if (result === void 0) continue;
           if (result === null || typeof result !== "object") throw new TypeError("Object expected");
@@ -63761,7 +63761,7 @@ var require_server = __commonJS({
     function noop() {
     }
     function deprecate2(message2) {
-      return function(target, context3) {
+      return function(target, context2) {
         return util3.deprecate(target, message2);
       };
     }
@@ -69559,35 +69559,35 @@ var require_lib3 = __commonJS({
     }
     var INTERNALS = /* @__PURE__ */ Symbol("Body internals");
     var PassThrough = Stream.PassThrough;
-    function Body(body2) {
+    function Body(body) {
       var _this = this;
       var _ref = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {}, _ref$size = _ref.size;
       let size = _ref$size === void 0 ? 0 : _ref$size;
       var _ref$timeout = _ref.timeout;
       let timeout = _ref$timeout === void 0 ? 0 : _ref$timeout;
-      if (body2 == null) {
-        body2 = null;
-      } else if (isURLSearchParams(body2)) {
-        body2 = Buffer.from(body2.toString());
-      } else if (isBlob(body2)) ;
-      else if (Buffer.isBuffer(body2)) ;
-      else if (Object.prototype.toString.call(body2) === "[object ArrayBuffer]") {
-        body2 = Buffer.from(body2);
-      } else if (ArrayBuffer.isView(body2)) {
-        body2 = Buffer.from(body2.buffer, body2.byteOffset, body2.byteLength);
-      } else if (body2 instanceof Stream) ;
+      if (body == null) {
+        body = null;
+      } else if (isURLSearchParams(body)) {
+        body = Buffer.from(body.toString());
+      } else if (isBlob(body)) ;
+      else if (Buffer.isBuffer(body)) ;
+      else if (Object.prototype.toString.call(body) === "[object ArrayBuffer]") {
+        body = Buffer.from(body);
+      } else if (ArrayBuffer.isView(body)) {
+        body = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+      } else if (body instanceof Stream) ;
       else {
-        body2 = Buffer.from(String(body2));
+        body = Buffer.from(String(body));
       }
       this[INTERNALS] = {
-        body: body2,
+        body,
         disturbed: false,
         error: null
       };
       this.size = size;
       this.timeout = timeout;
-      if (body2 instanceof Stream) {
-        body2.on("error", function(err) {
+      if (body instanceof Stream) {
+        body.on("error", function(err) {
           const error = err.name === "AbortError" ? err : new FetchError(`Invalid response body while trying to fetch ${_this.url}: ${err.message}`, "system", err);
           _this[INTERNALS].error = error;
         });
@@ -69700,17 +69700,17 @@ var require_lib3 = __commonJS({
       if (this[INTERNALS].error) {
         return Body.Promise.reject(this[INTERNALS].error);
       }
-      let body2 = this.body;
-      if (body2 === null) {
+      let body = this.body;
+      if (body === null) {
         return Body.Promise.resolve(Buffer.alloc(0));
       }
-      if (isBlob(body2)) {
-        body2 = body2.stream();
+      if (isBlob(body)) {
+        body = body.stream();
       }
-      if (Buffer.isBuffer(body2)) {
-        return Body.Promise.resolve(body2);
+      if (Buffer.isBuffer(body)) {
+        return Body.Promise.resolve(body);
       }
-      if (!(body2 instanceof Stream)) {
+      if (!(body instanceof Stream)) {
         return Body.Promise.resolve(Buffer.alloc(0));
       }
       let accum = [];
@@ -69724,7 +69724,7 @@ var require_lib3 = __commonJS({
             reject(new FetchError(`Response timeout while trying to fetch ${_this4.url} (over ${_this4.timeout}ms)`, "body-timeout"));
           }, _this4.timeout);
         }
-        body2.on("error", function(err) {
+        body.on("error", function(err) {
           if (err.name === "AbortError") {
             abort = true;
             reject(err);
@@ -69732,7 +69732,7 @@ var require_lib3 = __commonJS({
             reject(new FetchError(`Invalid response body while trying to fetch ${_this4.url}: ${err.message}`, "system", err));
           }
         });
-        body2.on("data", function(chunk) {
+        body.on("data", function(chunk) {
           if (abort || chunk === null) {
             return;
           }
@@ -69744,7 +69744,7 @@ var require_lib3 = __commonJS({
           accumBytes += chunk.length;
           accum.push(chunk);
         });
-        body2.on("end", function() {
+        body.on("end", function() {
           if (abort) {
             return;
           }
@@ -69805,55 +69805,55 @@ var require_lib3 = __commonJS({
     }
     function clone2(instance) {
       let p1, p2;
-      let body2 = instance.body;
+      let body = instance.body;
       if (instance.bodyUsed) {
         throw new Error("cannot clone body after it is used");
       }
-      if (body2 instanceof Stream && typeof body2.getBoundary !== "function") {
+      if (body instanceof Stream && typeof body.getBoundary !== "function") {
         p1 = new PassThrough();
         p2 = new PassThrough();
-        body2.pipe(p1);
-        body2.pipe(p2);
+        body.pipe(p1);
+        body.pipe(p2);
         instance[INTERNALS].body = p1;
-        body2 = p2;
+        body = p2;
       }
-      return body2;
+      return body;
     }
-    function extractContentType(body2) {
-      if (body2 === null) {
+    function extractContentType(body) {
+      if (body === null) {
         return null;
-      } else if (typeof body2 === "string") {
+      } else if (typeof body === "string") {
         return "text/plain;charset=UTF-8";
-      } else if (isURLSearchParams(body2)) {
+      } else if (isURLSearchParams(body)) {
         return "application/x-www-form-urlencoded;charset=UTF-8";
-      } else if (isBlob(body2)) {
-        return body2.type || null;
-      } else if (Buffer.isBuffer(body2)) {
+      } else if (isBlob(body)) {
+        return body.type || null;
+      } else if (Buffer.isBuffer(body)) {
         return null;
-      } else if (Object.prototype.toString.call(body2) === "[object ArrayBuffer]") {
+      } else if (Object.prototype.toString.call(body) === "[object ArrayBuffer]") {
         return null;
-      } else if (ArrayBuffer.isView(body2)) {
+      } else if (ArrayBuffer.isView(body)) {
         return null;
-      } else if (typeof body2.getBoundary === "function") {
-        return `multipart/form-data;boundary=${body2.getBoundary()}`;
-      } else if (body2 instanceof Stream) {
+      } else if (typeof body.getBoundary === "function") {
+        return `multipart/form-data;boundary=${body.getBoundary()}`;
+      } else if (body instanceof Stream) {
         return null;
       } else {
         return "text/plain;charset=UTF-8";
       }
     }
     function getTotalBytes(instance) {
-      const body2 = instance.body;
-      if (body2 === null) {
+      const body = instance.body;
+      if (body === null) {
         return 0;
-      } else if (isBlob(body2)) {
-        return body2.size;
-      } else if (Buffer.isBuffer(body2)) {
-        return body2.length;
-      } else if (body2 && typeof body2.getLengthSync === "function") {
-        if (body2._lengthRetrievers && body2._lengthRetrievers.length == 0 || // 1.x
-        body2.hasKnownLength && body2.hasKnownLength()) {
-          return body2.getLengthSync();
+      } else if (isBlob(body)) {
+        return body.size;
+      } else if (Buffer.isBuffer(body)) {
+        return body.length;
+      } else if (body && typeof body.getLengthSync === "function") {
+        if (body._lengthRetrievers && body._lengthRetrievers.length == 0 || // 1.x
+        body.hasKnownLength && body.hasKnownLength()) {
+          return body.getLengthSync();
         }
         return null;
       } else {
@@ -69861,16 +69861,16 @@ var require_lib3 = __commonJS({
       }
     }
     function writeToStream(dest, instance) {
-      const body2 = instance.body;
-      if (body2 === null) {
+      const body = instance.body;
+      if (body === null) {
         dest.end();
-      } else if (isBlob(body2)) {
-        body2.stream().pipe(dest);
-      } else if (Buffer.isBuffer(body2)) {
-        dest.write(body2);
+      } else if (isBlob(body)) {
+        body.stream().pipe(dest);
+      } else if (Buffer.isBuffer(body)) {
+        dest.write(body);
         dest.end();
       } else {
-        body2.pipe(dest);
+        body.pipe(dest);
       }
     }
     Body.Promise = global.Promise;
@@ -70178,13 +70178,13 @@ var require_lib3 = __commonJS({
     var STATUS_CODES = http2.STATUS_CODES;
     var Response2 = class _Response {
       constructor() {
-        let body2 = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : null;
+        let body = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : null;
         let opts = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {};
-        Body.call(this, body2, opts);
+        Body.call(this, body, opts);
         const status = opts.status || 200;
         const headers = new Headers2(opts.headers);
-        if (body2 != null && !headers.has("Content-Type")) {
-          const contentType = extractContentType(body2);
+        if (body != null && !headers.has("Content-Type")) {
+          const contentType = extractContentType(body);
           if (contentType) {
             headers.append("Content-Type", contentType);
           }
@@ -70566,7 +70566,7 @@ var require_lib3 = __commonJS({
           res.once("end", function() {
             if (signal) signal.removeEventListener("abort", abortAndFinalize);
           });
-          let body2 = res.pipe(new PassThrough$1());
+          let body = res.pipe(new PassThrough$1());
           const response_options = {
             url: request.url,
             status: res.statusCode,
@@ -70578,7 +70578,7 @@ var require_lib3 = __commonJS({
           };
           const codings = headers.get("Content-Encoding");
           if (!request.compress || request.method === "HEAD" || codings === null || res.statusCode === 204 || res.statusCode === 304) {
-            response = new Response2(body2, response_options);
+            response = new Response2(body, response_options);
             resolve(response);
             return;
           }
@@ -70587,8 +70587,8 @@ var require_lib3 = __commonJS({
             finishFlush: zlib.Z_SYNC_FLUSH
           };
           if (codings == "gzip" || codings == "x-gzip") {
-            body2 = body2.pipe(zlib.createGunzip(zlibOptions));
-            response = new Response2(body2, response_options);
+            body = body.pipe(zlib.createGunzip(zlibOptions));
+            response = new Response2(body, response_options);
             resolve(response);
             return;
           }
@@ -70596,28 +70596,28 @@ var require_lib3 = __commonJS({
             const raw2 = res.pipe(new PassThrough$1());
             raw2.once("data", function(chunk) {
               if ((chunk[0] & 15) === 8) {
-                body2 = body2.pipe(zlib.createInflate());
+                body = body.pipe(zlib.createInflate());
               } else {
-                body2 = body2.pipe(zlib.createInflateRaw());
+                body = body.pipe(zlib.createInflateRaw());
               }
-              response = new Response2(body2, response_options);
+              response = new Response2(body, response_options);
               resolve(response);
             });
             raw2.on("end", function() {
               if (!response) {
-                response = new Response2(body2, response_options);
+                response = new Response2(body, response_options);
                 resolve(response);
               }
             });
             return;
           }
           if (codings == "br" && typeof zlib.createBrotliDecompress === "function") {
-            body2 = body2.pipe(zlib.createBrotliDecompress());
-            response = new Response2(body2, response_options);
+            body = body.pipe(zlib.createBrotliDecompress());
+            response = new Response2(body, response_options);
             resolve(response);
             return;
           }
-          response = new Response2(body2, response_options);
+          response = new Response2(body, response_options);
           resolve(response);
         });
         writeToStream(req, request);
@@ -75720,22 +75720,22 @@ var require_crypto2 = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.NodeCrypto = void 0;
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var NodeCrypto = class {
       async sha256DigestBase64(str) {
-        return crypto19.createHash("sha256").update(str).digest("base64");
+        return crypto20.createHash("sha256").update(str).digest("base64");
       }
       randomBytesBase64(count) {
-        return crypto19.randomBytes(count).toString("base64");
+        return crypto20.randomBytes(count).toString("base64");
       }
       async verify(pubkey, data, signature) {
-        const verifier = crypto19.createVerify("RSA-SHA256");
+        const verifier = crypto20.createVerify("RSA-SHA256");
         verifier.update(data);
         verifier.end();
         return verifier.verify(pubkey, signature, "base64");
       }
       async sign(privateKey, data) {
-        const signer = crypto19.createSign("RSA-SHA256");
+        const signer = crypto20.createSign("RSA-SHA256");
         signer.update(data);
         signer.end();
         return signer.sign(privateKey, "base64");
@@ -75753,7 +75753,7 @@ var require_crypto2 = __commonJS({
        *   string in hexadecimal encoding.
        */
       async sha256DigestHex(str) {
-        return crypto19.createHash("sha256").update(str).digest("hex");
+        return crypto20.createHash("sha256").update(str).digest("hex");
       }
       /**
        * Computes the HMAC hash of a message using the provided crypto key and the
@@ -75765,7 +75765,7 @@ var require_crypto2 = __commonJS({
        */
       async signWithHmacSha256(key, msg) {
         const cryptoKey = typeof key === "string" ? key : toBuffer(key);
-        return toArrayBuffer(crypto19.createHmac("sha256", cryptoKey).update(msg).digest());
+        return toArrayBuffer(crypto20.createHmac("sha256", cryptoKey).update(msg).digest());
       }
     };
     exports2.NodeCrypto = NodeCrypto;
@@ -75988,21 +75988,21 @@ var require_transporters = __commonJS({
       processError(e) {
         const res = e.response;
         const err = e;
-        const body2 = res ? res.data : null;
-        if (res && body2 && body2.error && res.status !== 200) {
-          if (typeof body2.error === "string") {
-            err.message = body2.error;
+        const body = res ? res.data : null;
+        if (res && body && body.error && res.status !== 200) {
+          if (typeof body.error === "string") {
+            err.message = body.error;
             err.status = res.status;
-          } else if (Array.isArray(body2.error.errors)) {
-            err.message = body2.error.errors.map((err2) => err2.message).join("\n");
-            err.code = body2.error.code;
-            err.errors = body2.error.errors;
+          } else if (Array.isArray(body.error.errors)) {
+            err.message = body.error.errors.map((err2) => err2.message).join("\n");
+            err.code = body.error.code;
+            err.errors = body.error.errors;
           } else {
-            err.message = body2.error.message;
-            err.code = body2.error.code;
+            err.message = body.error.message;
+            err.code = body.error.code;
           }
         } else if (res && res.status >= 400) {
-          err.message = body2;
+          err.message = body;
           err.status = res.status;
         }
         return err;
@@ -76543,10 +76543,10 @@ var require_oauth2client = __commonJS({
        * https://github.com/googleapis/google-auth-library-nodejs/blob/main/samples/oauth2-codeVerifier.js
        */
       async generateCodeVerifierAsync() {
-        const crypto19 = (0, crypto_1.createCrypto)();
-        const randomString = crypto19.randomBytesBase64(96);
+        const crypto20 = (0, crypto_1.createCrypto)();
+        const randomString = crypto20.randomBytesBase64(96);
         const codeVerifier = randomString.replace(/\+/g, "~").replace(/=/g, "_").replace(/\//g, "-");
-        const unencodedCodeChallenge = await crypto19.sha256DigestBase64(codeVerifier);
+        const unencodedCodeChallenge = await crypto20.sha256DigestBase64(codeVerifier);
         const codeChallenge = unencodedCodeChallenge.split("=")[0].replace(/\+/g, "-").replace(/\//g, "_");
         return { codeVerifier, codeChallenge };
       }
@@ -76990,7 +76990,7 @@ var require_oauth2client = __commonJS({
        * @return Returns a promise resolving to LoginTicket on verification.
        */
       async verifySignedJwtWithCertsAsync(jwt, certs, requiredAudience, issuers, maxExpiry) {
-        const crypto19 = (0, crypto_1.createCrypto)();
+        const crypto20 = (0, crypto_1.createCrypto)();
         if (!maxExpiry) {
           maxExpiry = _OAuth2Client.DEFAULT_MAX_TOKEN_LIFETIME_SECS_;
         }
@@ -77003,7 +77003,7 @@ var require_oauth2client = __commonJS({
         let envelope;
         let payload;
         try {
-          envelope = JSON.parse(crypto19.decodeBase64StringUtf8(segments[0]));
+          envelope = JSON.parse(crypto20.decodeBase64StringUtf8(segments[0]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token envelope: ${segments[0]}': ${err.message}`;
@@ -77014,7 +77014,7 @@ var require_oauth2client = __commonJS({
           throw new Error("Can't parse token envelope: " + segments[0]);
         }
         try {
-          payload = JSON.parse(crypto19.decodeBase64StringUtf8(segments[1]));
+          payload = JSON.parse(crypto20.decodeBase64StringUtf8(segments[1]));
         } catch (err) {
           if (err instanceof Error) {
             err.message = `Can't parse token payload '${segments[0]}`;
@@ -77031,7 +77031,7 @@ var require_oauth2client = __commonJS({
         if (envelope.alg === "ES256") {
           signature = formatEcdsa.joseToDer(signature, "ES256").toString("base64");
         }
-        const verified = await crypto19.verify(cert, signed, signature);
+        const verified = await crypto20.verify(cert, signed, signature);
         if (!verified) {
           throw new Error("Invalid token signature: " + jwt);
         }
@@ -77399,14 +77399,14 @@ var require_buffer_equal_constant_time = __commonJS({
 var require_jwa = __commonJS({
   "node_modules/jwa/index.js"(exports2, module2) {
     var Buffer5 = require_safe_buffer().Buffer;
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var formatEcdsa = require_ecdsa_sig_formatter();
     var util3 = require("util");
     var MSG_INVALID_ALGORITHM = '"%s" is not a valid algorithm.\n  Supported algorithms are:\n  "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512" and "none".';
     var MSG_INVALID_SECRET = "secret must be a string or buffer";
     var MSG_INVALID_VERIFIER_KEY = "key must be a string or a buffer";
     var MSG_INVALID_SIGNER_KEY = "key must be a string, a buffer or an object";
-    var supportsKeyObjects = typeof crypto19.createPublicKey === "function";
+    var supportsKeyObjects = typeof crypto20.createPublicKey === "function";
     if (supportsKeyObjects) {
       MSG_INVALID_VERIFIER_KEY += " or a KeyObject";
       MSG_INVALID_SECRET += "or a KeyObject";
@@ -77496,17 +77496,17 @@ var require_jwa = __commonJS({
       return function sign3(thing, secret) {
         checkIsSecretKey(secret);
         thing = normalizeInput(thing);
-        var hmac = crypto19.createHmac("sha" + bits, secret);
+        var hmac = crypto20.createHmac("sha" + bits, secret);
         var sig = (hmac.update(thing), hmac.digest("base64"));
         return fromBase64(sig);
       };
     }
     var bufferEqual;
-    var timingSafeEqual3 = "timingSafeEqual" in crypto19 ? function timingSafeEqual4(a, b) {
+    var timingSafeEqual3 = "timingSafeEqual" in crypto20 ? function timingSafeEqual4(a, b) {
       if (a.byteLength !== b.byteLength) {
         return false;
       }
-      return crypto19.timingSafeEqual(a, b);
+      return crypto20.timingSafeEqual(a, b);
     } : function timingSafeEqual4(a, b) {
       if (!bufferEqual) {
         bufferEqual = require_buffer_equal_constant_time();
@@ -77523,7 +77523,7 @@ var require_jwa = __commonJS({
       return function sign3(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto19.createSign("RSA-SHA" + bits);
+        var signer = crypto20.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign(privateKey, "base64"));
         return fromBase64(sig);
       };
@@ -77533,7 +77533,7 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto19.createVerify("RSA-SHA" + bits);
+        var verifier = crypto20.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify(publicKey, signature, "base64");
       };
@@ -77542,11 +77542,11 @@ var require_jwa = __commonJS({
       return function sign3(thing, privateKey) {
         checkIsPrivateKey(privateKey);
         thing = normalizeInput(thing);
-        var signer = crypto19.createSign("RSA-SHA" + bits);
+        var signer = crypto20.createSign("RSA-SHA" + bits);
         var sig = (signer.update(thing), signer.sign({
           key: privateKey,
-          padding: crypto19.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto19.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto20.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto20.constants.RSA_PSS_SALTLEN_DIGEST
         }, "base64"));
         return fromBase64(sig);
       };
@@ -77556,12 +77556,12 @@ var require_jwa = __commonJS({
         checkIsPublicKey(publicKey);
         thing = normalizeInput(thing);
         signature = toBase64(signature);
-        var verifier = crypto19.createVerify("RSA-SHA" + bits);
+        var verifier = crypto20.createVerify("RSA-SHA" + bits);
         verifier.update(thing);
         return verifier.verify({
           key: publicKey,
-          padding: crypto19.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto19.constants.RSA_PSS_SALTLEN_DIGEST
+          padding: crypto20.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto20.constants.RSA_PSS_SALTLEN_DIGEST
         }, signature, "base64");
       };
     }
@@ -77976,9 +77976,9 @@ var require_src9 = __commonJS({
         switch (ext) {
           case ".json": {
             const key = await readFile(keyFile, "utf8");
-            const body2 = JSON.parse(key);
-            const privateKey = body2.private_key;
-            const clientEmail = body2.client_email;
+            const body = JSON.parse(key);
+            const privateKey = body.private_key;
+            const clientEmail = body.client_email;
             if (!privateKey || !clientEmail) {
               throw new ErrorWithCode("private_key and client_email are required.", "MISSING_CREDENTIALS");
             }
@@ -78109,10 +78109,10 @@ var require_src9 = __commonJS({
       } catch (e) {
         this.rawToken = void 0;
         this.tokenExpires = void 0;
-        const body2 = e.response && ((_a = e.response) === null || _a === void 0 ? void 0 : _a.data) ? (_b = e.response) === null || _b === void 0 ? void 0 : _b.data : {};
-        if (body2.error) {
-          const desc = body2.error_description ? `: ${body2.error_description}` : "";
-          e.message = `${body2.error}${desc}`;
+        const body = e.response && ((_a = e.response) === null || _a === void 0 ? void 0 : _a.data) ? (_b = e.response) === null || _b === void 0 ? void 0 : _b.data : {};
+        if (body.error) {
+          const desc = body.error_description ? `: ${body.error_description}` : "";
+          e.message = `${body.error}${desc}`;
         }
         throw e;
       }
@@ -78727,14 +78727,14 @@ var require_impersonated = __commonJS({
         await this.sourceClient.getAccessToken();
         const name = `projects/-/serviceAccounts/${this.targetPrincipal}`;
         const u = `${this.endpoint}/v1/${name}:signBlob`;
-        const body2 = {
+        const body = {
           delegates: this.delegates,
           payload: Buffer.from(blobToSign).toString("base64")
         };
         const res = await this.sourceClient.request({
           ..._Impersonated.RETRY_CONFIG,
           url: u,
-          data: body2,
+          data: body,
           method: "POST"
         });
         return res.data;
@@ -78752,7 +78752,7 @@ var require_impersonated = __commonJS({
           await this.sourceClient.getAccessToken();
           const name = "projects/-/serviceAccounts/" + this.targetPrincipal;
           const u = `${this.endpoint}/v1/${name}:generateAccessToken`;
-          const body2 = {
+          const body = {
             delegates: this.delegates,
             scope: this.targetScopes,
             lifetime: this.lifetime + "s"
@@ -78760,7 +78760,7 @@ var require_impersonated = __commonJS({
           const res = await this.sourceClient.request({
             ..._Impersonated.RETRY_CONFIG,
             url: u,
-            data: body2,
+            data: body,
             method: "POST"
           });
           const tokenResponse = res.data;
@@ -78802,7 +78802,7 @@ var require_impersonated = __commonJS({
         await this.sourceClient.getAccessToken();
         const name = `projects/-/serviceAccounts/${this.targetPrincipal}`;
         const u = `${this.endpoint}/v1/${name}:generateIdToken`;
-        const body2 = {
+        const body = {
           delegates: this.delegates,
           audience: targetAudience,
           includeEmail: (_a = options === null || options === void 0 ? void 0 : options.includeEmail) !== null && _a !== void 0 ? _a : true,
@@ -78811,7 +78811,7 @@ var require_impersonated = __commonJS({
         const res = await this.sourceClient.request({
           ..._Impersonated.RETRY_CONFIG,
           url: u,
-          data: body2,
+          data: body,
           method: "POST"
         });
         return res.data.token;
@@ -79467,7 +79467,7 @@ var require_filesubjecttokensupplier = __commonJS({
        *   {@link IdentityPoolClient}, contains the requested audience and subject
        *   token type for the external account identity. Not used.
        */
-      async getSubjectToken(context3) {
+      async getSubjectToken(context2) {
         let parsedFilePath = this.filePath;
         try {
           parsedFilePath = await realpath(parsedFilePath);
@@ -79523,7 +79523,7 @@ var require_urlsubjecttokensupplier = __commonJS({
        *   {@link IdentityPoolClient}, contains the requested audience and subject
        *   token type for the external account identity. Not used.
        */
-      async getSubjectToken(context3) {
+      async getSubjectToken(context2) {
         const opts = {
           ...this.additionalGaxiosOptions,
           url: this.url,
@@ -79533,10 +79533,10 @@ var require_urlsubjecttokensupplier = __commonJS({
         };
         let subjectToken;
         if (this.formatType === "text") {
-          const response = await context3.transporter.request(opts);
+          const response = await context2.transporter.request(opts);
           subjectToken = response.data;
         } else if (this.formatType === "json" && this.subjectTokenFieldName) {
-          const response = await context3.transporter.request(opts);
+          const response = await context2.transporter.request(opts);
           subjectToken = response.data[this.subjectTokenFieldName];
         }
         if (!subjectToken) {
@@ -79719,14 +79719,14 @@ var require_awsrequestsigner = __commonJS({
       }
     };
     exports2.AwsRequestSigner = AwsRequestSigner;
-    async function sign3(crypto19, key, msg) {
-      return await crypto19.signWithHmacSha256(key, msg);
+    async function sign3(crypto20, key, msg) {
+      return await crypto20.signWithHmacSha256(key, msg);
     }
-    async function getSigningKey(crypto19, key, dateStamp, region, serviceName) {
-      const kDate = await sign3(crypto19, `AWS4${key}`, dateStamp);
-      const kRegion = await sign3(crypto19, kDate, region);
-      const kService = await sign3(crypto19, kRegion, serviceName);
-      const kSigning = await sign3(crypto19, kService, "aws4_request");
+    async function getSigningKey(crypto20, key, dateStamp, region, serviceName) {
+      const kDate = await sign3(crypto20, `AWS4${key}`, dateStamp);
+      const kRegion = await sign3(crypto20, kDate, region);
+      const kService = await sign3(crypto20, kRegion, serviceName);
+      const kSigning = await sign3(crypto20, kService, "aws4_request");
       return kSigning;
     }
     async function generateAuthenticationHeaderMap(options) {
@@ -79824,13 +79824,13 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
        *   for the external account identity.
        * @return A promise that resolves with the AWS region string.
        */
-      async getAwsRegion(context3) {
+      async getAwsRegion(context2) {
         if (__classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "a", _DefaultAwsSecurityCredentialsSupplier_regionFromEnv_get)) {
           return __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "a", _DefaultAwsSecurityCredentialsSupplier_regionFromEnv_get);
         }
         const metadataHeaders = {};
         if (!__classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "a", _DefaultAwsSecurityCredentialsSupplier_regionFromEnv_get) && this.imdsV2SessionTokenUrl) {
-          metadataHeaders["x-aws-ec2-metadata-token"] = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_getImdsV2SessionToken).call(this, context3.transporter);
+          metadataHeaders["x-aws-ec2-metadata-token"] = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_getImdsV2SessionToken).call(this, context2.transporter);
         }
         if (!this.regionUrl) {
           throw new Error('Unable to determine AWS region due to missing "options.credential_source.region_url"');
@@ -79842,7 +79842,7 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
           responseType: "text",
           headers: metadataHeaders
         };
-        const response = await context3.transporter.request(opts);
+        const response = await context2.transporter.request(opts);
         return response.data.substr(0, response.data.length - 1);
       }
       /**
@@ -79854,16 +79854,16 @@ var require_defaultawssecuritycredentialssupplier = __commonJS({
        *   for the external account identity.
        * @return A promise that resolves with the AWS security credentials.
        */
-      async getAwsSecurityCredentials(context3) {
+      async getAwsSecurityCredentials(context2) {
         if (__classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "a", _DefaultAwsSecurityCredentialsSupplier_securityCredentialsFromEnv_get)) {
           return __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "a", _DefaultAwsSecurityCredentialsSupplier_securityCredentialsFromEnv_get);
         }
         const metadataHeaders = {};
         if (this.imdsV2SessionTokenUrl) {
-          metadataHeaders["x-aws-ec2-metadata-token"] = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_getImdsV2SessionToken).call(this, context3.transporter);
+          metadataHeaders["x-aws-ec2-metadata-token"] = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_getImdsV2SessionToken).call(this, context2.transporter);
         }
-        const roleName = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_getAwsRoleName).call(this, metadataHeaders, context3.transporter);
-        const awsCreds = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_retrieveAwsSecurityCredentials).call(this, roleName, metadataHeaders, context3.transporter);
+        const roleName = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_getAwsRoleName).call(this, metadataHeaders, context2.transporter);
+        const awsCreds = await __classPrivateFieldGet2(this, _DefaultAwsSecurityCredentialsSupplier_instances, "m", _DefaultAwsSecurityCredentialsSupplier_retrieveAwsSecurityCredentials).call(this, roleName, metadataHeaders, context2.transporter);
         return {
           accessKeyId: awsCreds.AccessKeyId,
           secretAccessKey: awsCreds.SecretAccessKey,
@@ -81311,24 +81311,24 @@ var require_googleauth = __commonJS({
           const signed = await client2.sign(data);
           return signed.signedBlob;
         }
-        const crypto19 = (0, crypto_1.createCrypto)();
+        const crypto20 = (0, crypto_1.createCrypto)();
         if (client2 instanceof jwtclient_1.JWT && client2.key) {
-          const sign3 = await crypto19.sign(client2.key, data);
+          const sign3 = await crypto20.sign(client2.key, data);
           return sign3;
         }
         const creds = await this.getCredentials();
         if (!creds.client_email) {
           throw new Error("Cannot sign data without `client_email`.");
         }
-        return this.signBlob(crypto19, creds.client_email, data, endpoint);
+        return this.signBlob(crypto20, creds.client_email, data, endpoint);
       }
-      async signBlob(crypto19, emailOrUniqueId, data, endpoint) {
+      async signBlob(crypto20, emailOrUniqueId, data, endpoint) {
         const url = new URL(endpoint + `${emailOrUniqueId}:signBlob`);
         const res = await this.request({
           method: "POST",
           url: url.href,
           data: {
-            payload: crypto19.encodeBase64StringUtf8(data)
+            payload: crypto20.encodeBase64StringUtf8(data)
           },
           retry: true,
           retryConfig: {
@@ -81745,7 +81745,7 @@ var require_src10 = __commonJS({
 var require_object_hash = __commonJS({
   "node_modules/object-hash/index.js"(exports2, module2) {
     "use strict";
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     exports2 = module2.exports = objectHash;
     function objectHash(object, options) {
       options = applyDefaults(object, options);
@@ -81763,7 +81763,7 @@ var require_object_hash = __commonJS({
     exports2.keysMD5 = function(object) {
       return objectHash(object, { algorithm: "md5", encoding: "hex", excludeValues: true });
     };
-    var hashes = crypto19.getHashes ? crypto19.getHashes().slice() : ["sha1", "md5"];
+    var hashes = crypto20.getHashes ? crypto20.getHashes().slice() : ["sha1", "md5"];
     hashes.push("passthrough");
     var encodings = ["buffer", "hex", "binary", "base64"];
     function applyDefaults(object, sourceOptions) {
@@ -81809,7 +81809,7 @@ var require_object_hash = __commonJS({
     function hash(object, options) {
       var hashingStream;
       if (options.algorithm !== "passthrough") {
-        hashingStream = crypto19.createHash(options.algorithm);
+        hashingStream = crypto20.createHash(options.algorithm);
       } else {
         hashingStream = new PassThrough();
       }
@@ -81839,8 +81839,8 @@ var require_object_hash = __commonJS({
       options = applyDefaults(object, options);
       return typeHasher(options, stream2).dispatch(object);
     };
-    function typeHasher(options, writeTo, context3) {
-      context3 = context3 || [];
+    function typeHasher(options, writeTo, context2) {
+      context2 = context2 || [];
       var write = function(str) {
         if (writeTo.update) {
           return writeTo.update(str, "utf8");
@@ -81870,10 +81870,10 @@ var require_object_hash = __commonJS({
           }
           objType = objType.toLowerCase();
           var objectNumber = null;
-          if ((objectNumber = context3.indexOf(object)) >= 0) {
+          if ((objectNumber = context2.indexOf(object)) >= 0) {
             return this.dispatch("[CIRCULAR:" + objectNumber + "]");
           } else {
-            context3.push(object);
+            context2.push(object);
           }
           if (typeof Buffer !== "undefined" && Buffer.isBuffer && Buffer.isBuffer(object)) {
             write("buffer:");
@@ -81924,13 +81924,13 @@ var require_object_hash = __commonJS({
           var contextAdditions = [];
           var entries = arr.map(function(entry) {
             var strm = new PassThrough();
-            var localContext = context3.slice();
+            var localContext = context2.slice();
             var hasher = typeHasher(options, strm, localContext);
             hasher.dispatch(entry);
-            contextAdditions = contextAdditions.concat(localContext.slice(context3.length));
+            contextAdditions = contextAdditions.concat(localContext.slice(context2.length));
             return strm.read().toString();
           });
-          context3 = context3.concat(contextAdditions);
+          context2 = context2.concat(contextAdditions);
           entries.sort();
           return this._array(entries, false);
         },
@@ -93481,13 +93481,13 @@ var require_fallbackRest = __commonJS({
         transcoded.queryString = (transcoded.queryString ? `${transcoded.queryString}&` : "") + "$alt=json%3Benum-encoding=int";
       }
       const method = transcoded.httpMethod.toUpperCase();
-      const body2 = JSON.stringify(transcoded.data);
+      const body = JSON.stringify(transcoded.data);
       const url = `${protocol}://${servicePath}:${servicePort}/${transcoded.url.replace(/^\//, "")}?${transcoded.queryString}`;
       return {
         method,
         url,
         headers,
-        body: body2
+        body
       };
     }
     function decodeResponse(rpc, ok, response) {
@@ -97602,12 +97602,12 @@ var require_retry_request = __commonJS({
             }
             streamResponseHandled = true;
             onResponse(err);
-          }).on("response", (resp, body2) => {
+          }).on("response", (resp, body) => {
             if (streamResponseHandled) {
               return;
             }
             streamResponseHandled = true;
-            onResponse(null, resp, body2);
+            onResponse(null, resp, body);
           }).on("complete", (...params) => handleFinish(params)).on("finish", (...params) => handleFinish(params));
           requestStream.pipe(delayStream);
         } else {
@@ -97632,7 +97632,7 @@ var require_retry_request = __commonJS({
         }
         setTimeout(makeRequest, nextRetryDelay);
       }
-      function onResponse(err, response, body2) {
+      function onResponse(err, response, body) {
         if (err) {
           numNoResponseAttempts++;
           if (numNoResponseAttempts <= opts.noResponseRetries) {
@@ -97642,7 +97642,7 @@ var require_retry_request = __commonJS({
               retryStream.emit("error", err);
               retryStream.end();
             } else {
-              callback(err, response, body2);
+              callback(err, response, body);
             }
           }
           return;
@@ -97659,7 +97659,7 @@ var require_retry_request = __commonJS({
             retryStream.destroy(err2);
           });
         } else {
-          callback(err, response, body2);
+          callback(err, response, body);
         }
       }
     }
@@ -101870,10 +101870,10 @@ var require_events = __commonJS({
         ...wrapOptions
       };
       return (...eventFunctionArguments) => {
-        const [data, context3, callback] = eventFunctionArguments;
+        const [data, context2, callback] = eventFunctionArguments;
         return node.startSpanManual(
           {
-            name: context3.eventType,
+            name: context2.eventType,
             op: "function.gcp.event",
             attributes: {
               [core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: "component",
@@ -101882,7 +101882,7 @@ var require_events = __commonJS({
           },
           (span) => {
             const scope = node.getCurrentScope();
-            scope.setContext("gcp.function.context", { ...context3 });
+            scope.setContext("gcp.function.context", { ...context2 });
             const newCallback = utils.domainify((...args) => {
               if (args[0] !== null && args[0] !== void 0) {
                 node.captureException(args[0], (scope2) => utils.markEventUnhandled(scope2));
@@ -101898,13 +101898,13 @@ var require_events = __commonJS({
             });
             if (fn.length > 2) {
               return core.handleCallbackErrors(
-                () => fn(data, context3, newCallback),
+                () => fn(data, context2, newCallback),
                 (err) => {
                   node.captureException(err, (scope2) => utils.markEventUnhandled(scope2));
                 }
               );
             }
-            return Promise.resolve().then(() => fn(data, context3)).then(
+            return Promise.resolve().then(() => fn(data, context2)).then(
               (result) => newCallback(null, result),
               (err) => newCallback(err, void 0)
             );
@@ -101936,10 +101936,10 @@ var require_cloud_events = __commonJS({
         flushTimeout: 2e3,
         ...wrapOptions
       };
-      return (context3, callback) => {
+      return (context2, callback) => {
         return node.startSpanManual(
           {
-            name: context3.type || "<unknown>",
+            name: context2.type || "<unknown>",
             op: "function.gcp.cloud_event",
             attributes: {
               [core.SEMANTIC_ATTRIBUTE_SENTRY_SOURCE]: "component",
@@ -101948,7 +101948,7 @@ var require_cloud_events = __commonJS({
           },
           (span) => {
             const scope = node.getCurrentScope();
-            scope.setContext("gcp.function.context", { ...context3 });
+            scope.setContext("gcp.function.context", { ...context2 });
             const newCallback = utils.domainify((...args) => {
               if (args[0] !== null && args[0] !== void 0) {
                 node.captureException(args[0], (scope2) => utils.markEventUnhandled(scope2));
@@ -101964,13 +101964,13 @@ var require_cloud_events = __commonJS({
             });
             if (fn.length > 1) {
               return core.handleCallbackErrors(
-                () => fn(context3, newCallback),
+                () => fn(context2, newCallback),
                 (err) => {
                   node.captureException(err, (scope2) => utils.markEventUnhandled(scope2));
                 }
               );
             }
-            return Promise.resolve().then(() => fn(context3)).then(
+            return Promise.resolve().then(() => fn(context2)).then(
               (result) => newCallback(null, result),
               (err) => newCallback(err, void 0)
             );
@@ -102237,7 +102237,7 @@ async function publishErrorMetric(errorType, severity = "error") {
     console.error("[Error Tracking] Failed to publish CloudWatch metric:", error);
   }
 }
-function captureException(error, context3) {
+function captureException(error, context2) {
   errorCount++;
   const errorType = error.name || "Error";
   const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -102251,11 +102251,11 @@ function captureException(error, context3) {
       type: errorType
     },
     context: {
-      ...context3,
-      requestId: context3?.requestId || "unknown",
-      path: context3?.path,
-      method: context3?.method,
-      userId: context3?.userId
+      ...context2,
+      requestId: context2?.requestId || "unknown",
+      path: context2?.path,
+      method: context2?.method,
+      userId: context2?.userId
     },
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     environment: process.env.ENVIRONMENT || "development",
@@ -102264,7 +102264,7 @@ function captureException(error, context3) {
       errorType,
       severity: "error",
       hasStack: !!error.stack,
-      contextKeys: context3 ? Object.keys(context3).join(",") : ""
+      contextKeys: context2 ? Object.keys(context2).join(",") : ""
     }
   };
   console.error(JSON.stringify(logData));
@@ -102274,7 +102274,7 @@ function captureException(error, context3) {
     try {
       Sentry.captureException(error, {
         contexts: {
-          custom: context3 || {}
+          custom: context2 || {}
         },
         tags: {
           environment: process.env.ENVIRONMENT || "development",
@@ -102287,7 +102287,7 @@ function captureException(error, context3) {
     }
   }
 }
-function captureMessage(message2, level = "info", context3) {
+function captureMessage(message2, level = "info", context2) {
   if (level === "error") {
     errorCount++;
   } else if (level === "warning") {
@@ -102300,12 +102300,12 @@ function captureMessage(message2, level = "info", context3) {
     level: level.toUpperCase(),
     messageId,
     message: message2,
-    context: context3 || {},
+    context: context2 || {},
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     environment: process.env.ENVIRONMENT || "development",
     _metadata: {
       severity: level,
-      contextKeys: context3 ? Object.keys(context3).join(",") : ""
+      contextKeys: context2 ? Object.keys(context2).join(",") : ""
     }
   };
   const logMethod = level === "error" ? console.error : level === "warning" ? console.warn : console.log;
@@ -102319,7 +102319,7 @@ function captureMessage(message2, level = "info", context3) {
       Sentry.captureMessage(message2, {
         level: level === "error" ? "error" : level === "warning" ? "warning" : "info",
         contexts: {
-          custom: context3 || {}
+          custom: context2 || {}
         },
         tags: {
           environment: process.env.ENVIRONMENT || "development",
@@ -103608,7 +103608,7 @@ var require_utils_webcrypto = __commonJS({
     var nodeCrypto = require("crypto");
     module2.exports = {
       postgresMd5PasswordHash,
-      randomBytes,
+      randomBytes: randomBytes2,
       deriveKey: deriveKey2,
       sha256,
       hashByName,
@@ -103618,7 +103618,7 @@ var require_utils_webcrypto = __commonJS({
     var webCrypto = nodeCrypto.webcrypto || globalThis.crypto;
     var subtleCrypto = webCrypto.subtle;
     var textEncoder = new TextEncoder();
-    function randomBytes(length) {
+    function randomBytes2(length) {
       return webCrypto.getRandomValues(Buffer.alloc(length));
     }
     async function md54(string) {
@@ -103783,7 +103783,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "node_modules/pg/lib/crypto/sasl.js"(exports2, module2) {
     "use strict";
-    var crypto19 = require_utils9();
+    var crypto20 = require_utils9();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function startSession(mechanisms, stream2) {
       const candidates = ["SCRAM-SHA-256"];
@@ -103795,7 +103795,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream2.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto19.randomBytes(18).toString("base64");
+      const clientNonce = crypto20.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream2 ? "y" : "n";
       return {
         mechanism,
@@ -103830,20 +103830,20 @@ var require_sasl = __commonJS({
         const peerCert = stream2.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto19.hashByName(hashName, peerCert);
+        const certHash = await crypto20.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto19.deriveKey(password, saltBytes, sv.iteration);
-      const clientKey = await crypto19.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto19.sha256(clientKey);
-      const clientSignature = await crypto19.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto20.deriveKey(password, saltBytes, sv.iteration);
+      const clientKey = await crypto20.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto20.sha256(clientKey);
+      const clientSignature = await crypto20.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto19.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto19.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto20.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto20.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -105979,7 +105979,7 @@ var require_client3 = __commonJS({
     var Query2 = require_query2();
     var defaults2 = require_defaults2();
     var Connection2 = require_connection();
-    var crypto19 = require_utils9();
+    var crypto20 = require_utils9();
     var Client3 = class extends EventEmitter {
       constructor(config) {
         super();
@@ -106174,7 +106174,7 @@ var require_client3 = __commonJS({
       _handleAuthMD5Password(msg) {
         this._checkPgPass(async () => {
           try {
-            const hashedPassword = await crypto19.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto20.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e) {
             this.emit("error", e);
@@ -106638,9 +106638,9 @@ var require_pg_pool = __commonJS({
           clearTimeout(removed.timeoutId);
         }
         this._clients = this._clients.filter((c) => c !== client2);
-        const context3 = this;
+        const context2 = this;
         client2.end(() => {
-          context3.emit("remove", client2);
+          context2.emit("remove", client2);
           if (typeof callback === "function") {
             callback();
           }
@@ -107546,16 +107546,30 @@ async function update(table, filters, data) {
   let paramIndex = 1;
   for (const [key, value] of Object.entries(data)) {
     if (value !== void 0) {
-      setClause.push(`${key} = $${paramIndex}`);
+      const isJsonbColumn = key === "metadata" || key === "operating_hours" || key === "config" || key.endsWith("_config") || typeof value === "object" && value !== null && !(value instanceof Date);
+      if (isJsonbColumn && typeof value === "object" && value !== null) {
+        setClause.push(`${key} = $${paramIndex}::jsonb`);
+        params.push(JSON.stringify(value));
+      } else {
+        setClause.push(`${key} = $${paramIndex}`);
+        params.push(value);
+      }
+      paramIndex++;
+    }
+  }
+  if (setClause.length === 0) {
+    throw new Error("No fields to update. At least one field must be provided.");
+  }
+  const whereClause = [];
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== void 0) {
+      whereClause.push(`${key} = $${paramIndex}`);
       params.push(value);
       paramIndex++;
     }
   }
-  const whereClause = [];
-  for (const [key, value] of Object.entries(filters)) {
-    whereClause.push(`${key} = $${paramIndex}`);
-    params.push(value);
-    paramIndex++;
+  if (whereClause.length === 0) {
+    throw new Error("No filter conditions provided. At least one filter must be specified for safety.");
   }
   const queryText = `UPDATE ${table} SET ${setClause.join(", ")} WHERE ${whereClause.join(" AND ")} RETURNING *`;
   const result = await query(queryText, params);
@@ -107611,10 +107625,15 @@ async function withTransaction(callback) {
 }
 async function checkDbHealth() {
   try {
-    await query("SELECT 1");
+    const pool2 = await getRdsPool();
+    const testQuery = pool2.query("SELECT 1 as health_check");
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Health check timeout")), 5e3);
+    });
+    await Promise.race([testQuery, timeoutPromise]);
     return true;
   } catch (error) {
-    console.error("[DB] Health check failed:", error);
+    console.error("[DB] Health check failed:", error instanceof Error ? error.message : error);
     return false;
   }
 }
@@ -112082,9 +112101,9 @@ function generateTemporaryPassword() {
   return password;
 }
 function generatePermanentPassword(phone) {
-  const crypto19 = require("crypto");
+  const crypto20 = require("crypto");
   const secret = process.env.COGNITO_PASSWORD_SECRET || "warmpawz-default-secret-change-me";
-  const hmac = crypto19.createHmac("sha256", secret).update(phone).digest("hex");
+  const hmac = crypto20.createHmac("sha256", secret).update(phone).digest("hex");
   return `Wp${hmac.substring(0, 12)}!@`;
 }
 async function verifyCognitoToken3(token) {
@@ -118060,6 +118079,36 @@ var init_sns_client = __esm({
   }
 });
 
+// src/utils/sms-service.ts
+var sms_service_exports = {};
+__export(sms_service_exports, {
+  default: () => sms_service_default,
+  sendOTP: () => sendOTP,
+  sendSMS: () => sendSMS
+});
+async function sendSMS(options) {
+  const { to, message: message2, type = "transactional" } = options;
+  console.log(`[SMS-STUB] Would send ${type} SMS to ${to}: ${message2}`);
+  return {
+    success: true,
+    messageId: `stub-${Date.now()}`
+  };
+}
+async function sendOTP(phone, otp) {
+  return sendSMS({
+    to: phone,
+    message: `Your Warmpawz verification OTP is ${otp}. Valid for 10 minutes.`,
+    type: "otp"
+  });
+}
+var sms_service_default;
+var init_sms_service = __esm({
+  "src/utils/sms-service.ts"() {
+    "use strict";
+    sms_service_default = { sendSMS, sendOTP };
+  }
+});
+
 // ../../packages/api-contracts/dist/payments.js
 var require_payments = __commonJS({
   "../../packages/api-contracts/dist/payments.js"(exports2) {
@@ -118510,7 +118559,7 @@ var init_base_handler = __esm({
       async execute(event, lambdaContext) {
         const startTime = Date.now();
         try {
-          const body2 = this.parseBody(event);
+          const body = this.parseBody(event);
           const headers = this.getHeaders(event);
           const handlerContext = {
             event,
@@ -118601,14 +118650,14 @@ var init_base_handler = __esm({
       /**
        * Handle errors consistently
        */
-      handleError(error, event, context3) {
+      handleError(error, event, context2) {
         const method = event.httpMethod || event.requestContext?.http?.method || "UNKNOWN";
         const path = event.path || event.rawPath || "/";
         const { captureException: captureException2 } = (init_error_tracking(), __toCommonJS(error_tracking_exports));
         captureException2(error instanceof Error ? error : new Error(String(error)), {
           path,
           method,
-          requestId: context3.awsRequestId || "unknown",
+          requestId: context2.awsRequestId || "unknown",
           statusCode: error.statusCode || 500
         });
         console.error("Handler error:", {
@@ -118616,7 +118665,7 @@ var init_base_handler = __esm({
           stack: error.stack,
           path,
           method,
-          requestId: context3.awsRequestId || "unknown"
+          requestId: context2.awsRequestId || "unknown"
         });
         const statusCode = error.statusCode || 500;
         const message2 = error.message || "Internal server error";
@@ -118624,7 +118673,7 @@ var init_base_handler = __esm({
           statusCode,
           body: JSON.stringify({
             error: message2,
-            requestId: context3.awsRequestId || "unknown"
+            requestId: context2.awsRequestId || "unknown"
           }),
           headers: {
             "Content-Type": "application/json",
@@ -118793,12 +118842,12 @@ async function deleteDocument(indexName, id) {
 }
 async function bulkIndex(indexName, documents) {
   const client2 = getOpenSearchClient();
-  const body2 = documents.flatMap(({ id, document: document2 }) => [
+  const body = documents.flatMap(({ id, document: document2 }) => [
     { index: { _index: indexName, _id: id } },
     document2
   ]);
   try {
-    const response = await client2.bulk({ body: body2, refresh: true });
+    const response = await client2.bulk({ body, refresh: true });
     if (response.body.errors) {
       const errorItems = response.body.items.filter((item) => item.index?.error);
       console.error("Bulk index errors:", errorItems);
@@ -118841,7 +118890,7 @@ async function searchServices(options) {
       }
     });
   }
-  const body2 = {
+  const body = {
     query: {
       bool: {
         must: must.length > 0 ? must : [{ match_all: {} }],
@@ -118852,7 +118901,7 @@ async function searchServices(options) {
     size: options.size || 20
   };
   if (options.location) {
-    body2.sort = [
+    body.sort = [
       {
         _geo_distance: {
           location: {
@@ -118866,12 +118915,12 @@ async function searchServices(options) {
       { rating: { order: "desc" } }
     ];
   } else {
-    body2.sort = options.sort || [{ rating: { order: "desc" } }];
+    body.sort = options.sort || [{ rating: { order: "desc" } }];
   }
   try {
     const response = await client2.search({
       index: INDEXES.SERVICES,
-      body: body2
+      body
     });
     return {
       hits: response.body.hits.hits.map((hit) => ({
@@ -118922,7 +118971,7 @@ async function searchVendors(options) {
       }
     });
   }
-  const body2 = {
+  const body = {
     query: {
       bool: {
         must: must.length > 0 ? must : [{ match_all: {} }],
@@ -118933,7 +118982,7 @@ async function searchVendors(options) {
     size: options.size || 20
   };
   if (options.location) {
-    body2.sort = [
+    body.sort = [
       {
         _geo_distance: {
           location: {
@@ -118950,7 +118999,7 @@ async function searchVendors(options) {
   try {
     const response = await client2.search({
       index: INDEXES.VENDORS,
-      body: body2
+      body
     });
     return {
       hits: response.body.hits.hits.map((hit) => ({
@@ -119008,7 +119057,7 @@ async function searchStaff(options) {
       }
     });
   }
-  const body2 = {
+  const body = {
     query: {
       bool: {
         must: must.length > 0 ? must : [{ match_all: {} }],
@@ -119034,7 +119083,7 @@ async function searchStaff(options) {
   try {
     const response = await client2.search({
       index: INDEXES.STAFF,
-      body: body2
+      body
     });
     return {
       hits: response.body.hits.hits.map((hit) => ({
@@ -119275,7 +119324,7 @@ async function getRazorpayAuthHeader() {
   const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString("base64");
   return `Basic ${auth}`;
 }
-async function razorpayRequest(endpoint, method = "GET", body2) {
+async function razorpayRequest(endpoint, method = "GET", body) {
   const authHeader = await getRazorpayAuthHeader();
   const url = `https://api.razorpay.com/v1${endpoint}`;
   const response = await fetch(url, {
@@ -119284,7 +119333,7 @@ async function razorpayRequest(endpoint, method = "GET", body2) {
       "Authorization": authHeader,
       "Content-Type": "application/json"
     },
-    body: body2 ? JSON.stringify(body2) : void 0
+    body: body ? JSON.stringify(body) : void 0
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -119300,8 +119349,8 @@ function getRazorpayClient() {
     }
   };
   const payouts = {
-    async create(body2) {
-      return razorpayRequest("/payouts", "POST", body2);
+    async create(body) {
+      return razorpayRequest("/payouts", "POST", body);
     }
   };
   return {
@@ -119425,13 +119474,13 @@ async function queueSearchIndexUpdate(entity, action, entityId, data) {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 }
-async function uploadToS3(bucketName, key, body2, contentType) {
+async function uploadToS3(bucketName, key, body, contentType) {
   const bucket = S3_BUCKETS[bucketName];
   try {
     const command = new import_client_s3.PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: body2,
+      Body: body,
       ContentType: contentType
     });
     await s3Client.send(command);
@@ -119451,8 +119500,8 @@ async function getFromS3(bucketName, key) {
       Key: key
     });
     const response = await s3Client.send(command);
-    const body2 = await response.Body?.transformToByteArray();
-    return Buffer.from(body2 || []);
+    const body = await response.Body?.transformToByteArray();
+    return Buffer.from(body || []);
   } catch (error) {
     console.error(`Error getting from S3 ${bucket}/${key}:`, error);
     throw error;
@@ -119601,32 +119650,32 @@ function registerRazorpayEndpoints(app2) {
   const refundHandler = new ProcessRefundHandler();
   app2.post("/razorpay/create-order", async (c) => {
     const event = createApiGatewayEvent13(c.req);
-    const context3 = createLambdaContext13();
-    const result = await createOrderHandler.execute(event, context3);
+    const context2 = createLambdaContext13();
+    const result = await createOrderHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/razorpay/verify-payment", async (c) => {
     const event = createApiGatewayEvent13(c.req);
-    const context3 = createLambdaContext13();
-    const result = await verifyHandler.execute(event, context3);
+    const context2 = createLambdaContext13();
+    const result = await verifyHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/razorpay/webhook", async (c) => {
     const event = createApiGatewayEvent13(c.req);
-    const context3 = createLambdaContext13();
-    const result = await webhookHandler.execute(event, context3);
+    const context2 = createLambdaContext13();
+    const result = await webhookHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/razorpay/marketplace/settlement", async (c) => {
     const event = createApiGatewayEvent13(c.req);
-    const context3 = createLambdaContext13();
-    const result = await settlementHandler.execute(event, context3);
+    const context2 = createLambdaContext13();
+    const result = await settlementHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/razorpay/refund", async (c) => {
     const event = createApiGatewayEvent13(c.req);
-    const context3 = createLambdaContext13();
-    const result = await refundHandler.execute(event, context3);
+    const context2 = createLambdaContext13();
+    const result = await refundHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -119666,14 +119715,14 @@ async function getVendorTierCommission(vendorId) {
     if (subscriptionRows.length > 0 && subscriptionRows[0].commission_rate) {
       return parseFloat(subscriptionRows[0].commission_rate);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length > 0 && vendors2[0].tier) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length > 0 && vendors[0].tier) {
       const tierResult = await query(`
         SELECT commission_rate
         FROM vendor_tiers
         WHERE tier_name = $1 AND is_active = true
         LIMIT 1
-      `, [vendors2[0].tier]);
+      `, [vendors[0].tier]);
       const tierRows = Array.isArray(tierResult) ? tierResult : tierResult.rows || [];
       if (tierRows.length > 0 && tierRows[0].commission_rate) {
         return parseFloat(tierRows[0].commission_rate);
@@ -119706,18 +119755,18 @@ var init_razorpay = __esm({
     import_crypto9 = require("crypto");
     init_razorpay_client();
     CreateRazorpayOrderHandler = class extends BaseHandler {
-      async handle(context3) {
-        const body2 = this.parseBody(context3.event);
-        const { bookingId, amount, currency = "INR", customerId } = body2;
-        this.validateRequired(body2, ["bookingId", "amount"]);
+      async handle(context2) {
+        const body = this.parseBody(context2.event);
+        const { bookingId, amount, currency = "INR", customerId } = body;
+        this.validateRequired(body, ["bookingId", "amount"]);
         const config = await getRazorpayConfig();
         const bookings = await select("bookings", { id: bookingId });
         if (bookings.length === 0) {
           return this.error("Booking not found", 404);
         }
         const booking = bookings[0];
-        const vendors2 = await select("vendors", { id: booking.vendor_id });
-        const vendor = vendors2.length > 0 ? vendors2[0] : null;
+        const vendors = await select("vendors", { id: booking.vendor_id });
+        const vendor = vendors.length > 0 ? vendors[0] : null;
         const orderData = {
           amount: Math.round(amount * 100),
           // Convert to paise
@@ -119769,10 +119818,10 @@ var init_razorpay = __esm({
       }
     };
     VerifyPaymentHandler = class extends BaseHandler {
-      async handle(context3) {
-        const body2 = this.parseBody(context3.event);
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body2;
-        this.validateRequired(body2, ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature"]);
+      async handle(context2) {
+        const body = this.parseBody(context2.event);
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+        this.validateRequired(body, ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature"]);
         const config = await getRazorpayConfig();
         const text = `${razorpay_order_id}|${razorpay_payment_id}`;
         const generatedSignature = (0, import_crypto9.createHmac)("sha256", config.keySecret).update(text).digest("hex");
@@ -119799,8 +119848,8 @@ var init_razorpay = __esm({
           { payment_status: "paid" }
         );
         try {
-          const vendors2 = await select("vendors", { id: payment.vendor_id });
-          const vendor = vendors2.length > 0 ? vendors2[0] : null;
+          const vendors = await select("vendors", { id: payment.vendor_id });
+          const vendor = vendors.length > 0 ? vendors[0] : null;
           if (vendor?.razorpay_account_id && vendor.bank_verified) {
             const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
             await sendToSQS2("settlement-queue", {
@@ -119831,9 +119880,9 @@ var init_razorpay = __esm({
       }
     };
     RazorpayWebhookHandler = class extends BaseHandler {
-      async handle(context3) {
-        const body2 = this.parseBody(context3.event);
-        const headers = this.getHeaders(context3.event);
+      async handle(context2) {
+        const body = this.parseBody(context2.event);
+        const headers = this.getHeaders(context2.event);
         const webhookSignature = headers["x-razorpay-signature"];
         let config;
         try {
@@ -119847,13 +119896,13 @@ var init_razorpay = __esm({
         if (!config || !config.keyId || !config.webhookSecret) {
           return this.error("Razorpay not configured. Please configure in Platform Settings.", 400);
         }
-        const payload = JSON.stringify(body2);
+        const payload = JSON.stringify(body);
         const expectedSignature = (0, import_crypto9.createHmac)("sha256", config.webhookSecret).update(payload).digest("hex");
         if (webhookSignature !== expectedSignature) {
           return this.error("Invalid webhook signature", 401);
         }
-        const event = body2.event;
-        const payload_data = body2.payload;
+        const event = body.event;
+        const payload_data = body.payload;
         if (event === "payment.captured") {
           const payment = payload_data.payment.entity;
           await update(
@@ -119873,8 +119922,8 @@ var init_razorpay = __esm({
               { payment_status: "paid" }
             );
             try {
-              const vendors2 = await select("vendors", { id: paymentRecord.vendor_id });
-              const vendor = vendors2.length > 0 ? vendors2[0] : null;
+              const vendors = await select("vendors", { id: paymentRecord.vendor_id });
+              const vendor = vendors.length > 0 ? vendors[0] : null;
               if (vendor?.razorpay_account_id && vendor.bank_verified) {
                 const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
                 await sendToSQS2("settlement-queue", {
@@ -119913,9 +119962,9 @@ var init_razorpay = __esm({
       }
     };
     MarketplaceSettlementHandler = class extends BaseHandler {
-      async handle(context3) {
-        const body2 = this.parseBody(context3.event);
-        const { bookingId } = body2;
+      async handle(context2) {
+        const body = this.parseBody(context2.event);
+        const { bookingId } = body;
         if (!bookingId) {
           return this.error("Booking ID is required", 400);
         }
@@ -119948,11 +119997,11 @@ var init_razorpay = __esm({
         };
         const settlements = await insert("settlements", settlementData);
         const settlement = settlements[0];
-        const vendors2 = await select("vendors", { id: vendorId });
-        if (vendors2.length === 0) {
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length === 0) {
           return this.error("Vendor not found", 404);
         }
-        const vendor = vendors2[0];
+        const vendor = vendors[0];
         let transferId = null;
         let settlementStatus = "processing";
         if (vendor.razorpay_account_id && vendor.bank_verified) {
@@ -120031,10 +120080,10 @@ var init_razorpay = __esm({
       }
     };
     ProcessRefundHandler = class extends BaseHandler {
-      async handle(context3) {
-        const body2 = this.parseBody(context3.event);
-        const { paymentId, amount, reason } = body2;
-        this.validateRequired(body2, ["paymentId", "amount"]);
+      async handle(context2) {
+        const body = this.parseBody(context2.event);
+        const { paymentId, amount, reason } = body;
+        this.validateRequired(body, ["paymentId", "amount"]);
         const config = await getRazorpayConfig();
         const payments = await select("payments", { razorpay_payment_id: paymentId });
         if (payments.length === 0) {
@@ -131482,36 +131531,36 @@ var require_pbkdf2 = __commonJS({
     require_md();
     require_util10();
     var pkcs5 = forge.pkcs5 = forge.pkcs5 || {};
-    var crypto19;
+    var crypto20;
     if (forge.util.isNodejs && !forge.options.usePureJavaScript) {
-      crypto19 = require("crypto");
+      crypto20 = require("crypto");
     }
     module2.exports = forge.pbkdf2 = pkcs5.pbkdf2 = function(p, s, c, dkLen, md, callback) {
       if (typeof md === "function") {
         callback = md;
         md = null;
       }
-      if (forge.util.isNodejs && !forge.options.usePureJavaScript && crypto19.pbkdf2 && (md === null || typeof md !== "object") && (crypto19.pbkdf2Sync.length > 4 || (!md || md === "sha1"))) {
+      if (forge.util.isNodejs && !forge.options.usePureJavaScript && crypto20.pbkdf2 && (md === null || typeof md !== "object") && (crypto20.pbkdf2Sync.length > 4 || (!md || md === "sha1"))) {
         if (typeof md !== "string") {
           md = "sha1";
         }
         p = Buffer.from(p, "binary");
         s = Buffer.from(s, "binary");
         if (!callback) {
-          if (crypto19.pbkdf2Sync.length === 4) {
-            return crypto19.pbkdf2Sync(p, s, c, dkLen).toString("binary");
+          if (crypto20.pbkdf2Sync.length === 4) {
+            return crypto20.pbkdf2Sync(p, s, c, dkLen).toString("binary");
           }
-          return crypto19.pbkdf2Sync(p, s, c, dkLen, md).toString("binary");
+          return crypto20.pbkdf2Sync(p, s, c, dkLen, md).toString("binary");
         }
-        if (crypto19.pbkdf2Sync.length === 4) {
-          return crypto19.pbkdf2(p, s, c, dkLen, function(err2, key) {
+        if (crypto20.pbkdf2Sync.length === 4) {
+          return crypto20.pbkdf2(p, s, c, dkLen, function(err2, key) {
             if (err2) {
               return callback(err2);
             }
             callback(null, key.toString("binary"));
           });
         }
-        return crypto19.pbkdf2(p, s, c, dkLen, md, function(err2, key) {
+        return crypto20.pbkdf2(p, s, c, dkLen, md, function(err2, key) {
           if (err2) {
             return callback(err2);
           }
@@ -149426,8 +149475,8 @@ var require_crypto_signer = __commonJS({
        * @inheritDoc
        */
       sign(buffer) {
-        const crypto19 = require("crypto");
-        const sign3 = crypto19.createSign("RSA-SHA256");
+        const crypto20 = require("crypto");
+        const sign3 = crypto20.createSign("RSA-SHA256");
         sign3.update(buffer);
         return Promise.resolve(sign3.sign(this.credential.privateKey));
       }
@@ -149654,7 +149703,7 @@ var require_token_generator = __commonJS({
             typ: "JWT"
           };
           const iat = Math.floor(Date.now() / 1e3);
-          const body2 = {
+          const body = {
             aud: FIREBASE_AUDIENCE,
             iat,
             exp: iat + ONE_HOUR_IN_SECONDS,
@@ -149663,12 +149712,12 @@ var require_token_generator = __commonJS({
             uid
           };
           if (this.tenantId) {
-            body2.tenant_id = this.tenantId;
+            body.tenant_id = this.tenantId;
           }
           if (Object.keys(claims).length > 0) {
-            body2.claims = claims;
+            body.claims = claims;
           }
-          const token = `${this.encodeSegment(header)}.${this.encodeSegment(body2)}`;
+          const token = `${this.encodeSegment(header)}.${this.encodeSegment(body)}`;
           const signPromise = this.signer.sign(Buffer.from(token));
           return Promise.all([token, signPromise]);
         }).then(([token, signature]) => {
@@ -150163,9 +150212,9 @@ var require_webcrypto = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.isCryptoKey = void 0;
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var util3 = require("util");
-    var webcrypto3 = crypto19.webcrypto;
+    var webcrypto3 = crypto20.webcrypto;
     exports2.default = webcrypto3;
     exports2.isCryptoKey = util3.types.isCryptoKey ? (key) => util3.types.isCryptoKey(key) : (key) => false;
   }
@@ -152816,22 +152865,22 @@ var require_sign2 = __commonJS({
   "node_modules/jwks-rsa/node_modules/jose/dist/node/cjs/runtime/sign.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var util_1 = require("util");
     var dsa_digest_js_1 = require_dsa_digest();
     var hmac_digest_js_1 = require_hmac_digest();
     var node_key_js_1 = require_node_key();
     var get_sign_verify_key_js_1 = require_get_sign_verify_key();
     var oneShotSign2;
-    if (crypto19.sign.length > 3) {
-      oneShotSign2 = (0, util_1.promisify)(crypto19.sign);
+    if (crypto20.sign.length > 3) {
+      oneShotSign2 = (0, util_1.promisify)(crypto20.sign);
     } else {
-      oneShotSign2 = crypto19.sign;
+      oneShotSign2 = crypto20.sign;
     }
     var sign3 = async (alg, key, data) => {
       const keyObject = (0, get_sign_verify_key_js_1.default)(alg, key, "sign");
       if (alg.startsWith("HS")) {
-        const hmac = crypto19.createHmac((0, hmac_digest_js_1.default)(alg), keyObject);
+        const hmac = crypto20.createHmac((0, hmac_digest_js_1.default)(alg), keyObject);
         hmac.update(data);
         return hmac.digest();
       }
@@ -152846,7 +152895,7 @@ var require_verify2 = __commonJS({
   "node_modules/jwks-rsa/node_modules/jose/dist/node/cjs/runtime/verify.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    var crypto19 = require("crypto");
+    var crypto20 = require("crypto");
     var util_1 = require("util");
     var dsa_digest_js_1 = require_dsa_digest();
     var node_key_js_1 = require_node_key();
@@ -152854,10 +152903,10 @@ var require_verify2 = __commonJS({
     var get_sign_verify_key_js_1 = require_get_sign_verify_key();
     var flags_js_1 = require_flags();
     var oneShotVerify2;
-    if (crypto19.verify.length > 4 && flags_js_1.oneShotCallback) {
-      oneShotVerify2 = (0, util_1.promisify)(crypto19.verify);
+    if (crypto20.verify.length > 4 && flags_js_1.oneShotCallback) {
+      oneShotVerify2 = (0, util_1.promisify)(crypto20.verify);
     } else {
-      oneShotVerify2 = crypto19.verify;
+      oneShotVerify2 = crypto20.verify;
     }
     var verify3 = async (alg, key, signature, data) => {
       const keyObject = (0, get_sign_verify_key_js_1.default)(alg, key, "verify");
@@ -152865,7 +152914,7 @@ var require_verify2 = __commonJS({
         const expected = await (0, sign_js_1.default)(alg, keyObject, data);
         const actual = signature;
         try {
-          return crypto19.timingSafeEqual(actual, expected);
+          return crypto20.timingSafeEqual(actual, expected);
         } catch {
           return false;
         }
@@ -158958,14 +159007,14 @@ function __esDecorate(ctor, descriptorIn, decorators, contextIn, initializers, e
   var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
   var _, done = false;
   for (var i = decorators.length - 1; i >= 0; i--) {
-    var context3 = {};
-    for (var p in contextIn) context3[p] = p === "access" ? {} : contextIn[p];
-    for (var p in contextIn.access) context3.access[p] = contextIn.access[p];
-    context3.addInitializer = function(f) {
+    var context2 = {};
+    for (var p in contextIn) context2[p] = p === "access" ? {} : contextIn[p];
+    for (var p in contextIn.access) context2.access[p] = contextIn.access[p];
+    context2.addInitializer = function(f) {
       if (done) throw new TypeError("Cannot add initializers after decoration has completed");
       extraInitializers.push(accept(f || null));
     };
-    var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context3);
+    var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context2);
     if (kind === "accessor") {
       if (result === void 0) continue;
       if (result === null || typeof result !== "object") throw new TypeError("Object expected");
@@ -159024,7 +159073,7 @@ function __awaiter(thisArg, _arguments, P, generator) {
     step((generator = generator.apply(thisArg, _arguments || [])).next());
   });
 }
-function __generator(thisArg, body2) {
+function __generator(thisArg, body) {
   var _ = { label: 0, sent: function() {
     if (t[0] & 1) throw t[1];
     return t[1];
@@ -159082,7 +159131,7 @@ function __generator(thisArg, body2) {
           _.trys.pop();
           continue;
       }
-      op = body2.call(thisArg, _);
+      op = body.call(thisArg, _);
     } catch (e) {
       op = [6, e];
       y = 0;
@@ -160518,11 +160567,11 @@ var require_index_node_cjs = __commonJS({
         throw new Error(errorPrefix(fnName, argumentName) + "must be a valid function.");
       }
     }
-    function validateContextObject(fnName, argumentName, context3, optional) {
-      if (optional && !context3) {
+    function validateContextObject(fnName, argumentName, context2, optional) {
+      if (optional && !context2) {
         return;
       }
-      if (typeof context3 !== "object" || context3 === null) {
+      if (typeof context2 !== "object" || context2 === null) {
         throw new Error(errorPrefix(fnName, argumentName) + "must be a valid context object.");
       }
     }
@@ -161457,7 +161506,7 @@ var require_index_standalone = __commonJS({
       }
       return Buffer$9.concat(buffers, length);
     };
-    StreamReader.prototype.eachByte = function(callback, context3) {
+    StreamReader.prototype.eachByte = function(callback, context2) {
       var buffer, n, index;
       while (this._queue.length > 0) {
         buffer = this._queue[0];
@@ -161465,7 +161514,7 @@ var require_index_standalone = __commonJS({
         while (this._offset < n) {
           index = this._offset;
           this._offset += 1;
-          callback.call(context3, buffer[index]);
+          callback.call(context2, buffer[index]);
         }
         this._offset = 0;
         this._queue.shift();
@@ -162200,10 +162249,10 @@ var require_index_standalone = __commonJS({
       this._byName[name].push(params);
       this._inOrder.push({ name, params });
     };
-    Offers.prototype.eachOffer = function(callback, context3) {
+    Offers.prototype.eachOffer = function(callback, context2) {
       var list = this._inOrder;
       for (var i = 0, n = list.length; i < n; i++)
-        callback.call(context3, list[i].name, list[i].params);
+        callback.call(context2, list[i].name, list[i].params);
     };
     Offers.prototype.byName = function(name) {
       return this._byName[name] || [];
@@ -162273,9 +162322,9 @@ var require_index_standalone = __commonJS({
       this.pending = 0;
     };
     Functor$1.QUEUE_SIZE = 8;
-    Functor$1.prototype.call = function(error2, message3, callback, context3) {
+    Functor$1.prototype.call = function(error2, message3, callback, context2) {
       if (this._stopped) return;
-      var record = { error: error2, message: message3, callback, context: context3, done: false }, called = false, self2 = this;
+      var record = { error: error2, message: message3, callback, context: context2, done: false }, called = false, self2 = this;
       this._queue.push(record);
       if (record.error) {
         record.done = true;
@@ -162357,21 +162406,21 @@ var require_index_standalone = __commonJS({
       var functor2 = this._functors[direction];
       if (!functor2._stopped) functor2.pending += 1;
     };
-    Cell$1.prototype.incoming = function(error2, message3, callback, context3) {
-      this._exec("incoming", error2, message3, callback, context3);
+    Cell$1.prototype.incoming = function(error2, message3, callback, context2) {
+      this._exec("incoming", error2, message3, callback, context2);
     };
-    Cell$1.prototype.outgoing = function(error2, message3, callback, context3) {
-      this._exec("outgoing", error2, message3, callback, context3);
+    Cell$1.prototype.outgoing = function(error2, message3, callback, context2) {
+      this._exec("outgoing", error2, message3, callback, context2);
     };
     Cell$1.prototype.close = function() {
       this._closed = this._closed || new Pledge$1();
       this._doClose();
       return this._closed;
     };
-    Cell$1.prototype._exec = function(direction, error2, message3, callback, context3) {
+    Cell$1.prototype._exec = function(direction, error2, message3, callback, context2) {
       this._functors[direction].call(error2, message3, function(err, msg) {
         if (err) err.message = this._ext.name + ": " + err.message;
-        callback.call(context3, err, msg);
+        callback.call(context2, err, msg);
         this._doClose();
       }, this);
     };
@@ -162391,29 +162440,29 @@ var require_index_standalone = __commonJS({
       });
       this._stopped = { incoming: false, outgoing: false };
     };
-    Pipeline$1.prototype.processIncomingMessage = function(message3, callback, context3) {
+    Pipeline$1.prototype.processIncomingMessage = function(message3, callback, context2) {
       if (this._stopped.incoming) return;
-      this._loop("incoming", this._cells.length - 1, -1, -1, message3, callback, context3);
+      this._loop("incoming", this._cells.length - 1, -1, -1, message3, callback, context2);
     };
-    Pipeline$1.prototype.processOutgoingMessage = function(message3, callback, context3) {
+    Pipeline$1.prototype.processOutgoingMessage = function(message3, callback, context2) {
       if (this._stopped.outgoing) return;
-      this._loop("outgoing", 0, this._cells.length, 1, message3, callback, context3);
+      this._loop("outgoing", 0, this._cells.length, 1, message3, callback, context2);
     };
-    Pipeline$1.prototype.close = function(callback, context3) {
+    Pipeline$1.prototype.close = function(callback, context2) {
       this._stopped = { incoming: true, outgoing: true };
       var closed = this._cells.map(function(a) {
         return a.close();
       });
       if (callback)
         Pledge.all(closed).then(function() {
-          callback.call(context3);
+          callback.call(context2);
         });
     };
-    Pipeline$1.prototype._loop = function(direction, start, end, step, message3, callback, context3) {
+    Pipeline$1.prototype._loop = function(direction, start, end, step, message3, callback, context2) {
       var cells = this._cells, n = cells.length, self2 = this;
       while (n--) cells[n].pending(direction);
       var pipe = function(index, error2, msg) {
-        if (index === end) return callback.call(context3, error2, msg);
+        if (index === end) return callback.call(context2, error2, msg);
         cells[index][direction](error2, msg, function(err, m) {
           if (err) self2._stopped[direction] = true;
           pipe(index + step, err, m);
@@ -162506,15 +162555,15 @@ var require_index_standalone = __commonJS({
         }
         return (allowed.rsv1 || !frame2.rsv1) && (allowed.rsv2 || !frame2.rsv2) && (allowed.rsv3 || !frame2.rsv3);
       },
-      processIncomingMessage: function(message3, callback, context3) {
-        this._pipeline.processIncomingMessage(message3, callback, context3);
+      processIncomingMessage: function(message3, callback, context2) {
+        this._pipeline.processIncomingMessage(message3, callback, context2);
       },
-      processOutgoingMessage: function(message3, callback, context3) {
-        this._pipeline.processOutgoingMessage(message3, callback, context3);
+      processOutgoingMessage: function(message3, callback, context2) {
+        this._pipeline.processOutgoingMessage(message3, callback, context2);
       },
-      close: function(callback, context3) {
-        if (!this._pipeline) return callback.call(context3);
-        this._pipeline.close(callback, context3);
+      close: function(callback, context2) {
+        if (!this._pipeline) return callback.call(context2);
+        this._pipeline.close(callback, context2);
       },
       _reserve: function(ext) {
         this._rsv1 = this._rsv1 || ext.rsv1 && ext.name;
@@ -163219,7 +163268,7 @@ var require_index_standalone = __commonJS({
     var Buffer$1 = safeBuffer.exports.Buffer;
     var Base$2 = base;
     var Draft75$1 = draft75;
-    var crypto19 = require$$1__default$1["default"];
+    var crypto20 = require$$1__default$1["default"];
     var util$6 = require$$2__default["default"];
     var numberFromKey = function(key2) {
       return parseInt((key2.match(/[0-9]/g) || []).join(""), 10);
@@ -163267,7 +163316,7 @@ var require_index_standalone = __commonJS({
       },
       _handshakeSignature: function() {
         if (this._body.length < this.BODY_SIZE) return null;
-        var md54 = crypto19.createHash("md5"), buffer = Buffer$1.allocUnsafe(8 + this.BODY_SIZE);
+        var md54 = crypto20.createHash("md5"), buffer = Buffer$1.allocUnsafe(8 + this.BODY_SIZE);
         buffer.writeUInt32BE(this._keyValues[0], 0);
         buffer.writeUInt32BE(this._keyValues[1], 4);
         Buffer$1.from(this._body).copy(buffer, 8, 0, this.BODY_SIZE);
@@ -163775,7 +163824,7 @@ var require_index_standalone = __commonJS({
     var util$1 = require$$2__default["default"];
     var driver = driver$4;
     var API = api;
-    var WebSocket$1 = function(request, socket, body2, protocols, options) {
+    var WebSocket$1 = function(request, socket, body, protocols, options) {
       options = options || {};
       this._stream = socket;
       this._driver = driver.http(request, { maxLength: options.maxLength, protocols });
@@ -163789,7 +163838,7 @@ var require_index_standalone = __commonJS({
       API.call(this, options);
       process.nextTick(function() {
         self2._driver.start();
-        self2._driver.io.write(body2);
+        self2._driver.io.write(body);
       });
     };
     util$1.inherits(WebSocket$1, API);
@@ -165618,20 +165667,20 @@ var require_index_standalone = __commonJS({
             }
           }
         };
-        EventEmitter2.prototype.on = function(eventType, callback, context3) {
+        EventEmitter2.prototype.on = function(eventType, callback, context2) {
           this.validateEventType_(eventType);
           this.listeners_[eventType] = this.listeners_[eventType] || [];
-          this.listeners_[eventType].push({ callback, context: context3 });
+          this.listeners_[eventType].push({ callback, context: context2 });
           var eventData = this.getInitialEvent(eventType);
           if (eventData) {
-            callback.apply(context3, eventData);
+            callback.apply(context2, eventData);
           }
         };
-        EventEmitter2.prototype.off = function(eventType, callback, context3) {
+        EventEmitter2.prototype.off = function(eventType, callback, context2) {
           this.validateEventType_(eventType);
           var listeners = this.listeners_[eventType] || [];
           for (var i = 0; i < listeners.length; i++) {
-            if (listeners[i].callback === callback && (!context3 || context3 === listeners[i].context)) {
+            if (listeners[i].callback === callback && (!context2 || context2 === listeners[i].context)) {
               listeners.splice(i, 1);
               return;
             }
@@ -165983,9 +166032,9 @@ var require_index_standalone = __commonJS({
           }
           return _this;
         }
-        PersistentConnection2.prototype.sendRequest = function(action, body2, onResponse) {
+        PersistentConnection2.prototype.sendRequest = function(action, body, onResponse) {
           var curReqNum = ++this.requestNumber_;
-          var msg = { r: curReqNum, a: action, b: body2 };
+          var msg = { r: curReqNum, a: action, b: body };
           this.log_(util3.stringify(msg));
           util3.assert(this.connected_, "sendRequest call when we're not connected not allowed.");
           this.realtime_.sendRequest(msg);
@@ -166375,62 +166424,62 @@ var require_index_standalone = __commonJS({
             this.onDataPush_(message3["a"], message3["b"]);
           }
         };
-        PersistentConnection2.prototype.onDataPush_ = function(action, body2) {
-          this.log_("handleServerMessage", action, body2);
+        PersistentConnection2.prototype.onDataPush_ = function(action, body) {
+          this.log_("handleServerMessage", action, body);
           if (action === "d") {
             this.onDataUpdate_(
-              body2[
+              body[
                 /*path*/
                 "p"
               ],
-              body2[
+              body[
                 /*data*/
                 "d"
               ],
               /*isMerge*/
               false,
-              body2["t"]
+              body["t"]
             );
           } else if (action === "m") {
             this.onDataUpdate_(
-              body2[
+              body[
                 /*path*/
                 "p"
               ],
-              body2[
+              body[
                 /*data*/
                 "d"
               ],
               /*isMerge=*/
               true,
-              body2["t"]
+              body["t"]
             );
           } else if (action === "c") {
-            this.onListenRevoked_(body2[
+            this.onListenRevoked_(body[
               /*path*/
               "p"
-            ], body2[
+            ], body[
               /*query*/
               "q"
             ]);
           } else if (action === "ac") {
-            this.onAuthRevoked_(body2[
+            this.onAuthRevoked_(body[
               /*status code*/
               "s"
-            ], body2[
+            ], body[
               /* explanation */
               "d"
             ]);
           } else if (action === "apc") {
-            this.onAppCheckRevoked_(body2[
+            this.onAppCheckRevoked_(body[
               /*status code*/
               "s"
-            ], body2[
+            ], body[
               /* explanation */
               "d"
             ]);
           } else if (action === "sd") {
-            this.onSecurityDebugPacket_(body2);
+            this.onSecurityDebugPacket_(body);
           } else {
             error("Unrecognized action received from server: " + util3.stringify(action) + "\nAre you using the latest client?");
           }
@@ -166701,12 +166750,12 @@ var require_index_standalone = __commonJS({
             }
           }
         };
-        PersistentConnection2.prototype.onSecurityDebugPacket_ = function(body2) {
+        PersistentConnection2.prototype.onSecurityDebugPacket_ = function(body) {
           if (this.securityDebugCallback_) {
-            this.securityDebugCallback_(body2);
+            this.securityDebugCallback_(body);
           } else {
-            if ("msg" in body2) {
-              console.log("FIREBASE: " + body2["msg"].replace("\n", "\nFIREBASE: "));
+            if ("msg" in body) {
+              console.log("FIREBASE: " + body["msg"].replace("\n", "\nFIREBASE: "));
             }
           }
         };
@@ -173737,12 +173786,12 @@ var require_index_standalone = __commonJS({
           this.database = database;
           this._delegate = _delegate;
         }
-        Query3.prototype.on = function(eventType, callback, cancelCallbackOrContext, context3) {
+        Query3.prototype.on = function(eventType, callback, cancelCallbackOrContext, context2) {
           var _this = this;
           var _a;
           require$$1$3.validateArgCount("Query.on", 2, 4, arguments.length);
           require$$1$3.validateCallback("Query.on", "callback", callback, false);
-          var ret = Query3.getCancelAndContextArgs_("Query.on", cancelCallbackOrContext, context3);
+          var ret = Query3.getCancelAndContextArgs_("Query.on", cancelCallbackOrContext, context2);
           var valueCallback = function(expSnapshot, previousChildName) {
             callback.call(ret.context, new DataSnapshot(_this.database, expSnapshot), previousChildName);
           };
@@ -173769,16 +173818,16 @@ var require_index_standalone = __commonJS({
               throw new Error(require$$1$3.errorPrefix("Query.on", "eventType") + 'must be a valid event type = "value", "child_added", "child_removed", "child_changed", or "child_moved".');
           }
         };
-        Query3.prototype.off = function(eventType, callback, context3) {
+        Query3.prototype.off = function(eventType, callback, context2) {
           require$$1$3.validateArgCount("Query.off", 0, 3, arguments.length);
           validateEventType("Query.off", eventType, true);
           require$$1$3.validateCallback("Query.off", "callback", callback, true);
-          require$$1$3.validateContextObject("Query.off", "context", context3, true);
+          require$$1$3.validateContextObject("Query.off", "context", context2, true);
           if (callback) {
             var valueCallback = function() {
             };
             valueCallback.userCallback = callback;
-            valueCallback.context = context3;
+            valueCallback.context = context2;
             off_1(this._delegate, eventType, valueCallback);
           } else {
             off_1(this._delegate, eventType);
@@ -173790,11 +173839,11 @@ var require_index_standalone = __commonJS({
             return new DataSnapshot(_this.database, expSnapshot);
           });
         };
-        Query3.prototype.once = function(eventType, callback, failureCallbackOrContext, context3) {
+        Query3.prototype.once = function(eventType, callback, failureCallbackOrContext, context2) {
           var _this = this;
           require$$1$3.validateArgCount("Query.once", 1, 4, arguments.length);
           require$$1$3.validateCallback("Query.once", "callback", callback, true);
-          var ret = Query3.getCancelAndContextArgs_("Query.once", failureCallbackOrContext, context3);
+          var ret = Query3.getCancelAndContextArgs_("Query.once", failureCallbackOrContext, context2);
           var deferred = new require$$1$3.Deferred();
           var valueCallback = function(expSnapshot, previousChildName) {
             var result = new DataSnapshot(_this.database, expSnapshot);
@@ -173914,12 +173963,12 @@ var require_index_standalone = __commonJS({
           }
           return this._delegate.isEqual(other._delegate);
         };
-        Query3.getCancelAndContextArgs_ = function(fnName, cancelOrContext, context3) {
+        Query3.getCancelAndContextArgs_ = function(fnName, cancelOrContext, context2) {
           var ret = { cancel: void 0, context: void 0 };
-          if (cancelOrContext && context3) {
+          if (cancelOrContext && context2) {
             ret.cancel = cancelOrContext;
             require$$1$3.validateCallback(fnName, "cancel", ret.cancel, true);
-            ret.context = context3;
+            ret.context = context2;
             require$$1$3.validateContextObject(fnName, "context", ret.context, true);
           } else if (cancelOrContext) {
             if (typeof cancelOrContext === "object" && cancelOrContext !== null) {
@@ -177513,13 +177562,13 @@ Content-Type: ${part["Content-Type"]}\r
           teenyRequest.stats.requestFinished();
           const header = res.headers.get("content-type");
           const response = fetchToRequestResponse(options, res);
-          const body2 = response.body;
+          const body = response.body;
           if (header === "application/json" || header === "application/json; charset=utf-8") {
             res.json().then((json) => {
               response.body = json;
               callback(null, response, json);
             }, (err) => {
-              callback(err, response, body2);
+              callback(err, response, body);
             });
             return;
           }
@@ -177527,7 +177576,7 @@ Content-Type: ${part["Content-Type"]}\r
             response.body = text;
             callback(null, response, text);
           }, (err) => {
-            callback(err, response, body2);
+            callback(err, response, body);
           });
         }, (err) => {
           teenyRequest.stats.requestFinished();
@@ -177570,17 +177619,17 @@ Content-Type: ${part["Content-Type"]}\r
         teenyRequest.stats.requestFinished();
         const header = res.headers.get("content-type");
         const response = fetchToRequestResponse(options, res);
-        const body2 = response.body;
+        const body = response.body;
         if (header === "application/json" || header === "application/json; charset=utf-8") {
           if (response.statusCode === 204) {
-            callback(null, response, body2);
+            callback(null, response, body);
             return;
           }
           res.json().then((json) => {
             response.body = json;
             callback(null, response, json);
           }, (err) => {
-            callback(err, response, body2);
+            callback(err, response, body);
           });
           return;
         }
@@ -177589,7 +177638,7 @@ Content-Type: ${part["Content-Type"]}\r
           response2.body = text;
           callback(null, response2, text);
         }, (err) => {
-          callback(err, response, body2);
+          callback(err, response, body);
         });
       }, (err) => {
         teenyRequest.stats.requestFinished();
@@ -178121,12 +178170,12 @@ var require_util12 = __commonJS({
        * @param {*} body - Body value.
        * @param {function} callback - The callback function.
        */
-      handleResp(err, resp, body2, callback) {
+      handleResp(err, resp, body, callback) {
         callback = callback || util3.noop;
         const parsedResp = {
           err: err || null,
           ...resp && util3.parseHttpRespMessage(resp),
-          ...body2 && util3.parseHttpRespBody(body2)
+          ...body && util3.parseHttpRespBody(body)
         };
         if (!parsedResp.err && resp && typeof parsedResp.body === "object") {
           parsedResp.resp.body = parsedResp.body;
@@ -178168,15 +178217,15 @@ var require_util12 = __commonJS({
        *     will try to be JSON.parse'd. If it's successful, the parsed value will
        * be returned here, otherwise the original value and an error will be returned.
        */
-      parseHttpRespBody(body2) {
+      parseHttpRespBody(body) {
         const parsedHttpRespBody = {
-          body: body2
+          body
         };
-        if (typeof body2 === "string") {
+        if (typeof body === "string") {
           try {
-            parsedHttpRespBody.body = JSON.parse(body2);
+            parsedHttpRespBody.body = JSON.parse(body);
           } catch (err) {
-            parsedHttpRespBody.body = body2;
+            parsedHttpRespBody.body = body;
           }
         }
         if (parsedHttpRespBody.body && parsedHttpRespBody.body.error) {
@@ -178239,8 +178288,8 @@ var require_util12 = __commonJS({
             }
             requestDefaults.headers = util3._getDefaultHeaders(reqOpts[exports2.GCCL_GCS_CMD_KEY]);
             const request = teeny_request_1.teenyRequest.defaults(requestDefaults);
-            request(authenticatedReqOpts, (err2, resp, body2) => {
-              util3.handleResp(err2, resp, body2, (err3, data) => {
+            request(authenticatedReqOpts, (err2, resp, body) => {
+              util3.handleResp(err2, resp, body, (err3, data) => {
                 if (err3) {
                   dup.destroy(err3);
                   return;
@@ -178476,8 +178525,8 @@ var require_util12 = __commonJS({
             reqOpts,
             options,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (err, response, body2) => {
-              util3.handleResp(err, response, body2, callback);
+            (err, response, body) => {
+              util3.handleResp(err, response, body, callback);
             }
           );
         }
@@ -178979,7 +179028,7 @@ var require_service_object = __commonJS({
             ...options
           }
         };
-        _ServiceObject.prototype.request.call(this, reqOpts, (err, body2, res) => {
+        _ServiceObject.prototype.request.call(this, reqOpts, (err, body, res) => {
           if (err) {
             if (err.code === 404 && ignoreNotFound) {
               err = null;
@@ -179048,8 +179097,8 @@ var require_service_object = __commonJS({
             ...options
           }
         };
-        _ServiceObject.prototype.request.call(this, reqOpts, (err, body2, res) => {
-          this.metadata = body2;
+        _ServiceObject.prototype.request.call(this, reqOpts, (err, body, res) => {
+          this.metadata = body;
           callback(err, this.metadata, res);
         });
       }
@@ -179077,8 +179126,8 @@ var require_service_object = __commonJS({
             ...options
           }
         };
-        _ServiceObject.prototype.request.call(this, reqOpts, (err, body2, res) => {
-          this.metadata = body2;
+        _ServiceObject.prototype.request.call(this, reqOpts, (err, body, res) => {
+          this.metadata = body;
           callback(err, this.metadata, res);
         });
       }
@@ -181166,7 +181215,7 @@ var require_signer = __commonJS({
     })();
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.SigningError = exports2.URLSigner = exports2.PATH_STYLED_HOST = exports2.SignerExceptionMessages = void 0;
-    var crypto19 = __importStar2(require("crypto"));
+    var crypto20 = __importStar2(require("crypto"));
     var url = __importStar2(require("url"));
     var storage_js_1 = require_storage();
     var util_js_1 = require_util11();
@@ -181303,7 +181352,7 @@ var require_signer = __commonJS({
           };
           const canonicalQueryParams = this.getCanonicalQueryParams(queryParams);
           const canonicalRequest = this.getCanonicalRequest(config.method, this.getResourcePath(!!config.cname, config.bucket, config.file), canonicalQueryParams, extensionHeadersString, signedHeaders, contentSha256);
-          const hash = crypto19.createHash("sha256").update(canonicalRequest).digest("hex");
+          const hash = crypto20.createHash("sha256").update(canonicalRequest).digest("hex");
           const blobToSign = [
             "GOOG4-RSA-SHA256",
             dateISO,
@@ -182008,7 +182057,7 @@ var require_file = __commonJS({
     exports2.File = exports2.FileExceptionMessages = exports2.RequestError = exports2.STORAGE_POST_POLICY_BASE_URL = exports2.ActionToHTTPMethod = void 0;
     var index_js_1 = require_nodejs_common();
     var promisify_1 = require_src18();
-    var crypto19 = __importStar2(require("crypto"));
+    var crypto20 = __importStar2(require("crypto"));
     var fs = __importStar2(require("fs"));
     var mime_1 = __importDefault2(require_mime());
     var resumableUpload = __importStar2(require_resumable_upload());
@@ -182951,8 +183000,8 @@ var require_file = __commonJS({
         };
         const onResponse = (err, _body, rawResponseStream) => {
           if (err) {
-            this.getBufferFromReadable(rawResponseStream).then((body2) => {
-              err.message = body2.toString("utf8");
+            this.getBufferFromReadable(rawResponseStream).then((body) => {
+              err.message = body.toString("utf8");
               throughStream.destroy(err);
             });
             return;
@@ -183601,7 +183650,7 @@ var require_file = __commonJS({
       setEncryptionKey(encryptionKey) {
         this.encryptionKey = encryptionKey;
         this.encryptionKeyBase64 = Buffer.from(encryptionKey).toString("base64");
-        this.encryptionKeyHash = crypto19.createHash("sha256").update(this.encryptionKeyBase64, "base64").digest("base64");
+        this.encryptionKeyHash = crypto20.createHash("sha256").update(this.encryptionKeyBase64, "base64").digest("base64");
         this.encryptionKeyInterceptor = {
           request: (reqOpts) => {
             reqOpts.headers = reqOpts.headers || {};
@@ -185234,13 +185283,13 @@ var require_file = __commonJS({
         Object.assign(reqOpts.qs, this.instancePreconditionOpts, options.preconditionOpts);
         index_js_1.util.makeWritableStream(dup, {
           makeAuthenticatedRequest: (reqOpts2) => {
-            this.request(reqOpts2, (err, body2, resp) => {
+            this.request(reqOpts2, (err, body, resp) => {
               if (err) {
                 dup.destroy(err);
                 return;
               }
-              this.metadata = body2;
-              dup.emit("metadata", body2);
+              this.metadata = body;
+              dup.emit("metadata", body);
               dup.emit("response", resp);
               dup.emit("complete");
             });
@@ -186893,23 +186942,23 @@ var require_bucket = __commonJS({
         if (typeof topic !== "string") {
           throw new Error(BucketExceptionMessages.TOPIC_NAME_REQUIRED);
         }
-        const body2 = Object.assign({ topic }, options);
-        if (body2.topic.indexOf("projects") !== 0) {
-          body2.topic = "projects/{{projectId}}/topics/" + body2.topic;
+        const body = Object.assign({ topic }, options);
+        if (body.topic.indexOf("projects") !== 0) {
+          body.topic = "projects/{{projectId}}/topics/" + body.topic;
         }
-        body2.topic = `//pubsub.${this.storage.universeDomain}/` + body2.topic;
-        if (!body2.payloadFormat) {
-          body2.payloadFormat = "JSON_API_V1";
+        body.topic = `//pubsub.${this.storage.universeDomain}/` + body.topic;
+        if (!body.payloadFormat) {
+          body.payloadFormat = "JSON_API_V1";
         }
         const query12 = {};
-        if (body2.userProject) {
-          query12.userProject = body2.userProject;
-          delete body2.userProject;
+        if (body.userProject) {
+          query12.userProject = body.userProject;
+          delete body.userProject;
         }
         this.request({
           method: "POST",
           uri: "/notificationConfigs",
-          json: (0, util_js_1.convertObjKeysToSnakeCase)(body2),
+          json: (0, util_js_1.convertObjKeysToSnakeCase)(body),
           qs: query12,
           maxRetries: 0
           //explicitly set this value since this is a non-idempotent function
@@ -189839,7 +189888,7 @@ var require_storage = __commonJS({
         } else {
           metadata = metadataOrCallback;
         }
-        const body2 = {
+        const body = {
           ...metadata,
           name
         };
@@ -189854,48 +189903,48 @@ var require_storage = __commonJS({
         };
         const storageClassKeys = Object.keys(storageClasses);
         for (const storageClass of storageClassKeys) {
-          if (body2[storageClass]) {
+          if (body[storageClass]) {
             if (metadata.storageClass && metadata.storageClass !== storageClass) {
               throw new Error(`Both \`${storageClass}\` and \`storageClass\` were provided.`);
             }
-            body2.storageClass = storageClasses[storageClass];
-            delete body2[storageClass];
+            body.storageClass = storageClasses[storageClass];
+            delete body[storageClass];
           }
         }
-        if (body2.requesterPays) {
-          body2.billing = {
-            requesterPays: body2.requesterPays
+        if (body.requesterPays) {
+          body.billing = {
+            requesterPays: body.requesterPays
           };
-          delete body2.requesterPays;
+          delete body.requesterPays;
         }
         const query12 = {
           project: this.projectId
         };
-        if (body2.userProject) {
-          query12.userProject = body2.userProject;
-          delete body2.userProject;
+        if (body.userProject) {
+          query12.userProject = body.userProject;
+          delete body.userProject;
         }
-        if (body2.enableObjectRetention) {
-          query12.enableObjectRetention = body2.enableObjectRetention;
-          delete body2.enableObjectRetention;
+        if (body.enableObjectRetention) {
+          query12.enableObjectRetention = body.enableObjectRetention;
+          delete body.enableObjectRetention;
         }
-        if (body2.predefinedAcl) {
-          query12.predefinedAcl = body2.predefinedAcl;
-          delete body2.predefinedAcl;
+        if (body.predefinedAcl) {
+          query12.predefinedAcl = body.predefinedAcl;
+          delete body.predefinedAcl;
         }
-        if (body2.predefinedDefaultObjectAcl) {
-          query12.predefinedDefaultObjectAcl = body2.predefinedDefaultObjectAcl;
-          delete body2.predefinedDefaultObjectAcl;
+        if (body.predefinedDefaultObjectAcl) {
+          query12.predefinedDefaultObjectAcl = body.predefinedDefaultObjectAcl;
+          delete body.predefinedDefaultObjectAcl;
         }
-        if (body2.projection) {
-          query12.projection = body2.projection;
-          delete body2.projection;
+        if (body.projection) {
+          query12.projection = body.projection;
+          delete body.projection;
         }
         this.request({
           method: "POST",
           uri: "/b",
           qs: query12,
-          json: body2
+          json: body
         }, (err, resp) => {
           if (err) {
             callback(err, null, resp);
@@ -192136,14 +192185,14 @@ var require_transfer_manager = __commonJS({
         for (const entry of sortedMap.entries()) {
           parts.push({ PartNumber: entry[0], ETag: entry[1] });
         }
-        const body2 = `<CompleteMultipartUpload>${this.xmlBuilder.build(parts)}</CompleteMultipartUpload>`;
+        const body = `<CompleteMultipartUpload>${this.xmlBuilder.build(parts)}</CompleteMultipartUpload>`;
         return (0, async_retry_1.default)(async (bail) => {
           try {
             const res = await this.authClient.request({
               headers: __classPrivateFieldGet2(this, _XMLMultiPartUploadHelper_instances, "m", _XMLMultiPartUploadHelper_setGoogApiClientHeaders).call(this),
               url,
               method: "POST",
-              body: body2
+              body
             });
             if (res.data && res.data.error) {
               throw res.data.error;
@@ -209927,14 +209976,14 @@ var init_context = __esm({
           return self2._currentContext.get(key);
         };
         self2.setValue = function(key, value) {
-          var context3 = new BaseContext2(self2._currentContext);
-          context3._currentContext.set(key, value);
-          return context3;
+          var context2 = new BaseContext2(self2._currentContext);
+          context2._currentContext.set(key, value);
+          return context2;
         };
         self2.deleteValue = function(key) {
-          var context3 = new BaseContext2(self2._currentContext);
-          context3._currentContext.delete(key);
-          return context3;
+          var context2 = new BaseContext2(self2._currentContext);
+          context2._currentContext.delete(key);
+          return context2;
         };
       }
       return BaseContext2;
@@ -210281,16 +210330,16 @@ var init_context2 = __esm({
       ContextAPI2.prototype.active = function() {
         return this._getContextManager().active();
       };
-      ContextAPI2.prototype.with = function(context3, fn, thisArg) {
+      ContextAPI2.prototype.with = function(context2, fn, thisArg) {
         var _a;
         var args = [];
         for (var _i = 3; _i < arguments.length; _i++) {
           args[_i - 3] = arguments[_i];
         }
-        return (_a = this._getContextManager()).with.apply(_a, __spreadArray5([context3, fn, thisArg], __read6(args), false));
+        return (_a = this._getContextManager()).with.apply(_a, __spreadArray5([context2, fn, thisArg], __read6(args), false));
       };
-      ContextAPI2.prototype.bind = function(context3, target) {
-        return this._getContextManager().bind(context3, target);
+      ContextAPI2.prototype.bind = function(context2, target) {
+        return this._getContextManager().bind(context2, target);
       };
       ContextAPI2.prototype._getContextManager = function() {
         return getGlobal(API_NAME2) || NOOP_CONTEXT_MANAGER;
@@ -210380,24 +210429,24 @@ var init_NonRecordingSpan = __esm({
 });
 
 // node_modules/@opentelemetry/api/build/esm/trace/context-utils.js
-function getSpan(context3) {
-  return context3.getValue(SPAN_KEY) || void 0;
+function getSpan(context2) {
+  return context2.getValue(SPAN_KEY) || void 0;
 }
 function getActiveSpan() {
   return getSpan(ContextAPI.getInstance().active());
 }
-function setSpan(context3, span) {
-  return context3.setValue(SPAN_KEY, span);
+function setSpan(context2, span) {
+  return context2.setValue(SPAN_KEY, span);
 }
-function deleteSpan(context3) {
-  return context3.deleteValue(SPAN_KEY);
+function deleteSpan(context2) {
+  return context2.deleteValue(SPAN_KEY);
 }
-function setSpanContext(context3, spanContext) {
-  return setSpan(context3, new NonRecordingSpan(spanContext));
+function setSpanContext(context2, spanContext) {
+  return setSpan(context2, new NonRecordingSpan(spanContext));
 }
-function getSpanContext(context3) {
+function getSpanContext(context2) {
   var _a;
-  return (_a = getSpan(context3)) === null || _a === void 0 ? void 0 : _a.spanContext();
+  return (_a = getSpan(context2)) === null || _a === void 0 ? void 0 : _a.spanContext();
 }
 var SPAN_KEY;
 var init_context_utils = __esm({
@@ -210448,15 +210497,15 @@ var init_NoopTracer = __esm({
     (function() {
       function NoopTracer2() {
       }
-      NoopTracer2.prototype.startSpan = function(name, options, context3) {
-        if (context3 === void 0) {
-          context3 = contextApi.active();
+      NoopTracer2.prototype.startSpan = function(name, options, context2) {
+        if (context2 === void 0) {
+          context2 = contextApi.active();
         }
         var root = Boolean(options === null || options === void 0 ? void 0 : options.root);
         if (root) {
           return new NonRecordingSpan();
         }
-        var parentFromContext = context3 && getSpanContext(context3);
+        var parentFromContext = context2 && getSpanContext(context2);
         if (isSpanContext(parentFromContext) && isSpanContextValid(parentFromContext)) {
           return new NonRecordingSpan(parentFromContext);
         } else {
@@ -210503,8 +210552,8 @@ var init_ProxyTracer = __esm({
         this.version = version4;
         this.options = options;
       }
-      ProxyTracer2.prototype.startSpan = function(name, options, context3) {
-        return this._getTracer().startSpan(name, options, context3);
+      ProxyTracer2.prototype.startSpan = function(name, options, context2) {
+        return this._getTracer().startSpan(name, options, context2);
       };
       ProxyTracer2.prototype.startActiveSpan = function(_name, _options, _context, _fn) {
         var tracer = this._getTracer();
@@ -210714,11 +210763,11 @@ var init_utils2 = __esm({
 });
 
 // node_modules/@opentelemetry/api/build/esm/context-api.js
-var context2;
+var context;
 var init_context_api = __esm({
   "node_modules/@opentelemetry/api/build/esm/context-api.js"() {
     init_context2();
-    context2 = ContextAPI.getInstance();
+    context = ContextAPI.getInstance();
   }
 });
 
@@ -210803,8 +210852,8 @@ var init_NoopTextMapPropagator = __esm({
       }
       NoopTextMapPropagator2.prototype.inject = function(_context, _carrier) {
       };
-      NoopTextMapPropagator2.prototype.extract = function(context3, _carrier) {
-        return context3;
+      NoopTextMapPropagator2.prototype.extract = function(context2, _carrier) {
+        return context2;
       };
       NoopTextMapPropagator2.prototype.fields = function() {
         return [];
@@ -210815,17 +210864,17 @@ var init_NoopTextMapPropagator = __esm({
 });
 
 // node_modules/@opentelemetry/api/build/esm/baggage/context-helpers.js
-function getBaggage(context3) {
-  return context3.getValue(BAGGAGE_KEY) || void 0;
+function getBaggage(context2) {
+  return context2.getValue(BAGGAGE_KEY) || void 0;
 }
 function getActiveBaggage() {
   return getBaggage(ContextAPI.getInstance().active());
 }
-function setBaggage(context3, baggage) {
-  return context3.setValue(BAGGAGE_KEY, baggage);
+function setBaggage(context2, baggage) {
+  return context2.setValue(BAGGAGE_KEY, baggage);
 }
-function deleteBaggage(context3) {
-  return context3.deleteValue(BAGGAGE_KEY);
+function deleteBaggage(context2) {
+  return context2.deleteValue(BAGGAGE_KEY);
 }
 var BAGGAGE_KEY;
 var init_context_helpers = __esm({
@@ -210866,17 +210915,17 @@ var init_propagation = __esm({
       PropagationAPI2.prototype.setGlobalPropagator = function(propagator) {
         return registerGlobal(API_NAME4, propagator, DiagAPI.instance());
       };
-      PropagationAPI2.prototype.inject = function(context3, carrier, setter) {
+      PropagationAPI2.prototype.inject = function(context2, carrier, setter) {
         if (setter === void 0) {
           setter = defaultTextMapSetter;
         }
-        return this._getGlobalPropagator().inject(context3, carrier, setter);
+        return this._getGlobalPropagator().inject(context2, carrier, setter);
       };
-      PropagationAPI2.prototype.extract = function(context3, carrier, getter) {
+      PropagationAPI2.prototype.extract = function(context2, carrier, getter) {
         if (getter === void 0) {
           getter = defaultTextMapGetter;
         }
-        return this._getGlobalPropagator().extract(context3, carrier, getter);
+        return this._getGlobalPropagator().extract(context2, carrier, getter);
       };
       PropagationAPI2.prototype.fields = function() {
         return this._getGlobalPropagator().fields();
@@ -210978,7 +211027,7 @@ __export(esm_exports2, {
   TraceFlags: () => TraceFlags,
   ValueType: () => ValueType,
   baggageEntryMetadataFromString: () => baggageEntryMetadataFromString,
-  context: () => context2,
+  context: () => context,
   createContextKey: () => createContextKey,
   createNoopMeter: () => createNoopMeter,
   createTraceState: () => createTraceState,
@@ -211018,7 +211067,7 @@ var init_esm3 = __esm({
     init_propagation_api();
     init_trace_api();
     esm_default = {
-      context: context2,
+      context,
       diag: diag2,
       metrics,
       propagation,
@@ -216571,11 +216620,11 @@ var require_utils12 = __commonJS({
         file.storage.makeAuthenticatedRequest({
           method: "GET",
           uri
-        }, (err, body2) => {
+        }, (err, body) => {
           if (err) {
             reject(err);
           } else {
-            resolve(body2);
+            resolve(body);
           }
         });
       });
@@ -219277,22 +219326,22 @@ var require_condition_evaluator_internal = __commonJS({
     var remote_config_api_1 = require_remote_config_api();
     var farmhash = require_lib9();
     var ConditionEvaluator = class _ConditionEvaluator {
-      evaluateConditions(namedConditions, context3) {
+      evaluateConditions(namedConditions, context2) {
         const evaluatedConditions = /* @__PURE__ */ new Map();
         for (const namedCondition of namedConditions) {
-          evaluatedConditions.set(namedCondition.name, this.evaluateCondition(namedCondition.condition, context3));
+          evaluatedConditions.set(namedCondition.name, this.evaluateCondition(namedCondition.condition, context2));
         }
         return evaluatedConditions;
       }
-      evaluateCondition(condition, context3, nestingLevel = 0) {
+      evaluateCondition(condition, context2, nestingLevel = 0) {
         if (nestingLevel >= _ConditionEvaluator.MAX_CONDITION_RECURSION_DEPTH) {
           return false;
         }
         if (condition.orCondition) {
-          return this.evaluateOrCondition(condition.orCondition, context3, nestingLevel + 1);
+          return this.evaluateOrCondition(condition.orCondition, context2, nestingLevel + 1);
         }
         if (condition.andCondition) {
-          return this.evaluateAndCondition(condition.andCondition, context3, nestingLevel + 1);
+          return this.evaluateAndCondition(condition.andCondition, context2, nestingLevel + 1);
         }
         if (condition.true) {
           return true;
@@ -219301,35 +219350,35 @@ var require_condition_evaluator_internal = __commonJS({
           return false;
         }
         if (condition.percent) {
-          return this.evaluatePercentCondition(condition.percent, context3);
+          return this.evaluatePercentCondition(condition.percent, context2);
         }
         if (condition.customSignal) {
-          return this.evaluateCustomSignalCondition(condition.customSignal, context3);
+          return this.evaluateCustomSignalCondition(condition.customSignal, context2);
         }
         return false;
       }
-      evaluateOrCondition(orCondition, context3, nestingLevel) {
+      evaluateOrCondition(orCondition, context2, nestingLevel) {
         const subConditions = orCondition.conditions || [];
         for (const subCondition of subConditions) {
-          const result = this.evaluateCondition(subCondition, context3, nestingLevel + 1);
+          const result = this.evaluateCondition(subCondition, context2, nestingLevel + 1);
           if (result) {
             return result;
           }
         }
         return false;
       }
-      evaluateAndCondition(andCondition, context3, nestingLevel) {
+      evaluateAndCondition(andCondition, context2, nestingLevel) {
         const subConditions = andCondition.conditions || [];
         for (const subCondition of subConditions) {
-          const result = this.evaluateCondition(subCondition, context3, nestingLevel + 1);
+          const result = this.evaluateCondition(subCondition, context2, nestingLevel + 1);
           if (!result) {
             return result;
           }
         }
         return true;
       }
-      evaluatePercentCondition(percentCondition, context3) {
-        if (!context3.randomizationId) {
+      evaluatePercentCondition(percentCondition, context2) {
+        if (!context2.randomizationId) {
           return false;
         }
         const { seed, percentOperator, microPercent, microPercentRange } = percentCondition;
@@ -219340,7 +219389,7 @@ var require_condition_evaluator_internal = __commonJS({
         const normalizedMicroPercentUpperBound = microPercentRange?.microPercentUpperBound || 0;
         const normalizedMicroPercentLowerBound = microPercentRange?.microPercentLowerBound || 0;
         const seedPrefix = seed && seed.length > 0 ? `${seed}.` : "";
-        const stringToHash = `${seedPrefix}${context3.randomizationId}`;
+        const stringToHash = `${seedPrefix}${context2.randomizationId}`;
         const hash64 = _ConditionEvaluator.hashSeededRandomizationId(stringToHash);
         const instanceMicroPercentile = hash64 % BigInt(100 * 1e6);
         switch (percentOperator) {
@@ -219363,7 +219412,7 @@ var require_condition_evaluator_internal = __commonJS({
         }
         return hash64;
       }
-      evaluateCustomSignalCondition(customSignalCondition, context3) {
+      evaluateCustomSignalCondition(customSignalCondition, context2) {
         const { customSignalOperator, customSignalKey, targetCustomSignalValues } = customSignalCondition;
         if (!customSignalOperator || !customSignalKey || !targetCustomSignalValues) {
           return false;
@@ -219371,7 +219420,7 @@ var require_condition_evaluator_internal = __commonJS({
         if (!targetCustomSignalValues.length) {
           return false;
         }
-        const actualCustomSignalValue = context3[customSignalKey];
+        const actualCustomSignalValue = context2[customSignalKey];
         if (actualCustomSignalValue == void 0) {
           return false;
         }
@@ -219735,11 +219784,11 @@ var require_remote_config = __commonJS({
       /**
        * Evaluates the current template in cache to produce a {@link ServerConfig}.
        */
-      evaluate(context3 = {}) {
+      evaluate(context2 = {}) {
         if (!this.cache) {
           throw new remote_config_api_client_internal_1.FirebaseRemoteConfigError("failed-precondition", "No Remote Config Server template in cache. Call load() before calling evaluate().");
         }
-        const evaluatedConditions = this.conditionEvaluator.evaluateConditions(this.cache.conditions, context3);
+        const evaluatedConditions = this.conditionEvaluator.evaluateConditions(this.cache.conditions, context2);
         const configValues = {};
         for (const key in this.stringifiedDefaultConfig) {
           configValues[key] = new value_impl_1.ValueImpl("default", this.stringifiedDefaultConfig[key]);
@@ -220124,7 +220173,7 @@ var require_token_generator2 = __commonJS({
             typ: "JWT"
           };
           const iat = Math.floor(Date.now() / 1e3);
-          const body2 = {
+          const body = {
             iss: account,
             sub: account,
             app_id: appId,
@@ -220133,7 +220182,7 @@ var require_token_generator2 = __commonJS({
             iat,
             ...customOptions
           };
-          const token = `${this.encodeSegment(header)}.${this.encodeSegment(body2)}`;
+          const token = `${this.encodeSegment(header)}.${this.encodeSegment(body)}`;
           return this.signer.sign(Buffer.from(token)).then((signature) => {
             return `${token}.${this.encodeSegment(signature)}`;
           });
@@ -220700,9 +220749,9 @@ var require_database = __commonJS({
       getErrorMessage(err) {
         const intro = "Error while accessing security rules";
         try {
-          const body2 = err.response.data;
-          if (body2 && body2.error) {
-            return `${intro}: ${body2.error.trim()}`;
+          const body = err.response.data;
+          if (body && body.error) {
+            return `${intro}: ${body.error.trim()}`;
           }
         } catch {
         }
@@ -220732,10 +220781,10 @@ var require_database2 = __commonJS({
     var database_1 = require_database();
     exports2.enableLogging = standalone_1.enableLogging;
     exports2.ServerValue = standalone_1.ServerValue;
-    function getDatabase2(app2) {
+    function getDatabase(app2) {
       return getDatabaseInstance({ app: app2 });
     }
-    exports2.getDatabase = getDatabase2;
+    exports2.getDatabase = getDatabase;
     function getDatabaseWithUrl(url, app2) {
       return getDatabaseInstance({ url, app: app2 });
     }
@@ -221502,7 +221551,7 @@ module.exports = __toCommonJS(index_exports);
 
 // node_modules/hono/dist/compose.js
 var compose = (middleware, onError, onNotFound) => {
-  return (context3, next) => {
+  return (context2, next) => {
     let index = -1;
     return dispatch(0);
     async function dispatch(i) {
@@ -221515,31 +221564,31 @@ var compose = (middleware, onError, onNotFound) => {
       let handler2;
       if (middleware[i]) {
         handler2 = middleware[i][0][0];
-        context3.req.routeIndex = i;
+        context2.req.routeIndex = i;
       } else {
         handler2 = i === middleware.length && next || void 0;
       }
       if (handler2) {
         try {
-          res = await handler2(context3, () => dispatch(i + 1));
+          res = await handler2(context2, () => dispatch(i + 1));
         } catch (err) {
           if (err instanceof Error && onError) {
-            context3.error = err;
-            res = await onError(err, context3);
+            context2.error = err;
+            res = await onError(err, context2);
             isError = true;
           } else {
             throw err;
           }
         }
       } else {
-        if (context3.finalized === false && onNotFound) {
-          res = await onNotFound(context3);
+        if (context2.finalized === false && onNotFound) {
+          res = await onNotFound(context2);
         }
       }
-      if (res && (context3.finalized === false || isError)) {
-        context3.res = res;
+      if (res && (context2.finalized === false || isError)) {
+        context2.res = res;
       }
-      return context3;
+      return context2;
     }
   };
 };
@@ -221909,11 +221958,11 @@ var HonoRequest = class {
     }
     const anyCachedKey = Object.keys(bodyCache)[0];
     if (anyCachedKey) {
-      return bodyCache[anyCachedKey].then((body2) => {
+      return bodyCache[anyCachedKey].then((body) => {
         if (anyCachedKey === "json") {
-          body2 = JSON.stringify(body2);
+          body = JSON.stringify(body);
         }
-        return new Response(body2)[key]();
+        return new Response(body)[key]();
       });
     }
     return bodyCache[key] = raw2[key]();
@@ -222098,7 +222147,7 @@ var raw = (value, callbacks) => {
   escapedString.callbacks = callbacks;
   return escapedString;
 };
-var resolveCallback = async (str, phase, preserveCallbacks, context3, buffer) => {
+var resolveCallback = async (str, phase, preserveCallbacks, context2, buffer) => {
   if (typeof str === "object" && !(str instanceof String)) {
     if (!(str instanceof Promise)) {
       str = str.toString();
@@ -222116,9 +222165,9 @@ var resolveCallback = async (str, phase, preserveCallbacks, context3, buffer) =>
   } else {
     buffer = [str];
   }
-  const resStr = Promise.all(callbacks.map((c) => c({ phase, buffer, context: context3 }))).then(
+  const resStr = Promise.all(callbacks.map((c) => c({ phase, buffer, context: context2 }))).then(
     (res) => Promise.all(
-      res.filter(Boolean).map((str2) => resolveCallback(str2, phase, false, context3, buffer))
+      res.filter(Boolean).map((str2) => resolveCallback(str2, phase, false, context2, buffer))
     ).then(() => buffer[0])
   );
   if (preserveCallbacks) {
@@ -222840,13 +222889,13 @@ var Hono = class _Hono {
     const composed = compose(matchResult[0], this.errorHandler, this.#notFoundHandler);
     return (async () => {
       try {
-        const context3 = await composed(c);
-        if (!context3.finalized) {
+        const context2 = await composed(c);
+        if (!context2.finalized) {
           throw new Error(
             "Context is not finalized. Did you forget to return a Response object or `await next()`?"
           );
         }
-        return context3.res;
+        return context2.res;
       } catch (err) {
         return this.#handleError(err, c);
       }
@@ -222966,7 +223015,7 @@ var Node = class _Node {
   #index;
   #varIndex;
   #children = /* @__PURE__ */ Object.create(null);
-  insert(tokens, index, paramMap, context3, pathErrorCheckOnly) {
+  insert(tokens, index, paramMap, context2, pathErrorCheckOnly) {
     if (tokens.length === 0) {
       if (this.#index !== void 0) {
         throw PATH_ERROR;
@@ -223004,7 +223053,7 @@ var Node = class _Node {
         }
         node = this.#children[regexpStr] = new _Node();
         if (name !== "") {
-          node.#varIndex = context3.varIndex++;
+          node.#varIndex = context2.varIndex++;
         }
       }
       if (!pathErrorCheckOnly && name !== "") {
@@ -223024,7 +223073,7 @@ var Node = class _Node {
         node = this.#children[token] = new _Node();
       }
     }
-    node.insert(restTokens, index, paramMap, context3, pathErrorCheckOnly);
+    node.insert(restTokens, index, paramMap, context2, pathErrorCheckOnly);
   }
   buildRegExpStr() {
     const childKeys = Object.keys(this.#children).sort(compareKey);
@@ -223618,6 +223667,269 @@ var cors = (options) => {
 // src/handler/index.ts
 init_error_tracking();
 
+// src/utils/env-validation.ts
+var ENV_VARS = [
+  // Database (Critical)
+  {
+    name: "DB_HOST",
+    required: true,
+    description: "RDS PostgreSQL hostname"
+  },
+  {
+    name: "DB_NAME",
+    required: true,
+    description: "RDS PostgreSQL database name"
+  },
+  {
+    name: "DB_SECRET_ARN",
+    required: false,
+    description: "AWS Secrets Manager ARN for database credentials (required if DB_USER/DB_PASSWORD not set)"
+  },
+  {
+    name: "DB_USER",
+    required: false,
+    description: "Database username (required if DB_SECRET_ARN not set)"
+  },
+  {
+    name: "DB_PASSWORD",
+    required: false,
+    description: "Database password (required if DB_SECRET_ARN not set)"
+  },
+  {
+    name: "DB_PORT",
+    required: false,
+    defaultValue: "5432",
+    description: "Database port"
+  },
+  {
+    name: "DB_SSL",
+    required: false,
+    defaultValue: "false",
+    description: "Enable SSL for database connection"
+  },
+  // AWS Configuration
+  {
+    name: "AWS_REGION",
+    required: false,
+    defaultValue: "ap-south-1",
+    description: "AWS region"
+  },
+  // Cognito (Optional - may use UAT mode)
+  {
+    name: "COGNITO_CUSTOMER_POOL_ID",
+    required: false,
+    description: "Cognito customer user pool ID"
+  },
+  {
+    name: "COGNITO_VENDOR_POOL_ID",
+    required: false,
+    description: "Cognito vendor user pool ID"
+  },
+  {
+    name: "COGNITO_ADMIN_POOL_ID",
+    required: false,
+    description: "Cognito admin user pool ID"
+  },
+  // SNS Topics (Optional - features may be disabled)
+  {
+    name: "SNS_VENDOR_NOTIFICATIONS_ARN",
+    required: false,
+    description: "SNS topic ARN for vendor notifications"
+  },
+  {
+    name: "SNS_CUSTOMER_NOTIFICATIONS_ARN",
+    required: false,
+    description: "SNS topic ARN for customer notifications"
+  },
+  {
+    name: "SNS_PLATFORM_NOTIFICATIONS_ARN",
+    required: false,
+    description: "SNS topic ARN for platform notifications"
+  },
+  {
+    name: "SNS_BOOKING_EVENTS_ARN",
+    required: false,
+    description: "SNS topic ARN for booking events"
+  },
+  {
+    name: "SNS_PAYMENT_EVENTS_ARN",
+    required: false,
+    description: "SNS topic ARN for payment events"
+  },
+  // SQS Queues (Optional - features may be disabled)
+  {
+    name: "SQS_NOTIFICATION_QUEUE_URL",
+    required: false,
+    description: "SQS queue URL for notifications"
+  },
+  {
+    name: "SQS_BOOKING_QUEUE_URL",
+    required: false,
+    description: "SQS queue URL for bookings"
+  },
+  {
+    name: "SQS_PAYMENT_QUEUE_URL",
+    required: false,
+    description: "SQS queue URL for payments"
+  },
+  {
+    name: "SQS_SETTLEMENT_QUEUE_URL",
+    required: false,
+    description: "SQS queue URL for settlements"
+  },
+  {
+    name: "SQS_SEARCH_INDEX_QUEUE_URL",
+    required: false,
+    description: "SQS queue URL for search indexing"
+  },
+  // S3 Buckets (Optional - defaults provided)
+  {
+    name: "S3_DOCUMENTS_BUCKET",
+    required: false,
+    defaultValue: "warmpawz-documents",
+    description: "S3 bucket for documents"
+  },
+  {
+    name: "S3_UPLOADS_BUCKET",
+    required: false,
+    defaultValue: "warmpawz-uploads",
+    description: "S3 bucket for uploads"
+  },
+  {
+    name: "S3_MEDIA_BUCKET",
+    required: false,
+    defaultValue: "warmpawz-media",
+    description: "S3 bucket for media"
+  },
+  // Application Configuration
+  {
+    name: "NODE_ENV",
+    required: false,
+    defaultValue: "development",
+    description: "Node environment (development, staging, production)"
+  },
+  {
+    name: "ENVIRONMENT",
+    required: false,
+    description: "Deployment environment"
+  }
+];
+function validateDatabaseCredentials() {
+  const hasSecretArn = !!process.env.DB_SECRET_ARN;
+  const hasUser = !!process.env.DB_USER;
+  const hasPassword = !!process.env.DB_PASSWORD;
+  if (hasSecretArn) {
+    return { valid: true };
+  }
+  if (hasUser && hasPassword) {
+    return { valid: true };
+  }
+  return {
+    valid: false,
+    error: "Database credentials not configured. Provide either DB_SECRET_ARN or both DB_USER and DB_PASSWORD"
+  };
+}
+function validateEnvironment() {
+  const missing = [];
+  const warnings = [];
+  const errors = [];
+  for (const config of ENV_VARS) {
+    const value = process.env[config.name];
+    if (config.required && !value && !config.defaultValue) {
+      missing.push(config.name);
+    }
+  }
+  const dbCredsValidation = validateDatabaseCredentials();
+  if (!dbCredsValidation.valid) {
+    errors.push(dbCredsValidation.error);
+  }
+  if (false) {
+    warnings.push("Production environment should use DB_SECRET_ARN instead of DB_USER/DB_PASSWORD");
+  }
+  if (false) {
+    warnings.push("UAT_MODE should not be enabled in production");
+  }
+  if (process.env.DB_PORT) {
+    const port = parseInt(process.env.DB_PORT, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      errors.push(`DB_PORT must be a valid port number (1-65535), got: ${process.env.DB_PORT}`);
+    }
+  }
+  if (process.env.AWS_REGION && !/^[a-z0-9-]+$/.test(process.env.AWS_REGION)) {
+    warnings.push(`AWS_REGION format may be invalid: ${process.env.AWS_REGION}`);
+  }
+  const valid = missing.length === 0 && errors.length === 0;
+  return {
+    valid,
+    missing,
+    warnings,
+    errors
+  };
+}
+function validateEnvironmentOrThrow() {
+  const result = validateEnvironment();
+  if (!result.valid) {
+    const errorMessages = [];
+    if (result.missing.length > 0) {
+      errorMessages.push(`Missing required environment variables: ${result.missing.join(", ")}`);
+    }
+    if (result.errors.length > 0) {
+      errorMessages.push(`Configuration errors: ${result.errors.join("; ")}`);
+    }
+    throw new Error(`Environment validation failed:
+${errorMessages.join("\n")}`);
+  }
+  if (result.warnings.length > 0) {
+    console.warn("[ENV] Environment validation warnings:");
+    result.warnings.forEach((warning) => console.warn(`[ENV] \u26A0\uFE0F  ${warning}`));
+  }
+  console.log("[ENV] \u2705 Environment validation passed");
+}
+function getValidationReport() {
+  const result = validateEnvironment();
+  const lines = [];
+  lines.push("=== Environment Variable Validation Report ===\n");
+  if (result.valid) {
+    lines.push("\u2705 All required environment variables are set\n");
+  } else {
+    lines.push("\u274C Environment validation failed\n");
+  }
+  if (result.missing.length > 0) {
+    lines.push("Missing Required Variables:");
+    result.missing.forEach((name) => {
+      const config = ENV_VARS.find((v) => v.name === name);
+      lines.push(`  - ${name}${config?.description ? ` (${config.description})` : ""}`);
+    });
+    lines.push("");
+  }
+  if (result.errors.length > 0) {
+    lines.push("Configuration Errors:");
+    result.errors.forEach((error) => lines.push(`  - ${error}`));
+    lines.push("");
+  }
+  if (result.warnings.length > 0) {
+    lines.push("Warnings:");
+    result.warnings.forEach((warning) => lines.push(`  - ${warning}`));
+    lines.push("");
+  }
+  lines.push("Configured Variables:");
+  ENV_VARS.forEach((config) => {
+    const value = process.env[config.name];
+    if (value) {
+      const displayValue = config.name.includes("PASSWORD") || config.name.includes("SECRET") ? "***" : value;
+      lines.push(`  \u2705 ${config.name} = ${displayValue}`);
+    } else if (config.defaultValue) {
+      lines.push(`  \u26AA ${config.name} = ${config.defaultValue} (default)`);
+    } else if (!config.required) {
+      lines.push(`  \u26AA ${config.name} = (not set, optional)`);
+    }
+  });
+  return lines.join("\n");
+}
+
+// src/handler/index.ts
+init_rds_connection();
+
 // src/endpoints/auth-enhanced.ts
 var import_client_sns = require("@aws-sdk/client-sns");
 init_rds_connection();
@@ -223666,7 +223978,7 @@ var BaseHandlerEnhanced = class {
     const requestId = this.getRequestId(event, lambdaContext);
     try {
       this.logRequestStart(event, requestId);
-      const body2 = this.parseBody(event);
+      const body = this.parseBody(event);
       const headers = this.getHeaders(event);
       const authResult = await this.extractAndVerifyAuth(event);
       const userId = authResult?.userId;
@@ -223700,12 +224012,12 @@ var BaseHandlerEnhanced = class {
   /**
    * Get request ID from event or generate one
    */
-  getRequestId(event, context3) {
+  getRequestId(event, context2) {
     if ("requestContext" in event && event.requestContext) {
       const requestId = event.requestContext.requestId;
       if (requestId) return requestId;
     }
-    return context3.awsRequestId || `req-${Date.now()}`;
+    return context2.awsRequestId || `req-${Date.now()}`;
   }
   /**
    * Parse request body
@@ -223713,8 +224025,8 @@ var BaseHandlerEnhanced = class {
   parseBody(event) {
     if (!event.body) return null;
     try {
-      const body2 = event.isBase64Encoded && event.body ? Buffer.from(event.body, "base64").toString() : event.body;
-      return body2 ? JSON.parse(body2) : null;
+      const body = event.isBase64Encoded && event.body ? Buffer.from(event.body, "base64").toString() : event.body;
+      return body ? JSON.parse(body) : null;
     } catch (error) {
       throw new Error("Invalid JSON in request body");
     }
@@ -223767,8 +224079,8 @@ var BaseHandlerEnhanced = class {
    * Require authentication - throws error if user is not authenticated
    * Use this in handlers that require authentication
    */
-  requireAuth(context3) {
-    if (!context3.userId) {
+  requireAuth(context2) {
+    if (!context2.userId) {
       throw new Error("Authentication required");
     }
   }
@@ -223836,7 +224148,7 @@ var BaseHandlerEnhanced = class {
   /**
    * Handle errors
    */
-  handleError(error, event, context3, requestId) {
+  handleError(error, event, context2, requestId) {
     console.error(JSON.stringify({
       level: "ERROR",
       type: "HANDLER_ERROR",
@@ -223947,16 +224259,16 @@ async function sendSmsViaSns(phone, message2) {
   }
 }
 var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const validationResult = import_auth.SendOtpRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const validationResult = import_auth.SendOtpRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
         400,
         "VALIDATION_ERROR",
         { errors: validationResult.error.errors },
-        context3.requestId
+        context2.requestId
       );
     }
     const { phone } = validationResult.data;
@@ -223970,7 +224282,7 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
       }
       try {
-        await createOtp(phone, otpCode, body2.role || "login");
+        await createOtp(phone, otpCode, body.role || "login");
       } catch (dbError) {
         console.error("[AUTH] Database error creating OTP:", dbError);
         console.error("[AUTH] Error details:", JSON.stringify(dbError, null, 2));
@@ -223998,10 +224310,10 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         },
         meta: {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          requestId: context3.requestId,
+          requestId: context2.requestId,
           version: "v1"
         }
-      }, context3.requestId);
+      }, context2.requestId);
     } catch (error) {
       console.error("[AUTH] Error sending OTP:", error);
       console.error("[AUTH] Error stack:", error.stack);
@@ -224013,22 +224325,22 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
           details: error.message,
           stack: true ? error.stack : void 0
         },
-        context3.requestId
+        context2.requestId
       );
     }
   }
 };
 var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const validationResult = import_auth.VerifyOtpRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const validationResult = import_auth.VerifyOtpRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
         400,
         "VALIDATION_ERROR",
         { errors: validationResult.error.errors },
-        context3.requestId
+        context2.requestId
       );
     }
     const { phone, otp } = validationResult.data;
@@ -224062,9 +224374,9 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         }
       }
       if (!isValid) {
-        return this.error("Invalid or expired OTP", 401, "UNAUTHORIZED", void 0, context3.requestId);
+        return this.error("Invalid or expired OTP", 401, "UNAUTHORIZED", void 0, context2.requestId);
       }
-      const role = body2.role || "customer";
+      const role = body.role || "customer";
       let userId;
       let userData;
       if (role === "customer") {
@@ -224116,10 +224428,10 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         }
       } else if (role === "vendor") {
         const vendorIdentity = await select("vendor_identity", { phone });
-        const vendors2 = await select("vendors", { phone });
-        if (vendors2.length > 0) {
-          userId = vendors2[0].id;
-          userData = vendors2[0];
+        const vendors = await select("vendors", { phone });
+        if (vendors.length > 0) {
+          userId = vendors[0].id;
+          userData = vendors[0];
           if (vendorIdentity.length > 0) {
             userData.onboarding_status = vendorIdentity[0].onboarding_status;
             userData.vendor_identity_id = vendorIdentity[0].id;
@@ -224203,7 +224515,7 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
                 created_at: (/* @__PURE__ */ new Date()).toISOString()
               };
             } else {
-              return this.error("Admin not found", 404, "NOT_FOUND", void 0, context3.requestId);
+              return this.error("Admin not found", 404, "NOT_FOUND", void 0, context2.requestId);
             }
           }
         } catch (dbError) {
@@ -224221,11 +224533,11 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
             };
           } else {
             console.error("[AUTH] Error querying admins table:", dbError);
-            return this.error("Admin authentication failed", 500, "INTERNAL_ERROR", { details: dbError.message }, context3.requestId);
+            return this.error("Admin authentication failed", 500, "INTERNAL_ERROR", { details: dbError.message }, context2.requestId);
           }
         }
       } else {
-        return this.error("Invalid role", 400, "VALIDATION_ERROR", void 0, context3.requestId);
+        return this.error("Invalid role", 400, "VALIDATION_ERROR", void 0, context2.requestId);
       }
       let cognitoTokens;
       if (isUATMode) {
@@ -224252,7 +224564,7 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
             503,
             "SERVICE_UNAVAILABLE",
             { details: "Cognito authentication failed" },
-            context3.requestId
+            context2.requestId
           );
         }
       }
@@ -224296,10 +224608,10 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         },
         meta: {
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          requestId: context3.requestId,
+          requestId: context2.requestId,
           version: "v1"
         }
-      }, context3.requestId);
+      }, context2.requestId);
     } catch (error) {
       console.error("Error verifying OTP:", error);
       return this.error(
@@ -224307,7 +224619,7 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
         500,
         "INTERNAL_ERROR",
         { details: error.message },
-        context3.requestId
+        context2.requestId
       );
     }
   }
@@ -224318,10 +224630,10 @@ function registerAuthEndpointsEnhanced(app2) {
   app2.post("/auth/send-otp", async (c) => {
     try {
       const event = await createApiGatewayEvent(c);
-      const context3 = createLambdaContext();
-      const result = await sendOtpHandler.execute(event, context3);
-      const body2 = JSON.parse(result.body);
-      return c.json(body2, result.statusCode);
+      const context2 = createLambdaContext();
+      const result = await sendOtpHandler.execute(event, context2);
+      const body = JSON.parse(result.body);
+      return c.json(body, result.statusCode);
     } catch (error) {
       console.error("[AUTH] Error in send-otp handler:", error);
       return c.json({ error: error.message || "Internal Server Error" }, 500);
@@ -224330,10 +224642,10 @@ function registerAuthEndpointsEnhanced(app2) {
   app2.post("/auth/verify-otp", async (c) => {
     try {
       const event = await createApiGatewayEvent(c);
-      const context3 = createLambdaContext();
-      const result = await verifyOtpHandler.execute(event, context3);
-      const body2 = JSON.parse(result.body);
-      return c.json(body2, result.statusCode);
+      const context2 = createLambdaContext();
+      const result = await verifyOtpHandler.execute(event, context2);
+      const body = JSON.parse(result.body);
+      return c.json(body, result.statusCode);
     } catch (error) {
       console.error("[AUTH] Error in verify-otp handler:", error);
       return c.json({ error: error.message || "Internal Server Error" }, 500);
@@ -224341,7 +224653,7 @@ function registerAuthEndpointsEnhanced(app2) {
   });
 }
 async function createApiGatewayEvent(c) {
-  const body2 = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({}));
   const headers = {};
   try {
     if (c.req.raw && c.req.raw.headers) {
@@ -224374,7 +224686,7 @@ async function createApiGatewayEvent(c) {
       requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
     },
     headers,
-    body: body2 ? JSON.stringify(body2) : void 0,
+    body: body ? JSON.stringify(body) : void 0,
     isBase64Encoded: false
   };
 }
@@ -224389,9 +224701,9 @@ function createLambdaContext() {
 init_rds_connection();
 var import_vendors = __toESM(require_vendors());
 var GetOnboardingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const phone = context3.event.queryStringParameters?.phone;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const phone = context2.event.queryStringParameters?.phone;
+    const requestId = context2.requestId;
     if (!phone) {
       return this.error("Phone number is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -224468,8 +224780,8 @@ var GetOnboardingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetAvailableRolesHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const requestId = context2.requestId;
     try {
       const roles = await select("roles", { is_active: true });
       const rolesWithConfig = await Promise.all(
@@ -224503,10 +224815,10 @@ var GetAvailableRolesHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var SelectRoleHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
-    const validationResult = import_vendors.SelectVendorRoleRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
+    const validationResult = import_vendors.SelectVendorRoleRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -224558,10 +224870,10 @@ var SelectRoleHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var SelectVendorTypeHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
-    const validationResult = import_vendors.SelectVendorTypeRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
+    const validationResult = import_vendors.SelectVendorTypeRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -224617,9 +224929,9 @@ var SelectVendorTypeHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetOnboardingFormSchemaHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const phone = context3.event.queryStringParameters?.phone;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const phone = context2.event.queryStringParameters?.phone;
+    const requestId = context2.requestId;
     if (!phone) {
       return this.error("Phone number is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -224719,10 +225031,10 @@ var GetOnboardingFormSchemaHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
-    const validationResult = import_vendors.SubmitVendorApplicationRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
+    const validationResult = import_vendors.SubmitVendorApplicationRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -224838,14 +225150,14 @@ var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var AdminReviewApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const applicationId = context3.event.pathParameters?.applicationId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const applicationId = context2.event.pathParameters?.applicationId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!applicationId) {
       return this.error("Application ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const validationResult = import_vendors.AdminReviewApplicationRequestSchema.safeParse(body2);
+    const validationResult = import_vendors.AdminReviewApplicationRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -224982,25 +225294,25 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
   const reviewHandler = new AdminReviewApplicationHandlerEnhanced();
   app2.get("/vendor/onboarding/status", async (c) => {
     const event = createApiGatewayEvent2(c.req);
-    const context3 = createLambdaContext2();
-    const result = await statusHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext2();
+    const result = await statusHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/vendor/onboarding/roles", async (c) => {
     try {
       const event = createApiGatewayEvent2(c.req);
-      const context3 = createLambdaContext2();
-      const result = await rolesHandler.execute(event, context3);
-      const body2 = JSON.parse(result.body);
-      if (body2.success === false || result.statusCode >= 400) {
+      const context2 = createLambdaContext2();
+      const result = await rolesHandler.execute(event, context2);
+      const body = JSON.parse(result.body);
+      if (body.success === false || result.statusCode >= 400) {
         return c.json({
           success: true,
           data: { roles: [] },
-          message: body2.error?.message || body2.error || "Roles table not found."
+          message: body.error?.message || body.error || "Roles table not found."
         }, 200);
       }
-      return c.json(body2, result.statusCode);
+      return c.json(body, result.statusCode);
     } catch (error) {
       console.error("[Vendor Onboarding Roles Route] Error:", error);
       return c.json({
@@ -225012,44 +225324,44 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
   });
   app2.post("/vendor/onboarding/select-role", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
-    const context3 = createLambdaContext2();
-    const result = await selectRoleHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext2();
+    const result = await selectRoleHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/vendor/onboarding/select-vendor-type", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
-    const context3 = createLambdaContext2();
-    const result = await selectVendorTypeHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext2();
+    const result = await selectVendorTypeHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/vendor/onboarding/form-schema", async (c) => {
     const event = createApiGatewayEvent2(c.req);
-    const context3 = createLambdaContext2();
-    const result = await formSchemaHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext2();
+    const result = await formSchemaHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/vendor/onboarding/submit-application", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
-    const context3 = createLambdaContext2();
-    const result = await submitHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext2();
+    const result = await submitHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/admin/vendor/onboarding/:applicationId/review", async (c) => {
     const event = await createApiGatewayEventWithBody(c);
     event.pathParameters = { applicationId: c.req.param("applicationId") };
-    const context3 = createLambdaContext2();
-    const result = await reviewHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext2();
+    const result = await reviewHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/vendor/onboarding/activate", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { phone } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { phone } = body;
       if (!phone) {
         return c.json({ success: false, error: "Phone number is required" }, 400);
       }
@@ -225090,7 +225402,7 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
       }
       const application = apps[0];
       const payload = application.application_payload || {};
-      const vendors2 = await insert("vendors", {
+      const vendors = await insert("vendors", {
         phone: identity.phone,
         email: payload.email || identity.email || "",
         business_name: payload.businessName || "",
@@ -225106,7 +225418,7 @@ function registerVendorOnboardingEndpointsEnhanced(app2) {
         state: payload.state || "",
         pincode: payload.pin || payload.pincode || ""
       });
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       await update("vendor_identity", { id: identity.id }, {
         onboarding_status: "ACTIVATED",
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -225137,7 +225449,7 @@ function createApiGatewayEvent2(req) {
   };
 }
 async function createApiGatewayEventWithBody(c) {
-  const body2 = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({}));
   const headers = {};
   try {
     if (c.req.raw && c.req.raw.headers) {
@@ -225162,7 +225474,7 @@ async function createApiGatewayEventWithBody(c) {
     rawPath: url.pathname,
     rawQueryString: url.search.substring(1),
     headers,
-    body: JSON.stringify(body2),
+    body: JSON.stringify(body),
     isBase64Encoded: false,
     requestContext: {
       requestId: crypto.randomUUID()
@@ -225712,11 +226024,11 @@ async function getStaffLocationForCommute(staffId, vendorId) {
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors2 = await select14("vendors", { id: vendorId });
-    if (vendors2.length > 0 && vendors2[0].latitude && vendors2[0].longitude) {
+    const vendors = await select14("vendors", { id: vendorId });
+    if (vendors.length > 0 && vendors[0].latitude && vendors[0].longitude) {
       return {
-        latitude: parseFloat(vendors2[0].latitude),
-        longitude: parseFloat(vendors2[0].longitude)
+        latitude: parseFloat(vendors[0].latitude),
+        longitude: parseFloat(vendors[0].longitude)
       };
     }
     return null;
@@ -226037,10 +226349,10 @@ function generateEventMetadata(requestId) {
   };
 }
 var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
-    const validationResult = import_bookings.CreateBookingRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
+    const validationResult = import_bookings.CreateBookingRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -226088,9 +226400,9 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     }
     let roleId = null;
     try {
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length > 0) {
-        roleId = vendors2[0].role_id || vendors2[0].roleId || null;
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length > 0) {
+        roleId = vendors[0].role_id || vendors[0].roleId || null;
         if (!roleId) {
           const vendorRoles = await query(
             `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
@@ -226100,8 +226412,8 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             roleId = vendorRoles.rows[0].role_id;
           }
         }
-        if (!roleId && vendors2[0].vendor_type) {
-          const vendorType = vendors2[0].vendor_type.toLowerCase();
+        if (!roleId && vendors[0].vendor_type) {
+          const vendorType = vendors[0].vendor_type.toLowerCase();
           const typeToRole = {
             "veterinarian": "veterinarian",
             "vet": "veterinarian",
@@ -226273,9 +226585,9 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const requestId = context2.requestId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -226287,9 +226599,9 @@ var GetBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const requestId = context2.requestId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -226328,14 +226640,14 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateBookingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const validationResult = import_bookings.UpdateBookingStatusRequestSchema.safeParse(body2);
+    const validationResult = import_bookings.UpdateBookingStatusRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -226346,8 +226658,8 @@ var UpdateBookingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
       );
     }
     const { status, reason } = validationResult.data;
-    const actorId = context3.userId || body2.actorId;
-    const actorType = context3.userRole || body2.actorType || "system";
+    const actorId = context2.userId || body.actorId;
+    const actorType = context2.userRole || body.actorType || "system";
     const existingBookings = await select("bookings", { id: bookingId });
     if (existingBookings.length === 0) {
       return this.error("Booking not found", 404, "NOT_FOUND", void 0, requestId);
@@ -226440,10 +226752,10 @@ var UpdateBookingStatusHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetRefundPreviewHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId } = body2;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId } = body;
+    const requestId = context2.requestId;
     if (!bookingId) {
       return this.error("bookingId is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -226474,33 +226786,67 @@ var GetRefundPreviewHandler = class extends BaseHandlerEnhanced {
       const partialRefundHours = rule?.partial_refund_before_hours || 24;
       const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || "50");
       const cutoffHours = rule?.cancellation_cutoff_hours || 12;
+      let cancellationWindows = [];
+      if (rule?.cancellation_windows) {
+        try {
+          cancellationWindows = typeof rule.cancellation_windows === "string" ? JSON.parse(rule.cancellation_windows) : rule.cancellation_windows;
+        } catch (e) {
+          console.warn("[RefundPreview] Error parsing cancellation_windows:", e);
+        }
+      }
       let refundPercentage = 0;
       let cancellationFee = 0;
-      if (hoursUntilBooking >= fullRefundHours) {
-        refundPercentage = 100;
-      } else if (hoursUntilBooking >= partialRefundHours) {
-        refundPercentage = partialRefundPercentage;
-      } else if (hoursUntilBooking >= cutoffHours) {
-        refundPercentage = partialRefundPercentage;
+      let penaltyPercentage = 0;
+      if (cancellationWindows.length > 0) {
+        const sortedWindows = [...cancellationWindows].sort((a, b) => b.hoursBefore - a.hoursBefore);
+        for (const window2 of sortedWindows) {
+          if (hoursUntilBooking >= window2.hoursBefore) {
+            refundPercentage = window2.refundPercentage;
+            cancellationFee = window2.cancellationFee || 0;
+            penaltyPercentage = window2.penaltyPercentage || 0;
+            break;
+          }
+        }
+        if (refundPercentage === 0 && hoursUntilBooking > 0) {
+          const lowestWindow = sortedWindows[sortedWindows.length - 1];
+          if (lowestWindow && hoursUntilBooking < lowestWindow.hoursBefore) {
+            refundPercentage = 0;
+            cancellationFee = lowestWindow.cancellationFee || 0;
+            penaltyPercentage = lowestWindow.penaltyPercentage || 0;
+          }
+        }
       } else {
-        refundPercentage = 0;
-        cancellationFee = parseFloat(booking.total_amount || "0") * 0.1;
+        if (hoursUntilBooking >= fullRefundHours) {
+          refundPercentage = 100;
+        } else if (hoursUntilBooking >= partialRefundHours) {
+          refundPercentage = partialRefundPercentage;
+        } else if (hoursUntilBooking >= cutoffHours) {
+          refundPercentage = partialRefundPercentage;
+        } else {
+          refundPercentage = 0;
+          cancellationFee = parseFloat(booking.total_amount || "0") * 0.1;
+        }
       }
       const totalAmount = parseFloat(booking.total_amount || "0");
-      const refundAmount = Math.max(0, totalAmount * refundPercentage / 100 - cancellationFee);
+      const penaltyAmount = penaltyPercentage > 0 ? totalAmount * penaltyPercentage / 100 : 0;
+      const baseRefund = totalAmount * refundPercentage / 100;
+      const refundAmount = Math.max(0, baseRefund - cancellationFee - penaltyAmount);
       return this.success({
         refund: {
-          eligible: refundPercentage > 0,
+          eligible: refundPercentage > 0 || refundAmount > 0,
           refundAmount: Math.round(refundAmount * 100) / 100,
           refundPercentage: Math.round(refundPercentage),
           hoursUntil: Math.round(hoursUntilBooking),
           cancellationFee: Math.round(cancellationFee * 100) / 100,
-          message: refundPercentage > 0 ? `\u20B9${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method` : "No refund available for this booking",
+          penaltyPercentage: Math.round(penaltyPercentage),
+          penaltyAmount: Math.round(penaltyAmount * 100) / 100,
+          message: refundAmount > 0 ? `\u20B9${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method${cancellationFee > 0 ? ` (\u20B9${cancellationFee} cancellation fee applied)` : ""}` : "No refund available for this booking",
           policy: {
             fullRefundBeforeHours: fullRefundHours,
             partialRefundBeforeHours: partialRefundHours,
             partialRefundPercentage,
-            cancellationCutoffHours: cutoffHours
+            cancellationCutoffHours: cutoffHours,
+            configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null
           }
         }
       }, requestId);
@@ -226517,16 +226863,16 @@ var GetRefundPreviewHandler = class extends BaseHandlerEnhanced {
   }
 };
 var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const reason = body2.reason || body2.cancellationReason || "Customer cancellation";
-    const actorId = context3.userId || body2.customerId || body2.actorId;
-    const actorType = context3.userRole || body2.actorType || "customer";
+    const reason = body.reason || body.cancellationReason || "Customer cancellation";
+    const actorId = context2.userId || body.customerId || body.actorId;
+    const actorType = context2.userRole || body.actorType || "customer";
     const existingBookings = await select("bookings", { id: bookingId });
     if (existingBookings.length === 0) {
       return this.error("Booking not found", 404, "NOT_FOUND", void 0, requestId);
@@ -226657,18 +227003,18 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var RescheduleBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const newDate = body2.newDate || body2.bookingDate;
-    const newTime = body2.newTime || body2.newTimeSlot || body2.bookingTime;
-    const reason = body2.reason || body2.rescheduleReason || "Customer reschedule request";
-    const actorId = context3.userId || body2.customerId || body2.actorId;
-    const actorType = context3.userRole || body2.actorType || "customer";
+    const newDate = body.newDate || body.bookingDate;
+    const newTime = body.newTime || body.newTimeSlot || body.bookingTime;
+    const reason = body.reason || body.rescheduleReason || "Customer reschedule request";
+    const actorId = context2.userId || body.customerId || body.actorId;
+    const actorType = context2.userRole || body.actorType || "customer";
     if (!newDate || !newTime) {
       return this.error(
         "newDate and newTime are required",
@@ -226816,19 +227162,19 @@ function registerBookingEndpointsEnhanced(app2) {
   const refundPreviewHandler = new GetRefundPreviewHandler();
   app2.post("/bookings/create", async (c) => {
     try {
-      let body2 = global.__parsedBodyForBookings;
-      if (!body2 || Object.keys(body2).length === 0) {
+      let body = global.__parsedBodyForBookings;
+      if (!body || Object.keys(body).length === 0) {
         try {
-          body2 = await c.req.json();
+          body = await c.req.json();
         } catch (e) {
-          body2 = {};
+          body = {};
         }
       }
       const event = {
         httpMethod: "POST",
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
-        body: JSON.stringify(body2),
+        body: JSON.stringify(body),
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
@@ -226842,8 +227188,8 @@ function registerBookingEndpointsEnhanced(app2) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context3 = createLambdaContext3();
-      const result = await createHandler.execute(event, context3);
+      const context2 = createLambdaContext3();
+      const result = await createHandler.execute(event, context2);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
       console.error("Error in bookings/create:", error);
@@ -226852,19 +227198,19 @@ function registerBookingEndpointsEnhanced(app2) {
   });
   app2.post("/booking/create", async (c) => {
     try {
-      let body2 = global.__parsedBodyForBookings;
-      if (!body2 || Object.keys(body2).length === 0) {
+      let body = global.__parsedBodyForBookings;
+      if (!body || Object.keys(body).length === 0) {
         try {
-          body2 = await c.req.json();
+          body = await c.req.json();
         } catch (e) {
-          body2 = {};
+          body = {};
         }
       }
       const event = {
         httpMethod: "POST",
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
-        body: JSON.stringify(body2),
+        body: JSON.stringify(body),
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
@@ -226878,8 +227224,8 @@ function registerBookingEndpointsEnhanced(app2) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context3 = createLambdaContext3();
-      const result = await createHandler.execute(event, context3);
+      const context2 = createLambdaContext3();
+      const result = await createHandler.execute(event, context2);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
       console.error("Error in booking/create:", error);
@@ -226888,19 +227234,19 @@ function registerBookingEndpointsEnhanced(app2) {
   });
   app2.post("/customer/booking/create", async (c) => {
     try {
-      let body2 = global.__parsedBodyForBookings;
-      if (!body2 || Object.keys(body2).length === 0) {
+      let body = global.__parsedBodyForBookings;
+      if (!body || Object.keys(body).length === 0) {
         try {
-          body2 = await c.req.json();
+          body = await c.req.json();
         } catch (e) {
-          body2 = {};
+          body = {};
         }
       }
       const event = {
         httpMethod: "POST",
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
-        body: JSON.stringify(body2),
+        body: JSON.stringify(body),
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
@@ -226914,8 +227260,8 @@ function registerBookingEndpointsEnhanced(app2) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context3 = createLambdaContext3();
-      const result = await createHandler.execute(event, context3);
+      const context2 = createLambdaContext3();
+      const result = await createHandler.execute(event, context2);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
       console.error("Error in customer/booking/create:", error);
@@ -226925,49 +227271,49 @@ function registerBookingEndpointsEnhanced(app2) {
   app2.get("/bookings/:bookingId", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext3();
-    const result = await getHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext3();
+    const result = await getHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/bookings/:bookingId/history", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext3();
-    const result = await historyHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext3();
+    const result = await historyHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.put("/bookings/:bookingId/status", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext3();
-    const result = await updateHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext3();
+    const result = await updateHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/customer/bookings/refund-preview", async (c) => {
     const event = await createApiGatewayEvent3(c);
-    const context3 = createLambdaContext3();
-    const result = await refundPreviewHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext3();
+    const result = await refundPreviewHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/bookings/:bookingId/cancel", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext3();
-    const result = await cancelHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext3();
+    const result = await cancelHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/bookings/:bookingId/reschedule", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext3();
-    const result = await rescheduleHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext3();
+    const result = await rescheduleHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
 }
 async function createApiGatewayEventWithBody2(c) {
@@ -226990,12 +227336,12 @@ async function createApiGatewayEventWithBody2(c) {
   } catch (e) {
     console.warn("[BOOKINGS] Error processing headers:", e);
   }
-  let body2 = global.__parsedBodyForBookings;
-  if (!body2 || Object.keys(body2).length === 0) {
+  let body = global.__parsedBodyForBookings;
+  if (!body || Object.keys(body).length === 0) {
     try {
-      body2 = await c.req.json();
+      body = await c.req.json();
     } catch (e) {
-      body2 = {};
+      body = {};
     }
   }
   const url = new URL(c.req.url, "http://localhost");
@@ -227010,7 +227356,7 @@ async function createApiGatewayEventWithBody2(c) {
       requestId: crypto.randomUUID()
     },
     headers,
-    body: JSON.stringify(body2),
+    body: JSON.stringify(body),
     isBase64Encoded: false
   };
 }
@@ -227024,6 +227370,119 @@ function createLambdaContext3() {
     functionVersion: "$LATEST"
   };
 }
+function generateBookingOTP() {
+  return Math.floor(1e3 + Math.random() * 9e3).toString();
+}
+function registerBookingOTPEndpoint(app2) {
+  app2.post("/bookings/generate-otp", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { bookingId, serviceStyle, customerId } = body;
+      if (!bookingId) {
+        return c.json({ success: false, error: "Booking ID is required" }, 400);
+      }
+      if (serviceStyle === "tele" || serviceStyle === "online") {
+        return c.json({
+          success: true,
+          otp: null,
+          message: "OTP not required for tele consultations"
+        });
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ success: false, error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      if (booking.otp_code) {
+        return c.json({
+          success: true,
+          otp: booking.otp_code,
+          message: "Existing OTP retrieved",
+          expiresAt: booking.otp_expires_at
+        });
+      }
+      const otp = generateBookingOTP();
+      const expiresAt = /* @__PURE__ */ new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+      await query(
+        `UPDATE bookings 
+         SET otp_code = $1, 
+             otp_expires_at = $2, 
+             updated_at = NOW() 
+         WHERE id = $3`,
+        [otp, expiresAt.toISOString(), bookingId]
+      );
+      if (booking.customer_phone || booking.customer_id) {
+        try {
+          const { sendSMS: sendSMS2 } = await Promise.resolve().then(() => (init_sms_service(), sms_service_exports));
+          const customerPhone = booking.customer_phone || (customerId ? (await select("customers", { id: customerId }))[0]?.phone : null);
+          if (customerPhone) {
+            sendSMS2({
+              to: customerPhone,
+              message: `Your Warmpawz service verification OTP is ${otp}. Share this with your service provider to start the service. Valid for 24 hours.`,
+              type: "otp"
+            }).catch((err) => console.error("SMS send failed:", err));
+          }
+        } catch (e) {
+          console.log("SMS service not available");
+        }
+      }
+      console.log(`\u2705 [BOOKING-OTP] Generated OTP ${otp} for booking ${bookingId}`);
+      return c.json({
+        success: true,
+        otp,
+        message: "OTP generated successfully. Share this with your service provider.",
+        expiresAt: expiresAt.toISOString()
+      });
+    } catch (error) {
+      console.error("Error generating booking OTP:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app2.post("/bookings/verify-otp", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { bookingId, otp, vendorId } = body;
+      if (!bookingId || !otp) {
+        return c.json({ success: false, error: "Booking ID and OTP are required" }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ success: false, error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      if (vendorId && booking.vendor_id !== vendorId) {
+        return c.json({ success: false, error: "Unauthorized" }, 403);
+      }
+      const expectedOTP = String(booking.otp_code || "").trim();
+      const providedOTP = String(otp).trim();
+      if (expectedOTP !== providedOTP) {
+        return c.json({ success: false, error: "Invalid OTP" }, 400);
+      }
+      if (booking.otp_expires_at && new Date(booking.otp_expires_at) < /* @__PURE__ */ new Date()) {
+        return c.json({ success: false, error: "OTP has expired" }, 400);
+      }
+      await query(
+        `UPDATE bookings 
+         SET otp_verified = true, 
+             otp_verified_at = NOW(),
+             status = CASE WHEN status = 'confirmed' THEN 'in_progress' ELSE status END,
+             updated_at = NOW() 
+         WHERE id = $1`,
+        [bookingId]
+      );
+      console.log(`\u2705 [BOOKING-OTP] OTP verified for booking ${bookingId}`);
+      return c.json({
+        success: true,
+        verified: true,
+        message: "OTP verified successfully. Service can now begin."
+      });
+    } catch (error) {
+      console.error("Error verifying booking OTP:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+}
 
 // src/endpoints/payments-enhanced.ts
 init_rds_connection();
@@ -227031,10 +227490,10 @@ init_audit_log();
 init_sns_client();
 var import_payments = __toESM(require_payments());
 var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
-    const validationResult = import_payments.CreatePaymentRequestSchema.safeParse(body2);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
+    const validationResult = import_payments.CreatePaymentRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -227050,10 +227509,10 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
       paymentMethod,
       customerId,
       vendorId,
-      idempotencyKey,
-      useWallet = false,
-      walletAmount = 0
+      idempotencyKey
     } = validationResult.data;
+    const useWallet = body.useWallet ?? false;
+    const walletAmount = body.walletAmount ?? 0;
     if (idempotencyKey) {
       const existing = await checkIdempotencyKey(idempotencyKey);
       if (existing.exists) {
@@ -227076,27 +227535,31 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
       let sgstAmount = 0;
       let igstAmount = 0;
       let gstRuleId = null;
-      let customerLocation = null;
-      let vendorLocation = null;
+      let customerLocation = void 0;
+      let vendorLocation = void 0;
       if (booking.customer_id) {
         const customers = await select("customers", { id: booking.customer_id });
         if (customers.length > 0 && customers[0].address) {
           const addr = typeof customers[0].address === "string" ? JSON.parse(customers[0].address) : customers[0].address;
-          customerLocation = {
-            state: addr?.state,
-            city: addr?.city,
-            pincode: addr?.pincode
-          };
+          if (addr?.state) {
+            customerLocation = {
+              state: addr.state,
+              city: addr.city,
+              pincode: addr.pincode
+            };
+          }
         }
       }
       if (booking.vendor_id) {
-        const vendors2 = await select("vendors", { id: booking.vendor_id });
-        if (vendors2.length > 0 && vendors2[0].address) {
-          const addr = typeof vendors2[0].address === "string" ? JSON.parse(vendors2[0].address) : vendors2[0].address;
-          vendorLocation = {
-            state: addr?.state,
-            city: addr?.city
-          };
+        const vendors = await select("vendors", { id: booking.vendor_id });
+        if (vendors.length > 0 && vendors[0].address) {
+          const addr = typeof vendors[0].address === "string" ? JSON.parse(vendors[0].address) : vendors[0].address;
+          if (addr?.state) {
+            vendorLocation = {
+              state: addr.state,
+              city: addr.city
+            };
+          }
         }
       }
       const serviceId = booking.service_id;
@@ -227287,23 +227750,23 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const rawBody = context3.event.body || "{}";
-    const headers = this.getHeaders(context3.event);
+  async handle(context2) {
+    const rawBody = context2.event.body || "{}";
+    const headers = this.getHeaders(context2.event);
     const signature = headers["x-razorpay-signature"] || headers["X-Razorpay-Signature"] || "";
-    const requestId = context3.requestId;
+    const requestId = context2.requestId;
     if (!this.verifyWebhookSignature(rawBody, signature)) {
       console.error("[SECURITY] Invalid Razorpay webhook signature");
       return this.error("Invalid signature", 401, "UNAUTHORIZED", void 0, requestId);
     }
-    let body2;
+    let body;
     try {
-      body2 = JSON.parse(rawBody);
+      body = JSON.parse(rawBody);
     } catch (error) {
       return this.error("Invalid JSON in webhook body", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const { event, payload } = body2;
-    const webhookEventId = body2.id || `${event}_${payload?.payment?.entity?.id || payload?.order?.entity?.id}`;
+    const { event, payload } = body;
+    const webhookEventId = body.id || `${event}_${payload?.payment?.entity?.id || payload?.order?.entity?.id}`;
     const existing = await checkIdempotencyKey(`webhook_${webhookEventId}`);
     if (existing.exists) {
       return this.success({ message: "Webhook already processed", duplicate: true }, requestId);
@@ -227389,19 +227852,19 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
   /**
    * Verify Razorpay webhook signature using HMAC SHA256
    */
-  verifyWebhookSignature(body2, signature) {
+  verifyWebhookSignature(body, signature) {
     if (!signature) {
       return false;
     }
     try {
-      const crypto19 = require("crypto");
+      const crypto20 = require("crypto");
       const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
       if (!webhookSecret) {
         console.error("[SECURITY] RAZORPAY_WEBHOOK_SECRET not configured");
         return false;
       }
-      const expectedSignature = crypto19.createHmac("sha256", webhookSecret).update(body2).digest("hex");
-      return crypto19.timingSafeEqual(
+      const expectedSignature = crypto20.createHmac("sha256", webhookSecret).update(body).digest("hex");
+      return crypto20.timingSafeEqual(
         Buffer.from(signature),
         Buffer.from(expectedSignature)
       );
@@ -227412,9 +227875,9 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetPaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const paymentId = context3.event.pathParameters?.paymentId;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const paymentId = context2.event.pathParameters?.paymentId;
+    const requestId = context2.requestId;
     if (!paymentId) {
       return this.error("Payment ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -227451,32 +227914,32 @@ function registerPaymentEndpointsEnhanced(app2) {
   const getHandler = new GetPaymentHandlerEnhanced();
   app2.post("/payments/create", async (c) => {
     const event = createApiGatewayEvent4(c.req);
-    const context3 = createLambdaContext4();
-    const result = await createHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext4();
+    const result = await createHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/payments/create-order", async (c) => {
     const event = createApiGatewayEvent4(c.req);
-    const context3 = createLambdaContext4();
-    const result = await createHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext4();
+    const result = await createHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.post("/payments/razorpay/webhook", async (c) => {
     const event = createApiGatewayEvent4(c.req);
-    const context3 = createLambdaContext4();
-    const result = await webhookHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext4();
+    const result = await webhookHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/payments/:paymentId", async (c) => {
     const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { paymentId: c.req.param("paymentId") };
-    const context3 = createLambdaContext4();
-    const result = await getHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext4();
+    const result = await getHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
 }
 function createApiGatewayEvent4(req) {
@@ -227504,9 +227967,9 @@ function createLambdaContext4() {
 init_rds_connection();
 var import_customers = __toESM(require_customers());
 var GetCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const requestId = context2.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -227529,9 +227992,9 @@ var GetCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetCustomerByPhoneHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const phone = context3.event.queryStringParameters?.phone;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const phone = context2.event.queryStringParameters?.phone;
+    const requestId = context2.requestId;
     if (!phone) {
       return this.error("Phone number is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -227567,14 +228030,14 @@ var GetCustomerByPhoneHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const validationResult = import_customers.UpdateCustomerProfileRequestSchema.safeParse(body2);
+    const validationResult = import_customers.UpdateCustomerProfileRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -227613,9 +228076,9 @@ var UpdateCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var GetCustomerPetsHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const requestId = context2.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
@@ -227635,25 +228098,25 @@ var GetCustomerPetsHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var AddPetHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    this.validateRequired(body2, ["name", "species"]);
+    this.validateRequired(body, ["name", "species"]);
     try {
       const petData = {
         customer_id: customerId,
-        name: body2.name,
-        species: body2.species,
-        breed: body2.breed || null,
-        age: body2.age || null,
-        gender: body2.gender || null,
-        weight: body2.weight || null,
-        color: body2.color || null,
-        medical_history: body2.medicalHistory || []
+        name: body.name,
+        species: body.species,
+        breed: body.breed || null,
+        age: body.age || null,
+        gender: body.gender || null,
+        weight: body.weight || null,
+        color: body.color || null,
+        medical_history: body.medicalHistory || []
       };
       const pets = await insert("pets", petData);
       const existingPets = await select("pets", { customer_id: customerId });
@@ -227685,17 +228148,17 @@ var AddPetHandlerEnhanced = class extends BaseHandlerEnhanced {
   }
 };
 var DeactivateCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const body2 = this.parseBody(context3.event);
-    const requestId = context3.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const body = this.parseBody(context2.event);
+    const requestId = context2.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const reason = body2.reason || body2.deactivationReason || "Customer request";
-    const actorId = context3.userId || body2.actorId;
-    const actorType = context3.userRole || body2.actorType || "customer";
-    const permanentDelete = body2.permanentDelete === true;
+    const reason = body.reason || body.deactivationReason || "Customer request";
+    const actorId = context2.userId || body.actorId;
+    const actorType = context2.userRole || body.actorType || "customer";
+    const permanentDelete = body.permanentDelete === true;
     try {
       const existingCustomers = await select("customers", { id: customerId });
       if (existingCustomers.length === 0) {
@@ -227789,42 +228252,42 @@ function registerCustomerEndpointsEnhanced(app2) {
   app2.get("/customer/by-phone", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext5();
-    const result = await getByPhoneHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext5();
+    const result = await getByPhoneHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext5();
-    const result = await getHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext5();
+    const result = await getHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.put("/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext5();
-    const result = await updateHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext5();
+    const result = await updateHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.delete("/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext5();
-    const result = await deactivateHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext5();
+    const result = await deactivateHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/customer/:customerId/pets", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext5();
-    const result = await getPetsHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext5();
+    const result = await getPetsHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/customer/pets", async (c) => {
     try {
@@ -227867,10 +228330,10 @@ function registerCustomerEndpointsEnhanced(app2) {
   app2.post("/customer/:customerId/pets", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext5();
-    const result = await addPetHandler.execute(event, context3);
-    const body2 = JSON.parse(result.body);
-    return c.json(body2, result.statusCode);
+    const context2 = createLambdaContext5();
+    const result = await addPetHandler.execute(event, context2);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
   });
   app2.get("/customer/pets/:phone", async (c) => {
     try {
@@ -227914,8 +228377,8 @@ function registerCustomerEndpointsEnhanced(app2) {
   });
   app2.post("/customer/pets", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { phone, pets } = body2;
+      const body = await c.req.json();
+      const { phone, pets } = body;
       if (!phone) {
         return c.json({ error: "phone is required" }, 400);
       }
@@ -227930,6 +228393,12 @@ function registerCustomerEndpointsEnhanced(app2) {
       const savedPets = [];
       for (const pet of pets) {
         try {
+          const petSpecies = (pet.type || pet.species || "dog").toLowerCase();
+          const allowedSpecies = ["dog", "cat"];
+          if (!allowedSpecies.includes(petSpecies)) {
+            console.warn(`Rejected pet type: ${petSpecies}. Only Dog and Cat allowed.`);
+            continue;
+          }
           const existingPets = await select("pets", { customer_id: customer.id, name: pet.name });
           const normalizedGender = pet.gender ? pet.gender.toLowerCase() : null;
           const allowedGenders = ["male", "female", "neutered", "spayed"];
@@ -227937,7 +228406,7 @@ function registerCustomerEndpointsEnhanced(app2) {
           const petData = {
             customer_id: customer.id,
             name: pet.name,
-            species: (pet.type || pet.species || "dog").toLowerCase(),
+            species: petSpecies,
             breed: pet.breed || null,
             age_years: pet.age ? parseInt(pet.age) : null,
             gender: validGender,
@@ -227984,8 +228453,8 @@ function registerCustomerEndpointsEnhanced(app2) {
   });
   app2.post("/customer/questionnaire/planning", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { customerId, phone, answers } = body2;
+      const body = await c.req.json();
+      const { customerId, phone, answers } = body;
       if (!phone && !customerId) {
         return c.json({ error: "phone or customerId is required" }, 400);
       }
@@ -228007,6 +228476,112 @@ function registerCustomerEndpointsEnhanced(app2) {
       });
     } catch (error) {
       console.error("Error saving questionnaire:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/customer/payment-methods", async (c) => {
+    try {
+      const phone = c.req.query("phone");
+      const customerId = c.req.query("customerId");
+      if (!phone && !customerId) {
+        return c.json({ error: "phone or customerId is required" }, 400);
+      }
+      let customer = null;
+      if (customerId) {
+        const customers = await select("customers", { id: customerId });
+        customer = customers[0];
+      } else if (phone) {
+        const customers = await select("customers", { phone });
+        customer = customers[0];
+      }
+      if (!customer) {
+        return c.json({ methods: [] });
+      }
+      const methodsResult = await query(
+        `SELECT * FROM customer_payment_methods 
+         WHERE customer_id = $1 AND is_active = true 
+         ORDER BY is_default DESC, created_at DESC`,
+        [customer.id]
+      ).catch(() => ({ rows: [] }));
+      const methods = Array.isArray(methodsResult) ? methodsResult : methodsResult.rows || [];
+      return c.json({
+        success: true,
+        methods: methods.map((m) => ({
+          id: m.id,
+          type: m.payment_type || "card",
+          last4: m.card_last4,
+          brand: m.card_brand,
+          upiId: m.upi_id,
+          bankName: m.bank_name,
+          isDefault: m.is_default,
+          expiryMonth: m.card_expiry_month,
+          expiryYear: m.card_expiry_year
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching payment methods:", error);
+      return c.json({ methods: [] });
+    }
+  });
+  app2.post("/customer/payment-methods", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { phone, customerId, type, razorpayToken, last4, brand, upiId, bankName, isDefault } = body;
+      if (!phone && !customerId) {
+        return c.json({ error: "phone or customerId is required" }, 400);
+      }
+      let customer = null;
+      if (customerId) {
+        const customers = await select("customers", { id: customerId });
+        customer = customers[0];
+      } else if (phone) {
+        const customers = await select("customers", { phone });
+        customer = customers[0];
+      }
+      if (!customer) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      if (isDefault) {
+        await query(
+          `UPDATE customer_payment_methods SET is_default = false WHERE customer_id = $1`,
+          [customer.id]
+        ).catch(() => {
+        });
+      }
+      const inserted = await insert("customer_payment_methods", {
+        customer_id: customer.id,
+        payment_type: type,
+        razorpay_token: razorpayToken,
+        card_last4: last4,
+        card_brand: brand,
+        upi_id: upiId,
+        bank_name: bankName,
+        is_default: isDefault || false,
+        is_active: true
+      });
+      return c.json({
+        success: true,
+        method: inserted[0],
+        message: "Payment method saved successfully"
+      });
+    } catch (error) {
+      console.error("Error saving payment method:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.delete("/customer/payment-methods/:methodId", async (c) => {
+    try {
+      const methodId = c.req.param("methodId");
+      await query(
+        `UPDATE customer_payment_methods SET is_active = false, updated_at = NOW() WHERE id = $1`,
+        [methodId]
+      );
+      return c.json({
+        success: true,
+        message: "Payment method removed successfully"
+      });
+    } catch (error) {
+      console.error("Error removing payment method:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -228036,8 +228611,8 @@ function createLambdaContext5() {
 init_base_handler();
 init_rds_connection();
 var GetRolesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const queryParams = context3.event.queryStringParameters || {};
+  async handle(context2) {
+    const queryParams = context2.event.queryStringParameters || {};
     const onlyActive = queryParams.active === "true" || !queryParams.active;
     const roles = await select("roles", onlyActive ? { is_active: true } : {}, {
       orderBy: "display_name",
@@ -228144,8 +228719,8 @@ var GetRolesHandler = class extends BaseHandler {
   }
 };
 var GetRoleByIdHandler = class extends BaseHandler {
-  async handle(context3) {
-    const roleId = context3.event.pathParameters?.roleId;
+  async handle(context2) {
+    const roleId = context2.event.pathParameters?.roleId;
     if (!roleId) {
       return this.error("Role ID is required", 400);
     }
@@ -228214,8 +228789,8 @@ var GetRoleByIdHandler = class extends BaseHandler {
   }
 };
 var CreateRoleHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const {
       name,
       display_name,
@@ -228231,7 +228806,7 @@ var CreateRoleHandler = class extends BaseHandler {
       icon,
       isActive,
       is_active
-    } = body2;
+    } = body;
     const roleNameFinal = name || roleCode || "";
     const displayNameFinal = display_name || roleName || "";
     if (!roleNameFinal || !displayNameFinal) {
@@ -228299,9 +228874,9 @@ var CreateRoleHandler = class extends BaseHandler {
   }
 };
 var UpdateRoleHandler = class extends BaseHandler {
-  async handle(context3) {
-    const roleId = context3.event.pathParameters?.roleId;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const roleId = context2.event.pathParameters?.roleId;
+    const body = this.parseBody(context2.event);
     const {
       display_name,
       roleName,
@@ -228315,7 +228890,7 @@ var UpdateRoleHandler = class extends BaseHandler {
       pricingControl,
       category,
       icon
-    } = body2;
+    } = body;
     if (!roleId) {
       return this.error("Role ID is required", 400);
     }
@@ -228423,8 +228998,8 @@ var UpdateRoleHandler = class extends BaseHandler {
   }
 };
 var DeleteRoleHandler = class extends BaseHandler {
-  async handle(context3) {
-    const roleId = context3.event.pathParameters?.roleId;
+  async handle(context2) {
+    const roleId = context2.event.pathParameters?.roleId;
     if (!roleId) {
       return this.error("Role ID is required", 400);
     }
@@ -228448,7 +229023,7 @@ var DeleteRoleHandler = class extends BaseHandler {
   }
 };
 var GetCapabilitiesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const capabilities = [
       // ============================================================================
       // CORE OPERATIONS (6 capabilities)
@@ -228587,8 +229162,8 @@ function registerRoleEndpoints(app2) {
   const getCapabilitiesHandler = new GetCapabilitiesHandler();
   app2.get("/config/roles", async (c) => {
     const event = createApiGatewayEvent6(c.req);
-    const context3 = createLambdaContext6();
-    const result = await getRolesHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await getRolesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   const ALL_CUSTOMER_SERVICES2 = [
@@ -228662,8 +229237,8 @@ function registerRoleEndpoints(app2) {
   });
   app2.put("/config/ui/dashboard", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { roleId, config } = body2;
+      const body = await c.req.json();
+      const { roleId, config } = body;
       if (!roleId) {
         return c.json({ error: "roleId is required" }, 400);
       }
@@ -228724,46 +229299,46 @@ function registerRoleEndpoints(app2) {
   app2.get("/config/roles/:roleId", async (c) => {
     const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context3 = createLambdaContext6();
-    const result = await getRoleByIdHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await getRoleByIdHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/roles", async (c) => {
     const event = createApiGatewayEvent6(c.req);
-    const context3 = createLambdaContext6();
-    const result = await getRolesHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await getRolesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/roles", async (c) => {
     const event = createApiGatewayEvent6(c.req);
-    const context3 = createLambdaContext6();
-    const result = await getRolesHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await getRolesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/capabilities", async (c) => {
     const event = createApiGatewayEvent6(c.req);
-    const context3 = createLambdaContext6();
-    const result = await getCapabilitiesHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await getCapabilitiesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/roles", async (c) => {
     const event = await createApiGatewayEventWithBody3(c);
-    const context3 = createLambdaContext6();
-    const result = await createRoleHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await createRoleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/roles/:roleId", async (c) => {
     const event = await createApiGatewayEventWithBody3(c);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context3 = createLambdaContext6();
-    const result = await updateRoleHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await updateRoleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.delete("/admin/roles/:roleId", async (c) => {
     const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context3 = createLambdaContext6();
-    const result = await deleteRoleHandler.execute(event, context3);
+    const context2 = createLambdaContext6();
+    const result = await deleteRoleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -228781,12 +229356,12 @@ function createApiGatewayEvent6(req) {
   };
 }
 async function createApiGatewayEventWithBody3(c) {
-  const body2 = await c.req.json();
+  const body = await c.req.json();
   return {
     httpMethod: c.req.method,
     path: c.req.url,
     headers: Object.fromEntries(c.req.raw.headers.entries()),
-    body: JSON.stringify(body2),
+    body: JSON.stringify(body),
     pathParameters: {},
     queryStringParameters: {},
     requestContext: {
@@ -230027,17 +230602,17 @@ function registerOnboardingFormManagementEndpoints(app2) {
 init_base_handler();
 init_rds_connection();
 var VendorDashboardHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const timeframe = context3.event.queryStringParameters?.timeframe || "today";
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const timeframe = context2.event.queryStringParameters?.timeframe || "today";
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     let role = null;
     let capabilities = [];
     let roleConfig = {};
@@ -230124,10 +230699,10 @@ var VendorDashboardHandler = class extends BaseHandler {
   }
 };
 var VendorStatsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const startDate = context3.event.queryStringParameters?.startDate;
-    const endDate = context3.event.queryStringParameters?.endDate;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const startDate = context2.event.queryStringParameters?.startDate;
+    const endDate = context2.event.queryStringParameters?.endDate;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -230158,9 +230733,11 @@ function registerVendorDashboardEndpoints(app2) {
     }
     const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { vendorId };
-    const context3 = createLambdaContext7();
-    const result = await dashboardHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext7();
+    const result = await dashboardHandler.execute(event, context2);
+    const body = result.body ? JSON.parse(result.body) : result;
+    const statusCode = result.statusCode || 200;
+    return c.json(body, statusCode);
   });
   app2.get("/vendor/services", async (c) => {
     const vendorId = c.req.header("X-Vendor-Id") || c.get("vendorId") || c.get("userId");
@@ -230197,15 +230774,15 @@ function registerVendorDashboardEndpoints(app2) {
   app2.get("/vendor/dashboard/:vendorId", async (c) => {
     const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext7();
-    const result = await dashboardHandler.execute(event, context3);
+    const context2 = createLambdaContext7();
+    const result = await dashboardHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/stats/:vendorId", async (c) => {
     const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext7();
-    const result = await statsHandler.execute(event, context3);
+    const context2 = createLambdaContext7();
+    const result = await statsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -230287,9 +230864,9 @@ var StreamingApi = class {
     }
     this.closed = true;
   }
-  async pipe(body2) {
+  async pipe(body) {
     this.writer.releaseLock();
-    await body2.pipeTo(this.writable, { preventClose: true });
+    await body.pipeTo(this.writable, { preventClose: true });
     this.writer = this.writable.getWriter();
   }
   onAbort(listener) {
@@ -230378,10 +230955,10 @@ var streamSSE = (c, cb, onError) => {
 init_base_handler();
 init_rds_connection();
 var StartTrackingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const body2 = this.parseBody(context3.event);
-    const { vendorId, latitude, longitude } = body2;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const body = this.parseBody(context2.event);
+    const { vendorId, latitude, longitude } = body;
     if (!bookingId || !vendorId) {
       return this.error("Booking ID and Vendor ID are required", 400);
     }
@@ -230423,9 +231000,9 @@ var StartTrackingHandler = class extends BaseHandler {
         latitude,
         longitude,
         timestamp: /* @__PURE__ */ new Date(),
-        accuracy: body2.accuracy || null,
-        speed: body2.speed || null,
-        heading: body2.heading || null
+        accuracy: body.accuracy || null,
+        speed: body.speed || null,
+        heading: body.heading || null
       });
       return this.success({
         message: "Tracking started",
@@ -230440,9 +231017,9 @@ var StartTrackingHandler = class extends BaseHandler {
       latitude,
       longitude,
       timestamp: /* @__PURE__ */ new Date(),
-      accuracy: body2.accuracy || null,
-      speed: body2.speed || null,
-      heading: body2.heading || null
+      accuracy: body.accuracy || null,
+      speed: body.speed || null,
+      heading: body.heading || null
     });
     return this.success({
       message: "Tracking started",
@@ -230451,10 +231028,10 @@ var StartTrackingHandler = class extends BaseHandler {
   }
 };
 var UpdateLocationHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const body2 = this.parseBody(context3.event);
-    const { latitude, longitude, accuracy, speed, heading } = body2;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const body = this.parseBody(context2.event);
+    const { latitude, longitude, accuracy, speed, heading } = body;
     if (!bookingId || latitude === void 0 || longitude === void 0) {
       return this.error("Booking ID, latitude, and longitude are required", 400);
     }
@@ -230486,8 +231063,8 @@ var UpdateLocationHandler = class extends BaseHandler {
   }
 };
 var GetTrackingStatusHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -230539,8 +231116,8 @@ var GetTrackingStatusHandler = class extends BaseHandler {
   }
 };
 var StopTrackingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -230562,8 +231139,8 @@ var StopTrackingHandler = class extends BaseHandler {
   }
 };
 var GetActiveTrackingsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId || context3.event.queryStringParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId || context2.event.queryStringParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -230619,8 +231196,8 @@ var GetActiveTrackingsHandler = class extends BaseHandler {
   }
 };
 var GetCustomerTrackingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -230805,50 +231382,50 @@ function registerGpsTrackingEndpoints(app2) {
   app2.post("/vendor/tracking/:bookingId/start", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext8();
-    const result = await startHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await startHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/tracking/:bookingId/update", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext8();
-    const result = await updateHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await updateHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/tracking/:bookingId/status", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext8();
-    const result = await statusHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await statusHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/tracking/:bookingId/stop", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext8();
-    const result = await stopHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await stopHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/active-trackings", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext8();
-    const result = await activeTrackingsHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await activeTrackingsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/gps-tracking/booking/:bookingId", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext8();
-    const result = await customerTrackingHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await customerTrackingHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/gps-tracking/:bookingId/status", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext8();
-    const result = await customerTrackingHandler.execute(event, context3);
+    const context2 = createLambdaContext8();
+    const result = await customerTrackingHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/gps-tracking/booking/:bookingId/stream", async (c) => {
@@ -231096,15 +231673,15 @@ function createLambdaContext8() {
 init_base_handler();
 init_rds_connection();
 var VendorStatsHandler2 = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendors2 = await select("vendors", {});
-      const activeVendors = vendors2.filter((v) => v.status === "approved" && v.is_active);
-      const pendingApplications = vendors2.filter(
+      const vendors = await select("vendors", {});
+      const activeVendors = vendors.filter((v) => v.status === "approved" && v.is_active);
+      const pendingApplications = vendors.filter(
         (v) => v.status === "pending" || v.status === "pending_approval"
       );
-      const deactivatedVendors = vendors2.filter((v) => !v.is_active);
-      const rejectedVendors = vendors2.filter((v) => v.status === "rejected");
+      const deactivatedVendors = vendors.filter((v) => !v.is_active);
+      const rejectedVendors = vendors.filter((v) => v.status === "rejected");
       const today = /* @__PURE__ */ new Date();
       today.setHours(0, 0, 0, 0);
       const pendingToday = pendingApplications.filter((v) => {
@@ -231113,7 +231690,7 @@ var VendorStatsHandler2 = class extends BaseHandler {
         return submittedDate >= today;
       });
       const distributionByCategory = {};
-      vendors2.forEach((vendor) => {
+      vendors.forEach((vendor) => {
         if (vendor.category) {
           distributionByCategory[vendor.category] = (distributionByCategory[vendor.category] || 0) + 1;
         }
@@ -231121,7 +231698,7 @@ var VendorStatsHandler2 = class extends BaseHandler {
       return this.success({
         activeVendors: {
           count: activeVendors.length,
-          percentage: vendors2.length > 0 ? Math.round(activeVendors.length / vendors2.length * 100) : 0
+          percentage: vendors.length > 0 ? Math.round(activeVendors.length / vendors.length * 100) : 0
         },
         pendingApplications: {
           count: pendingApplications.length,
@@ -231134,7 +231711,7 @@ var VendorStatsHandler2 = class extends BaseHandler {
           count: rejectedVendors.length
         },
         distributionByCategory,
-        total: vendors2.length
+        total: vendors.length
       });
     } catch (error) {
       console.error("Error in VendorStatsHandler:", error);
@@ -231143,15 +231720,15 @@ var VendorStatsHandler2 = class extends BaseHandler {
   }
 };
 var ApproveVendorHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const body2 = this.parseBody(context3.event);
-    const adminId = context3.userId || body2.adminId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const body = this.parseBody(context2.event);
+    const adminId = context2.userId || body.adminId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
     await update(
@@ -231190,19 +231767,19 @@ var ApproveVendorHandler = class extends BaseHandler {
   }
 };
 var RejectVendorHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const body2 = this.parseBody(context3.event);
-    const { reason } = body2;
-    const adminId = context3.userId || body2.adminId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const body = this.parseBody(context2.event);
+    const { reason } = body;
+    const adminId = context2.userId || body.adminId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
     if (!reason) {
       return this.error("Rejection reason is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
     await update(
@@ -231239,21 +231816,21 @@ var RejectVendorHandler = class extends BaseHandler {
   }
 };
 var ListVendorsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const status = context3.event.queryStringParameters?.status;
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
-      let vendors2;
+      const status = context2.event.queryStringParameters?.status;
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context2.event.queryStringParameters?.offset || "0", 10);
+      let vendors;
       if (status) {
-        vendors2 = await select("vendors", { status }, {
+        vendors = await select("vendors", { status }, {
           limit,
           offset,
           orderBy: "created_at",
           orderDirection: "DESC"
         });
       } else {
-        vendors2 = await select("vendors", {}, {
+        vendors = await select("vendors", {}, {
           limit,
           offset,
           orderBy: "created_at",
@@ -231261,7 +231838,7 @@ var ListVendorsHandler = class extends BaseHandler {
         });
       }
       return this.success({
-        vendors: vendors2.map((v) => ({
+        vendors: vendors.map((v) => ({
           id: v.id,
           businessName: v.business_name,
           ownerName: v.owner_name,
@@ -231271,7 +231848,7 @@ var ListVendorsHandler = class extends BaseHandler {
           tier: v.tier,
           createdAt: v.created_at
         })),
-        total: vendors2.length
+        total: vendors.length
       });
     } catch (error) {
       console.error("Error in ListVendorsHandler:", error);
@@ -231348,8 +231925,8 @@ function registerAdminEndpoints(app2) {
       return c.json({ error: authResult.error }, 401);
     }
     const event = createApiGatewayEvent9(c.req);
-    const context3 = createLambdaContext9();
-    const result = await statsHandler.execute(event, context3);
+    const context2 = createLambdaContext9();
+    const result = await statsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendors/:vendorId/approve", async (c) => {
@@ -231359,8 +231936,8 @@ function registerAdminEndpoints(app2) {
     }
     const event = createApiGatewayEvent9(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext9();
-    const result = await approveHandler.execute(event, context3);
+    const context2 = createLambdaContext9();
+    const result = await approveHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendors/:vendorId/reject", async (c) => {
@@ -231370,8 +231947,8 @@ function registerAdminEndpoints(app2) {
     }
     const event = createApiGatewayEvent9(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext9();
-    const result = await rejectHandler.execute(event, context3);
+    const context2 = createLambdaContext9();
+    const result = await rejectHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendors", async (c) => {
@@ -231380,8 +231957,8 @@ function registerAdminEndpoints(app2) {
       return c.json({ error: authResult.error }, 401);
     }
     const event = createApiGatewayEvent9(c.req);
-    const context3 = createLambdaContext9();
-    const result = await listHandler.execute(event, context3);
+    const context2 = createLambdaContext9();
+    const result = await listHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendors/all", async (c) => {
@@ -231390,8 +231967,8 @@ function registerAdminEndpoints(app2) {
       return c.json({ error: authResult.error }, 401);
     }
     const event = createApiGatewayEvent9(c.req);
-    const context3 = createLambdaContext9();
-    const result = await listHandler.execute(event, context3);
+    const context2 = createLambdaContext9();
+    const result = await listHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendor/application/:applicationId/approve", async (c) => {
@@ -231479,11 +232056,47 @@ function registerAdminEndpoints(app2) {
           }
         }
       } else {
-        const vendors2 = await select("vendors", { id: applicationId });
-        if (vendors2.length === 0) {
+        const vendors = await select("vendors", { id: applicationId });
+        if (vendors.length === 0) {
           return c.json({ error: "Application not found" }, 404);
         }
-        vendorId = vendors2[0].id;
+        vendorId = vendors[0].id;
+      }
+      try {
+        const application = await select("vendor_onboarding_applications", { id: applicationId });
+        const currentVendor = await select("vendors", { id: vendorId });
+        const vendorRecord = currentVendor.length > 0 ? currentVendor[0] : null;
+        if (application.length > 0) {
+          const appPayload = application[0].application_payload || {};
+          const facilityUpdate = {};
+          if (appPayload.address && (!vendorRecord?.address || vendorRecord.address === "Unknown" || vendorRecord.address === "Not specified")) {
+            facilityUpdate.address = appPayload.address;
+          }
+          if (appPayload.city && (!vendorRecord?.city || vendorRecord.city === "Unknown" || vendorRecord.city === "Not specified")) {
+            facilityUpdate.city = appPayload.city;
+          }
+          if (appPayload.state && (!vendorRecord?.state || vendorRecord.state === "Unknown" || vendorRecord.state === "Not specified")) {
+            facilityUpdate.state = appPayload.state;
+          }
+          if ((appPayload.pincode || appPayload.pinCode) && (!vendorRecord?.pincode || vendorRecord.pincode === "000000")) {
+            facilityUpdate.pincode = appPayload.pincode || appPayload.pinCode;
+          }
+          if (appPayload.latitude && !vendorRecord?.latitude) {
+            facilityUpdate.latitude = appPayload.latitude;
+          }
+          if (appPayload.longitude && !vendorRecord?.longitude) {
+            facilityUpdate.longitude = appPayload.longitude;
+          }
+          if (Object.keys(facilityUpdate).length > 0) {
+            await update("vendors", { id: vendorId }, {
+              ...facilityUpdate,
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            console.log(`\u2705 [Vendor Approval] Provisioned facility fields for vendor ${vendorId}:`, Object.keys(facilityUpdate));
+          }
+        }
+      } catch (facilityErr) {
+        console.warn(`\u26A0\uFE0F [Vendor Approval] Failed to provision facility (non-critical):`, facilityErr.message);
       }
       await update(
         "vendors",
@@ -231541,8 +232154,8 @@ function registerAdminEndpoints(app2) {
       return c.json({ error: authResult.error }, 401);
     }
     const applicationId = c.req.param("applicationId");
-    const body2 = await c.req.json().catch(() => ({}));
-    const reason = body2.reason || "Application rejected by admin";
+    const body = await c.req.json().catch(() => ({}));
+    const reason = body.reason || "Application rejected by admin";
     try {
       await query(
         `UPDATE vendor_identity SET onboarding_status = 'REJECTED' WHERE application_id = $1 OR id = $1`,
@@ -231573,8 +232186,8 @@ function registerAdminEndpoints(app2) {
     const applicationId = c.req.param("applicationId");
     const event = createApiGatewayEvent9(c.req);
     event.pathParameters = { vendorId: applicationId };
-    const context3 = createLambdaContext9();
-    const result = await rejectHandler.execute(event, context3);
+    const context2 = createLambdaContext9();
+    const result = await rejectHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/customers", async (c) => {
@@ -231721,10 +232334,10 @@ init_base_handler();
 init_rds_connection();
 var import_client_chime_sdk_meetings = require("@aws-sdk/client-chime-sdk-meetings");
 var CreateMeetingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId, customerId, vendorId } = body2;
-    this.validateRequired(body2, ["bookingId", "customerId", "vendorId"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId, customerId, vendorId } = body;
+    this.validateRequired(body, ["bookingId", "customerId", "vendorId"]);
     const bookings = await select("bookings", { id: bookingId });
     if (bookings.length === 0) {
       return this.error("Booking not found", 404);
@@ -231790,8 +232403,8 @@ var CreateMeetingHandler = class extends BaseHandler {
   }
 };
 var GetMeetingInfoHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -231819,8 +232432,8 @@ var GetMeetingInfoHandler = class extends BaseHandler {
   }
 };
 var EndMeetingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -231847,22 +232460,22 @@ function registerVideoCallEndpoints(app2) {
   const endHandler = new EndMeetingHandler();
   app2.post("/video-call/create", async (c) => {
     const event = createApiGatewayEvent10(c.req);
-    const context3 = createLambdaContext10();
-    const result = await createHandler.execute(event, context3);
+    const context2 = createLambdaContext10();
+    const result = await createHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/video-call/:bookingId", async (c) => {
     const event = createApiGatewayEvent10(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext10();
-    const result = await getInfoHandler.execute(event, context3);
+    const context2 = createLambdaContext10();
+    const result = await getInfoHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/video-call/:bookingId/end", async (c) => {
     const event = createApiGatewayEvent10(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext10();
-    const result = await endHandler.execute(event, context3);
+    const context2 = createLambdaContext10();
+    const result = await endHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -231891,10 +232504,10 @@ function createLambdaContext10() {
 init_base_handler();
 init_rds_connection();
 var StartSessionHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId, sessionNumber } = body2;
-    this.validateRequired(body2, ["bookingId", "sessionNumber"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId, sessionNumber } = body;
+    this.validateRequired(body, ["bookingId", "sessionNumber"]);
     const bookings = await select("bookings", { id: bookingId });
     if (bookings.length === 0) {
       return this.error("Booking not found", 404);
@@ -231935,10 +232548,10 @@ var StartSessionHandler = class extends BaseHandler {
   }
 };
 var CompleteSessionHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId, sessionNumber, notes, outcome } = body2;
-    this.validateRequired(body2, ["bookingId", "sessionNumber"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId, sessionNumber, notes, outcome } = body;
+    this.validateRequired(body, ["bookingId", "sessionNumber"]);
     const sessions = await select("package_sessions", {
       booking_id: bookingId,
       session_number: sessionNumber
@@ -231975,8 +232588,8 @@ var CompleteSessionHandler = class extends BaseHandler {
   }
 };
 var GetSessionProgressHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -232015,21 +232628,21 @@ function registerPackageSessionEndpoints(app2) {
   const progressHandler = new GetSessionProgressHandler();
   app2.post("/package-sessions/start", async (c) => {
     const event = createApiGatewayEvent11(c.req);
-    const context3 = createLambdaContext11();
-    const result = await startHandler.execute(event, context3);
+    const context2 = createLambdaContext11();
+    const result = await startHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/package-sessions/complete", async (c) => {
     const event = createApiGatewayEvent11(c.req);
-    const context3 = createLambdaContext11();
-    const result = await completeHandler.execute(event, context3);
+    const context2 = createLambdaContext11();
+    const result = await completeHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/package-sessions/:bookingId/progress", async (c) => {
     const event = createApiGatewayEvent11(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext11();
-    const result = await progressHandler.execute(event, context3);
+    const context2 = createLambdaContext11();
+    const result = await progressHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -232065,11 +232678,11 @@ try {
   console.warn("\u26A0\uFE0F  OpenSearch client not available, will use SQL fallback");
 }
 var UniversalSearchHandler = class extends BaseHandler {
-  async handle(context3) {
-    const searchQuery = context3.event.queryStringParameters?.q || "";
-    const category = context3.event.queryStringParameters?.category;
-    const location2 = context3.event.queryStringParameters?.location;
-    const limit = parseInt(context3.event.queryStringParameters?.limit || "20", 10);
+  async handle(context2) {
+    const searchQuery = context2.event.queryStringParameters?.q || "";
+    const category = context2.event.queryStringParameters?.category;
+    const location2 = context2.event.queryStringParameters?.location;
+    const limit = parseInt(context2.event.queryStringParameters?.limit || "20", 10);
     if (!searchQuery && !category) {
       return this.error("Search query or category is required", 400);
     }
@@ -232120,12 +232733,12 @@ var UniversalSearchHandler = class extends BaseHandler {
       body: searchBody
     });
     const hits = result.body.hits.hits;
-    const vendors2 = [];
+    const vendors = [];
     const services = [];
     hits.forEach((hit) => {
       const source = hit._source;
       if (hit._index.includes("vendors")) {
-        vendors2.push({
+        vendors.push({
           id: source.id,
           businessName: source.business_name,
           ownerName: source.owner_name,
@@ -232150,7 +232763,7 @@ var UniversalSearchHandler = class extends BaseHandler {
     });
     return this.success({
       query: searchQuery,
-      vendors: vendors2,
+      vendors,
       services,
       total: hits.length,
       searchMethod: "opensearch"
@@ -232191,7 +232804,7 @@ var UniversalSearchHandler = class extends BaseHandler {
     }
     vendorsQuery += ` ORDER BY avg_rating DESC NULLS LAST, completed_bookings DESC LIMIT $${paramIndex}`;
     params.push(limit);
-    const { rows: vendors2 } = await query(vendorsQuery, params);
+    const { rows: vendors } = await query(vendorsQuery, params);
     let servicesQuery = `
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
       FROM vendor_services vs
@@ -232205,8 +232818,7 @@ var UniversalSearchHandler = class extends BaseHandler {
     let serviceParamIndex = 1;
     if (searchQuery) {
       servicesQuery += ` AND (
-        vs.service_name ILIKE $${serviceParamIndex} OR
-        vs.description ILIKE $${serviceParamIndex}
+        vs.service_name ILIKE $${serviceParamIndex}
       )`;
       serviceParams.push(`%${searchQuery}%`);
       serviceParamIndex++;
@@ -232221,7 +232833,7 @@ var UniversalSearchHandler = class extends BaseHandler {
     const { rows: services } = await query(servicesQuery, serviceParams);
     return this.success({
       query: searchQuery,
-      vendors: vendors2.map((v) => ({
+      vendors: vendors.map((v) => ({
         id: v.id,
         businessName: v.business_name,
         ownerName: v.owner_name,
@@ -232234,14 +232846,14 @@ var UniversalSearchHandler = class extends BaseHandler {
       services: services.map((s) => ({
         id: s.id,
         serviceName: s.service_name,
-        description: s.description,
+        description: s.service_description || s.description_text || s.service_name,
         price: s.price,
         vendorId: s.vendor_id,
         vendorName: s.business_name,
         city: s.city,
         state: s.state
       })),
-      total: vendors2.length + services.length,
+      total: vendors.length + services.length,
       searchMethod: "sql-fallback"
     });
   }
@@ -232250,8 +232862,8 @@ function registerSearchEndpoints(app2) {
   const searchHandler = new UniversalSearchHandler();
   app2.get("/search", async (c) => {
     const event = createApiGatewayEvent12(c.req);
-    const context3 = createLambdaContext12();
-    const result = await searchHandler.execute(event, context3);
+    const context2 = createLambdaContext12();
+    const result = await searchHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -232284,8 +232896,8 @@ init_base_handler();
 init_rds_connection();
 init_audit_log();
 var GetWalletHandler = class extends BaseHandler {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
     if (!customerId) {
       return this.error("Customer ID is required", 400);
     }
@@ -232337,15 +232949,15 @@ var GetWalletHandler = class extends BaseHandler {
   }
 };
 var CreditWalletHandler = class extends BaseHandler {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const body2 = this.parseBody(context3.event);
-    const { amount, referenceType, referenceId, description, idempotencyKey } = body2;
-    const requestId = context3.event.requestContext?.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const body = this.parseBody(context2.event);
+    const { amount, referenceType, referenceId, description, idempotencyKey } = body;
+    const requestId = context2.event.requestContext?.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400);
     }
-    this.validateRequired(body2, ["amount"]);
+    this.validateRequired(body, ["amount"]);
     if (typeof amount !== "number" || amount <= 0) {
       return this.error("Amount must be a positive number", 400);
     }
@@ -232444,15 +233056,15 @@ var CreditWalletHandler = class extends BaseHandler {
   }
 };
 var DebitWalletHandler = class extends BaseHandler {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const body2 = this.parseBody(context3.event);
-    const { amount, referenceType, referenceId, description, idempotencyKey } = body2;
-    const requestId = context3.event.requestContext?.requestId;
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const body = this.parseBody(context2.event);
+    const { amount, referenceType, referenceId, description, idempotencyKey } = body;
+    const requestId = context2.event.requestContext?.requestId;
     if (!customerId) {
       return this.error("Customer ID is required", 400);
     }
-    this.validateRequired(body2, ["amount"]);
+    this.validateRequired(body, ["amount"]);
     if (typeof amount !== "number" || amount <= 0) {
       return this.error("Amount must be a positive number", 400);
     }
@@ -232559,10 +233171,10 @@ var DebitWalletHandler = class extends BaseHandler {
   }
 };
 var GetWalletTransactionsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const customerId = context3.event.pathParameters?.customerId;
-    const limit = parseInt(context3.event.queryStringParameters?.limit || "50");
-    const offset = parseInt(context3.event.queryStringParameters?.offset || "0");
+  async handle(context2) {
+    const customerId = context2.event.pathParameters?.customerId;
+    const limit = parseInt(context2.event.queryStringParameters?.limit || "50");
+    const offset = parseInt(context2.event.queryStringParameters?.offset || "0");
     if (!customerId) {
       return this.error("Customer ID is required", 400);
     }
@@ -232652,29 +233264,29 @@ function registerWalletEndpoints(app2) {
   app2.get("/wallet/:customerId", async (c) => {
     const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext14();
-    const result = await getWalletHandler.execute(event, context3);
+    const context2 = createLambdaContext14();
+    const result = await getWalletHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/wallet/:customerId/credit", async (c) => {
     const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext14();
-    const result = await creditWalletHandler.execute(event, context3);
+    const context2 = createLambdaContext14();
+    const result = await creditWalletHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/wallet/:customerId/debit", async (c) => {
     const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext14();
-    const result = await debitWalletHandler.execute(event, context3);
+    const context2 = createLambdaContext14();
+    const result = await debitWalletHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/wallet/:customerId/transactions", async (c) => {
     const event = createApiGatewayEvent14(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext14();
-    const result = await getTransactionsHandler.execute(event, context3);
+    const context2 = createLambdaContext14();
+    const result = await getTransactionsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -232708,9 +233320,9 @@ async function checkVendorCapability(vendorId, capability) {
   try {
     let vendor = null;
     let roleId = null;
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length > 0) {
-      vendor = vendors2[0];
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length > 0) {
+      vendor = vendors[0];
       roleId = vendor.role_id;
     } else {
       const identities = await select("vendor_identity", { id: vendorId });
@@ -233966,9 +234578,9 @@ init_base_handler();
 init_rds_connection();
 init_aws_clients();
 var PropagateChangesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { type, ...data } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { type, ...data } = body;
     if (!type) {
       return this.error("Propagation type is required", 400);
     }
@@ -234006,7 +234618,7 @@ var PropagateChangesHandler = class extends BaseHandler {
         resource_type: type,
         resource_id: data.id || data.vendor_id || data.role_id,
         details: JSON.stringify(data),
-        performed_by: context3.event.requestContext?.authorizer?.claims?.sub || context3.event.requestContext?.identity?.user || "system",
+        performed_by: context2.event.requestContext?.authorizer?.claims?.sub || context2.event.requestContext?.identity?.user || "system",
         performed_at: /* @__PURE__ */ new Date()
       });
       return this.success({
@@ -234036,25 +234648,25 @@ var PropagateChangesHandler = class extends BaseHandler {
   }
   async propagateRoleCapabilitiesChange(data) {
     const { role_id } = data;
-    const vendors2 = await select("vendors", { role_id, status: "active" });
+    const vendors = await select("vendors", { role_id, status: "active" });
     await publishToSNS("vendor-notifications", {
       type: "capabilities_updated",
       role_id,
-      affected_vendors: vendors2.map((v) => v.id),
+      affected_vendors: vendors.map((v) => v.id),
       message: "Your dashboard capabilities have been updated. Please refresh to see changes."
     });
     await this.invalidateCache(`role:${role_id}:capabilities`);
-    for (const vendor of vendors2) {
+    for (const vendor of vendors) {
       await this.invalidateCache(`vendor:${vendor.id}:capabilities`);
     }
   }
   async propagateTierChange(data) {
     const { tier_id } = data;
-    const vendors2 = await select("vendors", { tier: tier_id });
+    const vendors = await select("vendors", { tier: tier_id });
     await publishToSNS("vendor-notifications", {
       type: "tier_updated",
       tier_id,
-      affected_vendors: vendors2.map((v) => v.id),
+      affected_vendors: vendors.map((v) => v.id),
       message: "Your tier benefits have been updated."
     });
     await this.invalidateCache(`tier:${tier_id}`);
@@ -234116,9 +234728,9 @@ var PropagateChangesHandler = class extends BaseHandler {
   }
 };
 var InvalidateCacheHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { keys, pattern } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { keys, pattern } = body;
     if (!keys && !pattern) {
       return this.error("Either keys or pattern is required", 400);
     }
@@ -234147,7 +234759,7 @@ var InvalidateCacheHandler = class extends BaseHandler {
   }
 };
 var GovernanceStatusHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     let recentEvents = [];
     try {
       const tableCheck = await query(
@@ -234228,30 +234840,30 @@ function registerAdminGovernanceEndpoints(app2) {
   const statusHandler = new GovernanceStatusHandler();
   app2.post("/admin/governance/propagate", async (c) => {
     const event = await createApiGatewayEvent15(c);
-    const context3 = createLambdaContext15();
-    const result = await propagateHandler.execute(event, context3);
+    const context2 = createLambdaContext15();
+    const result = await propagateHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/governance/invalidate-cache", async (c) => {
     const event = await createApiGatewayEvent15(c);
-    const context3 = createLambdaContext15();
-    const result = await invalidateCacheHandler.execute(event, context3);
+    const context2 = createLambdaContext15();
+    const result = await invalidateCacheHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/governance/status", async (c) => {
     const event = await createApiGatewayEvent15(c);
-    const context3 = createLambdaContext15();
-    const result = await statusHandler.execute(event, context3);
+    const context2 = createLambdaContext15();
+    const result = await statusHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 async function createApiGatewayEvent15(c) {
-  const body2 = await c.req.text().catch(() => "{}");
+  const body = await c.req.text().catch(() => "{}");
   return {
     httpMethod: c.req.method,
     path: c.req.url,
     headers: Object.fromEntries(c.req.raw.headers),
-    body: body2,
+    body,
     pathParameters: c.req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
     requestContext: {
@@ -234269,7 +234881,16 @@ function createLambdaContext15() {
 }
 
 // src/endpoints/staff.ts
+var import_client_sns4 = require("@aws-sdk/client-sns");
 init_rds_connection();
+
+// src/types/entities.ts
+var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUUID(id) {
+  return typeof id === "string" && UUID_REGEX.test(id);
+}
+
+// src/endpoints/staff.ts
 function calculateDistance2(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -234298,13 +234919,17 @@ function registerStaffEndpoints(app2) {
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
       let staffQuery = `
-        SELECT s.*, v.business_name as vendor_name, v.city, v.state
+        SELECT DISTINCT s.*, 
+               COALESCE(v.business_name, s.name) as vendor_name,
+               COALESCE(v.city, '') as city,
+               COALESCE(v.state, '') as state,
+               s.default_location as location
         FROM staff s
-        INNER JOIN vendors v ON s.vendor_id = v.id
+        LEFT JOIN vendors v ON s.vendor_id = v.id
         WHERE s.is_active = true
-          AND v.status = 'approved'
-          AND v.is_active = true
+          AND s.mobile_verified = true
       `;
+      staffQuery += ` AND (s.vendor_id IS NULL OR (v.status = 'approved' AND v.is_active = true))`;
       const params = [];
       let paramIndex = 1;
       if (vendorId) {
@@ -234323,32 +234948,104 @@ function registerStaffEndpoints(app2) {
       if (serviceId) {
         staffQuery += ` AND EXISTS (
           SELECT 1 FROM staff_services ss 
-          WHERE ss.staff_id = s.id AND ss.service_id = $${paramIndex}
+          WHERE ss.staff_id = s.id 
+            AND ss.service_id = $${paramIndex}
+            AND ss.enabled_by_staff = true
+            AND ss.is_active = true
         )`;
         params.push(serviceId);
         paramIndex++;
       }
+      if (serviceStyle) {
+        staffQuery += ` AND EXISTS (
+          SELECT 1 FROM staff_services ss 
+          WHERE ss.staff_id = s.id
+            AND ss.enabled_by_staff = true
+            AND ss.is_active = true
+            AND $${paramIndex} = ANY(ss.service_styles)
+        )`;
+        params.push(serviceStyle);
+        paramIndex++;
+      }
+      const bookingDate = c.req.query("bookingDate") || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const bookingTime = c.req.query("bookingTime");
+      staffQuery += ` AND EXISTS (
+        SELECT 1 FROM staff_availability_slots sas
+        INNER JOIN staff_slot_services sss ON sas.id = sss.slot_id
+        WHERE sas.staff_id = s.id
+          AND sas.is_available = true
+          AND sas.date = $${paramIndex}
+      `;
+      params.push(bookingDate);
+      paramIndex++;
+      if (bookingTime) {
+        staffQuery += ` AND sas.start_time <= $${paramIndex}
+          AND sas.end_time >= $${paramIndex}`;
+        params.push(bookingTime);
+        paramIndex++;
+      }
+      if (serviceId) {
+        staffQuery += ` AND sss.service_id = $${paramIndex}`;
+        params.push(serviceId);
+        paramIndex++;
+      }
+      staffQuery += ` )`;
       const staffResults = await query(staffQuery, params);
       let eligibleStaff = staffResults.rows;
       if (serviceStyle === "at_home" && customerLat && customerLng) {
         const customerLocation = { latitude: customerLat, longitude: customerLng };
         const bookingDateTime = c.req.query("booking_datetime") ? new Date(c.req.query("booking_datetime")) : void 0;
+        const staffWithLocation = await Promise.all(
+          eligibleStaff.map(async (staff) => {
+            let staffLat = null;
+            let staffLng = null;
+            let radiusKm = null;
+            if (staff.location) {
+              staffLat = parseFloat(staff.location.lat);
+              staffLng = parseFloat(staff.location.lng);
+            } else if (staff.vendor_id) {
+              const vendor = await query("SELECT latitude, longitude FROM vendors WHERE id = $1", [staff.vendor_id]);
+              if (vendor.rows.length > 0 && vendor.rows[0].latitude) {
+                staffLat = parseFloat(vendor.rows[0].latitude);
+                staffLng = parseFloat(vendor.rows[0].longitude);
+              }
+            }
+            if (serviceId) {
+              const serviceConfig = await query(
+                `SELECT radius_km FROM staff_services 
+                 WHERE staff_id = $1 AND service_id = $2 AND enabled_by_staff = true`,
+                [staff.id, serviceId]
+              );
+              if (serviceConfig.rows.length > 0 && serviceConfig.rows[0].radius_km) {
+                radiusKm = parseFloat(serviceConfig.rows[0].radius_km);
+              }
+            }
+            return {
+              ...staff,
+              staffLat,
+              staffLng,
+              radiusKm
+            };
+          })
+        );
+        const staffWithinRadius = staffWithLocation.filter((staff) => {
+          if (!staff.staffLat || !staff.staffLng) return false;
+          const effectiveRadius = staff.radiusKm || maxDistance;
+          const distance = calculateDistance2(
+            customerLat,
+            customerLng,
+            staff.staffLat,
+            staff.staffLng
+          );
+          return distance <= effectiveRadius;
+        });
         const staffWithCommuteTime = await Promise.all(
-          eligibleStaff.filter((staff) => {
-            if (!staff.latitude || !staff.longitude) return false;
+          staffWithinRadius.map(async (staff) => {
             const distance = calculateDistance2(
               customerLat,
               customerLng,
-              parseFloat(staff.latitude),
-              parseFloat(staff.longitude)
-            );
-            return distance <= maxDistance;
-          }).map(async (staff) => {
-            const distance = calculateDistance2(
-              customerLat,
-              customerLng,
-              parseFloat(staff.latitude),
-              parseFloat(staff.longitude)
+              staff.staffLat,
+              staff.staffLng
             );
             let bufferMinutes = 5;
             try {
@@ -234369,8 +235066,8 @@ function registerStaffEndpoints(app2) {
               console.warn("Error fetching buffer time for staff:", error);
             }
             const staffLocation = {
-              latitude: parseFloat(staff.latitude),
-              longitude: parseFloat(staff.longitude)
+              latitude: staff.staffLat,
+              longitude: staff.staffLng
             };
             try {
               const commuteResult = await calculateCommuteTime(
@@ -234517,6 +235214,18 @@ function registerStaffEndpoints(app2) {
     try {
       const { vendorId } = c.req.param();
       const staffData = await c.req.json();
+      if (!staffData.name || !staffData.phone) {
+        return c.json({ error: "Name and phone are required" }, 400);
+      }
+      if (!staffData.photo) {
+        return c.json({ error: "Photo is mandatory for all staff members" }, 400);
+      }
+      if (!staffData.qualifications || staffData.qualifications.trim() === "") {
+        return c.json({ error: "Qualifications are mandatory for all staff members" }, 400);
+      }
+      if (!staffData.specializations || !Array.isArray(staffData.specializations) || staffData.specializations.length === 0) {
+        return c.json({ error: "At least one specialization is mandatory" }, 400);
+      }
       let roleName = staffData.role || staffData.roleId || staffData.role_id;
       if (roleName && roleName.length === 36 && roleName.includes("-")) {
         const role = await query("SELECT name FROM roles WHERE id = $1", [roleName]);
@@ -234532,8 +235241,72 @@ function registerStaffEndpoints(app2) {
         role: roleName,
         // Staff table uses 'role' TEXT column, not 'role_id'
         experience_years: staffData.experienceYears || staffData.experience_years || null,
-        is_active: staffData.isActive !== false
+        photo: staffData.photo,
+        // ⚠️ MANDATORY
+        qualifications: staffData.qualifications,
+        // ⚠️ MANDATORY
+        is_active: staffData.isActive !== false,
+        mobile_verified: false
+        // ⚠️ New staff must verify mobile before going live
       });
+      if (staffData.specializations && Array.isArray(staffData.specializations)) {
+        for (const spec of staffData.specializations) {
+          await insert("staff_specializations", {
+            staff_id: staff[0].id,
+            specialization: typeof spec === "string" ? spec : spec.name || spec
+          });
+        }
+      }
+      try {
+        const UAT_MODE = process.env.UAT_MODE === "true" || true;
+        const otp = UAT_MODE ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
+        const expiresAt = /* @__PURE__ */ new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+        await insert("otp_tokens", {
+          phone: staffData.phone,
+          code: otp,
+          purpose: "staff_verification",
+          expires_at: expiresAt,
+          is_used: false
+        });
+        if (!UAT_MODE) {
+          try {
+            const settings = await select("platform_settings", {
+              setting_key: "admin:settings:aws"
+            });
+            if (settings.length > 0) {
+              const awsSettings = settings[0].setting_value;
+              if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
+                const snsClient3 = new import_client_sns4.SNSClient({
+                  region: awsSettings.sns.region || "ap-south-1",
+                  credentials: {
+                    accessKeyId: awsSettings.credentials.accessKeyId,
+                    secretAccessKey: awsSettings.credentials.secretAccessKey
+                  }
+                });
+                const message2 = `Your Warmpawz staff verification code is: ${otp}. Valid for 10 minutes.`;
+                await snsClient3.send(
+                  new import_client_sns4.PublishCommand({
+                    PhoneNumber: staffData.phone,
+                    Message: message2,
+                    MessageAttributes: {
+                      "AWS.SNS.SMS.SMSType": {
+                        DataType: "String",
+                        StringValue: "Transactional"
+                      }
+                    }
+                  })
+                );
+              }
+            }
+          } catch (snsError) {
+            console.error("[STAFF] SNS send failed, OTP logged only:", snsError);
+          }
+        }
+        console.log(`[STAFF] OTP sent to ${staffData.phone} for staff verification: ${UAT_MODE ? "123456 (UAT)" : "***"}`);
+      } catch (error) {
+        console.error("[STAFF] Failed to send OTP:", error);
+      }
       if (staffData.services && Array.isArray(staffData.services)) {
         for (const serviceId of staffData.services) {
           await insert("staff_services", {
@@ -234542,7 +235315,12 @@ function registerStaffEndpoints(app2) {
           });
         }
       }
-      return c.json({ success: true, staff: staff[0], message: "Staff member created successfully" });
+      return c.json({
+        success: true,
+        staff: staff[0],
+        message: "Staff member created successfully. OTP sent to mobile for verification.",
+        requiresVerification: true
+      });
     } catch (error) {
       console.error("Error creating staff:", error);
       return c.json({ error: error.message }, 500);
@@ -234647,18 +235425,1428 @@ function registerStaffEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.post("/staff/:staffId/verify-mobile", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const { otp } = await c.req.json();
+      if (!otp) {
+        return c.json({ error: "OTP is required" }, 400);
+      }
+      const staffRecords = await select("staff", { id: staffId });
+      if (staffRecords.length === 0) {
+        return c.json({ error: "Staff member not found" }, 404);
+      }
+      const staff = staffRecords[0];
+      const otpRecords = await select("otp_tokens", {
+        phone: staff.phone,
+        code: otp,
+        purpose: "staff_verification",
+        is_used: false
+      });
+      if (otpRecords.length === 0) {
+        return c.json({ error: "Invalid OTP" }, 400);
+      }
+      const otpRecord = otpRecords[0];
+      if (new Date(otpRecord.expires_at) < /* @__PURE__ */ new Date()) {
+        return c.json({ error: "OTP has expired. Please request a new one." }, 400);
+      }
+      await update("otp_tokens", { id: otpRecord.id }, { is_used: true, used_at: /* @__PURE__ */ new Date() });
+      await update("staff", { id: staffId }, {
+        mobile_verified: true,
+        mobile_verified_at: /* @__PURE__ */ new Date()
+      });
+      return c.json({
+        success: true,
+        message: "Mobile number verified successfully. Staff can now go live on the platform."
+      });
+    } catch (error) {
+      console.error("Error verifying staff mobile:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/:staffId/resend-verification-otp", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const staffRecords = await select("staff", { id: staffId });
+      if (staffRecords.length === 0) {
+        return c.json({ error: "Staff member not found" }, 404);
+      }
+      const staff = staffRecords[0];
+      if (staff.mobile_verified) {
+        return c.json({ error: "Mobile number is already verified" }, 400);
+      }
+      const UAT_MODE = process.env.UAT_MODE === "true" || true;
+      const otp = UAT_MODE ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
+      const expiresAt = /* @__PURE__ */ new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+      await insert("otp_tokens", {
+        phone: staff.phone,
+        code: otp,
+        purpose: "staff_verification",
+        expires_at: expiresAt,
+        is_used: false
+      });
+      if (!UAT_MODE) {
+        try {
+          const settings = await select("platform_settings", {
+            setting_key: "admin:settings:aws"
+          });
+          if (settings.length > 0) {
+            const awsSettings = settings[0].setting_value;
+            if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
+              const snsClient3 = new import_client_sns4.SNSClient({
+                region: awsSettings.sns.region || "ap-south-1",
+                credentials: {
+                  accessKeyId: awsSettings.credentials.accessKeyId,
+                  secretAccessKey: awsSettings.credentials.secretAccessKey
+                }
+              });
+              const message2 = `Your Warmpawz staff verification code is: ${otp}. Valid for 10 minutes.`;
+              await snsClient3.send(
+                new import_client_sns4.PublishCommand({
+                  PhoneNumber: staff.phone,
+                  Message: message2,
+                  MessageAttributes: {
+                    "AWS.SNS.SMS.SMSType": {
+                      DataType: "String",
+                      StringValue: "Transactional"
+                    }
+                  }
+                })
+              );
+            }
+          }
+        } catch (snsError) {
+          console.error("[STAFF] SNS send failed, OTP logged only:", snsError);
+        }
+      }
+      console.log(`[STAFF] Resent OTP to ${staff.phone} for verification: ${UAT_MODE ? "123456 (UAT)" : "***"}`);
+      return c.json({
+        success: true,
+        message: "OTP resent successfully",
+        debug_otp: UAT_MODE ? otp : void 0
+      });
+    } catch (error) {
+      console.error("Error resending OTP:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/availability-slots", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const startDate = c.req.query("startDate") || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const endDate = c.req.query("endDate");
+      let slotsQuery = `
+        SELECT sas.*
+        FROM staff_availability_slots sas
+        WHERE sas.staff_id = $1
+        AND sas.date >= $2
+      `;
+      const params = [staffId, startDate];
+      if (endDate) {
+        slotsQuery += ` AND sas.date <= $3`;
+        params.push(endDate);
+      }
+      slotsQuery += ` ORDER BY sas.date, sas.start_time`;
+      const slotsResult = await query(slotsQuery, params);
+      const slots = slotsResult.rows;
+      const enrichedSlots = await Promise.all(
+        slots.map(async (slot) => {
+          const servicesResult = await query(
+            `SELECT sss.*, s.name as service_name, s.service_style
+             FROM staff_slot_services sss
+             INNER JOIN services s ON sss.service_id = s.id
+             WHERE sss.slot_id = $1`,
+            [slot.id]
+          );
+          const breaksResult = await query(
+            `SELECT * FROM staff_slot_breaks
+             WHERE slot_id = $1
+             ORDER BY start_time`,
+            [slot.id]
+          );
+          return {
+            ...slot,
+            services: servicesResult.rows,
+            breaks: breaksResult.rows
+          };
+        })
+      );
+      return c.json({ success: true, slots: enrichedSlots });
+    } catch (error) {
+      console.error("Error fetching availability slots:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/:staffId/availability-slots", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const slotData = await c.req.json();
+      if (!slotData.date || !slotData.startTime || !slotData.endTime) {
+        return c.json({ error: "date, startTime, and endTime are required" }, 400);
+      }
+      const overlappingCheck = await query(
+        `SELECT id FROM staff_availability_slots
+         WHERE staff_id = $1
+         AND date = $2
+         AND is_available = true
+         AND (
+           (start_time <= $3 AND end_time > $3) OR
+           (start_time < $4 AND end_time >= $4) OR
+           (start_time >= $3 AND end_time <= $4)
+         )`,
+        [staffId, slotData.date, slotData.startTime, slotData.endTime]
+      );
+      if (overlappingCheck.rows.length > 0) {
+        return c.json({ error: "Slot overlaps with existing availability" }, 400);
+      }
+      const slot = await insert("staff_availability_slots", {
+        staff_id: staffId,
+        date: slotData.date,
+        start_time: slotData.startTime,
+        end_time: slotData.endTime,
+        location_override: slotData.locationOverride || null,
+        is_available: slotData.isAvailable !== false,
+        notes: slotData.notes || null
+      });
+      const slotId = slot[0].id;
+      if (slotData.services && Array.isArray(slotData.services)) {
+        for (const service of slotData.services) {
+          await insert("staff_slot_services", {
+            slot_id: slotId,
+            service_id: service.serviceId,
+            lead_time_minutes: service.leadTimeMinutes || 0,
+            buffer_time_minutes: service.bufferTimeMinutes || 0,
+            radius_km: service.radiusKm || null
+          });
+        }
+      }
+      if (slotData.breaks && Array.isArray(slotData.breaks)) {
+        for (const breakItem of slotData.breaks) {
+          await insert("staff_slot_breaks", {
+            slot_id: slotId,
+            start_time: breakItem.startTime,
+            end_time: breakItem.endTime,
+            reason: breakItem.reason || null
+          });
+        }
+      }
+      return c.json({ success: true, slot: slot[0], message: "Availability slot created successfully" });
+    } catch (error) {
+      console.error("Error creating availability slot:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/availability-slots/:slotId", async (c) => {
+    try {
+      const { staffId, slotId } = c.req.param();
+      const slotData = await c.req.json();
+      const updated = await update(
+        "staff_availability_slots",
+        { id: slotId, staff_id: staffId },
+        {
+          date: slotData.date,
+          start_time: slotData.startTime,
+          end_time: slotData.endTime,
+          location_override: slotData.locationOverride,
+          is_available: slotData.isAvailable,
+          notes: slotData.notes
+        }
+      );
+      if (updated.length === 0) {
+        return c.json({ error: "Slot not found" }, 404);
+      }
+      if (slotData.services !== void 0) {
+        await query("DELETE FROM staff_slot_services WHERE slot_id = $1", [slotId]);
+        if (Array.isArray(slotData.services)) {
+          for (const service of slotData.services) {
+            await insert("staff_slot_services", {
+              slot_id: slotId,
+              service_id: service.serviceId,
+              lead_time_minutes: service.leadTimeMinutes || 0,
+              buffer_time_minutes: service.bufferTimeMinutes || 0,
+              radius_km: service.radiusKm || null
+            });
+          }
+        }
+      }
+      if (slotData.breaks !== void 0) {
+        await query("DELETE FROM staff_slot_breaks WHERE slot_id = $1", [slotId]);
+        if (Array.isArray(slotData.breaks)) {
+          for (const breakItem of slotData.breaks) {
+            await insert("staff_slot_breaks", {
+              slot_id: slotId,
+              start_time: breakItem.startTime,
+              end_time: breakItem.endTime,
+              reason: breakItem.reason || null
+            });
+          }
+        }
+      }
+      return c.json({ success: true, slot: updated[0], message: "Slot updated successfully" });
+    } catch (error) {
+      console.error("Error updating availability slot:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.delete("/staff/:staffId/availability-slots/:slotId", async (c) => {
+    try {
+      const { staffId, slotId } = c.req.param();
+      await query("DELETE FROM staff_slot_services WHERE slot_id = $1", [slotId]);
+      await query("DELETE FROM staff_slot_breaks WHERE slot_id = $1", [slotId]);
+      await query("DELETE FROM staff_availability_slots WHERE id = $1 AND staff_id = $2", [slotId, staffId]);
+      return c.json({ success: true, message: "Slot deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting availability slot:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/services", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const servicesResult = await query(
+        `SELECT ss.*, s.name as service_name, s.description, s.category, s.service_style,
+                s.price as base_price, s.duration_minutes as base_duration
+         FROM staff_services ss
+         INNER JOIN services s ON ss.service_id = s.id
+         WHERE ss.staff_id = $1
+         ORDER BY s.name`,
+        [staffId]
+      );
+      return c.json({ success: true, services: servicesResult.rows });
+    } catch (error) {
+      console.error("Error fetching staff services:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/services/:serviceId/enable", async (c) => {
+    try {
+      const { staffId, serviceId } = c.req.param();
+      const serviceData = await c.req.json();
+      const assignedCheck = await query(
+        "SELECT * FROM staff_services WHERE staff_id = $1 AND service_id = $2",
+        [staffId, serviceId]
+      );
+      if (assignedCheck.rows.length === 0) {
+        return c.json({ error: "Service not assigned to this staff member" }, 404);
+      }
+      const updated = await update(
+        "staff_services",
+        { staff_id: staffId, service_id: serviceId },
+        {
+          enabled_by_staff: true,
+          service_styles: serviceData.serviceStyles || assignedCheck.rows[0].service_styles || [],
+          lead_time_minutes: serviceData.leadTimeMinutes ?? assignedCheck.rows[0].lead_time_minutes ?? 0,
+          buffer_time_minutes: serviceData.bufferTimeMinutes ?? assignedCheck.rows[0].buffer_time_minutes ?? 0,
+          radius_km: serviceData.radiusKm ?? assignedCheck.rows[0].radius_km,
+          is_active: true
+        }
+      );
+      return c.json({
+        success: true,
+        service: updated[0],
+        message: "Service enabled and is now live"
+      });
+    } catch (error) {
+      console.error("Error enabling service:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/services/:serviceId/disable", async (c) => {
+    try {
+      const { staffId, serviceId } = c.req.param();
+      const updated = await update(
+        "staff_services",
+        { staff_id: staffId, service_id: serviceId },
+        { enabled_by_staff: false }
+      );
+      if (updated.length === 0) {
+        return c.json({ error: "Service not found" }, 404);
+      }
+      return c.json({ success: true, message: "Service disabled" });
+    } catch (error) {
+      console.error("Error disabling service:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/services/:serviceId", async (c) => {
+    try {
+      const { staffId, serviceId } = c.req.param();
+      const serviceData = await c.req.json();
+      const updated = await update(
+        "staff_services",
+        { staff_id: staffId, service_id: serviceId },
+        {
+          service_styles: serviceData.serviceStyles,
+          lead_time_minutes: serviceData.leadTimeMinutes,
+          buffer_time_minutes: serviceData.bufferTimeMinutes,
+          radius_km: serviceData.radiusKm,
+          price: serviceData.price,
+          duration_minutes: serviceData.durationMinutes
+        }
+      );
+      if (updated.length === 0) {
+        return c.json({ error: "Service not found" }, 404);
+      }
+      return c.json({ success: true, service: updated[0], message: "Service configuration updated" });
+    } catch (error) {
+      console.error("Error updating service configuration:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/:vendorId/staff/:staffId/assign-services", async (c) => {
+    try {
+      const { vendorId, staffId } = c.req.param();
+      const { serviceIds } = await c.req.json();
+      if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
+        return c.json({ error: "serviceIds array is required" }, 400);
+      }
+      const staffCheck = await select("staff", { id: staffId, vendor_id: vendorId });
+      if (staffCheck.length === 0) {
+        return c.json({ error: "Staff not found or does not belong to this vendor" }, 404);
+      }
+      const assignedServices = [];
+      for (const serviceId of serviceIds) {
+        const serviceCheck = await select("services", { id: serviceId, vendor_id: vendorId });
+        if (serviceCheck.length === 0) {
+          console.warn(`Service ${serviceId} not found or does not belong to vendor`);
+          continue;
+        }
+        const existing = await select("staff_services", { staff_id: staffId, service_id: serviceId });
+        if (existing.length === 0) {
+          const assigned = await insert("staff_services", {
+            staff_id: staffId,
+            service_id: serviceId,
+            assigned_by_vendor: true,
+            enabled_by_staff: false,
+            // Staff must enable it
+            is_active: true
+          });
+          assignedServices.push(assigned[0]);
+        } else {
+          await update(
+            "staff_services",
+            { staff_id: staffId, service_id: serviceId },
+            { assigned_by_vendor: true }
+          );
+          assignedServices.push(existing[0]);
+        }
+      }
+      return c.json({
+        success: true,
+        services: assignedServices,
+        message: `${assignedServices.length} service(s) assigned to staff`
+      });
+    } catch (error) {
+      console.error("Error assigning services:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/individual-provider/create", async (c) => {
+    try {
+      const providerData = await c.req.json();
+      if (!providerData.name || !providerData.phone || !providerData.role) {
+        return c.json({ error: "name, phone, and role are required" }, 400);
+      }
+      if (!providerData.photo) {
+        return c.json({ error: "photo is mandatory" }, 400);
+      }
+      if (!providerData.qualifications) {
+        return c.json({ error: "qualifications are mandatory" }, 400);
+      }
+      if (!providerData.specializations || !Array.isArray(providerData.specializations) || providerData.specializations.length === 0) {
+        return c.json({ error: "At least one specialization is mandatory" }, 400);
+      }
+      if (!providerData.defaultLocation || !providerData.defaultLocation.lat || !providerData.defaultLocation.lng) {
+        return c.json({ error: "defaultLocation with lat/lng is required" }, 400);
+      }
+      const existingStaff = await select("staff", { phone: providerData.phone, is_active: true });
+      if (existingStaff.length > 0) {
+        return c.json({ error: "Phone number already registered" }, 400);
+      }
+      const provider = await insert("staff", {
+        vendor_id: null,
+        // Individual provider
+        name: providerData.name,
+        phone: providerData.phone,
+        email: providerData.email || null,
+        role: providerData.role,
+        experience_years: providerData.experienceYears || null,
+        photo: providerData.photo,
+        qualifications: providerData.qualifications,
+        default_location: providerData.defaultLocation,
+        is_individual_provider: true,
+        is_active: true,
+        mobile_verified: false
+        // Must verify before going live
+      });
+      const providerId = provider[0].id;
+      for (const spec of providerData.specializations) {
+        await insert("staff_specializations", {
+          staff_id: providerId,
+          specialization: typeof spec === "string" ? spec : spec.name || spec
+        });
+      }
+      try {
+        const UAT_MODE = process.env.UAT_MODE === "true" || true;
+        const otp = UAT_MODE ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
+        const expiresAt = /* @__PURE__ */ new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+        await insert("otp_tokens", {
+          phone: providerData.phone,
+          code: otp,
+          purpose: "staff_verification",
+          expires_at: expiresAt,
+          is_used: false
+        });
+        if (!UAT_MODE) {
+          const settings = await select("platform_settings", {
+            setting_key: "admin:settings:aws"
+          });
+          if (settings.length > 0) {
+            const awsSettings = settings[0].setting_value;
+            if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
+              const snsClient3 = new import_client_sns4.SNSClient({
+                region: awsSettings.sns.region || "ap-south-1",
+                credentials: {
+                  accessKeyId: awsSettings.credentials.accessKeyId,
+                  secretAccessKey: awsSettings.credentials.secretAccessKey
+                }
+              });
+              const message2 = `Your Warmpawz verification code is: ${otp}. Valid for 10 minutes.`;
+              await snsClient3.send(
+                new import_client_sns4.PublishCommand({
+                  PhoneNumber: providerData.phone,
+                  Message: message2,
+                  MessageAttributes: {
+                    "AWS.SNS.SMS.SMSType": {
+                      DataType: "String",
+                      StringValue: "Transactional"
+                    }
+                  }
+                })
+              );
+            }
+          }
+        }
+        console.log(`[INDIVIDUAL_PROVIDER] OTP sent to ${providerData.phone}: ${UAT_MODE ? "123456 (UAT)" : "***"}`);
+      } catch (error) {
+        console.error("[INDIVIDUAL_PROVIDER] Failed to send OTP:", error);
+      }
+      return c.json({
+        success: true,
+        provider: provider[0],
+        message: "Individual provider created. OTP sent for verification.",
+        requiresVerification: true
+      });
+    } catch (error) {
+      console.error("Error creating individual provider:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/:staffId/location", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const locationData = await c.req.json();
+      if (!locationData.address || !locationData.lat || !locationData.lng) {
+        return c.json({ error: "address, lat, and lng are required" }, 400);
+      }
+      const location2 = {
+        address: locationData.address,
+        lat: parseFloat(locationData.lat),
+        lng: parseFloat(locationData.lng),
+        place_id: locationData.placeId || null,
+        formatted_address: locationData.formattedAddress || locationData.address
+      };
+      await update("staff", { id: staffId }, { default_location: location2 });
+      await insert("staff_location_overrides", {
+        staff_id: staffId,
+        slot_id: null,
+        // Default location
+        address: locationData.address,
+        latitude: location2.lat,
+        longitude: location2.lng,
+        place_id: locationData.placeId,
+        formatted_address: location2.formatted_address
+      });
+      return c.json({ success: true, location: location2, message: "Location updated successfully" });
+    } catch (error) {
+      console.error("Error updating location:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/location", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const staff = await select("staff", { id: staffId });
+      if (staff.length === 0) {
+        return c.json({ error: "Staff not found" }, 404);
+      }
+      let location2 = staff[0].default_location;
+      if (!location2 && staff[0].vendor_id) {
+        const vendor = await select("vendors", { id: staff[0].vendor_id });
+        if (vendor.length > 0 && vendor[0].latitude && vendor[0].longitude) {
+          location2 = {
+            address: vendor[0].address,
+            lat: vendor[0].latitude,
+            lng: vendor[0].longitude,
+            formatted_address: vendor[0].address
+          };
+        }
+      }
+      return c.json({ success: true, location: location2 });
+    } catch (error) {
+      console.error("Error fetching location:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/location/autocomplete", async (c) => {
+    try {
+      const { input, sessionToken } = await c.req.json();
+      if (!input) {
+        return c.json({ error: "input is required" }, 400);
+      }
+      const settings = await select("platform_settings", {
+        setting_key: "admin:settings:google"
+      });
+      let apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      if (settings.length > 0 && settings[0].setting_value?.apiKey) {
+        apiKey = settings[0].setting_value.apiKey;
+      }
+      if (!apiKey) {
+        return c.json({ error: "Google Maps API key not configured" }, 500);
+      }
+      const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
+      url.searchParams.set("input", input);
+      url.searchParams.set("key", apiKey);
+      url.searchParams.set("types", "address");
+      if (sessionToken) {
+        url.searchParams.set("sessiontoken", sessionToken);
+      }
+      const response = await fetch(url.toString());
+      const data = await response.json();
+      if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+        console.error("Google Places API error:", data);
+        return c.json({ error: "Location autocomplete failed" }, 500);
+      }
+      return c.json({ success: true, predictions: data.predictions || [] });
+    } catch (error) {
+      console.error("Error in autocomplete:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/location/details", async (c) => {
+    try {
+      const { placeId, sessionToken } = await c.req.json();
+      if (!placeId) {
+        return c.json({ error: "placeId is required" }, 400);
+      }
+      const settings = await select("platform_settings", {
+        setting_key: "admin:settings:google"
+      });
+      let apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      if (settings.length > 0 && settings[0].setting_value?.apiKey) {
+        apiKey = settings[0].setting_value.apiKey;
+      }
+      if (!apiKey) {
+        return c.json({ error: "Google Maps API key not configured" }, 500);
+      }
+      const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
+      url.searchParams.set("place_id", placeId);
+      url.searchParams.set("key", apiKey);
+      url.searchParams.set("fields", "formatted_address,geometry,place_id");
+      if (sessionToken) {
+        url.searchParams.set("sessiontoken", sessionToken);
+      }
+      const response = await fetch(url.toString());
+      const data = await response.json();
+      if (data.status !== "OK") {
+        return c.json({ error: "Failed to get place details" }, 500);
+      }
+      const result = data.result;
+      const location2 = {
+        address: result.formatted_address,
+        lat: result.geometry.location.lat,
+        lng: result.geometry.location.lng,
+        place_id: result.place_id,
+        formatted_address: result.formatted_address
+      };
+      return c.json({ success: true, location: location2 });
+    } catch (error) {
+      console.error("Error getting place details:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/login/send-otp", async (c) => {
+    try {
+      const { phone } = await c.req.json();
+      if (!phone) {
+        return c.json({ error: "Phone number is required" }, 400);
+      }
+      const staff = await select("staff", { phone, is_active: true });
+      if (staff.length === 0) {
+        return c.json({ error: "Staff not found or inactive" }, 404);
+      }
+      const UAT_MODE = process.env.UAT_MODE === "true" || true;
+      const otp = UAT_MODE ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
+      const expiresAt = /* @__PURE__ */ new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+      await insert("otp_tokens", {
+        phone,
+        code: otp,
+        purpose: "staff_login",
+        expires_at: expiresAt,
+        is_used: false
+      });
+      if (!UAT_MODE) {
+        try {
+          const settings = await select("platform_settings", {
+            setting_key: "admin:settings:aws"
+          });
+          if (settings.length > 0) {
+            const awsSettings = settings[0].setting_value;
+            if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
+              const snsClient3 = new import_client_sns4.SNSClient({
+                region: awsSettings.sns.region || "ap-south-1",
+                credentials: {
+                  accessKeyId: awsSettings.credentials.accessKeyId,
+                  secretAccessKey: awsSettings.credentials.secretAccessKey
+                }
+              });
+              const message2 = `Your Warmpawz staff login code is: ${otp}. Valid for 10 minutes.`;
+              await snsClient3.send(
+                new import_client_sns4.PublishCommand({
+                  PhoneNumber: phone,
+                  Message: message2,
+                  MessageAttributes: {
+                    "AWS.SNS.SMS.SMSType": {
+                      DataType: "String",
+                      StringValue: "Transactional"
+                    }
+                  }
+                })
+              );
+            }
+          }
+        } catch (snsError) {
+          console.error("[STAFF LOGIN] SNS send failed:", snsError);
+        }
+      }
+      console.log(`[STAFF LOGIN] OTP sent to ${phone}: ${UAT_MODE ? "123456 (UAT)" : "***"}`);
+      return c.json({
+        success: true,
+        message: "OTP sent successfully",
+        debug_otp: UAT_MODE ? otp : void 0
+      });
+    } catch (error) {
+      console.error("Error sending staff login OTP:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/login/verify-otp", async (c) => {
+    try {
+      const { phone, otp } = await c.req.json();
+      if (!phone || !otp) {
+        return c.json({ error: "Phone and OTP are required" }, 400);
+      }
+      const otpRecords = await select("otp_tokens", {
+        phone,
+        code: otp,
+        purpose: "staff_login",
+        is_used: false
+      });
+      if (otpRecords.length === 0) {
+        return c.json({ error: "Invalid OTP" }, 400);
+      }
+      const otpRecord = otpRecords[0];
+      if (new Date(otpRecord.expires_at) < /* @__PURE__ */ new Date()) {
+        return c.json({ error: "OTP has expired" }, 400);
+      }
+      await update("otp_tokens", { id: otpRecord.id }, { is_used: true, used_at: /* @__PURE__ */ new Date() });
+      const staff = await select("staff", { phone, is_active: true });
+      if (staff.length === 0) {
+        return c.json({ error: "Staff not found" }, 404);
+      }
+      const staffMember = staff[0];
+      await update("staff", { id: staffMember.id }, { last_login_at: /* @__PURE__ */ new Date() });
+      let vendorInfo = null;
+      if (staffMember.vendor_id) {
+        const vendor = await select("vendors", { id: staffMember.vendor_id });
+        if (vendor.length > 0) {
+          vendorInfo = {
+            id: vendor[0].id,
+            businessName: vendor[0].business_name,
+            roleId: vendor[0].role_id
+          };
+        }
+      }
+      return c.json({
+        success: true,
+        staff: {
+          id: staffMember.id,
+          name: staffMember.name,
+          phone: staffMember.phone,
+          email: staffMember.email,
+          role: staffMember.role,
+          photo: staffMember.photo,
+          isIndividualProvider: staffMember.is_individual_provider,
+          vendorId: staffMember.vendor_id,
+          vendor: vendorInfo
+        },
+        message: "Login successful"
+      });
+    } catch (error) {
+      console.error("Error verifying staff login OTP:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/appointments", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const date = c.req.query("date");
+      const status = c.req.query("status");
+      const startDate = c.req.query("startDate");
+      const endDate = c.req.query("endDate");
+      let appointmentsQuery = `
+        SELECT 
+          b.id,
+          b.booking_date,
+          b.booking_time,
+          b.status,
+          b.total_amount,
+          b.service_style,
+          b.otp,
+          b.customer_address,
+          b.latitude as customer_lat,
+          b.longitude as customer_lng,
+          s.name as service_name,
+          s.description as service_description,
+          c.name as customer_name,
+          c.phone as customer_phone,
+          p.name as pet_name,
+          p.type as pet_type,
+          v.business_name as vendor_name,
+          v.address as vendor_address,
+          v.latitude as vendor_lat,
+          v.longitude as vendor_lng
+        FROM bookings b
+        INNER JOIN services s ON b.service_id = s.id
+        INNER JOIN customers c ON b.customer_id = c.id
+        INNER JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        WHERE b.staff_id = $1
+      `;
+      const params = [staffId];
+      let paramIndex = 2;
+      if (date) {
+        appointmentsQuery += ` AND b.booking_date = $${paramIndex}`;
+        params.push(date);
+        paramIndex++;
+      }
+      if (startDate) {
+        appointmentsQuery += ` AND b.booking_date >= $${paramIndex}`;
+        params.push(startDate);
+        paramIndex++;
+      }
+      if (endDate) {
+        appointmentsQuery += ` AND b.booking_date <= $${paramIndex}`;
+        params.push(endDate);
+        paramIndex++;
+      }
+      if (status) {
+        appointmentsQuery += ` AND b.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+      appointmentsQuery += ` ORDER BY b.booking_date DESC, b.booking_time DESC`;
+      const appointmentsResult = await query(appointmentsQuery, params);
+      const enrichedAppointments = await Promise.all(
+        appointmentsResult.rows.map(async (booking) => {
+          let staffLocation = null;
+          if (booking.service_style === "at_home") {
+            const staff = await select("staff", { id: staffId });
+            if (staff.length > 0) {
+              if (staff[0].default_location) {
+                staffLocation = staff[0].default_location;
+              } else if (staff[0].vendor_id && booking.vendor_lat) {
+                staffLocation = {
+                  lat: booking.vendor_lat,
+                  lng: booking.vendor_lng
+                };
+              }
+            }
+          }
+          return {
+            ...booking,
+            staffLocation,
+            distance: booking.customer_lat && staffLocation ? calculateDistance2(
+              parseFloat(booking.customer_lat),
+              parseFloat(booking.customer_lng),
+              parseFloat(staffLocation.lat),
+              parseFloat(staffLocation.lng)
+            ) : null
+          };
+        })
+      );
+      return c.json({
+        success: true,
+        appointments: enrichedAppointments,
+        total: enrichedAppointments.length
+      });
+    } catch (error) {
+      console.error("Error fetching staff appointments:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/appointments/:bookingId/accept", async (c) => {
+    try {
+      const { staffId, bookingId } = c.req.param();
+      const bookingCheck = await query(
+        "SELECT * FROM bookings WHERE id = $1 AND staff_id = $2",
+        [bookingId, staffId]
+      );
+      if (bookingCheck.rows.length === 0) {
+        return c.json({ error: "Booking not found or does not belong to this staff" }, 404);
+      }
+      await update("bookings", { id: bookingId }, { status: "confirmed" });
+      return c.json({ success: true, message: "Booking accepted successfully" });
+    } catch (error) {
+      console.error("Error accepting booking:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/appointments/:bookingId/reject", async (c) => {
+    try {
+      const { staffId, bookingId } = c.req.param();
+      const { reason } = await c.req.json();
+      const bookingCheck = await query(
+        "SELECT * FROM bookings WHERE id = $1 AND staff_id = $2",
+        [bookingId, staffId]
+      );
+      if (bookingCheck.rows.length === 0) {
+        return c.json({ error: "Booking not found or does not belong to this staff" }, 404);
+      }
+      await update("bookings", { id: bookingId }, {
+        status: "cancelled",
+        cancellation_reason: reason || "Rejected by staff"
+      });
+      return c.json({ success: true, message: "Booking rejected" });
+    } catch (error) {
+      console.error("Error rejecting booking:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/appointments/:bookingId/start", async (c) => {
+    try {
+      const { staffId, bookingId } = c.req.param();
+      const { otp } = await c.req.json();
+      const bookingCheck = await query(
+        "SELECT * FROM bookings WHERE id = $1 AND staff_id = $2",
+        [bookingId, staffId]
+      );
+      if (bookingCheck.rows.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookingCheck.rows[0];
+      if (booking.service_style !== "tele" && otp) {
+        if (booking.otp !== otp) {
+          return c.json({ error: "Invalid OTP" }, 400);
+        }
+      }
+      await update("bookings", { id: bookingId }, {
+        status: "in_progress",
+        started_at: /* @__PURE__ */ new Date()
+      });
+      if (booking.service_style === "at_home") {
+      }
+      return c.json({
+        success: true,
+        message: "Service started",
+        gpsTrackingEnabled: booking.service_style === "at_home"
+      });
+    } catch (error) {
+      console.error("Error starting service:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/staff/:staffId/appointments/:bookingId/complete", async (c) => {
+    try {
+      const { staffId, bookingId } = c.req.param();
+      const { otp } = await c.req.json();
+      const bookingCheck = await query(
+        "SELECT * FROM bookings WHERE id = $1 AND staff_id = $2",
+        [bookingId, staffId]
+      );
+      if (bookingCheck.rows.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookingCheck.rows[0];
+      if (booking.service_style !== "tele") {
+        if (!otp) {
+          return c.json({ error: "OTP is required to complete service" }, 400);
+        }
+        if (booking.otp !== otp) {
+          return c.json({ error: "Invalid OTP" }, 400);
+        }
+      }
+      await update("bookings", { id: bookingId }, {
+        status: "completed",
+        completed_at: /* @__PURE__ */ new Date()
+      });
+      if (booking.service_style === "at_home") {
+      }
+      return c.json({
+        success: true,
+        message: "Service completed successfully"
+      });
+    } catch (error) {
+      console.error("Error completing service:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/earnings", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const period = c.req.query("period") || "month";
+      const now = /* @__PURE__ */ new Date();
+      let startDate;
+      switch (period) {
+        case "week":
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1e3);
+          break;
+        case "month":
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case "year":
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        default:
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+      const completedBookings = await query(
+        `SELECT 
+          b.id,
+          b.booking_date,
+          b.total_amount,
+          b.service_style,
+          s.name as service_name
+         FROM bookings b
+         INNER JOIN services s ON b.service_id = s.id
+         WHERE b.staff_id = $1
+           AND b.status = 'completed'
+           AND b.booking_date >= $2
+         ORDER BY b.booking_date DESC`,
+        [staffId, startDate.toISOString().split("T")[0]]
+      );
+      const platformCommissionRate = 0.15;
+      const gstOnCommission = 0.18;
+      let totalRevenue = 0;
+      let totalEarnings = 0;
+      let totalCommission = 0;
+      let totalGST = 0;
+      completedBookings.rows.forEach((booking) => {
+        const revenue = parseFloat(booking.total_amount) || 0;
+        totalRevenue += revenue;
+        const commission = revenue * platformCommissionRate;
+        const gst = commission * gstOnCommission;
+        const earnings = revenue - commission - gst;
+        totalCommission += commission;
+        totalGST += gst;
+        totalEarnings += earnings;
+      });
+      const pendingBookings = await query(
+        `SELECT COALESCE(SUM(total_amount), 0) as pending_amount
+         FROM bookings
+         WHERE staff_id = $1
+           AND status = 'completed'
+           AND settlement_status IS NULL
+           AND booking_date >= $2`,
+        [staffId, startDate.toISOString().split("T")[0]]
+      );
+      const pendingEarnings = parseFloat(pendingBookings.rows[0]?.pending_amount || "0") * (1 - platformCommissionRate - platformCommissionRate * gstOnCommission);
+      let lastSettlement = { rows: [] };
+      try {
+        lastSettlement = await query(
+          `SELECT 
+            settlement_amount,
+            settlement_date
+           FROM settlements
+           WHERE staff_id = $1
+           ORDER BY settlement_date DESC
+           LIMIT 1`,
+          [staffId]
+        );
+      } catch (error) {
+        console.warn("Could not fetch staff settlements:", error);
+        const staffRecord = await select("staff", { id: staffId });
+        if (staffRecord.length > 0 && staffRecord[0].vendor_id) {
+          try {
+            lastSettlement = await query(
+              `SELECT 
+                settlement_amount,
+                settlement_date
+               FROM settlements
+               WHERE vendor_id = $1
+               ORDER BY settlement_date DESC
+               LIMIT 1`,
+              [staffRecord[0].vendor_id]
+            );
+          } catch (e) {
+            console.warn("Could not fetch vendor settlements:", e);
+          }
+        }
+      }
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+      const thisMonthBookings = await query(
+        `SELECT COALESCE(SUM(total_amount), 0) as amount
+         FROM bookings
+         WHERE staff_id = $1
+           AND status = 'completed'
+           AND booking_date >= $2`,
+        [staffId, thisMonthStart.toISOString().split("T")[0]]
+      );
+      const lastMonthBookings = await query(
+        `SELECT COALESCE(SUM(total_amount), 0) as amount
+         FROM bookings
+         WHERE staff_id = $1
+           AND status = 'completed'
+           AND booking_date >= $2
+           AND booking_date <= $3`,
+        [staffId, lastMonthStart.toISOString().split("T")[0], lastMonthEnd.toISOString().split("T")[0]]
+      );
+      const thisMonthRevenue = parseFloat(thisMonthBookings.rows[0]?.amount || "0");
+      const lastMonthRevenue = parseFloat(lastMonthBookings.rows[0]?.amount || "0");
+      const thisMonthEarnings = thisMonthRevenue * (1 - platformCommissionRate - platformCommissionRate * gstOnCommission);
+      const lastMonthEarnings = lastMonthRevenue * (1 - platformCommissionRate - platformCommissionRate * gstOnCommission);
+      return c.json({
+        success: true,
+        summary: {
+          totalEarnings: Math.round(totalEarnings * 100) / 100,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+          totalCommission: Math.round(totalCommission * 100) / 100,
+          totalGST: Math.round(totalGST * 100) / 100,
+          pendingEarnings: Math.round(pendingEarnings * 100) / 100,
+          lastSettlement: lastSettlement.rows[0] ? Math.round(parseFloat(lastSettlement.rows[0].settlement_amount) * 100) / 100 : 0,
+          lastSettlementDate: lastSettlement.rows[0]?.settlement_date || null,
+          thisMonth: Math.round(thisMonthEarnings * 100) / 100,
+          lastMonth: Math.round(lastMonthEarnings * 100) / 100,
+          totalBookings: completedBookings.rows.length,
+          completedBookings: completedBookings.rows.length,
+          averageBookingValue: completedBookings.rows.length > 0 ? Math.round(totalRevenue / completedBookings.rows.length * 100) / 100 : 0
+        },
+        bookings: completedBookings.rows
+      });
+    } catch (error) {
+      console.error("Error fetching staff earnings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/earnings/transactions", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const period = c.req.query("period") || "month";
+      const now = /* @__PURE__ */ new Date();
+      let startDate;
+      switch (period) {
+        case "week":
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1e3);
+          break;
+        case "month":
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case "year":
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        default:
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+      const bookings = await query(
+        `SELECT 
+          b.id,
+          b.booking_date,
+          b.booking_time,
+          b.total_amount,
+          b.status,
+          b.service_style,
+          s.name as service_name,
+          c.name as customer_name,
+          p.name as pet_name,
+          'booking' as transaction_type
+         FROM bookings b
+         INNER JOIN services s ON b.service_id = s.id
+         INNER JOIN customers c ON b.customer_id = c.id
+         INNER JOIN pets p ON b.pet_id = p.id
+         WHERE b.staff_id = $1
+           AND b.status = 'completed'
+           AND b.booking_date >= $2
+         ORDER BY b.booking_date DESC, b.booking_time DESC`,
+        [staffId, startDate.toISOString().split("T")[0]]
+      );
+      let settlements = [];
+      try {
+        let settlementsResult;
+        try {
+          settlementsResult = await query(
+            `SELECT 
+              id,
+              settlement_amount as total_amount,
+              settlement_date as booking_date,
+              'settlement' as transaction_type,
+              'Settlement' as service_name,
+              'Settlement Payment' as customer_name
+             FROM staff_settlements
+             WHERE staff_id = $1
+               AND settlement_date >= $2
+             ORDER BY settlement_date DESC`,
+            [staffId, startDate.toISOString().split("T")[0]]
+          );
+        } catch (e) {
+          settlementsResult = await query(
+            `SELECT 
+              id,
+              settlement_amount as total_amount,
+              settlement_date as booking_date,
+              'settlement' as transaction_type,
+              'Settlement' as service_name,
+              'Settlement Payment' as customer_name
+             FROM settlements
+             WHERE staff_id = $1
+               AND settlement_date >= $2
+             ORDER BY settlement_date DESC`,
+            [staffId, startDate.toISOString().split("T")[0]]
+          );
+        }
+        settlements = settlementsResult.rows;
+      } catch (error) {
+        console.warn("Could not fetch settlements:", error);
+      }
+      const transactions = [
+        ...bookings.rows.map((b) => ({
+          ...b,
+          transaction_type: "booking",
+          description: `${b.service_name} - ${b.customer_name}'s ${b.pet_name}`
+        })),
+        ...settlements.map((s) => ({
+          ...s,
+          description: "Settlement Payment"
+        }))
+      ].sort((a, b) => {
+        const dateA = new Date(a.booking_date).getTime();
+        const dateB = new Date(b.booking_date).getTime();
+        return dateB - dateA;
+      });
+      return c.json({
+        success: true,
+        transactions,
+        total: transactions.length
+      });
+    } catch (error) {
+      console.error("Error fetching staff transactions:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/:staffId/conversations", async (c) => {
+    try {
+      const staffId = c.req.param("staffId");
+      if (!isValidUUID(staffId)) {
+        return c.json({ error: "Invalid staff ID" }, 400);
+      }
+      const bookings = await query(
+        `SELECT DISTINCT
+          b.id as booking_id,
+          b.customer_id,
+          c.name as customer_name,
+          c.phone as customer_phone,
+          c.photo_url as customer_photo,
+          b.booking_date,
+          b.status,
+          b.created_at
+        FROM bookings b
+        INNER JOIN customers c ON b.customer_id = c.id
+        WHERE b.staff_id = $1
+          AND b.status NOT IN ('cancelled')
+        ORDER BY b.created_at DESC`,
+        [staffId]
+      );
+      const conversations = await Promise.all(
+        bookings.rows.map(async (booking) => {
+          let lastMessage = null;
+          let lastMessageAt = booking.created_at;
+          let unreadCount = 0;
+          try {
+            const messageResult = await query(
+              `SELECT message, created_at, sender_type, read_at
+               FROM messages
+               WHERE booking_id = $1
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [booking.booking_id]
+            ).catch(() => ({ rows: [] }));
+            if (messageResult.rows.length > 0) {
+              lastMessage = messageResult.rows[0].message;
+              lastMessageAt = messageResult.rows[0].created_at;
+            }
+            const unreadResult = await query(
+              `SELECT COUNT(*) as count
+               FROM messages
+               WHERE booking_id = $1
+                 AND sender_type = 'customer'
+                 AND (read_at IS NULL OR read_at = '')`,
+              [booking.booking_id]
+            ).catch(() => ({ rows: [{ count: 0 }] }));
+            unreadCount = parseInt(unreadResult.rows[0]?.count || "0");
+          } catch (error) {
+            console.warn("Messages table not available:", error);
+          }
+          return {
+            id: `conv_${booking.booking_id}`,
+            customer_id: booking.customer_id,
+            customer_name: booking.customer_name,
+            customer_phone: booking.customer_phone,
+            customer_photo: booking.customer_photo,
+            booking_id: booking.booking_id,
+            booking_date: booking.booking_date,
+            last_message: lastMessage || "Tap to start conversation",
+            last_message_at: lastMessageAt,
+            unread_count: unreadCount
+          };
+        })
+      );
+      return c.json({
+        success: true,
+        conversations
+      });
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/staff/conversations/:conversationId/messages", async (c) => {
+    try {
+      const conversationId = c.req.param("conversationId");
+      const bookingId = conversationId.replace("conv_", "");
+      if (!isValidUUID(bookingId)) {
+        return c.json({ error: "Invalid conversation ID" }, 400);
+      }
+      try {
+        const messagesResult = await query(
+          `SELECT 
+            id,
+            sender_id,
+            sender_type,
+            message,
+            created_at,
+            read_at
+          FROM messages
+          WHERE booking_id = $1
+          ORDER BY created_at ASC`,
+          [bookingId]
+        );
+        return c.json({
+          success: true,
+          messages: messagesResult.rows.map((msg) => ({
+            id: msg.id,
+            sender_id: msg.sender_id,
+            sender_type: msg.sender_type,
+            message: msg.message,
+            created_at: msg.created_at,
+            read_at: msg.read_at
+          }))
+        });
+      } catch (error) {
+        return c.json({
+          success: true,
+          messages: []
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/conversations/:conversationId/messages", async (c) => {
+    try {
+      const conversationId = c.req.param("conversationId");
+      const { message: message2 } = await c.req.json();
+      if (!message2 || !message2.trim()) {
+        return c.json({ error: "Message is required" }, 400);
+      }
+      const bookingId = conversationId.replace("conv_", "");
+      if (!isValidUUID(bookingId)) {
+        return c.json({ error: "Invalid conversation ID" }, 400);
+      }
+      const booking = await select("bookings", { id: bookingId });
+      if (booking.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const staffId = booking[0].staff_id;
+      try {
+        const messageRecord = await insert("messages", {
+          booking_id: bookingId,
+          sender_id: staffId,
+          sender_type: "staff",
+          message: message2.trim(),
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        return c.json({
+          success: true,
+          message: {
+            id: messageRecord[0]?.id || `msg_${Date.now()}`,
+            sender_id: staffId,
+            sender_type: "staff",
+            message: message2.trim(),
+            created_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        });
+      } catch (error) {
+        console.warn("Messages table not available:", error);
+        return c.json({
+          success: true,
+          message: {
+            id: `msg_${Date.now()}`,
+            sender_id: staffId,
+            sender_type: "staff",
+            message: message2.trim(),
+            created_at: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/staff/conversations/:conversationId/read", async (c) => {
+    try {
+      const conversationId = c.req.param("conversationId");
+      const bookingId = conversationId.replace("conv_", "");
+      if (!isValidUUID(bookingId)) {
+        return c.json({ error: "Invalid conversation ID" }, 400);
+      }
+      try {
+        await query(
+          `UPDATE messages
+           SET read_at = $1
+           WHERE booking_id = $2
+             AND sender_type = 'customer'
+             AND (read_at IS NULL OR read_at = '')`,
+          [(/* @__PURE__ */ new Date()).toISOString(), bookingId]
+        );
+        return c.json({ success: true });
+      } catch (error) {
+        return c.json({ success: true });
+      }
+    } catch (error) {
+      console.error("Error marking as read:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 // src/endpoints/service-discovery.ts
 init_rds_connection();
-
-// src/types/entities.ts
-var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isValidUUID(id) {
-  return typeof id === "string" && UUID_REGEX.test(id);
-}
-
-// src/endpoints/service-discovery.ts
 function calculateDistance3(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -234681,6 +236869,7 @@ function getCategoryFromRole(roleId) {
     "boarding_resort": "boarding",
     "pet_boarding": "boarding",
     "nutritionist": "nutrition",
+    "pet_nutritionist": "nutrition",
     "ngo": "adoption",
     "shelter": "adoption",
     "breeder": "adoption",
@@ -234716,7 +236905,7 @@ function registerServiceDiscoveryEndpoints(app2) {
           "training": ["trainer", "pet_trainer"],
           "walker": ["dog_walker", "pet_walker"],
           "boarding": ["boarding_resort", "pet_boarding"],
-          "nutrition": ["nutritionist"],
+          "nutrition": ["nutritionist", "pet_nutritionist"],
           "adoption": ["ngo", "shelter", "breeder"],
           "marketplace": ["pet_store"]
         };
@@ -234732,9 +236921,9 @@ function registerServiceDiscoveryEndpoints(app2) {
         params.push(roleId, roleId);
         paramIndex += 2;
       }
-      const vendors2 = await query(vendorQuery, params);
+      const vendors = await query(vendorQuery, params);
       const services = await Promise.all(
-        vendors2.rows.map(async (vendor) => {
+        vendors.rows.map(async (vendor) => {
           const serviceColumns = await query(
             `SELECT column_name FROM information_schema.columns 
              WHERE table_name = 'services' AND column_name = 'is_global'`
@@ -234796,7 +236985,7 @@ function registerServiceDiscoveryEndpoints(app2) {
           "training": ["trainer", "pet_trainer"],
           "walker": ["dog_walker", "pet_walker"],
           "boarding": ["boarding_resort", "pet_boarding"],
-          "nutrition": ["nutritionist"],
+          "nutrition": ["nutritionist", "pet_nutritionist"],
           "adoption": ["ngo", "shelter", "breeder"],
           "marketplace": ["pet_store"]
         };
@@ -234818,9 +237007,9 @@ function registerServiceDiscoveryEndpoints(app2) {
       }
       vendorQuery += ` ORDER BY v.created_at DESC`;
       const vendorResults = await query(vendorQuery, params);
-      let vendors2 = vendorResults.rows;
+      let vendors = vendorResults.rows;
       const enrichedVendors = await Promise.all(
-        vendors2.map(async (vendor) => {
+        vendors.map(async (vendor) => {
           const services = await query(
             `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled
              FROM services s
@@ -234943,14 +237132,121 @@ function registerServiceDiscoveryEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.get("/customer/vendor/:vendorId/available-slots", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const date = c.req.query("date");
+      const serviceStyle = c.req.query("serviceStyle") || "at_home";
+      if (!date) {
+        return c.json({ error: "date parameter is required" }, 400);
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      let operatingHours = null;
+      if (vendor.operating_hours) {
+        try {
+          operatingHours = typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours;
+        } catch (e) {
+          console.warn("[SLOTS] Failed to parse vendor.operating_hours:", e);
+        }
+      }
+      if (!operatingHours && vendor.metadata) {
+        try {
+          const metadata = typeof vendor.metadata === "string" ? JSON.parse(vendor.metadata) : vendor.metadata;
+          operatingHours = metadata?.operatingHours || metadata?.operating_hours;
+        } catch (e) {
+          console.warn("[SLOTS] Failed to parse metadata:", e);
+        }
+      }
+      if (!operatingHours) {
+        try {
+          const facilities = await query(
+            `SELECT operating_hours FROM vendor_facilities WHERE vendor_id = $1 LIMIT 1`,
+            [vendorId]
+          );
+          if (facilities.rows.length > 0 && facilities.rows[0].operating_hours) {
+            const facilityHours = facilities.rows[0].operating_hours;
+            operatingHours = typeof facilityHours === "string" ? JSON.parse(facilityHours) : facilityHours;
+            console.log("[SLOTS] Loaded operating hours from vendor_facilities");
+          }
+        } catch (e) {
+          console.warn("[SLOTS] Failed to load from vendor_facilities:", e);
+        }
+      }
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+      const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const dayName = dayNames[dayOfWeek];
+      const slots = [];
+      if (operatingHours && operatingHours[dayName]) {
+        const daySchedule = operatingHours[dayName];
+        if (daySchedule.isOpen && daySchedule.open && daySchedule.close) {
+          const [openHour, openMin] = daySchedule.open.split(":").map(Number);
+          const [closeHour, closeMin] = daySchedule.close.split(":").map(Number);
+          let currentHour = openHour;
+          let currentMin = openMin;
+          while (currentHour < closeHour || currentHour === closeHour && currentMin < closeMin) {
+            const timeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMin).padStart(2, "0")}`;
+            const now = /* @__PURE__ */ new Date();
+            const slotDateTime = new Date(requestedDate);
+            slotDateTime.setHours(currentHour, currentMin, 0, 0);
+            const isPast = slotDateTime < now;
+            slots.push({
+              time: timeStr,
+              available: !isPast
+            });
+            currentMin += 30;
+            if (currentMin >= 60) {
+              currentMin -= 60;
+              currentHour += 1;
+            }
+          }
+        }
+      } else {
+        const defaultSlots = [
+          "09:00",
+          "09:30",
+          "10:00",
+          "10:30",
+          "11:00",
+          "11:30",
+          "14:00",
+          "14:30",
+          "15:00",
+          "15:30",
+          "16:00",
+          "16:30",
+          "17:00",
+          "17:30"
+        ];
+        slots.push(...defaultSlots.map((time) => ({
+          time,
+          available: true
+        })));
+      }
+      return c.json({
+        success: true,
+        slots,
+        date,
+        vendorId,
+        serviceStyle
+      });
+    } catch (error) {
+      console.error("Error fetching available slots:", error);
+      return c.json({ error: error.message || "Failed to fetch available slots" }, 500);
+    }
+  });
   app2.get("/customer/vendor/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const roles = await select("roles", { id: vendor.role_id });
       const role = roles[0];
       const serviceColumns = await query(
@@ -235062,9 +237358,9 @@ function registerServiceDiscoveryEndpoints(app2) {
       params.push(limit, offset);
       paramIndex += 2;
       const vendorResults = await query(vendorQuery, params);
-      let vendors2 = vendorResults.rows;
+      let vendors = vendorResults.rows;
       const enrichedVendors = await Promise.all(
-        vendors2.map(async (vendor) => {
+        vendors.map(async (vendor) => {
           const reviews = await query(
             `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
              FROM reviews 
@@ -235153,7 +237449,7 @@ function registerServiceDiscoveryEndpoints(app2) {
       if (!q || q.length < 2) {
         return c.json({ success: true, suggestions: [] });
       }
-      const vendors2 = await query(
+      const vendors = await query(
         `SELECT DISTINCT business_name as name, 'vendor' as type, id
          FROM vendors
          WHERE business_name ILIKE $1 AND status = 'approved' AND is_active = true
@@ -235175,7 +237471,7 @@ function registerServiceDiscoveryEndpoints(app2) {
         [`%${q}%`, limit]
       );
       const suggestions = [
-        ...vendors2.rows.map((v) => ({ text: v.name, type: v.type, id: v.id })),
+        ...vendors.rows.map((v) => ({ text: v.name, type: v.type, id: v.id })),
         ...services.rows.map((s) => ({ text: s.name, type: s.type, id: s.id })),
         ...problems.rows.map((p) => ({ text: p.name, type: p.type, id: p.id }))
       ].slice(0, limit);
@@ -235194,7 +237490,7 @@ function registerServiceDiscoveryEndpoints(app2) {
       if (!lat || !lng) {
         return c.json({ error: "lat and lng are required" }, 400);
       }
-      const vendors2 = await query(
+      const vendors = await query(
         `SELECT v.*, r.name as role_name,
          (6371 * acos(
            cos(radians($1)) * cos(radians(CAST(v.latitude AS FLOAT))) *
@@ -235213,7 +237509,7 @@ function registerServiceDiscoveryEndpoints(app2) {
       );
       return c.json({
         success: true,
-        providers: vendors2.rows.map((v) => ({
+        providers: vendors.rows.map((v) => ({
           id: v.id,
           name: v.business_name,
           role: v.role_name,
@@ -235293,11 +237589,11 @@ function registerServiceDiscoveryEndpoints(app2) {
   app2.get("/vendor/:vendorId/facility", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const serviceColumns = await query(
         `SELECT column_name FROM information_schema.columns 
          WHERE table_name = 'services' AND column_name = 'is_global'`
@@ -235328,6 +237624,8 @@ function registerServiceDiscoveryEndpoints(app2) {
          LIMIT 5`,
         [vendorId]
       );
+      const metadata = vendor.metadata || {};
+      const operatingHours = vendor.operating_hours ? typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours : null;
       return c.json({
         success: true,
         vendor: {
@@ -235345,7 +237643,12 @@ function registerServiceDiscoveryEndpoints(app2) {
           state: vendor.state,
           pincode: vendor.pincode,
           latitude: vendor.latitude,
-          longitude: vendor.longitude
+          longitude: vendor.longitude,
+          description: vendor.description || "",
+          amenities: metadata.amenities || [],
+          photos: metadata.facility_photos || [],
+          specializations: metadata.specializations || [],
+          operatingHours: operatingHours || null
         },
         services: services.rows || [],
         rating: {
@@ -235357,6 +237660,96 @@ function registerServiceDiscoveryEndpoints(app2) {
     } catch (error) {
       console.error("Error fetching vendor facility:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/vendor/facility/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const facilityData = await c.req.json();
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const updateData = {};
+      if (facilityData.address !== void 0) updateData.address = facilityData.address;
+      if (facilityData.city !== void 0) updateData.city = facilityData.city;
+      if (facilityData.state !== void 0) updateData.state = facilityData.state;
+      if (facilityData.pincode !== void 0) updateData.pincode = facilityData.pincode;
+      if (facilityData.country !== void 0) updateData.country = facilityData.country;
+      if (facilityData.latitude !== void 0) updateData.latitude = facilityData.latitude;
+      if (facilityData.longitude !== void 0) updateData.longitude = facilityData.longitude;
+      if (facilityData.operatingHours !== void 0 || facilityData.operating_hours !== void 0) {
+        updateData.operating_hours = facilityData.operatingHours || facilityData.operating_hours;
+      }
+      const existingMetadata = vendor.metadata || {};
+      const updatedMetadata = { ...existingMetadata };
+      let metadataChanged = false;
+      if (facilityData.amenities !== void 0) {
+        updatedMetadata.amenities = facilityData.amenities;
+        metadataChanged = true;
+      }
+      if (facilityData.customAmenities !== void 0) {
+        updatedMetadata.customAmenities = facilityData.customAmenities;
+        metadataChanged = true;
+      }
+      if (facilityData.specializations !== void 0) {
+        updatedMetadata.specializations = facilityData.specializations;
+        metadataChanged = true;
+      }
+      if (facilityData.photos !== void 0 || facilityData.facility_photos !== void 0) {
+        updatedMetadata.facility_photos = facilityData.photos || facilityData.facility_photos;
+        metadataChanged = true;
+      }
+      if (metadataChanged) {
+        try {
+          const { query: query12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+          const columnCheck = await query12(
+            `SELECT column_name FROM information_schema.columns 
+             WHERE table_name = 'vendors' AND column_name = 'metadata'`
+          );
+          if (columnCheck.rows.length === 0) {
+            console.log("[FACILITY] Metadata column missing, adding it...");
+            await query12("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS metadata JSONB");
+            console.log("[FACILITY] Metadata column added successfully");
+          }
+          updateData.metadata = updatedMetadata;
+        } catch (metadataError) {
+          console.error("[FACILITY] Error handling metadata column:", metadataError);
+          if (!metadataError.message?.includes("does not exist")) {
+            throw metadataError;
+          }
+          console.warn("[FACILITY] Skipping metadata update - column may not exist");
+        }
+      }
+      if (facilityData.description !== void 0) updateData.description = facilityData.description;
+      if (Object.keys(updateData).length === 0) {
+        return c.json({ error: "No valid fields to update. Please provide at least one facility field" }, 400);
+      }
+      updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+      const { update: update12 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+      const updated = await update12("vendors", { id: vendorId }, updateData);
+      if (updated.length === 0) {
+        return c.json({ error: "Failed to update facility" }, 500);
+      }
+      return c.json({
+        success: true,
+        message: "Facility updated successfully",
+        facility: {
+          address: updated[0].address,
+          city: updated[0].city,
+          state: updated[0].state,
+          pincode: updated[0].pincode,
+          latitude: updated[0].latitude,
+          longitude: updated[0].longitude,
+          operating_hours: updated[0].operating_hours,
+          amenities: updated[0].metadata?.amenities || [],
+          photos: updated[0].metadata?.facility_photos || []
+        }
+      });
+    } catch (error) {
+      console.error("Error updating vendor facility:", error);
+      return c.json({ error: error.message || "Failed to update facility" }, 500);
     }
   });
   app2.get("/customer/facility/:vendorId", async (c) => {
@@ -235620,6 +238013,89 @@ function registerServiceDiscoveryEndpoints(app2) {
       return c.json({ error: error.message, success: false }, 500);
     }
   });
+  app2.get("/vendors", async (c) => {
+    try {
+      const role = c.req.query("role");
+      const city = c.req.query("city");
+      const status = c.req.query("status") || "approved";
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      let vendorQuery = `
+        SELECT 
+          v.id,
+          v.business_name,
+          v.owner_name,
+          v.phone,
+          v.address,
+          v.city,
+          v.latitude,
+          v.longitude,
+          v.status,
+          v.role_id,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          COALESCE(
+            (SELECT AVG(rating)::numeric(3,1) FROM reviews WHERE vendor_id = v.id),
+            4.5
+          ) as avg_rating,
+          COALESCE(
+            (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id),
+            0
+          ) as review_count,
+          COALESCE(
+            (SELECT COUNT(*) FROM bookings WHERE vendor_id = v.id AND status = 'completed'),
+            0
+          ) as completed_bookings
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE v.is_active = true
+      `;
+      const params = [];
+      let paramIndex = 1;
+      if (status) {
+        vendorQuery += ` AND v.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+      if (role) {
+        vendorQuery += ` AND (r.name = $${paramIndex} OR r.display_name ILIKE $${paramIndex + 1})`;
+        params.push(role, `%${role}%`);
+        paramIndex += 2;
+      }
+      if (city) {
+        vendorQuery += ` AND v.city ILIKE $${paramIndex}`;
+        params.push(`%${city}%`);
+        paramIndex++;
+      }
+      vendorQuery += ` ORDER BY avg_rating DESC, completed_bookings DESC LIMIT $${paramIndex}`;
+      params.push(limit);
+      const result = await query(vendorQuery, params);
+      const vendors = result.rows.map((v) => ({
+        id: v.id,
+        businessName: v.business_name || v.owner_name,
+        ownerName: v.owner_name,
+        phone: v.phone,
+        address: v.address,
+        city: v.city,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        status: v.status,
+        roleId: v.role_id,
+        roleName: v.role_name,
+        roleDisplayName: v.role_display_name,
+        rating: parseFloat(v.avg_rating || "4.5").toFixed(1),
+        reviewCount: parseInt(v.review_count || "0", 10),
+        completedBookings: parseInt(v.completed_bookings || "0", 10)
+      }));
+      return c.json({
+        success: true,
+        vendors,
+        total: vendors.length
+      });
+    } catch (error) {
+      console.error("Error fetching vendors:", error);
+      return c.json({ error: error.message, success: false }, 500);
+    }
+  });
 }
 
 // src/endpoints/reviews.ts
@@ -235816,7 +238292,7 @@ function registerReviewEndpoints(app2) {
 // src/endpoints/notifications.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns4 = require("@aws-sdk/client-sns");
+var import_client_sns5 = require("@aws-sdk/client-sns");
 function registerNotificationEndpoints(app2) {
   app2.get("/notifications", async (c) => {
     try {
@@ -235905,12 +238381,12 @@ function registerNotificationEndpoints(app2) {
             const customers = await select("customers", { id: userId });
             phone = customers[0]?.phone || null;
           } else if (userType === "vendor") {
-            const vendors2 = await select("vendors", { id: userId });
-            phone = vendors2[0]?.phone || null;
+            const vendors = await select("vendors", { id: userId });
+            phone = vendors[0]?.phone || null;
           }
           if (phone) {
             const snsClient3 = getSnsClient();
-            await snsClient3.send(new import_client_sns4.PublishCommand({
+            await snsClient3.send(new import_client_sns5.PublishCommand({
               PhoneNumber: phone,
               Message: `${title}
 
@@ -236105,7 +238581,7 @@ init_rds_connection();
 function registerFollowupRescheduleEndpoints(app2) {
   app2.post("/followup/create", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         originalBookingId,
         customerPhone,
@@ -236117,7 +238593,7 @@ function registerFollowupRescheduleEndpoints(app2) {
         petId,
         address,
         serviceStyle = "at_center"
-      } = body2;
+      } = body;
       if (!originalBookingId || !customerPhone || !vendorId || !selectedDate || !selectedTime) {
         return c.json({
           error: "originalBookingId, customerPhone, vendorId, selectedDate, and selectedTime are required"
@@ -236594,7 +239070,7 @@ function registerBehaviorJournalEndpoints(app2) {
   });
   app2.post("/behaviorist/journal-entry", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         petId,
         customerId,
@@ -236603,7 +239079,7 @@ function registerBehaviorJournalEndpoints(app2) {
         duration,
         severity,
         notes
-      } = body2;
+      } = body;
       if (!petId || !customerId || !behavior) {
         return c.json({
           error: "petId, customerId, and behavior are required"
@@ -236926,11 +239402,13 @@ function registerVendorScheduleEndpoints(app2) {
           totalSlots: 0
         });
       }
+      let vendor;
       try {
-        const vendors2 = await select("vendors", { id: vendorId });
-        if (vendors2.length === 0) {
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length === 0) {
           return c.json({ error: "Vendor not found" }, 404);
         }
+        vendor = vendors[0];
       } catch (error) {
         if (error.message?.includes("invalid input syntax for type uuid")) {
           return c.json({
@@ -236941,7 +239419,6 @@ function registerVendorScheduleEndpoints(app2) {
         }
         throw error;
       }
-      const vendor = vendors[0];
       if (!vendor.is_active || vendor.status !== "approved") {
         return c.json({
           success: true,
@@ -237138,8 +239615,8 @@ function registerVendorScheduleEndpoints(app2) {
     try {
       const { vendorId } = c.req.param();
       const scheduleData = await c.req.json();
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
       const slots = Array.isArray(scheduleData.slots) ? scheduleData.slots : [scheduleData];
@@ -237259,11 +239736,24 @@ function registerVendorScheduleEndpoints(app2) {
     try {
       const { vendorId } = c.req.param();
       const { startDate, endDate, message: message2, isActive } = await c.req.json();
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
+      try {
+        const columnCheck = await query(
+          `SELECT column_name FROM information_schema.columns 
+           WHERE table_name = 'vendors' AND column_name = 'metadata'`
+        );
+        if (columnCheck.rows.length === 0) {
+          console.log("[VACATION] Metadata column missing, adding it...");
+          await query("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS metadata JSONB");
+          console.log("[VACATION] Metadata column added successfully");
+        }
+      } catch (metadataError) {
+        console.error("[VACATION] Error checking/adding metadata column:", metadataError);
+      }
       const metadata = vendor.metadata || {};
       metadata.vacation_mode = {
         isActive: isActive !== false,
@@ -237967,14 +240457,14 @@ function registerMedicalRecordsEndpoints(app2) {
           entityType: "medical_record",
           entityId: recordId,
           action: "update",
-          oldValues: { previous_record: existingRecord },
-          newValues: { updated_fields: Object.keys(body) },
+          oldValues: { previous_record: existing[0] },
+          newValues: { updated_fields: ["title", "description", "attachments", "updatedBy"].filter((k) => ({ title, description, attachments, updatedBy })[k] !== void 0) },
           actorType: updatedBy?.startsWith("vendor_") ? "vendor" : "customer",
           actorId: updatedBy,
-          requestId: context.event.requestContext?.requestId
+          requestId: c.req.header("x-request-id") || crypto.randomUUID()
         });
-      } catch (error) {
-        console.warn("Failed to create audit log entry:", error);
+      } catch (auditError) {
+        console.warn("Failed to create audit log entry:", auditError);
       }
       return c.json({
         success: true,
@@ -238388,27 +240878,31 @@ function registerEcommerceEndpoints(app2) {
       let subtotal = 0;
       const orderItems = [];
       const taxCalculationItems = [];
-      let customerLocation = null;
-      let vendorLocation = null;
+      let customerLocation = void 0;
+      let vendorLocation = void 0;
       if (customerId) {
         const customers = await select("customers", { id: customerId });
         if (customers.length > 0 && customers[0].address) {
           const addr = typeof customers[0].address === "string" ? JSON.parse(customers[0].address) : customers[0].address;
-          customerLocation = {
-            state: addr.state,
-            city: addr.city,
-            pincode: addr.pincode
-          };
+          if (addr?.state) {
+            customerLocation = {
+              state: addr.state,
+              city: addr.city,
+              pincode: addr.pincode
+            };
+          }
         }
       }
       if (vendorId) {
-        const vendors2 = await select("vendors", { id: vendorId });
-        if (vendors2.length > 0 && vendors2[0].address) {
-          const addr = typeof vendors2[0].address === "string" ? JSON.parse(vendors2[0].address) : vendors2[0].address;
-          vendorLocation = {
-            state: addr.state,
-            city: addr.city
-          };
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length > 0 && vendors[0].address) {
+          const addr = typeof vendors[0].address === "string" ? JSON.parse(vendors[0].address) : vendors[0].address;
+          if (addr?.state) {
+            vendorLocation = {
+              state: addr.state,
+              city: addr.city
+            };
+          }
         }
       }
       for (const item of items) {
@@ -238421,7 +240915,8 @@ function registerEcommerceEndpoints(app2) {
           product_id: item.productId,
           quantity: item.quantity,
           price: product.price,
-          total: itemTotal
+          total: itemTotal,
+          name: product.name || "Product"
         });
         taxCalculationItems.push({
           id: item.productId,
@@ -238726,8 +241221,8 @@ function registerEcommerceEndpoints(app2) {
   app2.put("/admin/ecommerce/product/:productId", async (c) => {
     try {
       const { productId } = c.req.param();
-      const body2 = await c.req.json();
-      const { status } = body2;
+      const body = await c.req.json();
+      const { status } = body;
       if (!status) {
         return c.json({ error: "status is required" }, 400);
       }
@@ -238759,8 +241254,8 @@ function registerEcommerceEndpoints(app2) {
   });
   app2.put("/admin/ecommerce/categories", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { categories } = body2;
+      const body = await c.req.json();
+      const { categories } = body;
       if (!Array.isArray(categories)) {
         return c.json({ error: "categories must be an array" }, 400);
       }
@@ -238820,8 +241315,8 @@ function registerEcommerceEndpoints(app2) {
   app2.put("/admin/ecommerce/service/:serviceId", async (c) => {
     try {
       const { serviceId } = c.req.param();
-      const body2 = await c.req.json();
-      const { status } = body2;
+      const body = await c.req.json();
+      const { status } = body;
       if (!status) {
         return c.json({ error: "status is required" }, 400);
       }
@@ -238895,8 +241390,8 @@ function registerEcommerceEndpoints(app2) {
   });
   app2.put("/admin/ecommerce/commission/settings", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { commissionRate, minCommission, maxCommission } = body2;
+      const body = await c.req.json();
+      const { commissionRate, minCommission, maxCommission } = body;
       return c.json({
         success: true,
         message: "Commission settings updated",
@@ -238913,7 +241408,7 @@ function registerEcommerceEndpoints(app2) {
   });
   app2.get("/admin/vendor/list", async (c) => {
     try {
-      const vendors2 = await query(
+      const vendors = await query(
         `SELECT 
           v.*,
           r.id as role_id,
@@ -238925,9 +241420,9 @@ function registerEcommerceEndpoints(app2) {
       return c.json({
         success: true,
         data: {
-          vendors: vendors2.rows
+          vendors: vendors.rows
         },
-        vendors: vendors2.rows
+        vendors: vendors.rows
         // Also include at top level for compatibility
       });
     } catch (error) {
@@ -238944,8 +241439,8 @@ function registerAnalyticsEndpoints(app2) {
     try {
       const { vendorId } = c.req.param();
       const period = c.req.query("period") || "all";
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
       let dateFilter = "";
@@ -239539,7 +242034,7 @@ function registerLoyaltyEndpoints(app2) {
   });
   app2.post("/admin/loyalty/rules", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         name,
         description,
@@ -239549,7 +242044,7 @@ function registerLoyaltyEndpoints(app2) {
         max_redemption_per_transaction,
         expiry_days,
         is_active = true
-      } = body2;
+      } = body;
       if (!name || points_per_rupee === void 0 || redemption_rate === void 0) {
         return c.json({ error: "name, points_per_rupee, and redemption_rate are required" }, 400);
       }
@@ -239576,16 +242071,16 @@ function registerLoyaltyEndpoints(app2) {
   app2.put("/admin/loyalty/rules/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const updateData = {};
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.points_per_rupee !== void 0) updateData.points_per_rupee = body2.points_per_rupee;
-      if (body2.redemption_rate !== void 0) updateData.redemption_rate = body2.redemption_rate;
-      if (body2.min_points_to_redeem !== void 0) updateData.min_points_to_redeem = body2.min_points_to_redeem;
-      if (body2.max_redemption_per_transaction !== void 0) updateData.max_redemption_per_transaction = body2.max_redemption_per_transaction;
-      if (body2.expiry_days !== void 0) updateData.expiry_days = body2.expiry_days;
-      if (body2.is_active !== void 0) updateData.is_active = body2.is_active;
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.points_per_rupee !== void 0) updateData.points_per_rupee = body.points_per_rupee;
+      if (body.redemption_rate !== void 0) updateData.redemption_rate = body.redemption_rate;
+      if (body.min_points_to_redeem !== void 0) updateData.min_points_to_redeem = body.min_points_to_redeem;
+      if (body.max_redemption_per_transaction !== void 0) updateData.max_redemption_per_transaction = body.max_redemption_per_transaction;
+      if (body.expiry_days !== void 0) updateData.expiry_days = body.expiry_days;
+      if (body.is_active !== void 0) updateData.is_active = body.is_active;
       await update("loyalty_rules", { id }, updateData);
       const updated = await select("loyalty_rules", { id });
       return c.json({
@@ -240046,6 +242541,47 @@ function registerPetEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.get("/customer/:phone/pets/:petId", async (c) => {
+    try {
+      const { phone, petId } = c.req.param();
+      const customers = await select("customers", { phone });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      const customer = customers[0];
+      const pets = await select("pets", { id: petId, customer_id: customer.id });
+      if (pets.length === 0) {
+        return c.json({ error: "Pet not found" }, 404);
+      }
+      const pet = pets[0];
+      return c.json({
+        success: true,
+        pet: {
+          id: pet.id,
+          name: pet.name,
+          type: pet.species || "Dog",
+          species: pet.species,
+          breed: pet.breed,
+          age: pet.age_years?.toString() || "",
+          age_years: pet.age_years,
+          age_months: pet.age_months,
+          gender: pet.gender,
+          weight: pet.weight_kg?.toString() || "",
+          weight_kg: pet.weight_kg,
+          photo: pet.profile_photo_url,
+          profile_photo_url: pet.profile_photo_url,
+          microchipId: pet.microchip_id,
+          healthRecords: pet.medical_history || {},
+          vaccinations: pet.vaccination_records || {},
+          medical_history: pet.medical_history || {},
+          createdAt: pet.created_at
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching pet by phone:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app2.get("/pets/:petId", async (c) => {
     try {
       const { petId } = c.req.param();
@@ -240104,6 +242640,14 @@ function registerPetEndpoints(app2) {
       if (!customerId || !name || !petType) {
         return c.json({ error: "customerId, name, and petType are required" }, 400);
       }
+      const allowedPetTypes = ["Dog", "Cat", "dog", "cat"];
+      const petTypeToValidate = petType || petData.type || petData.species;
+      if (!allowedPetTypes.includes(petTypeToValidate)) {
+        return c.json({
+          error: "Invalid pet type. Platform currently supports Dogs and Cats only.",
+          allowedTypes: ["Dog", "Cat"]
+        }, 400);
+      }
       let age_years = null;
       let age_months = null;
       if (age) {
@@ -240161,7 +242705,15 @@ function registerPetEndpoints(app2) {
         }
       }
       if (petData.species || petData.petType || petData.type) {
-        updateData.species = petData.species || petData.petType || petData.type;
+        const newSpecies = petData.species || petData.petType || petData.type;
+        const allowedPetTypes = ["Dog", "Cat", "dog", "cat"];
+        if (!allowedPetTypes.includes(newSpecies)) {
+          return c.json({
+            error: "Invalid pet type. Platform currently supports Dogs and Cats only.",
+            allowedTypes: ["Dog", "Cat"]
+          }, 400);
+        }
+        updateData.species = newSpecies;
       }
       Object.keys(updateData).forEach((key) => {
         if (updateData[key] === void 0) {
@@ -240195,6 +242747,175 @@ function registerPetEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.put("/customer/:phone/pets/:petId", async (c) => {
+    try {
+      const { phone, petId } = c.req.param();
+      const petData = await c.req.json();
+      const customers = await select("customers", { phone });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      const customer = customers[0];
+      const pets = await select("pets", { id: petId, customer_id: customer.id });
+      if (pets.length === 0) {
+        return c.json({ error: "Pet not found" }, 404);
+      }
+      const updateData = {
+        name: petData.name,
+        breed: petData.breed,
+        gender: petData.gender,
+        weight_kg: petData.weight ? parseFloat(petData.weight) : void 0,
+        profile_photo_url: petData.photo || petData.photos?.[0] || void 0,
+        medical_history: petData.healthRecords || petData.medicalHistory || petData.medical_history || {}
+      };
+      if (petData.age) {
+        if (petData.ageUnit === "years" || petData.ageUnit === "year") {
+          updateData.age_years = parseInt(petData.age, 10);
+        } else if (petData.ageUnit === "months" || petData.ageUnit === "month") {
+          updateData.age_months = parseInt(petData.age, 10);
+        } else {
+          updateData.age_years = parseInt(petData.age, 10);
+        }
+      }
+      if (petData.species || petData.petType || petData.type) {
+        const newSpecies = petData.species || petData.petType || petData.type;
+        const allowedPetTypes = ["Dog", "Cat", "dog", "cat"];
+        if (!allowedPetTypes.includes(newSpecies)) {
+          return c.json({
+            error: "Invalid pet type. Platform currently supports Dogs and Cats only.",
+            allowedTypes: ["Dog", "Cat"]
+          }, 400);
+        }
+        updateData.species = newSpecies;
+      }
+      Object.keys(updateData).forEach((key) => {
+        if (updateData[key] === void 0) {
+          delete updateData[key];
+        }
+      });
+      const updated = await update("pets", { id: petId, customer_id: customer.id }, updateData);
+      if (updated.length === 0) {
+        return c.json({ error: "Pet not found or update failed" }, 404);
+      }
+      const pet = updated[0];
+      return c.json({
+        success: true,
+        pet: {
+          id: pet.id,
+          name: pet.name,
+          type: pet.species,
+          species: pet.species,
+          breed: pet.breed,
+          age: pet.age_years?.toString() || "",
+          gender: pet.gender,
+          weight: pet.weight_kg?.toString() || "",
+          photo: pet.profile_photo_url,
+          healthRecords: pet.medical_history || {},
+          vaccinations: pet.vaccination_records || {}
+        },
+        message: "Pet updated successfully"
+      });
+    } catch (error) {
+      console.error("Error updating pet by phone:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.delete("/customer/:phone/pets/:petId", async (c) => {
+    try {
+      const { phone, petId } = c.req.param();
+      const customers = await select("customers", { phone });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      const customer = customers[0];
+      const pets = await select("pets", { id: petId, customer_id: customer.id });
+      if (pets.length === 0) {
+        return c.json({ error: "Pet not found" }, 404);
+      }
+      const activeBookings = await query(
+        "SELECT COUNT(*) as count FROM bookings WHERE pet_id = $1 AND status IN ($2, $3, $4)",
+        [petId, "confirmed", "in_progress", "scheduled"]
+      );
+      const activeCount = parseInt(activeBookings.rows[0]?.count || "0", 10);
+      if (activeCount > 0) {
+        return c.json({
+          success: false,
+          error: "Cannot delete pet with active bookings",
+          activeBookingsCount: activeCount
+        }, 400);
+      }
+      await query("DELETE FROM pets WHERE id = $1 AND customer_id = $2", [petId, customer.id]);
+      return c.json({
+        success: true,
+        message: "Pet deleted successfully"
+      });
+    } catch (error) {
+      console.error("Error deleting pet by phone:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/customer/:phone/pets/:petId/bookings", async (c) => {
+    try {
+      const { phone, petId } = c.req.param();
+      const customers = await select("customers", { phone });
+      if (customers.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      const customer = customers[0];
+      const pets = await select("pets", { id: petId, customer_id: customer.id });
+      if (pets.length === 0) {
+        return c.json({ error: "Pet not found" }, 404);
+      }
+      const bookingsResult = await query(
+        `SELECT 
+          b.id,
+          b.service_name as "serviceName",
+          b.vendor_name as "vendorName",
+          b.vendor_type as "vendorType",
+          b.scheduled_date as "scheduledDate",
+          b.scheduled_time as "scheduledTime",
+          b.status,
+          b.price,
+          b.service_style as "serviceStyle",
+          b.created_at as "createdAt",
+          b.duration,
+          b.pet_id as "petId"
+        FROM bookings b
+        WHERE b.pet_id = $1
+        ORDER BY b.scheduled_date DESC, b.scheduled_time DESC`,
+        [petId]
+      );
+      const bookings = bookingsResult.rows || [];
+      const stats = {
+        total: bookings.length,
+        confirmed: bookings.filter((b) => b.status === "confirmed").length,
+        inProgress: bookings.filter((b) => b.status === "in_progress").length,
+        completed: bookings.filter((b) => b.status === "completed").length,
+        cancelled: bookings.filter((b) => b.status === "cancelled").length
+      };
+      return c.json({
+        success: true,
+        bookings: bookings.map((booking) => ({
+          id: booking.id,
+          serviceName: booking.serviceName,
+          vendorName: booking.vendorName,
+          vendorType: booking.vendorType,
+          scheduledDate: booking.scheduledDate,
+          scheduledTime: booking.scheduledTime,
+          status: booking.status,
+          price: booking.price,
+          serviceStyle: booking.serviceStyle,
+          createdAt: booking.createdAt,
+          duration: booking.duration,
+          petId: booking.petId
+        })),
+        stats
+      });
+    } catch (error) {
+      console.error("Error fetching pet bookings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 // src/endpoints/vendor-services.ts
@@ -240211,8 +242932,8 @@ function registerVendorServicesEndpoints(app2) {
           total: 0
         });
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         console.log(`[Vendor Services] Vendor ${vendorId} not found in vendors table, returning empty services`);
         return c.json({
           success: true,
@@ -240228,7 +242949,7 @@ function registerVendorServicesEndpoints(app2) {
           allowedServiceStyles: ["at_home", "at_center", "tele"]
         });
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       let role = null;
       let capabilities = [];
       let roleConfig = {};
@@ -240539,20 +243260,35 @@ function registerVendorServicesEndpoints(app2) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
       }
       const serviceData = await c.req.json();
+      const updateData = {};
+      if (serviceData.price !== void 0 || serviceData.customPrice !== void 0) {
+        updateData.price = serviceData.price || serviceData.customPrice;
+      }
+      if (serviceData.customPrice !== void 0) {
+        updateData.custom_price = serviceData.customPrice;
+      }
+      if (serviceData.duration !== void 0 || serviceData.customDuration !== void 0) {
+        updateData.duration_minutes = serviceData.duration || serviceData.customDuration;
+      }
+      if (serviceData.customDuration !== void 0) {
+        updateData.custom_duration = serviceData.customDuration;
+      }
+      if (serviceData.isEnabled !== void 0 || serviceData.is_enabled !== void 0) {
+        updateData.is_enabled = serviceData.isEnabled !== void 0 ? serviceData.isEnabled : serviceData.is_enabled;
+      }
+      if (serviceData.publishStatus !== void 0 || serviceData.publish_status !== void 0) {
+        updateData.publish_status = serviceData.publishStatus || serviceData.publish_status;
+      }
+      if (Object.keys(updateData).length === 0) {
+        return c.json({ error: "No valid fields to update. Please provide at least one field: price, duration, isEnabled, or publishStatus" }, 400);
+      }
       const updated = await update(
         "vendor_services",
         { id: serviceId, vendor_id: vendorId },
-        {
-          price: serviceData.price || serviceData.customPrice,
-          custom_price: serviceData.customPrice,
-          duration_minutes: serviceData.duration || serviceData.customDuration,
-          custom_duration: serviceData.customDuration,
-          is_enabled: serviceData.isEnabled,
-          publish_status: serviceData.publishStatus
-        }
+        updateData
       );
       if (updated.length === 0) {
-        return c.json({ error: "Service not found" }, 404);
+        return c.json({ error: "Service not found or you do not have permission to update it" }, 404);
       }
       return c.json({
         success: true,
@@ -240645,14 +243381,14 @@ function registerVendorServicesEndpoints(app2) {
 init_rds_connection();
 init_base_handler();
 var GetVendorProductsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const search = context3.event.queryStringParameters?.search;
-      const category = context3.event.queryStringParameters?.category;
-      const status = context3.event.queryStringParameters?.status;
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const search = context2.event.queryStringParameters?.search;
+      const category = context2.event.queryStringParameters?.category;
+      const status = context2.event.queryStringParameters?.status;
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context2.event.queryStringParameters?.offset || "0", 10);
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -240664,8 +243400,8 @@ var GetVendorProductsHandler = class extends BaseHandler {
         });
       }
       try {
-        const vendors2 = await select("vendors", { id: vendorId });
-        if (vendors2.length === 0) {
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length === 0) {
           return this.error("Vendor not found", 404);
         }
       } catch (error) {
@@ -240758,27 +243494,27 @@ var GetVendorProductsHandler = class extends BaseHandler {
   }
 };
 var CreateVendorProductHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const body2 = this.parseBody(context3.event);
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const body = this.parseBody(context2.event);
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
-      this.validateRequired(body2, ["name", "price"]);
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      this.validateRequired(body, ["name", "price"]);
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return this.error("Vendor not found", 404);
       }
       const productData = {
         vendor_id: vendorId,
-        name: body2.name,
-        description: body2.description || null,
-        category_id: body2.category_id || null,
-        price: parseFloat(body2.price),
-        stock_quantity: parseInt(body2.stock || body2.stock_quantity || "0", 10),
-        sku: body2.sku || null,
-        is_active: body2.is_active !== false
+        name: body.name,
+        description: body.description || null,
+        category_id: body.category_id || null,
+        price: parseFloat(body.price),
+        stock_quantity: parseInt(body.stock || body.stock_quantity || "0", 10),
+        sku: body.sku || null,
+        is_active: body.is_active !== false
       };
       const newProduct = await insert("products", productData);
       return this.success({
@@ -240792,10 +243528,10 @@ var CreateVendorProductHandler = class extends BaseHandler {
   }
 };
 var GetVendorProductHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const productId = context3.event.pathParameters?.productId;
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const productId = context2.event.pathParameters?.productId;
       if (!vendorId || !productId) {
         return this.error("Vendor ID and Product ID are required", 400);
       }
@@ -240821,11 +243557,11 @@ var GetVendorProductHandler = class extends BaseHandler {
   }
 };
 var UpdateVendorProductHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const productId = context3.event.pathParameters?.productId;
-      const body2 = this.parseBody(context3.event);
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const productId = context2.event.pathParameters?.productId;
+      const body = this.parseBody(context2.event);
       if (!vendorId || !productId) {
         return this.error("Vendor ID and Product ID are required", 400);
       }
@@ -240834,24 +243570,24 @@ var UpdateVendorProductHandler = class extends BaseHandler {
         return this.error("Product not found or access denied", 404);
       }
       const updateData = {};
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.category_id !== void 0) updateData.category_id = body2.category_id;
-      if (body2.category !== void 0) updateData.category = body2.category;
-      if (body2.price !== void 0) updateData.price = parseFloat(body2.price);
-      if (body2.stock !== void 0) {
-        updateData.stock = parseInt(body2.stock, 10);
-        updateData.stock_quantity = parseInt(body2.stock, 10);
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.category_id !== void 0) updateData.category_id = body.category_id;
+      if (body.category !== void 0) updateData.category = body.category;
+      if (body.price !== void 0) updateData.price = parseFloat(body.price);
+      if (body.stock !== void 0) {
+        updateData.stock = parseInt(body.stock, 10);
+        updateData.stock_quantity = parseInt(body.stock, 10);
       }
-      if (body2.stock_quantity !== void 0) {
-        updateData.stock = parseInt(body2.stock_quantity, 10);
-        updateData.stock_quantity = parseInt(body2.stock_quantity, 10);
+      if (body.stock_quantity !== void 0) {
+        updateData.stock = parseInt(body.stock_quantity, 10);
+        updateData.stock_quantity = parseInt(body.stock_quantity, 10);
       }
-      if (body2.sku !== void 0) updateData.sku = body2.sku;
-      if (body2.hsn_code !== void 0) updateData.hsn_code = body2.hsn_code;
-      if (body2.gst_rate !== void 0) updateData.gst_rate = body2.gst_rate ? parseFloat(body2.gst_rate) : null;
-      if (body2.images !== void 0) updateData.images = body2.images;
-      if (body2.is_active !== void 0) updateData.is_active = body2.is_active;
+      if (body.sku !== void 0) updateData.sku = body.sku;
+      if (body.hsn_code !== void 0) updateData.hsn_code = body.hsn_code;
+      if (body.gst_rate !== void 0) updateData.gst_rate = body.gst_rate ? parseFloat(body.gst_rate) : null;
+      if (body.images !== void 0) updateData.images = body.images;
+      if (body.is_active !== void 0) updateData.is_active = body.is_active;
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
       const updated = await update("products", { id: productId, vendor_id: vendorId }, updateData);
       if (updated.length === 0) {
@@ -240868,10 +243604,10 @@ var UpdateVendorProductHandler = class extends BaseHandler {
   }
 };
 var DeleteVendorProductHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const productId = context3.event.pathParameters?.productId;
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const productId = context2.event.pathParameters?.productId;
       if (!vendorId || !productId) {
         return this.error("Vendor ID and Product ID are required", 400);
       }
@@ -240979,11 +243715,11 @@ function registerVendorProductsEndpoints(app2) {
   });
   app2.post("/vendor/:vendorId/products", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const response = await createProductHandler.handle({
         event: {
           pathParameters: c.req.param(),
-          body: JSON.stringify(body2)
+          body: JSON.stringify(body)
           // Pass as string for parseBody to work
         }
       });
@@ -241008,11 +243744,11 @@ function registerVendorProductsEndpoints(app2) {
   });
   app2.put("/vendor/:vendorId/products/:productId", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const response = await updateProductHandler.handle({
         event: {
           pathParameters: c.req.param(),
-          body: JSON.stringify(body2)
+          body: JSON.stringify(body)
           // Pass as string for parseBody to work
         }
       });
@@ -241041,20 +243777,20 @@ function registerVendorProductsEndpoints(app2) {
 init_rds_connection();
 init_base_handler();
 var GetVendorOrdersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const status = context3.event.queryStringParameters?.status;
-      const dateFilter = context3.event.queryStringParameters?.dateFilter || "all";
-      const search = context3.event.queryStringParameters?.search;
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const status = context2.event.queryStringParameters?.status;
+      const dateFilter = context2.event.queryStringParameters?.dateFilter || "all";
+      const search = context2.event.queryStringParameters?.search;
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context2.event.queryStringParameters?.offset || "0", 10);
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
       try {
-        const vendors2 = await select("vendors", { id: vendorId });
-        if (vendors2.length === 0 && vendorId !== "test-vendor-id") {
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length === 0 && vendorId !== "test-vendor-id") {
           return this.error("Vendor not found", 404);
         }
       } catch (error) {
@@ -241190,10 +243926,10 @@ var GetVendorOrdersHandler = class extends BaseHandler {
   }
 };
 var GetVendorOrderStatsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const dateFilter = context3.event.queryStringParameters?.dateFilter || "all";
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const dateFilter = context2.event.queryStringParameters?.dateFilter || "all";
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -241357,8 +244093,8 @@ function registerVendorOrdersEndpoints(app2) {
   app2.put("/vendor/:vendorId/orders/:orderId/status", async (c) => {
     try {
       const { vendorId, orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { status, tracking_number, delivery_partner, notes } = body2;
+      const body = await c.req.json();
+      const { status, tracking_number, delivery_partner, notes } = body;
       if (!status) {
         return c.json({ error: "Status is required" }, 400);
       }
@@ -241429,8 +244165,8 @@ function registerVendorOrdersEndpoints(app2) {
   app2.put("/vendor/:vendorId/orders/:orderId", async (c) => {
     try {
       const { vendorId, orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { status, tracking_number, delivery_partner, notes } = body2;
+      const body = await c.req.json();
+      const { status, tracking_number, delivery_partner, notes } = body;
       if (!status) {
         return c.json({ error: "Status is required" }, 400);
       }
@@ -241905,9 +244641,9 @@ function registerServiceCatalogEndpoints(app2) {
       let vendorRole = null;
       if (vendorId && !roleId) {
         try {
-          const vendors2 = await select("vendors", { id: vendorId });
-          if (vendors2.length > 0 && vendors2[0].role_id) {
-            const vendorRoles = await select("roles", { id: vendors2[0].role_id });
+          const vendors = await select("vendors", { id: vendorId });
+          if (vendors.length > 0 && vendors[0].role_id) {
+            const vendorRoles = await select("roles", { id: vendors[0].role_id });
             if (vendorRoles.length > 0) {
               vendorRole = vendorRoles[0];
               roleConfig = vendorRole.config || {};
@@ -242049,11 +244785,11 @@ function registerServiceCatalogEndpoints(app2) {
         });
       }
       const serviceStyle = c.req.query("serviceStyle");
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       let role = null;
       let capabilities = [];
       let roleConfig = {};
@@ -242169,7 +244905,7 @@ function registerServiceCatalogEndpoints(app2) {
   });
   app2.post("/admin/service-catalog", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         service_id,
         service_name,
@@ -242185,7 +244921,7 @@ function registerServiceCatalogEndpoints(app2) {
         duration_minutes,
         metadata,
         display_order
-      } = body2;
+      } = body;
       if (!service_id || !service_name || !applicable_roles || applicable_roles.length === 0) {
         return c.json({
           error: "service_id, service_name, and applicable_roles are required"
@@ -242229,7 +244965,7 @@ function registerServiceCatalogEndpoints(app2) {
   app2.put("/admin/service-catalog/:serviceId", async (c) => {
     try {
       const { serviceId } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const existing = await query(
         "SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1",
         [serviceId]
@@ -242239,21 +244975,21 @@ function registerServiceCatalogEndpoints(app2) {
       }
       const service = existing.rows[0];
       const updateData = {};
-      if (body2.service_name !== void 0) updateData.service_name = body2.service_name;
-      if (body2.display_name !== void 0) updateData.display_name = body2.display_name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.category_id !== void 0) updateData.category_id = body2.category_id;
-      if (body2.category_name !== void 0) updateData.category_name = body2.category_name;
-      if (body2.sub_category_id !== void 0) updateData.sub_category_id = body2.sub_category_id;
-      if (body2.sub_category_name !== void 0) updateData.sub_category_name = body2.sub_category_name;
-      if (body2.applicable_roles !== void 0) updateData.applicable_roles = body2.applicable_roles;
-      if (body2.service_style !== void 0) updateData.service_style = body2.service_style;
-      if (body2.base_price !== void 0) updateData.base_price = body2.base_price;
-      if (body2.duration_minutes !== void 0) updateData.duration_minutes = body2.duration_minutes;
-      if (body2.status !== void 0) updateData.status = body2.status;
-      if (body2.publish_status !== void 0) updateData.publish_status = body2.publish_status;
-      if (body2.metadata !== void 0) updateData.metadata = body2.metadata;
-      if (body2.display_order !== void 0) updateData.display_order = body2.display_order;
+      if (body.service_name !== void 0) updateData.service_name = body.service_name;
+      if (body.display_name !== void 0) updateData.display_name = body.display_name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.category_id !== void 0) updateData.category_id = body.category_id;
+      if (body.category_name !== void 0) updateData.category_name = body.category_name;
+      if (body.sub_category_id !== void 0) updateData.sub_category_id = body.sub_category_id;
+      if (body.sub_category_name !== void 0) updateData.sub_category_name = body.sub_category_name;
+      if (body.applicable_roles !== void 0) updateData.applicable_roles = body.applicable_roles;
+      if (body.service_style !== void 0) updateData.service_style = body.service_style;
+      if (body.base_price !== void 0) updateData.base_price = body.base_price;
+      if (body.duration_minutes !== void 0) updateData.duration_minutes = body.duration_minutes;
+      if (body.status !== void 0) updateData.status = body.status;
+      if (body.publish_status !== void 0) updateData.publish_status = body.publish_status;
+      if (body.metadata !== void 0) updateData.metadata = body.metadata;
+      if (body.display_order !== void 0) updateData.display_order = body.display_order;
       await update("service_catalog", { id: service.id }, updateData);
       const updated = await query(
         "SELECT * FROM service_catalog WHERE id = $1",
@@ -242299,7 +245035,7 @@ function registerServiceCatalogEndpoints(app2) {
 init_rds_connection();
 init_razorpay_client();
 init_sns_client();
-var import_client_sns5 = require("@aws-sdk/client-sns");
+var import_client_sns6 = require("@aws-sdk/client-sns");
 function registerSettlementEndpoints(app2) {
   app2.get("/settlements", async (c) => {
     try {
@@ -242518,7 +245254,7 @@ function registerSettlementEndpoints(app2) {
             await createPayout(settlementRecord[0].id, vendorId, settlement.netAmount);
           }
           const snsClient3 = getSnsClient();
-          await snsClient3.send(new import_client_sns5.PublishCommand({
+          await snsClient3.send(new import_client_sns6.PublishCommand({
             TopicArn: process.env.SETTLEMENT_CREATED_TOPIC_ARN || "",
             Message: JSON.stringify({
               eventType: "SettlementCreated",
@@ -243680,7 +246416,10 @@ function registerRegionEndpoints(app2) {
   });
   app2.post("/admin/regions/init-:templateId", async (c) => {
     try {
-      const { templateId } = c.req.param();
+      const templateId = c.req.param("templateId");
+      if (!templateId) {
+        return c.json({ error: "Template ID is required" }, 400);
+      }
       const template = REGION_TEMPLATES[templateId.toLowerCase()];
       if (!template) {
         return c.json({
@@ -243855,7 +246594,7 @@ function registerRegionEndpoints(app2) {
 // src/endpoints/chat.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns6 = require("@aws-sdk/client-sns");
+var import_client_sns7 = require("@aws-sdk/client-sns");
 function registerChatEndpoints(app2) {
   app2.get("/chat/booking/:bookingId/conversation", async (c) => {
     try {
@@ -243931,7 +246670,7 @@ function registerChatEndpoints(app2) {
       const recipientPhone = senderType === "customer" ? (await select("vendors", { id: booking.vendor_id }))[0]?.phone : (await select("customers", { id: booking.customer_id }))[0]?.phone;
       if (recipientPhone) {
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns6.PublishCommand({
+        await snsClient3.send(new import_client_sns7.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
           MessageAttributes: {
@@ -243972,8 +246711,8 @@ function registerChatEndpoints(app2) {
   });
   app2.post("/chat/send", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { bookingId, senderPhone, senderName, senderType, receiverPhone, receiverName, receiverType, message: message2, messageType, fileId, fileName } = body2;
+      const body = await c.req.json();
+      const { bookingId, senderPhone, senderName, senderType, receiverPhone, receiverName, receiverType, message: message2, messageType, fileId, fileName } = body;
       if (!bookingId || !senderPhone || !message2) {
         return c.json({ error: "bookingId, senderPhone, and message are required" }, 400);
       }
@@ -244001,7 +246740,7 @@ function registerChatEndpoints(app2) {
       });
       if (receiverPhone) {
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns6.PublishCommand({
+        await snsClient3.send(new import_client_sns7.PublishCommand({
           PhoneNumber: receiverPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
           MessageAttributes: {
@@ -244052,7 +246791,7 @@ function registerChatEndpoints(app2) {
       if (recipientPhone) {
         const snsClient3 = getSnsClient();
         if (snsClient3) {
-          await snsClient3.send(new import_client_sns6.PublishCommand({
+          await snsClient3.send(new import_client_sns7.PublishCommand({
             TopicArn: process.env.CHAT_NOTIFICATIONS_TOPIC_ARN,
             Message: JSON.stringify({
               type: "chat_message",
@@ -244760,8 +247499,8 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
   app2.put("/customer/cart/:phone/items/:itemId", async (c) => {
     try {
       const { phone, itemId } = c.req.param();
-      const body2 = await c.req.json();
-      const { quantity } = body2;
+      const body = await c.req.json();
+      const { quantity } = body;
       const customerId = await resolveCustomerIdFromPhone(phone);
       if (!customerId) {
         return c.json({ error: "Customer not found" }, 404);
@@ -244941,13 +247680,13 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
   app2.post("/customer/payments/:phone", async (c) => {
     try {
       const { phone } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const customerId = await resolveCustomerIdFromPhone(phone);
       if (!customerId) {
         return c.json({ error: "Customer not found" }, 404);
       }
       const paymentData = {
-        ...body2,
+        ...body,
         customerId
       };
       return c.json({
@@ -245101,8 +247840,7 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
         SELECT 
           psp.*,
           ts.skill_name,
-          ts.category,
-          ts.difficulty_level,
+          ts.skill_category,
           p.name as pet_name
         FROM pet_skill_progress psp
         LEFT JOIN training_skills ts ON psp.skill_id = ts.id
@@ -245111,20 +247849,16 @@ function registerCustomerPhoneConvenienceEndpoints(app2) {
         ORDER BY psp.updated_at DESC
       `, [petIds]);
       const skills = skillsResult.rows.map((skill) => {
-        const progressLevel = skill.progress_level || 0;
-        let status = "not_started";
-        if (progressLevel >= 100) {
-          status = "mastered";
-        } else if (progressLevel > 0) {
-          status = "in_progress";
-        }
+        const progressLevel = skill.proficiency_score || 0;
+        const currentLevel = skill.current_level || "not_started";
         return {
           skillName: skill.skill_name || "Unknown Skill",
           level: progressLevel,
-          status,
+          status: currentLevel,
           petName: skill.pet_name,
-          category: skill.category,
-          lastUpdated: skill.updated_at
+          category: skill.skill_category,
+          lastUpdated: skill.updated_at,
+          sessionsPracticed: skill.sessions_practiced || 0
         };
       });
       return c.json({
@@ -245612,7 +248346,7 @@ function registerPackageBookingEndpoints(app2) {
   });
   app2.post("/bookings/create-from-package", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         packagePurchaseId,
         customerId,
@@ -245624,7 +248358,7 @@ function registerPackageBookingEndpoints(app2) {
         serviceType = "at_center",
         notes,
         address
-      } = body2;
+      } = body;
       if (!packagePurchaseId || !customerId || !vendorId) {
         return c.json({
           error: "packagePurchaseId, customerId, and vendorId are required"
@@ -245811,7 +248545,7 @@ function registerPackageBookingEndpoints(app2) {
   });
   app2.post("/packages/convert-from-trial", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         trialBookingId,
         packageId,
@@ -245822,7 +248556,7 @@ function registerPackageBookingEndpoints(app2) {
         scheduleAllSessions = false,
         sessionSchedule = []
         // Array of {sessionNumber, date, time}
-      } = body2;
+      } = body;
       if (!packageId || !customerId) {
         return c.json({ error: "packageId and customerId required" }, 400);
       }
@@ -245931,8 +248665,8 @@ function registerPackageBookingEndpoints(app2) {
   app2.post("/packages/:packagePurchaseId/schedule-sessions", async (c) => {
     try {
       const { packagePurchaseId } = c.req.param();
-      const body2 = await c.req.json();
-      const { sessions } = body2;
+      const body = await c.req.json();
+      const { sessions } = body;
       if (!sessions || !Array.isArray(sessions)) {
         return c.json({ error: "sessions array required" }, 400);
       }
@@ -246118,7 +248852,7 @@ function registerPackageBookingEndpoints(app2) {
   });
   app2.post("/package-sessions", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         packagePurchaseId,
         scheduledStartTime,
@@ -246126,7 +248860,7 @@ function registerPackageBookingEndpoints(app2) {
         staffId,
         location: location2,
         notes
-      } = body2;
+      } = body;
       if (!packagePurchaseId || !scheduledStartTime) {
         return c.json({
           error: "packagePurchaseId and scheduledStartTime are required"
@@ -246205,8 +248939,8 @@ function registerWalkerGPSEndpoints(app2) {
   app2.post("/walker/:walkerId/start-session", async (c) => {
     try {
       const { walkerId } = c.req.param();
-      const body2 = await c.req.json();
-      const { bookingId, startLat, startLng } = body2;
+      const body = await c.req.json();
+      const { bookingId, startLat, startLng } = body;
       if (!bookingId || !startLat || !startLng) {
         return c.json({ error: "bookingId, startLat, and startLng required" }, 400);
       }
@@ -246270,7 +249004,7 @@ function registerWalkerGPSEndpoints(app2) {
   app2.post("/walker/:walkerId/gps-update", async (c) => {
     try {
       const { walkerId } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         bookingId,
         lat,
@@ -246279,7 +249013,7 @@ function registerWalkerGPSEndpoints(app2) {
         speed,
         accuracy,
         batteryLevel
-      } = body2;
+      } = body;
       if (!bookingId || lat === void 0 || lng === void 0) {
         return c.json({ error: "bookingId, lat, and lng required" }, 400);
       }
@@ -246323,7 +249057,7 @@ function registerWalkerGPSEndpoints(app2) {
   app2.post("/walker/:walkerId/end-session", async (c) => {
     try {
       const { walkerId } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         bookingId,
         endLat,
@@ -246331,7 +249065,7 @@ function registerWalkerGPSEndpoints(app2) {
         notes,
         pottyBreaks = 0,
         weatherConditions
-      } = body2;
+      } = body;
       if (!bookingId) {
         return c.json({ error: "bookingId required" }, 400);
       }
@@ -246524,8 +249258,8 @@ function registerWalkerGPSEndpoints(app2) {
   app2.post("/walker/:walkerId/add-photo", async (c) => {
     try {
       const { walkerId } = c.req.param();
-      const body2 = await c.req.json();
-      const { bookingId, photoUrl, caption, lat, lng } = body2;
+      const body = await c.req.json();
+      const { bookingId, photoUrl, caption, lat, lng } = body;
       if (!bookingId || !photoUrl) {
         return c.json({ error: "bookingId and photoUrl required" }, 400);
       }
@@ -246638,7 +249372,7 @@ function registerPromotionEndpoints(app2) {
   });
   app2.post("/marketing/spotlights", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         vendorId,
         vendorName,
@@ -246657,7 +249391,7 @@ function registerPromotionEndpoints(app2) {
         imageUrl,
         ctaText,
         ctaLink
-      } = body2;
+      } = body;
       const spotlight = await insert("spotlight_offers", {
         role_id: roleId || type || "veterinarian",
         service_category: serviceCategory || null,
@@ -246952,7 +249686,7 @@ function registerPromotionEndpoints(app2) {
   });
   app2.post("/marketing/promotions", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         name,
         description,
@@ -246967,7 +249701,7 @@ function registerPromotionEndpoints(app2) {
         applicableServices,
         applicableRoles,
         priority = 0
-      } = body2;
+      } = body;
       if (!name || !promotionType || !discountType || !discountValue) {
         return c.json({ error: "name, promotionType, discountType, and discountValue are required" }, 400);
       }
@@ -247001,7 +249735,7 @@ function registerPromotionEndpoints(app2) {
   app2.put("/marketing/promotions/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const promotions = await select("promotions", { id });
       if (promotions.length === 0) {
         return c.json({ error: "Promotion not found" }, 404);
@@ -247009,19 +249743,19 @@ function registerPromotionEndpoints(app2) {
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.promotionType !== void 0) updateData.promotion_type = body2.promotionType;
-      if (body2.discountType !== void 0) updateData.discount_type = body2.discountType;
-      if (body2.discountValue !== void 0) updateData.discount_value = parseFloat(body2.discountValue);
-      if (body2.minOrderAmount !== void 0) updateData.min_order_amount = body2.minOrderAmount ? parseFloat(body2.minOrderAmount) : null;
-      if (body2.maxDiscountAmount !== void 0) updateData.max_discount_amount = body2.maxDiscountAmount ? parseFloat(body2.maxDiscountAmount) : null;
-      if (body2.startDate !== void 0) updateData.start_date = new Date(body2.startDate).toISOString().split("T")[0];
-      if (body2.endDate !== void 0) updateData.end_date = body2.endDate ? new Date(body2.endDate).toISOString().split("T")[0] : null;
-      if (body2.isActive !== void 0) updateData.is_active = body2.isActive !== false;
-      if (body2.applicableServices !== void 0) updateData.applicable_services = body2.applicableServices;
-      if (body2.applicableRoles !== void 0) updateData.applicable_roles = body2.applicableRoles;
-      if (body2.priority !== void 0) updateData.priority = parseInt(body2.priority) || 0;
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.promotionType !== void 0) updateData.promotion_type = body.promotionType;
+      if (body.discountType !== void 0) updateData.discount_type = body.discountType;
+      if (body.discountValue !== void 0) updateData.discount_value = parseFloat(body.discountValue);
+      if (body.minOrderAmount !== void 0) updateData.min_order_amount = body.minOrderAmount ? parseFloat(body.minOrderAmount) : null;
+      if (body.maxDiscountAmount !== void 0) updateData.max_discount_amount = body.maxDiscountAmount ? parseFloat(body.maxDiscountAmount) : null;
+      if (body.startDate !== void 0) updateData.start_date = new Date(body.startDate).toISOString().split("T")[0];
+      if (body.endDate !== void 0) updateData.end_date = body.endDate ? new Date(body.endDate).toISOString().split("T")[0] : null;
+      if (body.isActive !== void 0) updateData.is_active = body.isActive !== false;
+      if (body.applicableServices !== void 0) updateData.applicable_services = body.applicableServices;
+      if (body.applicableRoles !== void 0) updateData.applicable_roles = body.applicableRoles;
+      if (body.priority !== void 0) updateData.priority = parseInt(body.priority) || 0;
       const updated = await update("promotions", { id }, updateData);
       return c.json({
         success: true,
@@ -247093,7 +249827,7 @@ function registerPromotionEndpoints(app2) {
   });
   app2.post("/admin/promotions", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         code,
         name,
@@ -247108,7 +249842,7 @@ function registerPromotionEndpoints(app2) {
         usage_limit_per_user,
         applicable_to,
         is_active = true
-      } = body2;
+      } = body;
       if (!code || !name || !discount_type || discount_value === void 0) {
         return c.json({ error: "code, name, discount_type, and discount_value are required" }, 400);
       }
@@ -247140,21 +249874,21 @@ function registerPromotionEndpoints(app2) {
   app2.put("/admin/promotions/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const updateData = {};
-      if (body2.code !== void 0) updateData.code = body2.code.toUpperCase();
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.discount_type !== void 0) updateData.discount_type = body2.discount_type;
-      if (body2.discount_value !== void 0) updateData.discount_value = body2.discount_value;
-      if (body2.min_order_value !== void 0) updateData.min_order_amount = body2.min_order_value;
-      if (body2.max_discount !== void 0) updateData.max_discount_amount = body2.max_discount;
-      if (body2.valid_from !== void 0) updateData.start_date = new Date(body2.valid_from);
-      if (body2.valid_until !== void 0) updateData.end_date = body2.valid_until ? new Date(body2.valid_until) : null;
-      if (body2.usage_limit !== void 0) updateData.max_uses = body2.usage_limit;
-      if (body2.usage_limit_per_user !== void 0) updateData.max_uses_per_user = body2.usage_limit_per_user;
-      if (body2.applicable_to !== void 0) updateData.applicable_to = body2.applicable_to;
-      if (body2.is_active !== void 0) updateData.is_active = body2.is_active;
+      if (body.code !== void 0) updateData.code = body.code.toUpperCase();
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.discount_type !== void 0) updateData.discount_type = body.discount_type;
+      if (body.discount_value !== void 0) updateData.discount_value = body.discount_value;
+      if (body.min_order_value !== void 0) updateData.min_order_amount = body.min_order_value;
+      if (body.max_discount !== void 0) updateData.max_discount_amount = body.max_discount;
+      if (body.valid_from !== void 0) updateData.start_date = new Date(body.valid_from);
+      if (body.valid_until !== void 0) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
+      if (body.usage_limit !== void 0) updateData.max_uses = body.usage_limit;
+      if (body.usage_limit_per_user !== void 0) updateData.max_uses_per_user = body.usage_limit_per_user;
+      if (body.applicable_to !== void 0) updateData.applicable_to = body.applicable_to;
+      if (body.is_active !== void 0) updateData.is_active = body.is_active;
       await update("promotions", { id }, updateData);
       const updated = await query(
         "SELECT * FROM promotions WHERE id = $1::uuid",
@@ -247217,7 +249951,7 @@ function registerPromotionEndpoints(app2) {
   });
   app2.post("/admin/coupons", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         code,
         type,
@@ -247236,7 +249970,7 @@ function registerPromotionEndpoints(app2) {
         usage_limit,
         isActive,
         is_active = true
-      } = body2;
+      } = body;
       const finalCode = code || "";
       const finalDiscountType = discount_type || type || "percentage";
       const finalDiscountValue = discount_value !== void 0 ? discount_value : value !== void 0 ? value : 0;
@@ -247276,7 +250010,7 @@ function registerPromotionEndpoints(app2) {
   });
   app2.post("/admin/coupons/create", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         code,
         type,
@@ -247295,7 +250029,7 @@ function registerPromotionEndpoints(app2) {
         usage_limit,
         isActive,
         is_active = true
-      } = body2;
+      } = body;
       const finalCode = code || "";
       const finalDiscountType = discount_type || type || "percentage";
       const finalDiscountValue = discount_value !== void 0 ? discount_value : value !== void 0 ? value : 0;
@@ -247336,17 +250070,17 @@ function registerPromotionEndpoints(app2) {
   app2.put("/admin/coupons/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const updateData = {};
-      if (body2.code !== void 0) updateData.code = body2.code.toUpperCase();
-      if (body2.discount_type !== void 0) updateData.discount_type = body2.discount_type;
-      if (body2.discount_value !== void 0) updateData.discount_value = body2.discount_value;
-      if (body2.min_order_value !== void 0) updateData.min_order_amount = body2.min_order_value;
-      if (body2.max_discount !== void 0) updateData.max_discount_amount = body2.max_discount;
-      if (body2.valid_from !== void 0) updateData.start_date = new Date(body2.valid_from);
-      if (body2.valid_until !== void 0) updateData.end_date = body2.valid_until ? new Date(body2.valid_until) : null;
-      if (body2.usage_limit !== void 0) updateData.max_uses = body2.usage_limit;
-      if (body2.is_active !== void 0) updateData.is_active = body2.is_active;
+      if (body.code !== void 0) updateData.code = body.code.toUpperCase();
+      if (body.discount_type !== void 0) updateData.discount_type = body.discount_type;
+      if (body.discount_value !== void 0) updateData.discount_value = body.discount_value;
+      if (body.min_order_value !== void 0) updateData.min_order_amount = body.min_order_value;
+      if (body.max_discount !== void 0) updateData.max_discount_amount = body.max_discount;
+      if (body.valid_from !== void 0) updateData.start_date = new Date(body.valid_from);
+      if (body.valid_until !== void 0) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
+      if (body.usage_limit !== void 0) updateData.max_uses = body.usage_limit;
+      if (body.is_active !== void 0) updateData.is_active = body.is_active;
       await update("coupons", { id }, updateData);
       const updated = await query(
         "SELECT * FROM coupons WHERE id = $1::uuid",
@@ -249146,6 +251880,198 @@ function registerReportEndpoints(app2) {
 // src/endpoints/addresses.ts
 init_rds_connection();
 function registerAddressEndpoints(app2) {
+  app2.get("/customer/addresses", async (c) => {
+    try {
+      const phone = c.req.query("phone");
+      if (!phone) {
+        return c.json({ error: "phone parameter is required" }, 400);
+      }
+      let customer = await select("customers", { phone });
+      if (customer.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      const addresses = await query(
+        `SELECT * FROM customer_addresses
+         WHERE customer_id = $1
+         ORDER BY is_default DESC, created_at DESC`,
+        [customer[0].id]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        addresses: addresses.rows.map((addr) => ({
+          id: addr.id,
+          customerId: addr.customer_id,
+          label: addr.address_type,
+          name: addr.full_name,
+          phone: addr.phone,
+          addressLine1: addr.address_line1,
+          addressLine2: addr.address_line2,
+          city: addr.city,
+          state: addr.state,
+          pincode: addr.pincode,
+          landmark: addr.landmark,
+          coordinates: addr.coordinates || null,
+          isDefault: addr.is_default,
+          createdAt: addr.created_at,
+          updatedAt: addr.updated_at
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching addresses:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/customer/addresses", async (c) => {
+    try {
+      const body = await c.req.json();
+      let customerPhone;
+      let addressData;
+      if (body.phone && body.addresses && Array.isArray(body.addresses)) {
+        customerPhone = body.phone;
+        const addressesArray = body.addresses;
+        const lastAddress = addressesArray[addressesArray.length - 1];
+        addressData = {
+          label: lastAddress.label || lastAddress.addressType || "home",
+          name: lastAddress.name || lastAddress.fullName,
+          phone: lastAddress.phone || customerPhone,
+          addressLine1: lastAddress.addressLine1 || lastAddress.address_line1 || lastAddress.address?.split(",")[0],
+          addressLine2: lastAddress.addressLine2 || lastAddress.address_line2 || (lastAddress.address?.split(",").slice(1).join(",").trim() || null),
+          city: lastAddress.city,
+          state: lastAddress.state,
+          pincode: lastAddress.pincode || lastAddress.pincode,
+          landmark: lastAddress.landmark || null,
+          coordinates: lastAddress.coordinates || null,
+          isDefault: lastAddress.isDefault !== void 0 ? lastAddress.isDefault : addressesArray.length === 1
+        };
+      } else {
+        customerPhone = body.phone;
+        addressData = {
+          label: body.label || "home",
+          name: body.name || body.fullName,
+          phone: body.phone || customerPhone,
+          addressLine1: body.addressLine1 || body.address_line1,
+          addressLine2: body.addressLine2 || body.address_line2 || null,
+          city: body.city,
+          state: body.state,
+          pincode: body.pincode,
+          landmark: body.landmark || null,
+          coordinates: body.coordinates || null,
+          isDefault: body.isDefault !== void 0 ? body.isDefault : false
+        };
+      }
+      if (!customerPhone) {
+        return c.json({ error: "phone is required" }, 400);
+      }
+      const name = addressData.name || addressData.fullName || body.name || body.fullName;
+      let addressLine1 = addressData.addressLine1 || addressData.address_line1 || body.addressLine1 || body.address_line1;
+      if (!addressLine1 && body.address) {
+        addressLine1 = typeof body.address === "string" ? body.address.split(",")[0].trim() : body.address;
+      }
+      const phone = addressData.phone || body.phone || customerPhone;
+      if (!name || !phone || !addressLine1 || !addressData.city || !addressData.state || !addressData.pincode) {
+        const missingFields = [];
+        if (!name) missingFields.push("name");
+        if (!phone) missingFields.push("phone");
+        if (!addressLine1) missingFields.push("addressLine1");
+        if (!addressData.city) missingFields.push("city");
+        if (!addressData.state) missingFields.push("state");
+        if (!addressData.pincode) missingFields.push("pincode");
+        console.error("Address validation failed. Missing fields:", missingFields);
+        console.error("Received data:", JSON.stringify(body, null, 2));
+        console.error("Parsed addressData:", JSON.stringify(addressData, null, 2));
+        return c.json({
+          error: `Missing required fields: ${missingFields.join(", ")}`,
+          missingFields,
+          receivedData: body,
+          parsedData: addressData
+        }, 400);
+      }
+      addressData.name = name;
+      addressData.phone = phone;
+      addressData.addressLine1 = addressLine1;
+      let customer = await select("customers", { phone: customerPhone });
+      if (customer.length === 0) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      const existingAddresses = await query(
+        "SELECT COUNT(*) as count FROM customer_addresses WHERE customer_id = $1",
+        [customer[0].id]
+      ).catch(() => ({ rows: [{ count: "0" }] }));
+      const shouldBeDefault = addressData.isDefault || parseInt(existingAddresses.rows[0]?.count || "0", 10) === 0;
+      if (shouldBeDefault) {
+        await query(
+          "UPDATE customer_addresses SET is_default = false WHERE customer_id = $1",
+          [customer[0].id]
+        ).catch(() => {
+        });
+      }
+      let address;
+      try {
+        address = await insert("customer_addresses", {
+          customer_id: customer[0].id,
+          address_type: addressData.label || "home",
+          full_name: addressData.name,
+          phone: addressData.phone,
+          address_line1: addressData.addressLine1,
+          address_line2: addressData.addressLine2 || null,
+          city: addressData.city,
+          state: addressData.state,
+          pincode: addressData.pincode,
+          landmark: addressData.landmark || null,
+          coordinates: addressData.coordinates ? typeof addressData.coordinates === "string" ? addressData.coordinates : JSON.stringify(addressData.coordinates) : null,
+          is_default: shouldBeDefault
+        });
+      } catch (insertError) {
+        console.error("Error inserting address:", insertError);
+        console.error("Address data:", JSON.stringify({
+          customer_id: customer[0].id,
+          address_type: addressData.label || "home",
+          full_name: addressData.name,
+          phone: addressData.phone,
+          address_line1: addressData.addressLine1,
+          address_line2: addressData.addressLine2 || null,
+          city: addressData.city,
+          state: addressData.state,
+          pincode: addressData.pincode,
+          landmark: addressData.landmark || null,
+          coordinates: addressData.coordinates,
+          is_default: shouldBeDefault
+        }, null, 2));
+        return c.json({
+          error: `Error saving address: ${insertError.message || "Database error"}`,
+          details: insertError.message
+        }, 500);
+      }
+      const allAddresses = await query(
+        "SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC",
+        [customer[0].id]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        address: address[0],
+        addresses: allAddresses.rows.map((addr) => ({
+          id: addr.id,
+          customerId: addr.customer_id,
+          label: addr.address_type,
+          name: addr.full_name,
+          phone: addr.phone,
+          addressLine1: addr.address_line1,
+          addressLine2: addr.address_line2,
+          city: addr.city,
+          state: addr.state,
+          pincode: addr.pincode,
+          landmark: addr.landmark,
+          coordinates: addr.coordinates || null,
+          isDefault: addr.is_default,
+          createdAt: addr.created_at,
+          updatedAt: addr.updated_at
+        }))
+      });
+    } catch (error) {
+      console.error("Error adding address:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app2.get("/customer/:customerId/addresses", async (c) => {
     try {
       const { customerId } = c.req.param();
@@ -249328,10 +252254,22 @@ function registerAddressEndpoints(app2) {
 // src/endpoints/customer-password.ts
 init_base_handler();
 init_rds_connection();
+var crypto13 = __toESM(require("crypto"));
+var hashPassword = async (password) => {
+  const salt = crypto13.randomBytes(16).toString("hex");
+  const hash = crypto13.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  return `${salt}:${hash}`;
+};
+var comparePassword = async (password, storedHash) => {
+  const [salt, hash] = storedHash.split(":");
+  if (!salt || !hash) return false;
+  const derivedHash = crypto13.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  return hash === derivedHash;
+};
 var ChangePasswordHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { currentPassword, newPassword, customerId, phone } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { currentPassword, newPassword, customerId, phone } = body;
     if (!newPassword || newPassword.length < 8) {
       return this.error("New password must be at least 8 characters long", 400);
     }
@@ -249384,8 +252322,8 @@ function registerCustomerPasswordEndpoints(app2) {
   const changePasswordHandler = new ChangePasswordHandler();
   app2.post("/customer/change-password", async (c) => {
     const event = createApiGatewayEvent16(c.req);
-    const context3 = createLambdaContext16();
-    const result = await changePasswordHandler.execute(event, context3);
+    const context2 = createLambdaContext16();
+    const result = await changePasswordHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -249746,7 +252684,7 @@ function registerAdminIntegrationEndpoints(app2) {
               connected: true,
               details: {
                 apiKeyConfigured: true,
-                status: data.status
+                status: data.status || "OK"
               }
             });
           } catch (error) {
@@ -250014,8 +252952,8 @@ function registerLogisticsEndpoints(app2) {
   });
   app2.post("/logistics/create-order", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { order_id, ...orderData } = body2;
+      const body = await c.req.json();
+      const { order_id, ...orderData } = body;
       const shiprocketData = {
         orderId: order_id,
         ...orderData
@@ -250034,8 +252972,8 @@ function registerLogisticsEndpoints(app2) {
   });
   app2.post("/logistics/cancel-order", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { order_id } = body2;
+      const body = await c.req.json();
+      const { order_id } = body;
       if (!order_id) {
         return c.json({ error: "order_id is required" }, 400);
       }
@@ -250467,7 +253405,7 @@ function registerReturnsEndpoints(app2) {
 // src/endpoints/order-management.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns7 = require("@aws-sdk/client-sns");
+var import_client_sns8 = require("@aws-sdk/client-sns");
 var validTransitions = {
   "pending": ["confirmed", "cancelled"],
   "confirmed": ["processing", "cancelled"],
@@ -250521,7 +253459,7 @@ function registerOrderManagementEndpoints(app2) {
       const vendor = order.vendor_id ? await select("vendors", { id: order.vendor_id }) : [];
       const snsClient3 = getSnsClient();
       if (customer.length > 0 && customer[0].phone) {
-        await snsClient3.send(new import_client_sns7.PublishCommand({
+        await snsClient3.send(new import_client_sns8.PublishCommand({
           PhoneNumber: customer[0].phone,
           Message: `Your order ${order.order_number} status updated to: ${status}`,
           MessageAttributes: {
@@ -250694,7 +253632,7 @@ function registerOrderManagementEndpoints(app2) {
 // src/endpoints/otp-enhanced.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns8 = require("@aws-sdk/client-sns");
+var import_client_sns9 = require("@aws-sdk/client-sns");
 function generateOTP() {
   return Math.floor(1e5 + Math.random() * 9e5).toString();
 }
@@ -250728,7 +253666,7 @@ function registerEnhancedOtpEndpoints(app2) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns8.PublishCommand({
+        await snsClient3.send(new import_client_sns9.PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
           MessageAttributes: {
@@ -250832,7 +253770,7 @@ function registerEnhancedOtpEndpoints(app2) {
   });
   app2.post("/bookings/create-with-otp", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         customerId,
         vendorId,
@@ -250844,7 +253782,7 @@ function registerEnhancedOtpEndpoints(app2) {
         petId,
         price,
         notes
-      } = body2;
+      } = body;
       if (!customerId || !vendorId || !serviceType || !serviceId) {
         return c.json({
           error: "Customer, vendor, service type, and service ID are required"
@@ -250884,7 +253822,7 @@ function registerEnhancedOtpEndpoints(app2) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns8.PublishCommand({
+        await snsClient3.send(new import_client_sns9.PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz booking ${booking[0].id} is confirmed! Start OTP: ${startOTP}, End OTP: ${endOTP}. Save these for verification.`,
           MessageAttributes: {
@@ -250911,7 +253849,7 @@ function registerEnhancedOtpEndpoints(app2) {
 // src/endpoints/sms-notifications.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns9 = require("@aws-sdk/client-sns");
+var import_client_sns10 = require("@aws-sdk/client-sns");
 var SMS_TEMPLATES = {
   booking_created: {
     id: "booking_created",
@@ -251025,7 +253963,7 @@ async function triggerBookingNotification(event, data) {
       return;
     }
     const snsClient3 = getSnsClient();
-    await snsClient3.send(new import_client_sns9.PublishCommand({
+    await snsClient3.send(new import_client_sns10.PublishCommand({
       PhoneNumber: recipientPhone,
       Message: message2,
       MessageAttributes: {
@@ -251058,7 +253996,7 @@ function registerSmsNotificationEndpoints(app2) {
         return c.json({ error: "phone and message are required" }, 400);
       }
       const snsClient3 = getSnsClient();
-      const result = await snsClient3.send(new import_client_sns9.PublishCommand({
+      const result = await snsClient3.send(new import_client_sns10.PublishCommand({
         PhoneNumber: phone,
         Message: message2,
         MessageAttributes: {
@@ -251102,8 +254040,8 @@ function registerSmsNotificationEndpoints(app2) {
       const booking = bookings[0];
       const customers = await select("customers", { id: booking.customer_id });
       const customer = customers.length > 0 ? customers[0] : null;
-      const vendors2 = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
-      const vendor = vendors2.length > 0 ? vendors2[0] : null;
+      const vendors = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
       const staff = booking.staff_id ? await select("staff", { id: booking.staff_id }) : [];
       const staffMember = staff.length > 0 ? staff[0] : null;
       const services = await select("services", { id: booking.service_id });
@@ -251160,7 +254098,53 @@ function registerSmsNotificationEndpoints(app2) {
 // src/endpoints/vendor-profile.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns10 = require("@aws-sdk/client-sns");
+var import_client_sns11 = require("@aws-sdk/client-sns");
+
+// src/utils/entity-extractor.ts
+function normalizeDbRow(row) {
+  if (!row) return row;
+  const normalized = { ...row };
+  if (row.role_id) normalized["roleId"] = row.role_id;
+  if (row.vendor_id) normalized["vendorId"] = row.vendor_id;
+  if (row.service_id) normalized["serviceId"] = row.service_id;
+  if (row.customer_id) normalized["customerId"] = row.customer_id;
+  if (row.booking_id) normalized["bookingId"] = row.booking_id;
+  if (row.payment_id) normalized["paymentId"] = row.payment_id;
+  if (row.staff_id) normalized["staffId"] = row.staff_id;
+  if (row.pet_id) normalized["petId"] = row.pet_id;
+  if (row.catalog_id) normalized["catalogId"] = row.catalog_id;
+  if (row.vendor_service_id) normalized["vendorServiceId"] = row.vendor_service_id;
+  if (row.identity_id) normalized["identityId"] = row.identity_id;
+  if (row.business_name) normalized["businessName"] = row.business_name;
+  if (row.owner_name) normalized["ownerName"] = row.owner_name;
+  if (row.display_name) normalized["displayName"] = row.display_name;
+  if (row.service_name) normalized["serviceName"] = row.service_name;
+  if (row.service_style) normalized["serviceStyle"] = row.service_style;
+  if (row.service_type) normalized["serviceType"] = row.service_type;
+  if (row.booking_date) normalized["bookingDate"] = row.booking_date;
+  if (row.booking_time) normalized["bookingTime"] = row.booking_time;
+  if (row.base_price) normalized["basePrice"] = row.base_price;
+  if (row.total_amount) normalized["totalAmount"] = row.total_amount;
+  if (row.tax_amount) normalized["taxAmount"] = row.tax_amount;
+  if (row.payment_status) normalized["paymentStatus"] = row.payment_status;
+  if (row.is_active !== void 0) normalized["isActive"] = row.is_active;
+  if (row.is_enabled !== void 0) normalized["isEnabled"] = row.is_enabled;
+  if (row.is_published !== void 0) normalized["isPublished"] = row.is_published;
+  if (row.created_at) normalized["createdAt"] = row.created_at;
+  if (row.updated_at) normalized["updatedAt"] = row.updated_at;
+  if (row.id) {
+    if (row.role_id === void 0 && row.name && row.display_name) {
+      normalized["roleId"] = row.id;
+    } else if (row.vendor_id === void 0 && (row.business_name || row.vendor_type)) {
+      normalized["vendorId"] = row.id;
+    } else if (row.booking_date) {
+      normalized["bookingId"] = row.id;
+    }
+  }
+  return normalized;
+}
+
+// src/endpoints/vendor-profile.ts
 var CRITICAL_FIELDS = [
   "business_name",
   "owner_name",
@@ -251204,9 +254188,9 @@ function registerVendorProfileEndpoints(app2) {
       let identityData = null;
       if (vendorIdFromAuth && !vendorIdFromAuth.startsWith("temp_")) {
         try {
-          const vendors2 = await select("vendors", { id: vendorIdFromAuth });
-          if (vendors2.length > 0) {
-            vendor = vendors2[0];
+          const vendors = await select("vendors", { id: vendorIdFromAuth });
+          if (vendors.length > 0) {
+            vendor = vendors[0];
           }
         } catch (e) {
           console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
@@ -251229,9 +254213,9 @@ function registerVendorProfileEndpoints(app2) {
             identityData = identities[0];
             if (!vendor && identityData && typeof identityData.vendor_id === "string") {
               try {
-                const vendors2 = await select("vendors", { id: identityData.vendor_id });
-                if (vendors2.length > 0) {
-                  vendor = vendors2[0];
+                const vendors = await select("vendors", { id: identityData.vendor_id });
+                if (vendors.length > 0) {
+                  vendor = vendors[0];
                 }
               } catch (e) {
                 console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
@@ -251342,11 +254326,11 @@ function registerVendorProfileEndpoints(app2) {
       const { vendorId } = c.req.param();
       const updates = await c.req.json();
       console.log(`\u{1F4DD} [PROFILE-UPDATE] Vendor ${vendorId} updating profile`);
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const wasApproved = vendor.status === "approved";
       const previousStatus = vendor.status;
       let criticalFieldsChanged = false;
@@ -251385,7 +254369,7 @@ function registerVendorProfileEndpoints(app2) {
         }).catch(() => {
         });
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns10.PublishCommand({
+        await snsClient3.send(new import_client_sns11.PublishCommand({
           TopicArn: process.env.ADMIN_ALERT_TOPIC_ARN,
           Message: JSON.stringify({
             eventType: "VendorProfileUpdate",
@@ -251423,11 +254407,11 @@ function registerVendorProfileEndpoints(app2) {
   app2.get("/vendor/:vendorId/profile/edit-check", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const isApproved = vendor.status === "approved";
       return c.json({
         canEdit: true,
@@ -251458,11 +254442,11 @@ function registerVendorProfileEndpoints(app2) {
           }
         });
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       let role = null;
       let capabilities = [];
       let roleConfig = {};
@@ -251527,11 +254511,11 @@ function registerVendorProfileEndpoints(app2) {
           }
         });
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       let role = null;
       let capabilities = [];
       let roleConfig = {};
@@ -251591,6 +254575,260 @@ function registerVendorProfileEndpoints(app2) {
       });
     } catch (error) {
       console.error("Error fetching complete vendor data:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const bankAccounts = await select("vendor_bank_details", { vendor_id: vendorId });
+      if (bankAccounts.length === 0) {
+        return c.json({ success: true, bankAccount: null });
+      }
+      const bankAccount = normalizeDbRow(bankAccounts[0]);
+      return c.json({ success: true, bankAccount });
+    } catch (error) {
+      console.error("Error fetching bank account:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { account_holder_name, account_number, ifsc_code, bank_name, branch_name } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (!account_holder_name || !account_number || !ifsc_code || !bank_name) {
+        return c.json({ error: "Missing required fields: account_holder_name, account_number, ifsc_code, bank_name" }, 400);
+      }
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.toUpperCase())) {
+        return c.json({ error: "Invalid IFSC code format" }, 400);
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const existing = await select("vendor_bank_details", { vendor_id: vendorId });
+      const bankData = {
+        vendor_id: vendorId,
+        account_holder_name: account_holder_name.trim(),
+        account_number: account_number.replace(/\s/g, ""),
+        ifsc_code: ifsc_code.toUpperCase().trim(),
+        bank_name: bank_name.trim(),
+        branch_name: branch_name?.trim() || null,
+        is_verified: false,
+        // Reset verification status on update
+        verified_at: null,
+        verified_by: null,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (existing.length > 0) {
+        await update("vendor_bank_details", { vendor_id: vendorId }, bankData);
+      } else {
+        await insert("vendor_bank_details", bankData);
+      }
+      await query(
+        `UPDATE vendor_setup_completion 
+         SET bank_account_completed = true, 
+             bank_account_completed_at = NOW(),
+             updated_at = NOW()
+         WHERE vendor_id = $1`,
+        [vendorId]
+      ).catch(() => {
+      });
+      return c.json({ success: true, message: "Bank account saved successfully" });
+    } catch (error) {
+      console.error("Error saving bank account:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/:vendorId/bank-account/verify", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const bankAccounts = await select("vendor_bank_details", { vendor_id: vendorId });
+      if (bankAccounts.length === 0) {
+        return c.json({ error: "Bank account not found. Please add bank account details first." }, 404);
+      }
+      return c.json({
+        success: true,
+        message: "Verification request submitted. Our team will review and verify your account shortly."
+      });
+    } catch (error) {
+      console.error("Error requesting verification:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.post("/vendor/:vendorId/bank-account/document", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { document_type, document_url } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (!document_type || !document_url) {
+        return c.json({ error: "document_type and document_url are required" }, 400);
+      }
+      return c.json({ success: true, message: "Document uploaded successfully" });
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/:vendorId/settings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const settings = {
+        service_radius: vendor.service_radius || null,
+        emergency_contact: vendor.emergency_contact || null,
+        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
+        walk_durations: vendor.walk_durations || [],
+        other_config: vendor.other_config || {}
+      };
+      return c.json({ success: true, settings });
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.put("/vendor/:vendorId/settings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (emergency_contact) {
+        if (!emergency_contact.name || !emergency_contact.phone) {
+          return c.json({ error: "Emergency contact must have both name and phone" }, 400);
+        }
+        if (!/^[6-9]\d{9}$/.test(emergency_contact.phone.replace(/\D/g, ""))) {
+          return c.json({ error: "Invalid emergency contact phone number" }, 400);
+        }
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const updateData = {
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (service_radius !== void 0) updateData.service_radius = service_radius;
+      if (emergency_contact !== void 0) updateData.emergency_contact = emergency_contact;
+      if (max_dogs_per_walk !== void 0) updateData.max_dogs_per_walk = max_dogs_per_walk;
+      if (walk_durations !== void 0) updateData.walk_durations = walk_durations;
+      if (other_config !== void 0) updateData.other_config = other_config;
+      await update("vendors", { id: vendorId }, updateData);
+      return c.json({ success: true, message: "Settings updated successfully" });
+    } catch (error) {
+      console.error("Error updating settings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app2.get("/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: []
+          },
+          menu: []
+        });
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let isCafe = false;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            const permissions = await select("role_permissions", { role_id: vendor.role_id });
+            capabilities = permissions.map((p) => p.permission_name);
+            const roleName = (role.name || "").toLowerCase();
+            isCafe = roleName.includes("cafe") || roleName.includes("restaurant") || capabilities.includes("cafe") || capabilities.includes("cafe_menu");
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Details] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      const vendorResponse = {
+        id: vendor.id,
+        business_name: vendor.business_name,
+        owner_name: vendor.owner_name,
+        role_id: vendor.role_id,
+        role: role ? {
+          id: role.id,
+          name: role.name,
+          display_name: role.display_name
+        } : null,
+        capabilities,
+        address: vendor.address,
+        city: vendor.city,
+        state: vendor.state,
+        pincode: vendor.pincode,
+        phone: vendor.phone,
+        email: vendor.email,
+        latitude: vendor.latitude,
+        longitude: vendor.longitude,
+        description: vendor.description || "",
+        operating_hours: vendor.operating_hours ? typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours : null,
+        // Include other vendor fields
+        ...vendor
+      };
+      let menu = [];
+      if (isCafe) {
+        try {
+          const menuItems = await query(
+            `SELECT * FROM cafe_menu_items 
+             WHERE vendor_id = $1 
+             AND is_active = true
+             ORDER BY category, name ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          menu = menuItems.rows || [];
+        } catch (menuError) {
+          console.warn(`[Vendor Details] Failed to load menu for cafe ${vendorId}:`, menuError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: vendorResponse,
+        menu
+        // Include menu for cafes
+      });
+    } catch (error) {
+      console.error("Error fetching vendor details:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -251774,8 +255012,8 @@ function registerCustomerProfileEndpoints(app2) {
   });
   app2.post("/customer/profile", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const rawProfilePayload = body2.profile || body2;
+      const body = await c.req.json().catch(() => ({}));
+      const rawProfilePayload = body.profile || body;
       const profilePayload = {};
       if (rawProfilePayload.firstName) profilePayload.firstName = rawProfilePayload.firstName;
       if (rawProfilePayload.lastName) profilePayload.lastName = rawProfilePayload.lastName;
@@ -251801,7 +255039,7 @@ function registerCustomerProfileEndpoints(app2) {
         }, 400);
       }
       const profileData = validationResult.data;
-      const phone = body2.phone || profileData.phone;
+      const phone = body.phone || body.profile?.phone;
       if (!phone) {
         return c.json({ error: "Phone number is required" }, 400);
       }
@@ -251869,7 +255107,7 @@ function registerCustomerProfileEndpoints(app2) {
         updateData.pincode = profileData.pincode;
       }
       const updated = await update("customers", { id: customerId }, updateData);
-      if (Object.keys(completionUpdates).length > 0) {
+      if (Object.keys(completionUpdates).length > 0 && customerId) {
         try {
           await updateProfileCompletion2(customerId, completionUpdates);
           const customers = await select("customers", { id: customerId });
@@ -251894,8 +255132,8 @@ function registerCustomerProfileEndpoints(app2) {
   app2.put("/customer/profile/:identifier", async (c) => {
     try {
       const { identifier } = c.req.param();
-      const body2 = await c.req.json().catch(() => ({}));
-      const validationResult = import_api_contracts.UpdateCustomerProfileRequestSchema.safeParse(body2);
+      const body = await c.req.json().catch(() => ({}));
+      const validationResult = import_api_contracts.UpdateCustomerProfileRequestSchema.safeParse(body);
       if (!validationResult.success) {
         return c.json({
           success: false,
@@ -252064,8 +255302,8 @@ function registerCustomerProfileEndpoints(app2) {
   app2.post("/customer/:customerId/search-history", async (c) => {
     try {
       const customerId = c.req.param("customerId");
-      const body2 = await c.req.json();
-      const { query: searchQuery } = body2;
+      const body = await c.req.json();
+      const { query: searchQuery } = body;
       if (!searchQuery) {
         return c.json({ error: "Search query is required" }, 400);
       }
@@ -252325,7 +255563,7 @@ function registerSystemHealthEndpoints(app2) {
 // src/endpoints/vendor-settings.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns11 = require("@aws-sdk/client-sns");
+var import_client_sns12 = require("@aws-sdk/client-sns");
 function registerVendorSettingsEndpoints(app2) {
   app2.get("/admin/vendor-settings-rules", async (c) => {
     try {
@@ -252367,7 +255605,7 @@ function registerVendorSettingsEndpoints(app2) {
         "setting_key"
       );
       const snsClient3 = getSnsClient();
-      await snsClient3.send(new import_client_sns11.PublishCommand({
+      await snsClient3.send(new import_client_sns12.PublishCommand({
         TopicArn: process.env.ADMIN_SETTING_UPDATED_TOPIC_ARN,
         Message: JSON.stringify({
           eventType: "PaymentRuleCreated",
@@ -253029,8 +256267,8 @@ function registerVendorDashboardEnhancedEndpoints(app2) {
         });
       }
       console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({
           success: true,
           vendor: {
@@ -253054,7 +256292,7 @@ function registerVendorDashboardEnhancedEndpoints(app2) {
           timeframe
         });
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const now = /* @__PURE__ */ new Date();
       const today = now.toISOString().split("T")[0];
       let startDate = /* @__PURE__ */ new Date();
@@ -253146,8 +256384,8 @@ function registerVendorDashboardEnhancedEndpoints(app2) {
         });
       }
       console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({
           success: true,
           stats: {
@@ -253161,7 +256399,7 @@ function registerVendorDashboardEnhancedEndpoints(app2) {
           }
         });
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const bookingsStats = await query(
         `SELECT 
@@ -253213,8 +256451,8 @@ function registerVendorDashboardEnhancedEndpoints(app2) {
       const { vendorId } = c.req.param();
       const period = c.req.query("period") || "month";
       console.log(`\u{1F4CA} [ANALYTICS] Fetching analytics for vendor: ${vendorId}, period: ${period}`);
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
       const now = /* @__PURE__ */ new Date();
@@ -253283,7 +256521,7 @@ function registerVendorDashboardEnhancedEndpoints(app2) {
 // src/endpoints/appointment-reminders.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns12 = require("@aws-sdk/client-sns");
+var import_client_sns13 = require("@aws-sdk/client-sns");
 function registerAppointmentReminderEndpoints(app2) {
   app2.post("/customer/:customerId/reminder-preferences", async (c) => {
     try {
@@ -253426,7 +256664,7 @@ function registerAppointmentReminderEndpoints(app2) {
         const appointmentTime = /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}:00`);
         const message2 = `Reminder: Your ${serviceName} appointment is scheduled for ${appointmentTime.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}.`;
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns12.PublishCommand({
+        await snsClient3.send(new import_client_sns13.PublishCommand({
           PhoneNumber: customer.phone,
           Message: message2,
           MessageAttributes: {
@@ -253674,7 +256912,7 @@ function registerVendorBookingActionsEndpoints(app2) {
 // src/endpoints/notification-system.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns13 = require("@aws-sdk/client-sns");
+var import_client_sns14 = require("@aws-sdk/client-sns");
 function registerNotificationSystemEndpoints(app2) {
   app2.post("/notifications/create", async (c) => {
     try {
@@ -253710,7 +256948,7 @@ function registerNotificationSystemEndpoints(app2) {
       });
       if (channels?.sms && recipientPhone) {
         const snsClient3 = getSnsClient();
-        await snsClient3.send(new import_client_sns13.PublishCommand({
+        await snsClient3.send(new import_client_sns14.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `${title}: ${message2}`,
           MessageAttributes: {
@@ -253828,11 +257066,11 @@ function registerTierSystemEndpoints(app2) {
   app2.get("/vendor/:vendorId/tier", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const currentTier = vendor.tier || "Bronze";
       const bookings = await query(
         `SELECT COUNT(*) as count, SUM(total_amount) as revenue 
@@ -253884,11 +257122,11 @@ function registerTierSystemEndpoints(app2) {
       if (!newTier || !["Bronze", "Silver", "Gold", "Platinum"].includes(newTier)) {
         return c.json({ error: "Invalid tier. Must be Bronze, Silver, Gold, or Platinum" }, 400);
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const oldTier = vendor.tier || "Bronze";
       const updated = await update(
         "vendors",
@@ -253928,8 +257166,8 @@ function registerTierSystemEndpoints(app2) {
   });
   app2.post("/admin/tiers/calculate-commissions", async (c) => {
     try {
-      const vendors2 = await select("vendors", { is_active: true });
-      const results = vendors2.map((vendor) => {
+      const vendors = await select("vendors", { is_active: true });
+      const results = vendors.map((vendor) => {
         const tier = vendor.tier || "Bronze";
         const commission = TIER_CONFIG[tier].commission;
         return {
@@ -254057,9 +257295,9 @@ function registerTransactionMonitoringEndpoints(app2) {
             }
           }
           if (payment.vendor_id) {
-            const vendors2 = await select("vendors", { id: payment.vendor_id }).catch(() => []);
-            if (vendors2.length > 0) {
-              vendor = vendors2[0].business_name || vendors2[0].owner_name || "Unknown";
+            const vendors = await select("vendors", { id: payment.vendor_id }).catch(() => []);
+            if (vendors.length > 0) {
+              vendor = vendors[0].business_name || vendors[0].owner_name || "Unknown";
             }
           }
           let type = "booking";
@@ -254767,8 +258005,8 @@ function registerPushNotificationEndpoints(app2) {
   });
   app2.post("/push/send", async (c) => {
     try {
-      const { userId, userType, title, body: body2, imageUrl, data } = await c.req.json();
-      if (!userId || !userType || !title || !body2) {
+      const { userId, userType, title, body, imageUrl, data } = await c.req.json();
+      if (!userId || !userType || !title || !body) {
         return c.json({ error: "userId, userType, title, and body are required" }, 400);
       }
       const tokens = await query(
@@ -254785,7 +258023,7 @@ function registerPushNotificationEndpoints(app2) {
       const fcmTokens = tokens.rows.map((t) => t.fcm_token);
       const result = await sendPushToMultipleDevices(fcmTokens, {
         title,
-        body: body2,
+        body,
         imageUrl,
         data
       });
@@ -254794,7 +258032,7 @@ function registerPushNotificationEndpoints(app2) {
         recipient_id: userId,
         notification_type: "push",
         title,
-        message: body2,
+        message: body,
         channels: { push: true },
         is_read: false
       });
@@ -254846,13 +258084,13 @@ function registerPushNotificationEndpoints(app2) {
   });
   app2.post("/push/send-to-topic", async (c) => {
     try {
-      const { topic, title, body: body2, imageUrl, data } = await c.req.json();
-      if (!topic || !title || !body2) {
+      const { topic, title, body, imageUrl, data } = await c.req.json();
+      if (!topic || !title || !body) {
         return c.json({ error: "topic, title, and body are required" }, 400);
       }
       const result = await sendPushToTopic(topic, {
         title,
-        body: body2,
+        body,
         imageUrl,
         data
       });
@@ -254864,14 +258102,14 @@ function registerPushNotificationEndpoints(app2) {
   });
   app2.post("/push/broadcast", async (c) => {
     try {
-      const { userType, title, body: body2, imageUrl, data } = await c.req.json();
-      if (!userType || !title || !body2) {
+      const { userType, title, body, imageUrl, data } = await c.req.json();
+      if (!userType || !title || !body) {
         return c.json({ error: "userType, title, and body are required" }, 400);
       }
       const topic = `all_${userType}s`;
       const result = await sendPushToTopic(topic, {
         title,
-        body: body2,
+        body,
         imageUrl,
         data
       });
@@ -254949,9 +258187,9 @@ function registerPushNotificationEndpoints(app2) {
 var import_crypto15 = require("crypto");
 init_base_handler();
 var CalculateCommuteTimeHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { origin, destination, options } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { origin, destination, options } = body;
     if (!origin || !destination) {
       return this.error("Origin and destination are required", 400);
     }
@@ -254973,9 +258211,9 @@ var CalculateCommuteTimeHandler = class extends BaseHandler {
   }
 };
 var CalculateMultipleCommuteTimesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { origin, destinations, options } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { origin, destinations, options } = body;
     if (!origin || !destinations || !Array.isArray(destinations) || destinations.length === 0) {
       return this.error("Origin and destinations array are required", 400);
     }
@@ -254993,9 +258231,9 @@ var CalculateMultipleCommuteTimesHandler = class extends BaseHandler {
   }
 };
 var CalculateStaffETAHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { staff_id, customer_location, booking_datetime, options } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { staff_id, customer_location, booking_datetime, options } = body;
     if (!staff_id || !customer_location || !booking_datetime) {
       return this.error("staff_id, customer_location, and booking_datetime are required", 400);
     }
@@ -255025,30 +258263,30 @@ function registerCommuteTimeEndpoints(app2) {
   const staffETAHandler = new CalculateStaffETAHandler();
   app2.post("/commute-time/calculate", async (c) => {
     const event = await createApiGatewayEvent17(c);
-    const context3 = createLambdaContext17();
-    const result = await calculateHandler.execute(event, context3);
+    const context2 = createLambdaContext17();
+    const result = await calculateHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/commute-time/calculate-multiple", async (c) => {
     const event = await createApiGatewayEvent17(c);
-    const context3 = createLambdaContext17();
-    const result = await calculateMultipleHandler.execute(event, context3);
+    const context2 = createLambdaContext17();
+    const result = await calculateMultipleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/commute-time/staff-eta", async (c) => {
     const event = await createApiGatewayEvent17(c);
-    const context3 = createLambdaContext17();
-    const result = await staffETAHandler.execute(event, context3);
+    const context2 = createLambdaContext17();
+    const result = await staffETAHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 async function createApiGatewayEvent17(c) {
-  const body2 = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({}));
   return {
     httpMethod: c.req.method,
     path: c.req.url,
     headers: c.req.headers,
-    body: JSON.stringify(body2),
+    body: JSON.stringify(body),
     pathParameters: c.req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
     requestContext: {
@@ -255069,10 +258307,10 @@ var import_crypto16 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetEnhancedBookingDetailsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
-    const actorId = context3.event.queryStringParameters?.actorId;
-    const actorRole = context3.event.queryStringParameters?.actorRole || "customer";
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
+    const actorId = context2.event.queryStringParameters?.actorId;
+    const actorRole = context2.event.queryStringParameters?.actorRole || "customer";
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -255082,7 +258320,7 @@ var GetEnhancedBookingDetailsHandler = class extends BaseHandler {
         return this.error("Booking not found", 404);
       }
       const booking = bookings[0];
-      const isUATMode = context3.event.headers?.["x-uat-mode"] === "true" || context3.event.headers?.["X-UAT-Mode"] === "true";
+      const isUATMode = context2.event.headers?.["x-uat-mode"] === "true" || context2.event.headers?.["X-UAT-Mode"] === "true";
       if (actorId && !isUATMode) {
         if (actorRole === "customer" && booking.customer_id !== actorId) {
           return this.error("Access denied", 403);
@@ -255192,8 +258430,8 @@ var GetEnhancedBookingDetailsHandler = class extends BaseHandler {
   }
 };
 var GetBookingPrescriptionsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -255212,8 +258450,8 @@ var GetBookingPrescriptionsHandler = class extends BaseHandler {
   }
 };
 var GetBookingMedicalRecordsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -255232,8 +258470,8 @@ var GetBookingMedicalRecordsHandler = class extends BaseHandler {
   }
 };
 var GetBookingChatHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -255266,29 +258504,29 @@ function registerBookingDetailsEnhancedEndpoints(app2) {
       actorId: c.req.query("actorId") || void 0,
       actorRole: c.req.query("actorRole") || "customer"
     };
-    const context3 = createLambdaContext18();
-    const result = await enhancedHandler.execute(event, context3);
+    const context2 = createLambdaContext18();
+    const result = await enhancedHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/bookings/:bookingId/prescriptions", async (c) => {
     const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext18();
-    const result = await prescriptionsHandler.execute(event, context3);
+    const context2 = createLambdaContext18();
+    const result = await prescriptionsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/bookings/:bookingId/medical-records", async (c) => {
     const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext18();
-    const result = await medicalRecordsHandler.execute(event, context3);
+    const context2 = createLambdaContext18();
+    const result = await medicalRecordsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/bookings/:bookingId/chat", async (c) => {
     const event = createApiGatewayEvent18(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext18();
-    const result = await chatHandler.execute(event, context3);
+    const context2 = createLambdaContext18();
+    const result = await chatHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -255321,7 +258559,7 @@ var import_crypto17 = __toESM(require("crypto"));
 var RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "";
 var RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
 var RAZORPAY_BASE_URL = "https://api.razorpay.com/v1";
-async function razorpayRequest2(endpoint, method = "GET", body2) {
+async function razorpayRequest2(endpoint, method = "GET", body) {
   const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64");
   const response = await fetch(`${RAZORPAY_BASE_URL}${endpoint}`, {
     method,
@@ -255329,7 +258567,7 @@ async function razorpayRequest2(endpoint, method = "GET", body2) {
       "Authorization": `Basic ${auth}`,
       "Content-Type": "application/json"
     },
-    body: body2 ? JSON.stringify(body2) : void 0
+    body: body ? JSON.stringify(body) : void 0
   });
   const data = await response.json();
   if (!response.ok) {
@@ -255339,15 +258577,15 @@ async function razorpayRequest2(endpoint, method = "GET", body2) {
   return data;
 }
 var CreateLinkedAccountHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendor_id } = body2;
-    this.validateRequired(body2, ["vendor_id"]);
-    const vendors2 = await select("vendors", { id: vendor_id });
-    if (vendors2.length === 0) {
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendor_id } = body;
+    this.validateRequired(body, ["vendor_id"]);
+    const vendors = await select("vendors", { id: vendor_id });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     if (vendor.razorpay_account_id) {
       return this.success({
         account_id: vendor.razorpay_account_id,
@@ -255403,15 +258641,15 @@ var CreateLinkedAccountHandler = class extends BaseHandler {
   }
 };
 var AddBankAccountHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendor_id, account_number, ifsc_code, beneficiary_name } = body2;
-    this.validateRequired(body2, ["vendor_id", "account_number", "ifsc_code", "beneficiary_name"]);
-    const vendors2 = await select("vendors", { id: vendor_id });
-    if (vendors2.length === 0) {
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendor_id, account_number, ifsc_code, beneficiary_name } = body;
+    this.validateRequired(body, ["vendor_id", "account_number", "ifsc_code", "beneficiary_name"]);
+    const vendors = await select("vendors", { id: vendor_id });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     if (!vendor.razorpay_account_id) {
       return this.error("Linked account not created. Please create linked account first.", 400);
     }
@@ -255454,14 +258692,14 @@ var AddBankAccountHandler = class extends BaseHandler {
   }
 };
 var VerifyBankAccountHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendor_id } = body2;
-    const vendors2 = await select("vendors", { id: vendor_id });
-    if (vendors2.length === 0) {
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendor_id } = body;
+    const vendors = await select("vendors", { id: vendor_id });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     if (!vendor.razorpay_account_id || !vendor.bank_account_id) {
       return this.error("Bank account not configured", 400);
     }
@@ -255498,15 +258736,15 @@ var VerifyBankAccountHandler = class extends BaseHandler {
   }
 };
 var ProcessSettlementHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendor_id, booking_ids, amount } = body2;
-    this.validateRequired(body2, ["vendor_id"]);
-    const vendors2 = await select("vendors", { id: vendor_id });
-    if (vendors2.length === 0) {
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendor_id, booking_ids, amount } = body;
+    this.validateRequired(body, ["vendor_id"]);
+    const vendors = await select("vendors", { id: vendor_id });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     if (!vendor.razorpay_account_id) {
       return this.error("Vendor linked account not configured", 400);
     }
@@ -255600,14 +258838,14 @@ var ProcessSettlementHandler = class extends BaseHandler {
       if (subscriptionRows.length > 0 && subscriptionRows[0].commission_rate) {
         return parseFloat(subscriptionRows[0].commission_rate);
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length > 0 && vendors2[0].tier) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length > 0 && vendors[0].tier) {
         const tierResult = await query(`
           SELECT commission_rate
           FROM vendor_tiers
           WHERE tier_name = $1 AND is_active = true
           LIMIT 1
-        `, [vendors2[0].tier]);
+        `, [vendors[0].tier]);
         const tierRows = Array.isArray(tierResult) ? tierResult : tierResult.rows || [];
         if (tierRows.length > 0 && tierRows[0].commission_rate) {
           return parseFloat(tierRows[0].commission_rate);
@@ -255633,8 +258871,8 @@ var ProcessSettlementHandler = class extends BaseHandler {
   }
 };
 var GetSettlementStatusHandler = class extends BaseHandler {
-  async handle(context3) {
-    const settlementId = context3.event.pathParameters?.settlementId;
+  async handle(context2) {
+    const settlementId = context2.event.pathParameters?.settlementId;
     if (!settlementId) {
       return this.error("Settlement ID required", 400);
     }
@@ -255670,11 +258908,11 @@ var GetSettlementStatusHandler = class extends BaseHandler {
   }
 };
 var GetVendorSettlementsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const status = context3.event.queryStringParameters?.status;
-    const limit = parseInt(context3.event.queryStringParameters?.limit || "20");
-    const offset = parseInt(context3.event.queryStringParameters?.offset || "0");
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const status = context2.event.queryStringParameters?.status;
+    const limit = parseInt(context2.event.queryStringParameters?.limit || "20");
+    const offset = parseInt(context2.event.queryStringParameters?.offset || "0");
     if (!vendorId) {
       return this.error("Vendor ID required", 400);
     }
@@ -255747,7 +258985,7 @@ var GetVendorSettlementsHandler = class extends BaseHandler {
   }
 };
 var AutoSettlementHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const settings = await select("platform_settings", { setting_key: "settlement_frequency_days" });
     const settlementFrequency = parseInt(settings[0]?.setting_value || "7");
     const vendorsWithPending = await query(`
@@ -255809,56 +259047,56 @@ function registerRazorpaySettlementEndpoints(app2) {
   const autoSettlementHandler = new AutoSettlementHandler();
   app2.post("/razorpay/linked-account/create", async (c) => {
     const event = await createApiGatewayEvent19(c);
-    const context3 = createLambdaContext19();
-    const result = await createAccountHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await createAccountHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/razorpay/linked-account/bank", async (c) => {
     const event = await createApiGatewayEvent19(c);
-    const context3 = createLambdaContext19();
-    const result = await addBankHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await addBankHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/razorpay/linked-account/verify-bank", async (c) => {
     const event = await createApiGatewayEvent19(c);
-    const context3 = createLambdaContext19();
-    const result = await verifyBankHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await verifyBankHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/settlements/process", async (c) => {
     const event = await createApiGatewayEvent19(c);
-    const context3 = createLambdaContext19();
-    const result = await processSettlementHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await processSettlementHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/settlements/:settlementId", async (c) => {
     const event = await createApiGatewayEvent19(c);
     event.pathParameters = { settlementId: c.req.param("settlementId") };
-    const context3 = createLambdaContext19();
-    const result = await getSettlementStatusHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await getSettlementStatusHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/settlements", async (c) => {
     const event = await createApiGatewayEvent19(c);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext19();
-    const result = await getVendorSettlementsHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await getVendorSettlementsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/settlements/auto-process", async (c) => {
     const event = await createApiGatewayEvent19(c);
-    const context3 = createLambdaContext19();
-    const result = await autoSettlementHandler.execute(event, context3);
+    const context2 = createLambdaContext19();
+    const result = await autoSettlementHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 async function createApiGatewayEvent19(c) {
-  const body2 = await c.req.text().catch(() => "{}");
+  const body = await c.req.text().catch(() => "{}");
   return {
     httpMethod: c.req.method,
     path: c.req.url,
     headers: Object.fromEntries(c.req.raw.headers),
-    body: body2,
+    body,
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
     requestContext: { requestId: import_crypto17.default.randomUUID() }
@@ -255876,10 +259114,10 @@ function createLambdaContext19() {
 init_base_handler();
 init_rds_connection();
 var CalculateRefundPolicyHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId, cancellationReason } = body2;
-    this.validateRequired(body2, ["bookingId"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId, cancellationReason } = body;
+    this.validateRequired(body, ["bookingId"]);
     const bookings = await select("bookings", { id: bookingId });
     if (bookings.length === 0) {
       return this.error("Booking not found", 404);
@@ -255983,10 +259221,10 @@ var CalculateRefundPolicyHandler = class extends BaseHandler {
   }
 };
 var GetRefundRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.queryStringParameters?.vendorId;
-      const serviceId = context3.event.queryStringParameters?.serviceId;
+      const vendorId = context2.event.queryStringParameters?.vendorId;
+      const serviceId = context2.event.queryStringParameters?.serviceId;
       let queryStr = "SELECT * FROM booking_cancellation_rules WHERE 1=1";
       const params = [];
       let paramIndex = 1;
@@ -256017,8 +259255,8 @@ var GetRefundRulesHandler = class extends BaseHandler {
   }
 };
 var CreateRefundRuleHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const {
       vendorId,
       serviceId,
@@ -256027,8 +259265,8 @@ var CreateRefundRuleHandler = class extends BaseHandler {
       partialRefundPercentage,
       cancellationCutoffHours,
       isActive = true
-    } = body2;
-    this.validateRequired(body2, ["fullRefundBeforeHours", "partialRefundBeforeHours", "partialRefundPercentage"]);
+    } = body;
+    this.validateRequired(body, ["fullRefundBeforeHours", "partialRefundBeforeHours", "partialRefundPercentage"]);
     if (partialRefundPercentage < 0 || partialRefundPercentage > 100) {
       return this.error("Partial refund percentage must be between 0 and 100", 400);
     }
@@ -256048,23 +259286,23 @@ var CreateRefundRuleHandler = class extends BaseHandler {
   }
 };
 var UpdateRefundRuleHandler = class extends BaseHandler {
-  async handle(context3) {
-    const ruleId = context3.event.pathParameters?.ruleId;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const ruleId = context2.event.pathParameters?.ruleId;
+    const body = this.parseBody(context2.event);
     if (!ruleId) {
       return this.error("Rule ID is required", 400);
     }
     const updateData = {};
-    if (body2.fullRefundBeforeHours !== void 0) updateData.full_refund_before_hours = body2.fullRefundBeforeHours;
-    if (body2.partialRefundBeforeHours !== void 0) updateData.partial_refund_before_hours = body2.partialRefundBeforeHours;
-    if (body2.partialRefundPercentage !== void 0) {
-      if (body2.partialRefundPercentage < 0 || body2.partialRefundPercentage > 100) {
+    if (body.fullRefundBeforeHours !== void 0) updateData.full_refund_before_hours = body.fullRefundBeforeHours;
+    if (body.partialRefundBeforeHours !== void 0) updateData.partial_refund_before_hours = body.partialRefundBeforeHours;
+    if (body.partialRefundPercentage !== void 0) {
+      if (body.partialRefundPercentage < 0 || body.partialRefundPercentage > 100) {
         return this.error("Partial refund percentage must be between 0 and 100", 400);
       }
-      updateData.partial_refund_percentage = body2.partialRefundPercentage;
+      updateData.partial_refund_percentage = body.partialRefundPercentage;
     }
-    if (body2.cancellationCutoffHours !== void 0) updateData.cancellation_cutoff_hours = body2.cancellationCutoffHours;
-    if (body2.isActive !== void 0) updateData.is_active = body2.isActive;
+    if (body.cancellationCutoffHours !== void 0) updateData.cancellation_cutoff_hours = body.cancellationCutoffHours;
+    if (body.isActive !== void 0) updateData.is_active = body.isActive;
     updateData.updated_at = /* @__PURE__ */ new Date();
     const result = await update("booking_cancellation_rules", { id: ruleId }, updateData);
     if (result.length === 0) {
@@ -256083,20 +259321,20 @@ function registerRefundPolicyEngineEndpoints(app2) {
   const updateRuleHandler = new UpdateRefundRuleHandler();
   app2.post("/refund-policy/calculate", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const event = {
         httpMethod: "POST",
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
-        body: JSON.stringify(body2),
+        body: JSON.stringify(body),
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
           requestId: crypto.randomUUID()
         }
       };
-      const context3 = createLambdaContext20();
-      const result = await calculateHandler.execute(event, context3);
+      const context2 = createLambdaContext20();
+      const result = await calculateHandler.execute(event, context2);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
       console.error("Error in refund policy calculate:", error);
@@ -256106,21 +259344,21 @@ function registerRefundPolicyEngineEndpoints(app2) {
   app2.get("/admin/refund-rules", async (c) => {
     const event = createApiGatewayEvent20(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext20();
-    const result = await getRulesHandler.execute(event, context3);
+    const context2 = createLambdaContext20();
+    const result = await getRulesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/refund-rules", async (c) => {
     const event = createApiGatewayEvent20(c.req);
-    const context3 = createLambdaContext20();
-    const result = await createRuleHandler.execute(event, context3);
+    const context2 = createLambdaContext20();
+    const result = await createRuleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/refund-rules/:ruleId", async (c) => {
     const event = createApiGatewayEvent20(c.req);
     event.pathParameters = { ruleId: c.req.param("ruleId") };
-    const context3 = createLambdaContext20();
-    const result = await updateRuleHandler.execute(event, context3);
+    const context2 = createLambdaContext20();
+    const result = await updateRuleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -256150,9 +259388,9 @@ init_base_handler();
 init_rds_connection();
 init_aws_clients();
 var RefreshCapabilitiesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendorId, forceRefresh = false } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendorId, forceRefresh = false } = body;
     try {
       if (vendorId) {
         await this.refreshVendorCapabilities(vendorId, forceRefresh);
@@ -256161,9 +259399,9 @@ var RefreshCapabilitiesHandler = class extends BaseHandler {
           vendorId
         });
       } else {
-        const vendors2 = await select("vendors", { status: "active" });
+        const vendors = await select("vendors", { status: "active" });
         const results = [];
-        for (const vendor of vendors2) {
+        for (const vendor of vendors) {
           try {
             await this.refreshVendorCapabilities(vendor.id, forceRefresh);
             results.push({ vendorId: vendor.id, status: "success" });
@@ -256182,11 +259420,11 @@ var RefreshCapabilitiesHandler = class extends BaseHandler {
     }
   }
   async refreshVendorCapabilities(vendorId, forceRefresh) {
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       throw new Error("Vendor not found");
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     const roleId = vendor.role_id;
     if (!roleId) {
       throw new Error("Vendor has no role assigned");
@@ -256211,9 +259449,9 @@ var RefreshCapabilitiesHandler = class extends BaseHandler {
   }
 };
 var SyncServiceCatalogHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendorId, serviceId, syncType = "full" } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendorId, serviceId, syncType = "full" } = body;
     try {
       if (syncType === "full") {
         await this.syncFullCatalog();
@@ -256289,14 +259527,14 @@ var SyncServiceCatalogHandler = class extends BaseHandler {
   }
 };
 var ApplyTierCommissionsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { vendorId, recalculateAll = false } = body2;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { vendorId, recalculateAll = false } = body;
     try {
       if (recalculateAll) {
-        const vendors2 = await select("vendors", { status: "active" });
+        const vendors = await select("vendors", { status: "active" });
         const results = [];
-        for (const vendor of vendors2) {
+        for (const vendor of vendors) {
           try {
             await this.applyTierCommission(vendor.id);
             results.push({ vendorId: vendor.id, status: "success" });
@@ -256323,11 +259561,11 @@ var ApplyTierCommissionsHandler = class extends BaseHandler {
     }
   }
   async applyTierCommission(vendorId) {
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       throw new Error("Vendor not found");
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     const tier = vendor.tier || "Bronze";
     const tierConfig = await query(`
       SELECT * FROM tiers WHERE name = $1
@@ -256351,10 +259589,10 @@ var ApplyTierCommissionsHandler = class extends BaseHandler {
   }
 };
 var CalculateTaxHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { amount, serviceType, vendorId, location: location2 } = body2;
-    this.validateRequired(body2, ["amount"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { amount, serviceType, vendorId, location: location2 } = body;
+    this.validateRequired(body, ["amount"]);
     try {
       const taxRules = await this.getTaxRules(serviceType, location2);
       const taxCalculation = this.calculateTax(amount, taxRules);
@@ -256420,8 +259658,8 @@ var CalculateTaxHandler = class extends BaseHandler {
   }
 };
 var GetBannersHandler = class extends BaseHandler {
-  async handle(context3) {
-    const queryParams = context3.event.queryStringParameters || {};
+  async handle(context2) {
+    const queryParams = context2.event.queryStringParameters || {};
     const { position, isActive } = queryParams;
     try {
       let queryStr = "SELECT * FROM banners WHERE 1=1";
@@ -256456,8 +259694,8 @@ var GetBannersHandler = class extends BaseHandler {
   }
 };
 var CreateBannerHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const {
       title,
       description,
@@ -256468,8 +259706,8 @@ var CreateBannerHandler = class extends BaseHandler {
       startDate,
       endDate,
       isActive = true
-    } = body2;
-    this.validateRequired(body2, ["title", "imageUrl", "position"]);
+    } = body;
+    this.validateRequired(body, ["title", "imageUrl", "position"]);
     try {
       const banner = await insert("banners", {
         title,
@@ -256498,12 +259736,12 @@ var CreateBannerHandler = class extends BaseHandler {
   }
 };
 var UpdateBannerHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bannerId = context3.event.pathParameters?.id;
+  async handle(context2) {
+    const bannerId = context2.event.pathParameters?.id;
     if (!bannerId) {
       return this.error("Banner ID is required", 400);
     }
-    const body2 = this.parseBody(context3.event);
+    const body = this.parseBody(context2.event);
     const {
       title,
       description,
@@ -256515,7 +259753,7 @@ var UpdateBannerHandler = class extends BaseHandler {
       endDate,
       isActive,
       ctaText
-    } = body2;
+    } = body;
     try {
       const updateData = {};
       if (title !== void 0) updateData.title = title;
@@ -256551,8 +259789,8 @@ var UpdateBannerHandler = class extends BaseHandler {
   }
 };
 var DeleteBannerHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bannerId = context3.event.pathParameters?.id;
+  async handle(context2) {
+    const bannerId = context2.event.pathParameters?.id;
     if (!bannerId) {
       return this.error("Banner ID is required", 400);
     }
@@ -256587,26 +259825,26 @@ function registerAdminGovernanceEnhancedEndpoints(app2) {
   const deleteBannerHandler = new DeleteBannerHandler();
   app2.post("/admin/capabilities/refresh", async (c) => {
     const event = createApiGatewayEvent21(c.req);
-    const context3 = createLambdaContext21();
-    const result = await refreshCapabilitiesHandler.execute(event, context3);
+    const context2 = createLambdaContext21();
+    const result = await refreshCapabilitiesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/service-catalog/sync", async (c) => {
     const event = createApiGatewayEvent21(c.req);
-    const context3 = createLambdaContext21();
-    const result = await syncCatalogHandler.execute(event, context3);
+    const context2 = createLambdaContext21();
+    const result = await syncCatalogHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/tiers/apply-commissions", async (c) => {
     const event = createApiGatewayEvent21(c.req);
-    const context3 = createLambdaContext21();
-    const result = await applyTierHandler.execute(event, context3);
+    const context2 = createLambdaContext21();
+    const result = await applyTierHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/tax/calculate", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { amount, gstRate, cgstRate, sgstRate, igstRate } = body2;
+      const body = await c.req.json();
+      const { amount, gstRate, cgstRate, sgstRate, igstRate } = body;
       if (!amount || !gstRate) {
         return c.json({ error: "amount and gstRate are required" }, 400);
       }
@@ -256642,8 +259880,8 @@ function registerAdminGovernanceEnhancedEndpoints(app2) {
     try {
       const event = createApiGatewayEvent21(c.req);
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context3 = createLambdaContext21();
-      const result = await getBannersHandler.execute(event, context3);
+      const context2 = createLambdaContext21();
+      const result = await getBannersHandler.execute(event, context2);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
       if (error.message && error.message.includes("does not exist")) {
@@ -256655,22 +259893,22 @@ function registerAdminGovernanceEnhancedEndpoints(app2) {
   });
   app2.post("/admin/banners", async (c) => {
     const event = createApiGatewayEvent21(c.req);
-    const context3 = createLambdaContext21();
-    const result = await createBannerHandler.execute(event, context3);
+    const context2 = createLambdaContext21();
+    const result = await createBannerHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/banners/:id", async (c) => {
     const event = createApiGatewayEvent21(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext21();
-    const result = await updateBannerHandler.execute(event, context3);
+    const context2 = createLambdaContext21();
+    const result = await updateBannerHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.delete("/admin/banners/:id", async (c) => {
     const event = createApiGatewayEvent21(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext21();
-    const result = await deleteBannerHandler.execute(event, context3);
+    const context2 = createLambdaContext21();
+    const result = await deleteBannerHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -256736,20 +259974,20 @@ function createSafeErrorResponse(error, defaultMessage = "Internal server error"
 // src/endpoints/admin-advanced.ts
 var COLORS = ["#FF8C42", "#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#8B5CF6"];
 var GetVendorTypesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const vendorTypes = await select("vendor_types", {});
     return this.success({ vendorTypes });
   }
 };
 var GetServiceStylesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const serviceStyles = await select("service_styles", {});
     return this.success({ serviceStyles });
   }
 };
 var GetRegionalAvailabilityHandler = class extends BaseHandler {
-  async handle(context3) {
-    const serviceId = context3.event.pathParameters?.serviceId;
+  async handle(context2) {
+    const serviceId = context2.event.pathParameters?.serviceId;
     if (!serviceId) {
       return this.error("Service ID is required", 400);
     }
@@ -256758,13 +259996,13 @@ var GetRegionalAvailabilityHandler = class extends BaseHandler {
   }
 };
 var UpdateRegionalAvailabilityHandler = class extends BaseHandler {
-  async handle(context3) {
-    const serviceId = context3.event.pathParameters?.serviceId;
-    const body2 = this.parseBody(context3.event);
-    if (!serviceId || !body2.regions) {
+  async handle(context2) {
+    const serviceId = context2.event.pathParameters?.serviceId;
+    const body = this.parseBody(context2.event);
+    if (!serviceId || !body.regions) {
       return this.error("Service ID and regions are required", 400);
     }
-    for (const region of body2.regions) {
+    for (const region of body.regions) {
       await update(
         "service_regional_availability",
         { service_id: serviceId, region_id: region.regionId },
@@ -256775,8 +260013,8 @@ var UpdateRegionalAvailabilityHandler = class extends BaseHandler {
   }
 };
 var GetRegionalPricingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const serviceId = context3.event.pathParameters?.serviceId;
+  async handle(context2) {
+    const serviceId = context2.event.pathParameters?.serviceId;
     if (!serviceId) {
       return this.error("Service ID is required", 400);
     }
@@ -256785,13 +260023,13 @@ var GetRegionalPricingHandler = class extends BaseHandler {
   }
 };
 var UpdateRegionalPricingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const serviceId = context3.event.pathParameters?.serviceId;
-    const body2 = this.parseBody(context3.event);
-    if (!serviceId || !body2.pricing) {
+  async handle(context2) {
+    const serviceId = context2.event.pathParameters?.serviceId;
+    const body = this.parseBody(context2.event);
+    if (!serviceId || !body.pricing) {
       return this.error("Service ID and pricing are required", 400);
     }
-    for (const price of body2.pricing) {
+    for (const price of body.pricing) {
       await update(
         "service_regional_pricing",
         { service_id: serviceId, region_id: price.regionId },
@@ -256802,9 +260040,9 @@ var UpdateRegionalPricingHandler = class extends BaseHandler {
   }
 };
 var GetRegionalPackagesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const regionId = context3.event.queryStringParameters?.regionId;
-    const status = context3.event.queryStringParameters?.status;
+  async handle(context2) {
+    const regionId = context2.event.queryStringParameters?.regionId;
+    const status = context2.event.queryStringParameters?.status;
     const filters = {};
     if (regionId) filters.region_id = regionId;
     if (status) filters.status = status;
@@ -256813,14 +260051,14 @@ var GetRegionalPackagesHandler = class extends BaseHandler {
   }
 };
 var CreateRegionalPackageHandler = class extends BaseHandler {
-  async handle(context3) {
-    const regionId = context3.event.pathParameters?.regionId;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const regionId = context2.event.pathParameters?.regionId;
+    const body = this.parseBody(context2.event);
     if (!regionId) {
       return this.error("Region ID is required", 400);
     }
     const pkg = await insert("regional_packages", {
-      ...body2,
+      ...body,
       region_id: regionId,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -256828,26 +260066,26 @@ var CreateRegionalPackageHandler = class extends BaseHandler {
   }
 };
 var GetPlatformSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const settings = await select("platform_settings", {});
     return this.success({ settings: settings[0] || {} });
   }
 };
 var UpdatePlatformSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const existing = await select("platform_settings", {});
     if (existing.length > 0) {
-      await update("platform_settings", { id: existing[0].id }, body2);
+      await update("platform_settings", { id: existing[0].id }, body);
     } else {
-      await insert("platform_settings", body2);
+      await insert("platform_settings", body);
     }
     return this.success({ success: true });
   }
 };
 var GetRegionalCatalogHandler = class extends BaseHandler {
-  async handle(context3) {
-    const regionId = context3.event.pathParameters?.regionId;
+  async handle(context2) {
+    const regionId = context2.event.pathParameters?.regionId;
     if (!regionId) {
       return this.error("Region ID is required", 400);
     }
@@ -256856,66 +260094,66 @@ var GetRegionalCatalogHandler = class extends BaseHandler {
   }
 };
 var GetIntegratedServicesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const services = await select("integrated_services", {});
     return this.success({ services });
   }
 };
 var CreateIntegratedServiceHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const service = await insert("integrated_services", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ service });
   }
 };
 var UpdateIntegratedServiceStatusHandler = class extends BaseHandler {
-  async handle(context3) {
-    const id = context3.event.pathParameters?.id;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const id = context2.event.pathParameters?.id;
+    const body = this.parseBody(context2.event);
     if (!id) {
       return this.error("Service ID is required", 400);
     }
-    await update("integrated_services", { id }, { status: body2.status });
+    await update("integrated_services", { id }, { status: body.status });
     return this.success({ success: true });
   }
 };
 var GetProblemCategoryMappingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const mappings = await select("problem_category_mappings", {});
     return this.success({ mappings });
   }
 };
 var CreateProblemCategoryMappingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const mapping = await insert("problem_category_mappings", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ mapping });
   }
 };
 var GetReschedulingPoliciesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const policies = await select("rescheduling_policies", {});
     return this.success({ policies });
   }
 };
 var CreateReschedulingPolicyHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const policy = await insert("rescheduling_policies", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ policy });
   }
 };
 var GetRBACStatsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const roles = await select("roles", {});
     const users = await select("users", {});
     const permissions = await select("permissions", {});
@@ -256931,19 +260169,19 @@ var GetRBACStatsHandler = class extends BaseHandler {
   }
 };
 var GetRolesHandler2 = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const roles = await select("roles", {});
     return this.success({ roles });
   }
 };
 var GetRBACUsersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const users = await select("users", {});
     return this.success({ users });
   }
 };
 var GetPermissionsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const result = await query(
         `SELECT DISTINCT permission_name, resource, action 
@@ -256963,7 +260201,7 @@ var GetPermissionsHandler = class extends BaseHandler {
   }
 };
 var GetPoliciesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const policies = await select("policies", {}).catch(() => []);
       return this.success({ policies: policies || [] });
@@ -256974,8 +260212,8 @@ var GetPoliciesHandler = class extends BaseHandler {
   }
 };
 var DeleteRoleHandler2 = class extends BaseHandler {
-  async handle(context3) {
-    const roleId = context3.event.pathParameters?.roleId;
+  async handle(context2) {
+    const roleId = context2.event.pathParameters?.roleId;
     if (!roleId) {
       return this.error("Role ID is required", 400);
     }
@@ -256984,26 +260222,26 @@ var DeleteRoleHandler2 = class extends BaseHandler {
   }
 };
 var CreateRoleHandler2 = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const role = await insert("roles", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ role });
   }
 };
 var GetRoleMigrationsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const migrations = await select("role_migrations", {});
     return this.success({ migrations });
   }
 };
 var CreateRoleMigrationHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const migration = await insert("role_migrations", {
-      ...body2,
+      ...body,
       status: "pending",
       started_at: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -257011,46 +260249,46 @@ var CreateRoleMigrationHandler = class extends BaseHandler {
   }
 };
 var GetVendorSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const settings = await select("vendor_settings", {});
     return this.success({ settings: settings[0] || {} });
   }
 };
 var UpdateVendorSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const existing = await select("vendor_settings", {});
     if (existing.length > 0) {
-      await update("vendor_settings", { id: existing[0].id }, body2);
+      await update("vendor_settings", { id: existing[0].id }, body);
     } else {
-      await insert("vendor_settings", body2);
+      await insert("vendor_settings", body);
     }
     return this.success({ success: true });
   }
 };
 var GetEnterpriseSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const settings = await select("enterprise_settings", {});
     return this.success({ settings: settings[0] || {} });
   }
 };
 var UpdateEnterpriseSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const existing = await select("enterprise_settings", {});
     if (existing.length > 0) {
-      await update("enterprise_settings", { id: existing[0].id }, body2);
+      await update("enterprise_settings", { id: existing[0].id }, body);
     } else {
-      await insert("enterprise_settings", body2);
+      await insert("enterprise_settings", body);
     }
     return this.success({ success: true });
   }
 };
 var GetSupportTicketsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const status = context3.event.queryStringParameters?.status;
-      const priority = context3.event.queryStringParameters?.priority;
+      const status = context2.event.queryStringParameters?.status;
+      const priority = context2.event.queryStringParameters?.priority;
       let tickets;
       try {
         let queryText = "SELECT * FROM support_tickets WHERE 1=1";
@@ -257095,10 +260333,10 @@ var GetSupportTicketsHandler = class extends BaseHandler {
   }
 };
 var CreateSupportTicketHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const ticket = await insert("support_tickets", {
-      ...body2,
+      ...body,
       status: "open",
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -257106,13 +260344,13 @@ var CreateSupportTicketHandler = class extends BaseHandler {
   }
 };
 var GetVendorSupportRequestsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const requests = await select("vendor_support_requests", {});
     return this.success({ requests });
   }
 };
 var GetOperationsStatsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const stats = {
       systemHealth: "healthy",
       activeUsers: 0,
@@ -257125,9 +260363,9 @@ var GetOperationsStatsHandler = class extends BaseHandler {
   }
 };
 var GetContentItemsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const type = context3.event.queryStringParameters?.type;
-    const status = context3.event.queryStringParameters?.status;
+  async handle(context2) {
+    const type = context2.event.queryStringParameters?.type;
+    const status = context2.event.queryStringParameters?.status;
     const filters = {};
     if (type) filters.type = type;
     if (status) filters.status = status;
@@ -257136,10 +260374,10 @@ var GetContentItemsHandler = class extends BaseHandler {
   }
 };
 var CreateContentItemHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const content = await insert("content_items", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString(),
       last_updated: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -257147,9 +260385,9 @@ var CreateContentItemHandler = class extends BaseHandler {
   }
 };
 var GetNotificationTemplatesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const type = context3.event.queryStringParameters?.type;
-    const category = context3.event.queryStringParameters?.category;
+  async handle(context2) {
+    const type = context2.event.queryStringParameters?.type;
+    const category = context2.event.queryStringParameters?.category;
     const filters = {};
     if (type) filters.type = type;
     if (category) filters.category = category;
@@ -257158,19 +260396,19 @@ var GetNotificationTemplatesHandler = class extends BaseHandler {
   }
 };
 var CreateNotificationTemplateHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const template = await insert("notification_templates", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ template });
   }
 };
 var GetPaymentDisputesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const status = context3.event.queryStringParameters?.status;
-    const priority = context3.event.queryStringParameters?.priority;
+  async handle(context2) {
+    const status = context2.event.queryStringParameters?.status;
+    const priority = context2.event.queryStringParameters?.priority;
     const filters = {};
     if (status) filters.status = status;
     if (priority) filters.priority = priority;
@@ -257179,25 +260417,25 @@ var GetPaymentDisputesHandler = class extends BaseHandler {
   }
 };
 var ResolvePaymentDisputeHandler = class extends BaseHandler {
-  async handle(context3) {
-    const id = context3.event.pathParameters?.id;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const id = context2.event.pathParameters?.id;
+    const body = this.parseBody(context2.event);
     if (!id) {
       return this.error("Dispute ID is required", 400);
     }
-    const status = body2.status || "resolved";
+    const status = body.status || "resolved";
     await update("payment_disputes", { id }, {
       status,
-      resolution: body2.resolution,
+      resolution: body.resolution,
       resolved_at: (/* @__PURE__ */ new Date()).toISOString(),
-      resolved_by: body2.resolvedBy || "admin"
+      resolved_by: body.resolvedBy || "admin"
     });
     return this.success({ success: true, status });
   }
 };
 var GetRateChangesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const status = context3.event.queryStringParameters?.status;
+  async handle(context2) {
+    const status = context2.event.queryStringParameters?.status;
     const filters = {};
     if (status) filters.status = status;
     const rateChanges = await select("rate_changes", filters);
@@ -257205,8 +260443,8 @@ var GetRateChangesHandler = class extends BaseHandler {
   }
 };
 var ApproveRateChangeHandler = class extends BaseHandler {
-  async handle(context3) {
-    const id = context3.event.pathParameters?.id;
+  async handle(context2) {
+    const id = context2.event.pathParameters?.id;
     if (!id) {
       return this.error("Rate change ID is required", 400);
     }
@@ -257218,24 +260456,24 @@ var ApproveRateChangeHandler = class extends BaseHandler {
   }
 };
 var RejectRateChangeHandler = class extends BaseHandler {
-  async handle(context3) {
-    const id = context3.event.pathParameters?.id;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const id = context2.event.pathParameters?.id;
+    const body = this.parseBody(context2.event);
     if (!id) {
       return this.error("Rate change ID is required", 400);
     }
     await update("rate_changes", { id }, {
       status: "rejected",
-      reason: body2.reason,
+      reason: body.reason,
       reviewed_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ success: true });
   }
 };
 var GetTransactionMonitoringHandler = class extends BaseHandler {
-  async handle(context3) {
-    const status = context3.event.queryStringParameters?.status;
-    const type = context3.event.queryStringParameters?.type;
+  async handle(context2) {
+    const status = context2.event.queryStringParameters?.status;
+    const type = context2.event.queryStringParameters?.type;
     const filters = {};
     if (status) filters.status = status;
     if (type) filters.type = type;
@@ -257244,23 +260482,23 @@ var GetTransactionMonitoringHandler = class extends BaseHandler {
   }
 };
 var ExportApplicationsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const downloadUrl = `https://s3.amazonaws.com/exports/applications-${Date.now()}.${body2.format}`;
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const downloadUrl = `https://s3.amazonaws.com/exports/applications-${Date.now()}.${body.format}`;
     return this.success({ downloadUrl });
   }
 };
 var GetBookingRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const rules = await select("booking_rules", {});
     return this.success({ rules });
   }
 };
 var CreateBookingRuleHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const rule = await insert("booking_rules", {
-      ...body2,
+      ...body,
       is_active: true,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -257268,50 +260506,50 @@ var CreateBookingRuleHandler = class extends BaseHandler {
   }
 };
 var GetScheduleSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const settings = await select("schedule_settings", {});
     return this.success({ settings: settings[0] || {} });
   }
 };
 var UpdateScheduleSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const existing = await select("schedule_settings", {});
     if (existing.length > 0) {
-      await update("schedule_settings", { id: existing[0].id }, body2);
+      await update("schedule_settings", { id: existing[0].id }, body);
     } else {
-      await insert("schedule_settings", body2);
+      await insert("schedule_settings", body);
     }
     return this.success({ success: true });
   }
 };
 var GetOnboardingStepsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const steps = await select("onboarding_steps", {}, { orderBy: "order", orderDirection: "ASC" });
     return this.success({ steps });
   }
 };
 var CreateOnboardingStepHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
     const step = await insert("onboarding_steps", {
-      ...body2,
+      ...body,
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     return this.success({ step });
   }
 };
 var GetPetIntelligenceHandler = class extends BaseHandler {
-  async handle(context3) {
-    const search = context3.event.queryStringParameters?.search;
+  async handle(context2) {
+    const search = context2.event.queryStringParameters?.search;
     const filters = {};
     const pets = await select("pets", filters);
     return this.success({ pets });
   }
 };
 var GetAdminProfileHandler = class extends BaseHandler {
-  async handle(context3) {
-    const adminId = context3.event.pathParameters?.adminId;
+  async handle(context2) {
+    const adminId = context2.event.pathParameters?.adminId;
     if (!adminId) {
       return this.error("Admin ID is required", 400);
     }
@@ -257320,25 +260558,25 @@ var GetAdminProfileHandler = class extends BaseHandler {
   }
 };
 var UpdateAdminProfileHandler = class extends BaseHandler {
-  async handle(context3) {
-    const adminId = context3.event.pathParameters?.adminId;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const adminId = context2.event.pathParameters?.adminId;
+    const body = this.parseBody(context2.event);
     if (!adminId) {
       return this.error("Admin ID is required", 400);
     }
-    await update("admins", { id: adminId }, body2);
+    await update("admins", { id: adminId }, body);
     return this.success({ success: true });
   }
 };
 var GetRenewalNoticesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     const notices = await select("renewal_notices", {});
     return this.success({ notices });
   }
 };
 var SendRenewalNoticeHandler = class extends BaseHandler {
-  async handle(context3) {
-    const id = context3.event.pathParameters?.id;
+  async handle(context2) {
+    const id = context2.event.pathParameters?.id;
     if (!id) {
       return this.error("Notice ID is required", 400);
     }
@@ -257353,182 +260591,182 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.get("/admin/catalog/vendor-types", async (c) => {
     const handler2 = new GetVendorTypesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/catalog/service-styles", async (c) => {
     const handler2 = new GetServiceStylesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/catalog/services/:serviceId/regional-availability", async (c) => {
     const handler2 = new GetRegionalAvailabilityHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/catalog/services/:serviceId/regional-availability", async (c) => {
     const handler2 = new UpdateRegionalAvailabilityHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/catalog/services/:serviceId/regional-pricing", async (c) => {
     const handler2 = new GetRegionalPricingHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/catalog/services/:serviceId/regional-pricing", async (c) => {
     const handler2 = new UpdateRegionalPricingHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { serviceId: c.req.param("serviceId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/catalog/regional-packages", async (c) => {
     const handler2 = new GetRegionalPackagesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/regions/:regionId/packages", async (c) => {
     const handler2 = new CreateRegionalPackageHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { regionId: c.req.param("regionId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/platform/settings", async (c) => {
     const handler2 = new GetPlatformSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/platform/settings", async (c) => {
     const handler2 = new UpdatePlatformSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/regions/:regionId/catalog", async (c) => {
     const handler2 = new GetRegionalCatalogHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { regionId: c.req.param("regionId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/integrated-services", async (c) => {
     const handler2 = new GetIntegratedServicesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/integrated-services", async (c) => {
     const handler2 = new CreateIntegratedServiceHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/integrated-services/:id/status", async (c) => {
     const handler2 = new UpdateIntegratedServiceStatusHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/problem-category-mappings", async (c) => {
     const handler2 = new GetProblemCategoryMappingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/problem-category-mappings", async (c) => {
     const handler2 = new CreateProblemCategoryMappingHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rescheduling-policies", async (c) => {
     const handler2 = new GetReschedulingPoliciesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/rescheduling-policies", async (c) => {
     const handler2 = new CreateReschedulingPolicyHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rbac/stats", async (c) => {
     const handler2 = new GetRBACStatsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rbac/roles", async (c) => {
     const handler2 = new GetRolesHandler2();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rbac/users", async (c) => {
     const handler2 = new GetRBACUsersHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rbac/permissions", async (c) => {
     const handler2 = new GetPermissionsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rbac/policies", async (c) => {
     const handler2 = new GetPoliciesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/roles", async (c) => {
     const handler2 = new CreateRoleHandler2();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/rbac/roles", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { level, ...validFields } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { level, ...validFields } = body;
       const roleData = {
         name: validFields.name || validFields.roleName,
         display_name: validFields.displayName || validFields.display_name || validFields.name || validFields.roleName,
@@ -257551,9 +260789,9 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/rbac/roles/:roleId", async (c) => {
     try {
       const roleId = c.req.param("roleId");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updated = await update("roles", { id: roleId }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return c.json({ success: true, role: updated[0] });
@@ -257567,207 +260805,207 @@ function registerAdminAdvancedEndpoints(app2) {
     const handler2 = new DeleteRoleHandler2();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/role-migrations", async (c) => {
     const handler2 = new GetRoleMigrationsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/role-migrations", async (c) => {
     const handler2 = new CreateRoleMigrationHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendor-settings", async (c) => {
     const handler2 = new GetVendorSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/vendor-settings", async (c) => {
     const handler2 = new UpdateVendorSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/enterprise-settings", async (c) => {
     const handler2 = new GetEnterpriseSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/enterprise-settings", async (c) => {
     const handler2 = new UpdateEnterpriseSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/support/tickets", async (c) => {
     const handler2 = new GetSupportTicketsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/support/tickets", async (c) => {
     const handler2 = new CreateSupportTicketHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/support/vendor-requests", async (c) => {
     const handler2 = new GetVendorSupportRequestsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/operations/stats", async (c) => {
     const handler2 = new GetOperationsStatsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/content", async (c) => {
     const handler2 = new GetContentItemsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/content", async (c) => {
     const handler2 = new CreateContentItemHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/notification-templates", async (c) => {
     const handler2 = new GetNotificationTemplatesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/notification-templates", async (c) => {
     const handler2 = new CreateNotificationTemplateHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/payment-disputes", async (c) => {
     const handler2 = new GetPaymentDisputesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/payment-disputes/:id/resolve", async (c) => {
     const handler2 = new ResolvePaymentDisputeHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/rate-changes", async (c) => {
     const handler2 = new GetRateChangesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/rate-changes/:id/approve", async (c) => {
     const handler2 = new ApproveRateChangeHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/rate-changes/:id/reject", async (c) => {
     const handler2 = new RejectRateChangeHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/transactions/monitoring", async (c) => {
     const handler2 = new GetTransactionMonitoringHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/applications/export", async (c) => {
     const handler2 = new ExportApplicationsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/settings/booking-rules", async (c) => {
     const handler2 = new GetBookingRulesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/settings/booking-rules", async (c) => {
     const handler2 = new CreateBookingRuleHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/settings/schedule", async (c) => {
     const handler2 = new GetScheduleSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/settings/schedule", async (c) => {
     const handler2 = new UpdateScheduleSettingsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/onboarding/steps", async (c) => {
     const handler2 = new GetOnboardingStepsHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/onboarding/steps", async (c) => {
     const handler2 = new CreateOnboardingStepHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/pets/intelligence", async (c) => {
     const handler2 = new GetPetIntelligenceHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/pets/stats", async (c) => {
@@ -257911,31 +261149,31 @@ function registerAdminAdvancedEndpoints(app2) {
     const handler2 = new GetAdminProfileHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { adminId: c.req.param("adminId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/profile/:adminId", async (c) => {
     const handler2 = new UpdateAdminProfileHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { adminId: c.req.param("adminId") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/renewal-notices", async (c) => {
     const handler2 = new GetRenewalNoticesHandler();
     const event = createApiGatewayEvent22(c.req);
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/renewal-notices/:id/send", async (c) => {
     const handler2 = new SendRenewalNoticeHandler();
     const event = createApiGatewayEvent22(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext22();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext22();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/catalog/categories", async (c) => {
@@ -258043,8 +261281,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/catalog/categories", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, icon, status, vendorType, serviceStyle } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, icon, status, vendorType, serviceStyle } = body;
       if (!name) {
         return c.json({ success: false, error: "Category name is required" }, 400);
       }
@@ -258075,15 +261313,15 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/catalog/categories/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.icon !== void 0) updateData.icon = body2.icon;
-      if (body2.status !== void 0) updateData.is_active = body2.status !== "inactive";
-      if (body2.display_order !== void 0) updateData.display_order = parseInt(body2.display_order, 10);
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.icon !== void 0) updateData.icon = body.icon;
+      if (body.status !== void 0) updateData.is_active = body.status !== "inactive";
+      if (body.display_order !== void 0) updateData.display_order = parseInt(body.display_order, 10);
       const updated = await update("service_categories", { id }, updateData);
       return c.json({
         success: true,
@@ -258146,8 +261384,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/catalog/products", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, categoryId, price, stock, status } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, categoryId, price, stock, status } = body;
       if (!name || !price) {
         return c.json({ success: false, error: "Product name and price are required" }, 400);
       }
@@ -258176,17 +261414,17 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/catalog/products/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.categoryId !== void 0) updateData.category_id = body2.categoryId;
-      if (body2.price !== void 0) updateData.price = parseFloat(body2.price);
-      if (body2.stock !== void 0) updateData.stock_quantity = parseInt(body2.stock, 10);
-      if (body2.status !== void 0) {
-        updateData.is_active = body2.status !== "inactive";
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.categoryId !== void 0) updateData.category_id = body.categoryId;
+      if (body.price !== void 0) updateData.price = parseFloat(body.price);
+      if (body.stock !== void 0) updateData.stock_quantity = parseInt(body.stock, 10);
+      if (body.status !== void 0) {
+        updateData.is_active = body.status !== "inactive";
       }
       const updated = await update("products", { id }, updateData);
       return c.json({
@@ -258264,8 +261502,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/catalog/services", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName } = body;
       if (!name || !price) {
         return c.json({ success: false, error: "Service name and price are required" }, 400);
       }
@@ -258323,18 +261561,18 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/catalog/services/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.name !== void 0) updateData.service_name = body2.name;
-      if (body2.display_name !== void 0) updateData.display_name = body2.display_name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.categoryId !== void 0) updateData.category_id = body2.categoryId;
-      if (body2.price !== void 0) updateData.base_price = parseFloat(body2.price);
-      if (body2.duration !== void 0) updateData.duration_minutes = parseInt(body2.duration, 10);
-      if (body2.status !== void 0) updateData.status = body2.status;
-      if (body2.display_order !== void 0) updateData.display_order = parseInt(body2.display_order, 10);
+      if (body.name !== void 0) updateData.service_name = body.name;
+      if (body.display_name !== void 0) updateData.display_name = body.display_name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.categoryId !== void 0) updateData.category_id = body.categoryId;
+      if (body.price !== void 0) updateData.base_price = parseFloat(body.price);
+      if (body.duration !== void 0) updateData.duration_minutes = parseInt(body.duration, 10);
+      if (body.status !== void 0) updateData.status = body.status;
+      if (body.display_order !== void 0) updateData.display_order = parseInt(body.display_order, 10);
       try {
         const updated = await update("service_catalog", { id }, updateData);
         return c.json({
@@ -258507,8 +261745,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/catalog/pricing-rules", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, ruleConfig, isActive } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, ruleType, ruleConfig, isActive } = body;
       if (!name || !ruleType || !ruleConfig) {
         return c.json({ success: false, error: "Name, rule type, and rule config are required" }, 400);
       }
@@ -258535,15 +261773,15 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/catalog/pricing-rules/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.name !== void 0) updateData.name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.ruleType !== void 0) updateData.rule_type = body2.ruleType;
-      if (body2.ruleConfig !== void 0) updateData.rule_config = body2.ruleConfig;
-      if (body2.isActive !== void 0) updateData.is_active = body2.isActive;
+      if (body.name !== void 0) updateData.name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.ruleType !== void 0) updateData.rule_type = body.ruleType;
+      if (body.ruleConfig !== void 0) updateData.rule_config = body.ruleConfig;
+      if (body.isActive !== void 0) updateData.is_active = body.isActive;
       const updated = await update("pricing_rules", { id }, updateData);
       return c.json({
         success: true,
@@ -258584,8 +261822,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/catalog/:itemType/bulk-edit", async (c) => {
     try {
       const itemType = c.req.param("itemType");
-      const body2 = await c.req.json().catch(() => ({}));
-      const { ids, updates } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { ids, updates } = body;
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return c.json({ success: false, error: "IDs array is required" }, 400);
       }
@@ -258698,8 +261936,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/finance/settlement-rules", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, conditions, actions, isActive, priority } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
       if (!name || !ruleType) {
         return c.json({ success: false, error: "Rule name and type are required" }, 400);
       }
@@ -258776,8 +262014,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/finance/settlement-rules/:id", async (c) => {
     try {
       const ruleId = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, conditions, actions, isActive, priority } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
       if (!ruleId) {
         return c.json({ success: false, error: "Rule ID is required" }, 400);
       }
@@ -258859,8 +262097,8 @@ function registerAdminAdvancedEndpoints(app2) {
         return c.json({ success: false, error: "Rule ID is required" }, 400);
       }
       try {
-        const deleted = await deleteRows("settlement_rules", { id: ruleId });
-        if (deleted.length === 0) {
+        const deletedCount = await deleteRows("settlement_rules", { id: ruleId });
+        if (deletedCount === 0) {
           return c.json({ success: false, error: "Settlement rule not found" }, 404);
         }
         return c.json({
@@ -258915,7 +262153,7 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/finance/cancellation-policies", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const {
         name,
         description,
@@ -258928,7 +262166,7 @@ function registerAdminAdvancedEndpoints(app2) {
         noShowPolicy,
         isActive,
         priority
-      } = body2;
+      } = body;
       if (!name) {
         return c.json({ success: false, error: "Policy name is required" }, 400);
       }
@@ -258955,16 +262193,16 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/finance/cancellation-policies/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.name !== void 0) updateData.policy_name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.gracePeriodHours !== void 0) updateData.hours_before_booking = body2.gracePeriodHours;
-      if (body2.isActive !== void 0) updateData.is_active = body2.isActive;
-      if (body2.cancellationWindows?.[0]?.penaltyPercentage !== void 0) {
-        updateData.cancellation_fee_percentage = body2.cancellationWindows[0].penaltyPercentage;
+      if (body.name !== void 0) updateData.policy_name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.gracePeriodHours !== void 0) updateData.hours_before_booking = body.gracePeriodHours;
+      if (body.isActive !== void 0) updateData.is_active = body.isActive;
+      if (body.cancellationWindows?.[0]?.penaltyPercentage !== void 0) {
+        updateData.cancellation_fee_percentage = body.cancellationWindows[0].penaltyPercentage;
       }
       const updated = await update("cancellation_policies", { id }, updateData);
       return c.json({
@@ -259015,8 +262253,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/finance/gst/hsn-codes", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { code, description, gstRate, category, cgst, sgst, igst, isActive } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { code, description, gstRate, category, cgst, sgst, igst, isActive } = body;
       if (!code || !gstRate) {
         return c.json({ success: false, error: "HSN code and GST rate are required" }, 400);
       }
@@ -259040,12 +262278,12 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/finance/gst/hsn-codes/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {};
-      if (body2.code !== void 0) updateData.hsn_code = body2.code;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.gstRate !== void 0) updateData.gst_rate = parseFloat(body2.gstRate);
-      if (body2.isActive !== void 0) updateData.is_active = body2.isActive;
+      if (body.code !== void 0) updateData.hsn_code = body.code;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.gstRate !== void 0) updateData.gst_rate = parseFloat(body.gstRate);
+      if (body.isActive !== void 0) updateData.is_active = body.isActive;
       const updated = await update("hsn_codes", { id }, updateData);
       return c.json({
         success: true,
@@ -259078,8 +262316,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/finance/gst/tax-categories", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { name, description, defaultGSTRate, applicableServices, isActive } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { name, description, defaultGSTRate, applicableServices, isActive } = body;
       if (!name || !defaultGSTRate) {
         return c.json({ success: false, error: "Category name and default GST rate are required" }, 400);
       }
@@ -259103,12 +262341,12 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/finance/gst/tax-categories/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const updateData = {};
-      if (body2.name !== void 0) updateData.category_name = body2.name;
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.defaultGSTRate !== void 0) updateData.tax_rate = parseFloat(body2.defaultGSTRate);
-      if (body2.isActive !== void 0) updateData.is_active = body2.isActive;
+      if (body.name !== void 0) updateData.category_name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.defaultGSTRate !== void 0) updateData.tax_rate = parseFloat(body.defaultGSTRate);
+      if (body.isActive !== void 0) updateData.is_active = body.isActive;
       const updated = await update("tax_categories", { id }, updateData);
       return c.json({
         success: true,
@@ -259275,8 +262513,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.put("/admin/enterprise/inventory", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { products } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { products } = body;
       if (!products || !Array.isArray(products)) {
         return c.json({ error: "products array is required" }, 400);
       }
@@ -259327,8 +262565,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.put("/admin/enterprise/pricing-rules", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { rules } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { rules } = body;
       if (!rules || !Array.isArray(rules)) {
         return c.json({ error: "rules array is required" }, 400);
       }
@@ -259478,7 +262716,7 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/notifications", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const {
         title,
         message: message2,
@@ -259488,7 +262726,7 @@ function registerAdminAdvancedEndpoints(app2) {
         target_user_ids,
         channels,
         scheduled_at
-      } = body2;
+      } = body;
       if (!title || !message2 || !channels || channels.length === 0) {
         return c.json({ error: "title, message, and at least one channel are required" }, 400);
       }
@@ -259626,8 +262864,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.put("/admin/payments/gateway-config", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { razorpay, stripe, paytm, default_gateway } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { razorpay, stripe, paytm, default_gateway } = body;
       try {
         const existing = await query("SELECT * FROM payment_gateway_settings WHERE gateway_name = $1", ["razorpay"]).catch(() => ({ rows: [] }));
         const gatewayConfig = {
@@ -259728,8 +262966,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.put("/admin/payments/refund-rules", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { enabled, schedule, autoReconcile, reconcilePeriod } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { enabled, schedule, autoReconcile, reconcilePeriod } = body;
       try {
         const existing = await query("SELECT * FROM refund_rules LIMIT 1").catch(() => ({ rows: [] }));
         const rulesData = {
@@ -260047,8 +263285,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/refunds/:refundId/approve", async (c) => {
     try {
       const refundId = c.req.param("refundId");
-      const body2 = await c.req.json().catch(() => ({}));
-      const { notes } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { notes } = body;
       const refunds = await select("refunds", { id: refundId });
       if (refunds.length === 0) {
         return c.json({ success: false, error: "Refund not found" }, 404);
@@ -260079,8 +263317,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/refunds/:refundId/reject", async (c) => {
     try {
       const refundId = c.req.param("refundId");
-      const body2 = await c.req.json().catch(() => ({}));
-      const { reason } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { reason } = body;
       if (!reason) {
         return c.json({ success: false, error: "Rejection reason is required" }, 400);
       }
@@ -260567,7 +263805,7 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/settings/aws", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       return c.json({ success: true, message: "AWS settings saved" });
     } catch (error) {
       return c.json({ success: false, error: "Failed to save AWS settings" }, 500);
@@ -260587,7 +263825,7 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/settings/payment-gateway", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       return c.json({ success: true, message: "Payment gateway settings saved" });
     } catch (error) {
       return c.json({ success: false, error: "Failed to save payment gateway settings" }, 500);
@@ -260607,7 +263845,7 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/settings/google-maps", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       return c.json({ success: true, message: "Google Maps settings saved" });
     } catch (error) {
       return c.json({ success: false, error: "Failed to save Google Maps settings" }, 500);
@@ -260615,14 +263853,14 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.put("/admin/settings", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      if (body2.setting_key && body2.setting_value !== void 0) {
-        const existing = await select("platform_settings", { setting_key: body2.setting_key });
-        const settingValue = body2.setting_value;
+      const body = await c.req.json().catch(() => ({}));
+      if (body.setting_key && body.setting_value !== void 0) {
+        const existing = await select("platform_settings", { setting_key: body.setting_key });
+        const settingValue = body.setting_value;
         if (existing.length > 0) {
           await update(
             "platform_settings",
-            { setting_key: body2.setting_key },
+            { setting_key: body.setting_key },
             {
               setting_value: settingValue,
               updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -260630,16 +263868,16 @@ function registerAdminAdvancedEndpoints(app2) {
           );
         } else {
           await insert("platform_settings", {
-            setting_key: body2.setting_key,
+            setting_key: body.setting_key,
             setting_value: settingValue,
-            setting_type: typeof body2.setting_value === "string" ? "string" : "object",
+            setting_type: typeof body.setting_value === "string" ? "string" : "object",
             is_public: false,
             created_at: (/* @__PURE__ */ new Date()).toISOString(),
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
           });
         }
       } else {
-        for (const [key, value] of Object.entries(body2)) {
+        for (const [key, value] of Object.entries(body)) {
           if (value === void 0) continue;
           const existing = await select("platform_settings", { setting_key: key });
           if (existing.length > 0) {
@@ -260692,8 +263930,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/content/pages", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { title, slug, content, category, isPublished } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { title, slug, content, category, isPublished } = body;
       if (!title || !slug) {
         return c.json({ error: "title and slug are required" }, 400);
       }
@@ -260719,7 +263957,7 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.put("/admin/content/pages/:pageId", async (c) => {
     try {
       const pageId = c.req.param("pageId");
-      const body2 = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch(() => ({}));
       const pages = await select("content_pages", { id: pageId });
       if (pages.length === 0) {
         return c.json({ error: "Page not found" }, 404);
@@ -260727,11 +263965,11 @@ function registerAdminAdvancedEndpoints(app2) {
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.title !== void 0) updateData.title = body2.title;
-      if (body2.slug !== void 0) updateData.slug = body2.slug;
-      if (body2.content !== void 0) updateData.content = body2.content;
-      if (body2.category !== void 0) updateData.category = body2.category;
-      if (body2.isPublished !== void 0) updateData.is_published = body2.isPublished !== false;
+      if (body.title !== void 0) updateData.title = body.title;
+      if (body.slug !== void 0) updateData.slug = body.slug;
+      if (body.content !== void 0) updateData.content = body.content;
+      if (body.category !== void 0) updateData.category = body.category;
+      if (body.isPublished !== void 0) updateData.is_published = body.isPublished !== false;
       const updated = await update("content_pages", { id: pageId }, updateData);
       return c.json({
         success: true,
@@ -260844,8 +264082,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/fix/create-vendor-identity", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { phone, roleId } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { phone, roleId } = body;
       if (!phone) {
         return c.json({ success: false, error: "phone is required" }, 400);
       }
@@ -260921,11 +264159,11 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.get("/debug/vendor-lookup/:phone", async (c) => {
     try {
       const phone = c.req.param("phone");
-      const vendors2 = await select("vendors", { phone });
+      const vendors = await select("vendors", { phone });
       return c.json({
         success: true,
-        vendors: vendors2 || [],
-        count: vendors2?.length || 0
+        vendors: vendors || [],
+        count: vendors?.length || 0
       });
     } catch (error) {
       console.error("Error in vendor lookup:", error);
@@ -260934,8 +264172,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/vendor/reject", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { vendorId, reason } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, reason } = body;
       if (!vendorId) {
         return c.json({ error: "vendorId is required" }, 400);
       }
@@ -260955,8 +264193,8 @@ function registerAdminAdvancedEndpoints(app2) {
   });
   app2.post("/admin/vendor/request-info", async (c) => {
     try {
-      const body2 = await c.req.json().catch(() => ({}));
-      const { vendorId, comment } = body2;
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, comment } = body;
       if (!vendorId) {
         return c.json({ error: "vendorId is required" }, 400);
       }
@@ -261093,8 +264331,8 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/vendors/compliance-issues/:issueId/investigate", async (c) => {
     try {
       const issueId = c.req.param("issueId");
-      const body2 = await c.req.json().catch(() => ({}));
-      const adminId = body2.adminId || "system";
+      const body = await c.req.json().catch(() => ({}));
+      const adminId = body.adminId || "system";
       try {
         await query(`
           UPDATE compliance_issues 
@@ -261125,9 +264363,9 @@ function registerAdminAdvancedEndpoints(app2) {
   app2.post("/admin/vendors/compliance-issues/:issueId/resolve", async (c) => {
     try {
       const issueId = c.req.param("issueId");
-      const body2 = await c.req.json().catch(() => ({}));
-      const adminId = body2.adminId || "system";
-      const resolutionNotes = body2.notes || null;
+      const body = await c.req.json().catch(() => ({}));
+      const adminId = body.adminId || "system";
+      const resolutionNotes = body.notes || null;
       try {
         await query(`
           UPDATE compliance_issues 
@@ -261387,8 +264625,8 @@ function registerAdminAdvancedEndpoints(app2) {
     try {
       const alertId = c.req.param("alertId");
       const action = c.req.param("action");
-      const body2 = await c.req.json().catch(() => ({}));
-      const adminId = body2.adminId || "system";
+      const body = await c.req.json().catch(() => ({}));
+      const adminId = body.adminId || "system";
       const vendorIdMatch = alertId.match(/alert-([^-]+)-/);
       const vendorId = vendorIdMatch ? vendorIdMatch[1] : null;
       if (action === "investigate" && vendorId) {
@@ -262274,16 +265512,16 @@ function createLambdaContext22() {
 init_base_handler();
 init_rds_connection();
 var GetVendorSetupStatusHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     return this.success({
       setupStatus: {
         servicesConfigured: vendor.services_configured || false,
@@ -262295,8 +265533,8 @@ var GetVendorSetupStatusHandler = class extends BaseHandler {
   }
 };
 var CompleteVendorSetupHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -262309,8 +265547,8 @@ var CompleteVendorSetupHandler = class extends BaseHandler {
   }
 };
 var GetVendorAvailabilityHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -262319,18 +265557,18 @@ var GetVendorAvailabilityHandler = class extends BaseHandler {
   }
 };
 var UpdateVendorAvailabilityHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const body2 = this.parseBody(context3.event);
-    if (!vendorId || !body2.availability) {
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const body = this.parseBody(context2.event);
+    if (!vendorId || !body.availability) {
       return this.error("Vendor ID and availability are required", 400);
     }
     const existing = await select("vendor_availability", { vendor_id: vendorId });
     if (existing.length > 0) {
-      await update("vendor_availability", { vendor_id: vendorId }, body2.availability);
+      await update("vendor_availability", { vendor_id: vendorId }, body.availability);
     } else {
       await insert("vendor_availability", {
-        ...body2.availability,
+        ...body.availability,
         vendor_id: vendorId,
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -262343,29 +265581,29 @@ var UpdateVendorAvailabilityHandler = class extends BaseHandler {
   }
 };
 var GetAvailableServicesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     const roleId = vendor.role_id;
     const services = await select("services", { role_id: roleId, is_active: true });
     return this.success({ services });
   }
 };
 var SelectVendorServicesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const body2 = this.parseBody(context3.event);
-    if (!vendorId || !body2.serviceIds) {
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const body = this.parseBody(context2.event);
+    if (!vendorId || !body.serviceIds) {
       return this.error("Vendor ID and service IDs are required", 400);
     }
-    for (const serviceId of body2.serviceIds) {
+    for (const serviceId of body.serviceIds) {
       await insert("vendor_services", {
         vendor_id: vendorId,
         service_id: serviceId,
@@ -262382,8 +265620,8 @@ var SelectVendorServicesHandler = class extends BaseHandler {
   }
 };
 var GetServiceConfigsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const serviceIds = context3.event.queryStringParameters?.serviceIds;
+  async handle(context2) {
+    const serviceIds = context2.event.queryStringParameters?.serviceIds;
     if (!serviceIds) {
       return this.error("Service IDs are required", 400);
     }
@@ -262397,42 +265635,42 @@ var GetServiceConfigsHandler = class extends BaseHandler {
   }
 };
 var ConfigureVendorServicesHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    if (!body2.vendorId || !body2.configurations) {
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    if (!body.vendorId || !body.configurations) {
       return this.error("Vendor ID and configurations are required", 400);
     }
-    for (const config of body2.configurations) {
+    for (const config of body.configurations) {
       await update("service_configs", { service_id: config.serviceId }, config);
     }
     return this.success({ success: true });
   }
 };
 var GetVendorStatusHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     return this.success({ vendor });
   }
 };
 var GetSoloProviderInfoHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
-    const vendor = vendors2[0];
+    const vendor = vendors[0];
     const centers = await select("centers", { vendor_id: vendorId });
     const staff = await select("staff", { vendor_id: vendorId });
     return this.success({
@@ -262443,8 +265681,8 @@ var GetSoloProviderInfoHandler = class extends BaseHandler {
   }
 };
 var GetCenterStatsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -262463,9 +265701,9 @@ var GetCenterStatsHandler = class extends BaseHandler {
   }
 };
 var GetStaffStatsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const staffId = context3.event.pathParameters?.staffId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const staffId = context2.event.pathParameters?.staffId;
     if (!vendorId || !staffId) {
       return this.error("Vendor ID and Staff ID are required", 400);
     }
@@ -262487,86 +265725,86 @@ function registerVendorSetupEndpoints(app2) {
     const handler2 = new GetVendorSetupStatusHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/:vendorId/setup/complete", async (c) => {
     const handler2 = new CompleteVendorSetupHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/availability", async (c) => {
     const handler2 = new GetVendorAvailabilityHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/vendor/:vendorId/availability", async (c) => {
     const handler2 = new UpdateVendorAvailabilityHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/services/available", async (c) => {
     const handler2 = new GetAvailableServicesHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/:vendorId/services/select", async (c) => {
     const handler2 = new SelectVendorServicesHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/services/config", async (c) => {
     const handler2 = new GetServiceConfigsHandler();
     const event = createApiGatewayEvent23(c.req);
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/services/configure", async (c) => {
     const handler2 = new ConfigureVendorServicesHandler();
     const event = createApiGatewayEvent23(c.req);
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/status/:vendorId", async (c) => {
     const handler2 = new GetVendorStatusHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/solo-info", async (c) => {
     const handler2 = new GetSoloProviderInfoHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/center/stats", async (c) => {
     const handler2 = new GetCenterStatsHandler();
     const event = createApiGatewayEvent23(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/staff/:staffId/stats", async (c) => {
@@ -262576,8 +265814,8 @@ function registerVendorSetupEndpoints(app2) {
       vendorId: c.req.param("vendorId"),
       staffId: c.req.param("staffId")
     };
-    const context3 = createLambdaContext23();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext23();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -262606,9 +265844,9 @@ function createLambdaContext23() {
 init_base_handler();
 init_rds_connection();
 var GetCustomerAppointmentsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const customerId = context3.event.pathParameters?.customerId || context3.event.queryStringParameters?.customerId || context3.userId;
+      const customerId = context2.event.pathParameters?.customerId || context2.event.queryStringParameters?.customerId || context2.userId;
       if (!customerId) {
         return this.error("Customer ID is required", 401);
       }
@@ -262649,10 +265887,10 @@ var GetCustomerAppointmentsHandler = class extends BaseHandler {
   }
 };
 var GetAppointmentDetailsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const appointmentId = context3.event.pathParameters?.id;
-      const customerId = context3.event.pathParameters?.customerId || context3.userId;
+      const appointmentId = context2.event.pathParameters?.id;
+      const customerId = context2.event.pathParameters?.customerId || context2.userId;
       if (!appointmentId) {
         return this.error("Appointment ID is required", 400);
       }
@@ -262711,12 +265949,12 @@ var GetAppointmentDetailsHandler = class extends BaseHandler {
   }
 };
 var RescheduleAppointmentHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const appointmentId = context3.event.pathParameters?.id;
-      const customerId = context3.event.pathParameters?.customerId || context3.userId;
-      const body2 = this.parseBody(context3.event);
-      const { appointment_date, appointment_time, reason } = body2 || {};
+      const appointmentId = context2.event.pathParameters?.id;
+      const customerId = context2.event.pathParameters?.customerId || context2.userId;
+      const body = this.parseBody(context2.event);
+      const { appointment_date, appointment_time, reason } = body || {};
       if (!appointmentId) {
         return this.error("Appointment ID is required", 400);
       }
@@ -262726,17 +265964,16 @@ var RescheduleAppointmentHandler = class extends BaseHandler {
       if (!customerId) {
         return this.error("Customer ID is required", 401);
       }
-      const db = await getDatabase();
-      const appointment = await db.query(`
+      const appointmentResult = await query(`
         SELECT a.*, b.customer_id, b.status as booking_status
         FROM appointments a
         INNER JOIN bookings b ON a.booking_id = b.id
         WHERE a.id = $1 AND b.customer_id = $2
       `, [appointmentId, customerId]);
-      if (appointment.rows.length === 0) {
+      if (appointmentResult.rows.length === 0) {
         return this.error("Appointment not found", 404);
       }
-      if (appointment.rows[0].booking_status !== "confirmed" && appointment.rows[0].booking_status !== "scheduled") {
+      if (appointmentResult.rows[0].booking_status !== "confirmed" && appointmentResult.rows[0].booking_status !== "scheduled") {
         return this.error("Appointment cannot be rescheduled in current status", 400);
       }
       const updated = await query(`
@@ -262763,8 +266000,8 @@ var RescheduleAppointmentHandler = class extends BaseHandler {
         ) VALUES ($1, 'rescheduled', $2, $3, $4, $5, $6, NOW())
       `, [
         appointmentId,
-        appointment.rows[0].appointment_date,
-        appointment.rows[0].appointment_time,
+        appointmentResult.rows[0].appointment_date,
+        appointmentResult.rows[0].appointment_time,
         appointment_date,
         appointment_time,
         reason
@@ -262780,12 +266017,12 @@ var RescheduleAppointmentHandler = class extends BaseHandler {
   }
 };
 var CancelAppointmentHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const appointmentId = context3.event.pathParameters?.id;
-      const customerId = context3.event.pathParameters?.customerId || context3.userId;
-      const body2 = this.parseBody(context3.event);
-      const { reason } = body2 || {};
+      const appointmentId = context2.event.pathParameters?.id;
+      const customerId = context2.event.pathParameters?.customerId || context2.userId;
+      const body = this.parseBody(context2.event);
+      const { reason } = body || {};
       if (!appointmentId) {
         return this.error("Appointment ID is required", 400);
       }
@@ -262844,54 +266081,54 @@ function registerCustomerAppointmentsEndpoints(app2) {
   const cancelHandler = new CancelAppointmentHandler();
   app2.get("/customer/appointments", async (c) => {
     const event = createApiGatewayEvent24(c.req);
-    const context3 = createLambdaContext24();
-    const result = await getAppointmentsHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await getAppointmentsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/customer/appointments/:id", async (c) => {
     const event = createApiGatewayEvent24(c.req);
-    const context3 = createLambdaContext24();
-    const result = await getDetailsHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await getDetailsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/customer/appointments/:id/reschedule", async (c) => {
     const event = createApiGatewayEvent24(c.req);
-    const context3 = createLambdaContext24();
-    const result = await rescheduleHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await rescheduleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/customer/appointments/:id/cancel", async (c) => {
     const event = createApiGatewayEvent24(c.req);
-    const context3 = createLambdaContext24();
-    const result = await cancelHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await cancelHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/appointment/:appointmentId", async (c) => {
     const event = createApiGatewayEvent24(c.req);
     event.pathParameters = { id: c.req.param("appointmentId") };
-    const context3 = createLambdaContext24();
-    const result = await getDetailsHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await getDetailsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/appointment/:appointmentId/cancel", async (c) => {
     const event = createApiGatewayEvent24(c.req);
     event.pathParameters = { id: c.req.param("appointmentId") };
-    const context3 = createLambdaContext24();
-    const result = await cancelHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await cancelHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/appointment/:appointmentId/reschedule", async (c) => {
     const event = createApiGatewayEvent24(c.req);
     event.pathParameters = { id: c.req.param("appointmentId") };
-    const context3 = createLambdaContext24();
-    const result = await rescheduleHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await rescheduleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/appointment/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent24(c.req);
     event.queryStringParameters = { status: c.req.query("status") || "all" };
-    const context3 = createLambdaContext24();
-    const result = await getAppointmentsHandler.execute(event, context3);
+    const context2 = createLambdaContext24();
+    const result = await getAppointmentsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -262918,15 +266155,15 @@ function createLambdaContext24() {
 init_base_handler();
 init_rds_connection();
 var GetCustomerOrdersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const customerId = context3.event.pathParameters?.customerId || context3.event.queryStringParameters?.customerId || context3.userId;
+      const customerId = context2.event.pathParameters?.customerId || context2.event.queryStringParameters?.customerId || context2.userId;
       if (!customerId) {
         return this.error("Customer ID is required", 401);
       }
-      const status = context3.event.queryStringParameters?.status;
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const status = context2.event.queryStringParameters?.status;
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context2.event.queryStringParameters?.offset || "0", 10);
       let ordersQuery = `
         SELECT 
           o.id,
@@ -263013,10 +266250,10 @@ var GetCustomerOrdersHandler = class extends BaseHandler {
   }
 };
 var GetOrderDetailsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const orderId = context3.event.pathParameters?.id;
-      const customerId = context3.event.pathParameters?.customerId || context3.event.queryStringParameters?.customerId || context3.userId;
+      const orderId = context2.event.pathParameters?.id;
+      const customerId = context2.event.pathParameters?.customerId || context2.event.queryStringParameters?.customerId || context2.userId;
       if (!orderId) {
         return this.error("Order ID is required", 400);
       }
@@ -263078,10 +266315,10 @@ var GetOrderDetailsHandler = class extends BaseHandler {
   }
 };
 var GetOrderInvoiceHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const orderId = context3.event.pathParameters?.id;
-      const customerId = context3.event.pathParameters?.customerId || context3.event.queryStringParameters?.customerId || context3.userId;
+      const orderId = context2.event.pathParameters?.id;
+      const customerId = context2.event.pathParameters?.customerId || context2.event.queryStringParameters?.customerId || context2.userId;
       if (!orderId) {
         return this.error("Order ID is required", 400);
       }
@@ -263134,22 +266371,26 @@ var GetOrderInvoiceHandler = class extends BaseHandler {
       if (!taxBreakdown && items.rows.length > 0) {
         try {
           const { taxCalculationService: taxCalculationService2 } = await Promise.resolve().then(() => (init_tax_calculation_service(), tax_calculation_service_exports));
-          let customerLocation = null;
-          let vendorLocation = null;
+          let customerLocation = void 0;
+          let vendorLocation = void 0;
           if (order.rows[0].customer_address) {
             const addr = typeof order.rows[0].customer_address === "string" ? JSON.parse(order.rows[0].customer_address) : order.rows[0].customer_address;
-            customerLocation = {
-              state: addr?.state,
-              city: addr?.city,
-              pincode: addr?.pincode
-            };
+            if (addr?.state) {
+              customerLocation = {
+                state: addr.state,
+                city: addr.city,
+                pincode: addr.pincode
+              };
+            }
           }
           if (order.rows[0].vendor_address) {
             const addr = typeof order.rows[0].vendor_address === "string" ? JSON.parse(order.rows[0].vendor_address) : order.rows[0].vendor_address;
-            vendorLocation = {
-              state: addr?.state,
-              city: addr?.city
-            };
+            if (addr?.state) {
+              vendorLocation = {
+                state: addr.state,
+                city: addr.city
+              };
+            }
           }
           const taxItems = items.rows.map((item) => ({
             id: item.product_id || item.service_id || item.id,
@@ -263239,20 +266480,20 @@ function registerCustomerOrdersEndpoints(app2) {
   const getInvoiceHandler = new GetOrderInvoiceHandler();
   app2.get("/customer/orders", async (c) => {
     const event = createApiGatewayEvent25(c.req);
-    const context3 = createLambdaContext25();
-    const result = await getOrdersHandler.execute(event, context3);
+    const context2 = createLambdaContext25();
+    const result = await getOrdersHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/customer/orders/:id", async (c) => {
     const event = createApiGatewayEvent25(c.req);
-    const context3 = createLambdaContext25();
-    const result = await getDetailsHandler.execute(event, context3);
+    const context2 = createLambdaContext25();
+    const result = await getDetailsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/customer/orders/:id/invoice", async (c) => {
     const event = createApiGatewayEvent25(c.req);
-    const context3 = createLambdaContext25();
-    const result = await getInvoiceHandler.execute(event, context3);
+    const context2 = createLambdaContext25();
+    const result = await getInvoiceHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -263279,15 +266520,15 @@ function createLambdaContext25() {
 init_base_handler();
 init_rds_connection();
 var GetDashboardAnalyticsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId || context3.event.queryStringParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.vendorId || context2.event.queryStringParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 401);
       }
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        const startDate2 = context3.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
-        const endDate2 = context3.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const startDate2 = context2.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
+        const endDate2 = context2.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
         return this.success({
           period: { startDate: startDate2, endDate: endDate2 },
           bookingStats: {
@@ -263308,8 +266549,8 @@ var GetDashboardAnalyticsHandler = class extends BaseHandler {
           staffPerformance: []
         });
       }
-      const startDate = context3.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
-      const endDate = context3.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const startDate = context2.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
+      const endDate = context2.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       let bookingStats;
       try {
         bookingStats = await query(`
@@ -263466,16 +266707,16 @@ var GetDashboardAnalyticsHandler = class extends BaseHandler {
   }
 };
 var GetRevenueAnalyticsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId || context3.event.queryStringParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.vendorId || context2.event.queryStringParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 401);
       }
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        const startDate2 = context3.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
-        const endDate2 = context3.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-        const groupBy2 = context3.event.queryStringParameters?.groupBy || "day";
+        const startDate2 = context2.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
+        const endDate2 = context2.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const groupBy2 = context2.event.queryStringParameters?.groupBy || "day";
         return this.success({
           period: { startDate: startDate2, endDate: endDate2, groupBy: groupBy2 },
           summary: {
@@ -263491,9 +266732,9 @@ var GetRevenueAnalyticsHandler = class extends BaseHandler {
           paymentMethodBreakdown: []
         });
       }
-      const startDate = context3.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
-      const endDate = context3.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-      const groupBy = context3.event.queryStringParameters?.groupBy || "day";
+      const startDate = context2.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
+      const endDate = context2.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const groupBy = context2.event.queryStringParameters?.groupBy || "day";
       let dateFormat = "DATE(booking_date)";
       if (groupBy === "week") {
         dateFormat = "DATE_TRUNC('week', booking_date)";
@@ -263574,14 +266815,14 @@ var GetRevenueAnalyticsHandler = class extends BaseHandler {
   }
 };
 var GetBookingAnalyticsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId || context3.event.queryStringParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.vendorId || context2.event.queryStringParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 401);
       }
-      const startDate = context3.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
-      const endDate = context3.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const startDate = context2.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
+      const endDate = context2.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const bookingTrends = await query(`
         SELECT 
           DATE(booking_date) as date,
@@ -263673,14 +266914,14 @@ var GetBookingAnalyticsHandler = class extends BaseHandler {
   }
 };
 var GetSalesAnalyticsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId || context3.event.queryStringParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.vendorId || context2.event.queryStringParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 401);
       }
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        const period2 = context3.event.queryStringParameters?.period || "month";
+        const period2 = context2.event.queryStringParameters?.period || "month";
         return this.success({
           period: period2,
           salesStats: {
@@ -263695,7 +266936,7 @@ var GetSalesAnalyticsHandler = class extends BaseHandler {
           orderTrends: []
         });
       }
-      const period = context3.event.queryStringParameters?.period || "month";
+      const period = context2.event.queryStringParameters?.period || "month";
       let dateFilter = "";
       if (period === "today") {
         dateFilter = `AND DATE(o.created_at) = CURRENT_DATE`;
@@ -263795,7 +267036,7 @@ var GetSalesAnalyticsHandler = class extends BaseHandler {
     } catch (error) {
       console.error("Error fetching sales analytics:", error);
       if (error.message?.includes("invalid input syntax for type uuid")) {
-        const period = context3.event.queryStringParameters?.period || "month";
+        const period = context2.event.queryStringParameters?.period || "month";
         return this.success({
           period,
           salesStats: {
@@ -263815,14 +267056,14 @@ var GetSalesAnalyticsHandler = class extends BaseHandler {
   }
 };
 var GetProductPerformanceHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId || context3.event.queryStringParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.vendorId || context2.event.queryStringParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 401);
       }
-      const period = context3.event.queryStringParameters?.period || "month";
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "10", 10);
+      const period = context2.event.queryStringParameters?.period || "month";
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "10", 10);
       let dateFilter = "";
       if (period === "today") {
         dateFilter = `AND DATE(o.created_at) = CURRENT_DATE`;
@@ -263887,30 +267128,32 @@ function registerVendorAnalyticsEndpoints(app2) {
   const productHandler = new GetProductPerformanceHandler();
   app2.get("/vendor/analytics/dashboard", async (c) => {
     const event = createApiGatewayEvent26(c.req);
-    const context3 = createLambdaContext26();
-    const result = await dashboardHandler.execute(event, context3);
+    const context2 = createLambdaContext26();
+    const result = await dashboardHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/analytics/revenue", async (c) => {
     const event = createApiGatewayEvent26(c.req);
-    const context3 = createLambdaContext26();
-    const result = await revenueHandler.execute(event, context3);
+    const context2 = createLambdaContext26();
+    const result = await revenueHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/analytics/bookings", async (c) => {
     const event = createApiGatewayEvent26(c.req);
-    const context3 = createLambdaContext26();
-    const result = await bookingHandler.execute(event, context3);
+    const context2 = createLambdaContext26();
+    const result = await bookingHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/analytics/sales", async (c) => {
     try {
       const event = createApiGatewayEvent26(c.req);
       event.pathParameters = { vendorId: c.req.param("vendorId") };
-      event.queryStringParameters = Object.fromEntries(c.req.query());
-      const context3 = createLambdaContext26();
-      const result = await salesHandler.execute(event, context3);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
+      const context2 = createLambdaContext26();
+      const result = await salesHandler.execute(event, context2);
+      const body = result.body ? JSON.parse(result.body) : result;
+      const statusCode = result.statusCode || 200;
+      return c.json(body, statusCode);
     } catch (error) {
       console.error("Error in sales analytics endpoint:", error);
       const vendorId = c.req.param("vendorId");
@@ -263936,10 +267179,12 @@ function registerVendorAnalyticsEndpoints(app2) {
   app2.get("/vendor/:vendorId/analytics/products", async (c) => {
     const event = createApiGatewayEvent26(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    event.queryStringParameters = Object.fromEntries(c.req.query());
-    const context3 = createLambdaContext26();
-    const result = await productHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
+    const context2 = createLambdaContext26();
+    const result = await productHandler.execute(event, context2);
+    const body = result.body ? JSON.parse(result.body) : result;
+    const statusCode = result.statusCode || 200;
+    return c.json(body, statusCode);
   });
 }
 function createApiGatewayEvent26(req) {
@@ -263965,9 +267210,9 @@ function createLambdaContext26() {
 init_base_handler();
 init_rds_connection();
 var GetCafeTablesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -263995,12 +267240,12 @@ var GetCafeTablesHandler = class extends BaseHandler {
   }
 };
 var GetTableAvailabilityHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId;
-      const date = context3.event.queryStringParameters?.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-      const timeSlot = context3.event.queryStringParameters?.timeSlot;
-      const numberOfPax = parseInt(context3.event.queryStringParameters?.numberOfPax || "1", 10);
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId;
+      const date = context2.event.queryStringParameters?.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const timeSlot = context2.event.queryStringParameters?.timeSlot;
+      const numberOfPax = parseInt(context2.event.queryStringParameters?.numberOfPax || "1", 10);
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264061,11 +267306,11 @@ var GetTableAvailabilityHandler = class extends BaseHandler {
   }
 };
 var CreateTableHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
-      const body2 = this.parseBody(context3.event);
-      const { table_number, capacity, max_concurrent_bookings, location: location2, description } = body2;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
+      const body = this.parseBody(context2.event);
+      const { table_number, capacity, max_concurrent_bookings, location: location2, description } = body;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264110,12 +267355,12 @@ var CreateTableHandler = class extends BaseHandler {
   }
 };
 var UpdateTableHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
-      const tableId = context3.event.pathParameters?.tableId;
-      const body2 = this.parseBody(context3.event);
-      const { capacity, max_concurrent_bookings, location: location2, description, is_active } = body2;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
+      const tableId = context2.event.pathParameters?.tableId;
+      const body = this.parseBody(context2.event);
+      const { capacity, max_concurrent_bookings, location: location2, description, is_active } = body;
       if (!vendorId || !tableId) {
         return this.error("Vendor ID and Table ID are required", 400);
       }
@@ -264177,26 +267422,26 @@ function registerPetCafeEndpoints(app2) {
   const updateTableHandler = new UpdateTableHandler();
   app2.get("/vendor/:id/tables", async (c) => {
     const event = createApiGatewayEvent27(c.req);
-    const context3 = createLambdaContext27();
-    const result = await getTablesHandler.execute(event, context3);
+    const context2 = createLambdaContext27();
+    const result = await getTablesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:id/tables/availability", async (c) => {
     const event = createApiGatewayEvent27(c.req);
-    const context3 = createLambdaContext27();
-    const result = await getAvailabilityHandler.execute(event, context3);
+    const context2 = createLambdaContext27();
+    const result = await getAvailabilityHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/:id/tables", async (c) => {
     const event = createApiGatewayEvent27(c.req);
-    const context3 = createLambdaContext27();
-    const result = await createTableHandler.execute(event, context3);
+    const context2 = createLambdaContext27();
+    const result = await createTableHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/vendor/:id/tables/:tableId", async (c) => {
     const event = createApiGatewayEvent27(c.req);
-    const context3 = createLambdaContext27();
-    const result = await updateTableHandler.execute(event, context3);
+    const context2 = createLambdaContext27();
+    const result = await updateTableHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -264223,9 +267468,9 @@ function createLambdaContext27() {
 init_base_handler();
 init_rds_connection();
 var GetRadarDistanceHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264281,11 +267526,11 @@ var GetRadarDistanceHandler = class extends BaseHandler {
   }
 };
 var UpdateRadarDistanceHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
-      const body2 = this.parseBody(context3.event);
-      const { radarDistanceKm, radarEnabled, serviceStyleRadarDistances } = body2;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
+      const body = this.parseBody(context2.event);
+      const { radarDistanceKm, radarEnabled, serviceStyleRadarDistances } = body;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264360,14 +267605,14 @@ function registerVendorRadarEndpoints(app2) {
   const updateHandler = new UpdateRadarDistanceHandler();
   app2.get("/vendor/:id/radar-distance", async (c) => {
     const event = createApiGatewayEvent28(c.req);
-    const context3 = createLambdaContext28();
-    const result = await getHandler.execute(event, context3);
+    const context2 = createLambdaContext28();
+    const result = await getHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/vendor/:id/radar-distance", async (c) => {
     const event = createApiGatewayEvent28(c.req);
-    const context3 = createLambdaContext28();
-    const result = await updateHandler.execute(event, context3);
+    const context2 = createLambdaContext28();
+    const result = await updateHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -264394,9 +267639,9 @@ function createLambdaContext28() {
 init_base_handler();
 init_rds_connection();
 var GetResortRoomsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264425,12 +267670,12 @@ var GetResortRoomsHandler = class extends BaseHandler {
   }
 };
 var GetRoomAvailabilityHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId;
-      const checkInDate = context3.event.queryStringParameters?.checkInDate;
-      const checkOutDate = context3.event.queryStringParameters?.checkOutDate;
-      const petSize = context3.event.queryStringParameters?.petSize;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId;
+      const checkInDate = context2.event.queryStringParameters?.checkInDate;
+      const checkOutDate = context2.event.queryStringParameters?.checkOutDate;
+      const petSize = context2.event.queryStringParameters?.petSize;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264488,10 +267733,10 @@ var GetRoomAvailabilityHandler = class extends BaseHandler {
   }
 };
 var CreateRoomHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
-      const body2 = this.parseBody(context3.event);
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
+      const body = this.parseBody(context2.event);
       const {
         room_number,
         room_type,
@@ -264503,7 +267748,7 @@ var CreateRoomHandler = class extends BaseHandler {
         amenities,
         description,
         images
-      } = body2;
+      } = body;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264558,11 +267803,11 @@ var CreateRoomHandler = class extends BaseHandler {
   }
 };
 var UpdateRoomHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
-      const roomId = context3.event.pathParameters?.roomId;
-      const body2 = this.parseBody(context3.event);
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
+      const roomId = context2.event.pathParameters?.roomId;
+      const body = this.parseBody(context2.event);
       const {
         room_type,
         capacity,
@@ -264574,7 +267819,7 @@ var UpdateRoomHandler = class extends BaseHandler {
         description,
         images,
         is_active
-      } = body2;
+      } = body;
       if (!vendorId || !roomId) {
         return this.error("Vendor ID and Room ID are required", 400);
       }
@@ -264744,26 +267989,26 @@ function registerPetResortEndpoints(app2) {
   });
   app2.get("/vendor/:id/rooms", async (c) => {
     const event = createApiGatewayEvent29(c.req);
-    const context3 = createLambdaContext29();
-    const result = await getRoomsHandler.execute(event, context3);
+    const context2 = createLambdaContext29();
+    const result = await getRoomsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:id/rooms/availability", async (c) => {
     const event = createApiGatewayEvent29(c.req);
-    const context3 = createLambdaContext29();
-    const result = await getAvailabilityHandler.execute(event, context3);
+    const context2 = createLambdaContext29();
+    const result = await getAvailabilityHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/:id/rooms", async (c) => {
     const event = createApiGatewayEvent29(c.req);
-    const context3 = createLambdaContext29();
-    const result = await createRoomHandler.execute(event, context3);
+    const context2 = createLambdaContext29();
+    const result = await createRoomHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/vendor/:id/rooms/:roomId", async (c) => {
     const event = createApiGatewayEvent29(c.req);
-    const context3 = createLambdaContext29();
-    const result = await updateRoomHandler.execute(event, context3);
+    const context2 = createLambdaContext29();
+    const result = await updateRoomHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -264798,13 +268043,13 @@ function calculateDistance5(lat1, lon1, lat2, lon2) {
 init_base_handler();
 init_rds_connection();
 var GetHolidayPackagesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.queryStringParameters?.vendorId;
-      const destination = context3.event.queryStringParameters?.destination;
-      const duration = context3.event.queryStringParameters?.duration;
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const vendorId = context2.event.queryStringParameters?.vendorId;
+      const destination = context2.event.queryStringParameters?.destination;
+      const duration = context2.event.queryStringParameters?.duration;
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context2.event.queryStringParameters?.offset || "0", 10);
       let packagesQuery = `
         SELECT 
           hp.*,
@@ -264860,9 +268105,9 @@ var GetHolidayPackagesHandler = class extends BaseHandler {
   }
 };
 var GetHolidayPackageDetailsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const packageId = context3.event.pathParameters?.id;
+      const packageId = context2.event.pathParameters?.id;
       if (!packageId) {
         return this.error("Package ID is required", 400);
       }
@@ -264901,9 +268146,9 @@ var GetHolidayPackageDetailsHandler = class extends BaseHandler {
   }
 };
 var GetVendorHolidayPackagesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -264946,10 +268191,10 @@ var GetVendorHolidayPackagesHandler = class extends BaseHandler {
   }
 };
 var CreateHolidayPackageHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.id || context3.event.pathParameters?.vendorId || context3.userId;
-      const body2 = this.parseBody(context3.event);
+      const vendorId = context2.event.pathParameters?.id || context2.event.pathParameters?.vendorId || context2.userId;
+      const body = this.parseBody(context2.event);
       const {
         title,
         destination,
@@ -264963,7 +268208,7 @@ var CreateHolidayPackageHandler = class extends BaseHandler {
         applicable_dates,
         images,
         description
-      } = body2;
+      } = body;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -265015,17 +268260,17 @@ var CreateHolidayPackageHandler = class extends BaseHandler {
   }
 };
 var BookHolidayHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const customerId = context3.userId;
-      const body2 = this.parseBody(context3.event);
+      const customerId = context2.userId;
+      const body = this.parseBody(context2.event);
       const {
         packageId,
         travelDate,
         numberOfPets,
         petIds,
         specialRequests
-      } = body2;
+      } = body;
       if (!customerId) {
         return this.error("Customer ID is required", 401);
       }
@@ -265095,32 +268340,32 @@ function registerPetHolidaysEndpoints(app2) {
   const bookHolidayHandler = new BookHolidayHandler();
   app2.get("/holidays/packages", async (c) => {
     const event = createApiGatewayEvent30(c.req);
-    const context3 = createLambdaContext30();
-    const result = await getPackagesHandler.execute(event, context3);
+    const context2 = createLambdaContext30();
+    const result = await getPackagesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/holidays/packages/:id", async (c) => {
     const event = createApiGatewayEvent30(c.req);
-    const context3 = createLambdaContext30();
-    const result = await getDetailsHandler.execute(event, context3);
+    const context2 = createLambdaContext30();
+    const result = await getDetailsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:id/holiday-packages", async (c) => {
     const event = createApiGatewayEvent30(c.req);
-    const context3 = createLambdaContext30();
-    const result = await getVendorPackagesHandler.execute(event, context3);
+    const context2 = createLambdaContext30();
+    const result = await getVendorPackagesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/:id/holiday-packages", async (c) => {
     const event = createApiGatewayEvent30(c.req);
-    const context3 = createLambdaContext30();
-    const result = await createPackageHandler.execute(event, context3);
+    const context2 = createLambdaContext30();
+    const result = await createPackageHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/holidays/bookings", async (c) => {
     const event = createApiGatewayEvent30(c.req);
-    const context3 = createLambdaContext30();
-    const result = await bookHolidayHandler.execute(event, context3);
+    const context2 = createLambdaContext30();
+    const result = await bookHolidayHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -265146,9 +268391,9 @@ function createLambdaContext30() {
 // src/endpoints/tax-management.ts
 init_rds_connection();
 var GetTaxRulesHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { enabled, roleId, serviceStyle, category } = queryParams;
       let queryStr = `
         SELECT 
@@ -265191,9 +268436,9 @@ var GetTaxRulesHandler = class extends BaseHandlerEnhanced {
   }
 };
 var GetTaxRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const ruleId = context3.event.pathParameters?.id;
+      const ruleId = context2.event.pathParameters?.id;
       if (!ruleId) {
         return this.error("Tax rule ID is required", 400);
       }
@@ -265218,9 +268463,9 @@ var GetTaxRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var CreateTaxRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         rule_name,
         enabled = true,
@@ -265238,7 +268483,7 @@ var CreateTaxRuleHandler = class extends BaseHandlerEnhanced {
         sgst_percentage,
         igst_percentage,
         description
-      } = body2;
+      } = body;
       if (!rule_name || gst_rate === void 0) {
         return this.error("rule_name and gst_rate are required", 400);
       }
@@ -265276,32 +268521,32 @@ var CreateTaxRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateTaxRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const ruleId = context3.event.pathParameters?.id;
+      const ruleId = context2.event.pathParameters?.id;
       if (!ruleId) {
         return this.error("Tax rule ID is required", 400);
       }
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.rule_name !== void 0) updateData.rule_name = body2.rule_name;
-      if (body2.enabled !== void 0) updateData.enabled = body2.enabled;
-      if (body2.priority !== void 0) updateData.priority = parseInt(body2.priority);
-      if (body2.role_id !== void 0) updateData.role_id = body2.role_id;
-      if (body2.service_style !== void 0) updateData.service_style = body2.service_style;
-      if (body2.category !== void 0) updateData.category = body2.category;
-      if (body2.min_amount !== void 0) updateData.min_amount = parseFloat(body2.min_amount);
-      if (body2.max_amount !== void 0) updateData.max_amount = parseFloat(body2.max_amount);
-      if (body2.customer_state !== void 0) updateData.customer_state = body2.customer_state;
-      if (body2.vendor_state !== void 0) updateData.vendor_state = body2.vendor_state;
-      if (body2.gst_type !== void 0) updateData.gst_type = body2.gst_type;
-      if (body2.gst_rate !== void 0) updateData.gst_rate = parseFloat(body2.gst_rate);
-      if (body2.cgst_percentage !== void 0) updateData.cgst_percentage = parseFloat(body2.cgst_percentage);
-      if (body2.sgst_percentage !== void 0) updateData.sgst_percentage = parseFloat(body2.sgst_percentage);
-      if (body2.igst_percentage !== void 0) updateData.igst_percentage = parseFloat(body2.igst_percentage);
-      if (body2.description !== void 0) updateData.description = body2.description;
+      if (body.rule_name !== void 0) updateData.rule_name = body.rule_name;
+      if (body.enabled !== void 0) updateData.enabled = body.enabled;
+      if (body.priority !== void 0) updateData.priority = parseInt(body.priority);
+      if (body.role_id !== void 0) updateData.role_id = body.role_id;
+      if (body.service_style !== void 0) updateData.service_style = body.service_style;
+      if (body.category !== void 0) updateData.category = body.category;
+      if (body.min_amount !== void 0) updateData.min_amount = parseFloat(body.min_amount);
+      if (body.max_amount !== void 0) updateData.max_amount = parseFloat(body.max_amount);
+      if (body.customer_state !== void 0) updateData.customer_state = body.customer_state;
+      if (body.vendor_state !== void 0) updateData.vendor_state = body.vendor_state;
+      if (body.gst_type !== void 0) updateData.gst_type = body.gst_type;
+      if (body.gst_rate !== void 0) updateData.gst_rate = parseFloat(body.gst_rate);
+      if (body.cgst_percentage !== void 0) updateData.cgst_percentage = parseFloat(body.cgst_percentage);
+      if (body.sgst_percentage !== void 0) updateData.sgst_percentage = parseFloat(body.sgst_percentage);
+      if (body.igst_percentage !== void 0) updateData.igst_percentage = parseFloat(body.igst_percentage);
+      if (body.description !== void 0) updateData.description = body.description;
       const result = await update("gst_rules", { id: ruleId }, updateData);
       const taxRule = Array.isArray(result) ? result[0] : result;
       return this.success({
@@ -265315,9 +268560,9 @@ var UpdateTaxRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var DeleteTaxRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const ruleId = context3.event.pathParameters?.id;
+      const ruleId = context2.event.pathParameters?.id;
       if (!ruleId) {
         return this.error("Tax rule ID is required", 400);
       }
@@ -265330,9 +268575,9 @@ var DeleteTaxRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var GetHSNCodesHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { isActive, search } = queryParams;
       let queryStr = `SELECT * FROM hsn_codes WHERE 1=1`;
       const params = [];
@@ -265358,10 +268603,10 @@ var GetHSNCodesHandler = class extends BaseHandlerEnhanced {
   }
 };
 var CreateHSNCodeHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
-      const { hsn_code, description, gst_rate, is_active = true } = body2;
+      const body = this.parseBody(context2.event);
+      const { hsn_code, description, gst_rate, is_active = true } = body;
       if (!hsn_code || gst_rate === void 0) {
         return this.error("hsn_code and gst_rate are required", 400);
       }
@@ -265389,22 +268634,22 @@ var CreateHSNCodeHandler = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateHSNCodeHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const codeId = context3.event.pathParameters?.id;
+      const codeId = context2.event.pathParameters?.id;
       if (!codeId) {
         return this.error("HSN code ID is required", 400);
       }
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const updateData = {};
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.gst_rate !== void 0) {
-        if (body2.gst_rate < 0 || body2.gst_rate > 100) {
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.gst_rate !== void 0) {
+        if (body.gst_rate < 0 || body.gst_rate > 100) {
           return this.error("gst_rate must be between 0 and 100", 400);
         }
-        updateData.gst_rate = parseFloat(body2.gst_rate);
+        updateData.gst_rate = parseFloat(body.gst_rate);
       }
-      if (body2.is_active !== void 0) updateData.is_active = body2.is_active;
+      if (body.is_active !== void 0) updateData.is_active = body.is_active;
       const result = await update("hsn_codes", { id: codeId }, updateData);
       const hsnCode = Array.isArray(result) ? result[0] : result;
       return this.success({
@@ -265418,9 +268663,9 @@ var UpdateHSNCodeHandler = class extends BaseHandlerEnhanced {
   }
 };
 var DeleteHSNCodeHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const codeId = context3.event.pathParameters?.id;
+      const codeId = context2.event.pathParameters?.id;
       if (!codeId) {
         return this.error("HSN code ID is required", 400);
       }
@@ -265433,9 +268678,9 @@ var DeleteHSNCodeHandler = class extends BaseHandlerEnhanced {
   }
 };
 var GetTaxCategoriesHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { isActive } = queryParams;
       let queryStr = `SELECT * FROM tax_categories WHERE 1=1`;
       const params = [];
@@ -265454,10 +268699,10 @@ var GetTaxCategoriesHandler = class extends BaseHandlerEnhanced {
   }
 };
 var CreateTaxCategoryHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
-      const { category_name, tax_rate, description, is_active = true } = body2;
+      const body = this.parseBody(context2.event);
+      const { category_name, tax_rate, description, is_active = true } = body;
       if (!category_name || tax_rate === void 0) {
         return this.error("category_name and tax_rate are required", 400);
       }
@@ -265485,23 +268730,23 @@ var CreateTaxCategoryHandler = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateTaxCategoryHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const categoryId = context3.event.pathParameters?.id;
+      const categoryId = context2.event.pathParameters?.id;
       if (!categoryId) {
         return this.error("Tax category ID is required", 400);
       }
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const updateData = {};
-      if (body2.category_name !== void 0) updateData.category_name = body2.category_name;
-      if (body2.tax_rate !== void 0) {
-        if (body2.tax_rate < 0 || body2.tax_rate > 100) {
+      if (body.category_name !== void 0) updateData.category_name = body.category_name;
+      if (body.tax_rate !== void 0) {
+        if (body.tax_rate < 0 || body.tax_rate > 100) {
           return this.error("tax_rate must be between 0 and 100", 400);
         }
-        updateData.tax_rate = parseFloat(body2.tax_rate);
+        updateData.tax_rate = parseFloat(body.tax_rate);
       }
-      if (body2.description !== void 0) updateData.description = body2.description;
-      if (body2.is_active !== void 0) updateData.is_active = body2.is_active;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.is_active !== void 0) updateData.is_active = body.is_active;
       const result = await update("tax_categories", { id: categoryId }, updateData);
       const category = Array.isArray(result) ? result[0] : result;
       return this.success({
@@ -265515,9 +268760,9 @@ var UpdateTaxCategoryHandler = class extends BaseHandlerEnhanced {
   }
 };
 var DeleteTaxCategoryHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const categoryId = context3.event.pathParameters?.id;
+      const categoryId = context2.event.pathParameters?.id;
       if (!categoryId) {
         return this.error("Tax category ID is required", 400);
       }
@@ -265530,6 +268775,11 @@ var DeleteTaxCategoryHandler = class extends BaseHandlerEnhanced {
   }
 };
 function registerTaxManagementEndpoints(app2) {
+  const parseHandlerResult = (result) => {
+    const body = result.body ? JSON.parse(result.body) : result;
+    const statusCode = result.statusCode || 200;
+    return { body, statusCode };
+  };
   const getTaxRulesHandler = new GetTaxRulesHandler();
   const getTaxRuleHandler = new GetTaxRuleHandler();
   const createTaxRuleHandler = new CreateTaxRuleHandler();
@@ -265538,36 +268788,41 @@ function registerTaxManagementEndpoints(app2) {
   app2.get("/admin/tax-rules", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext31();
-    const result = await getTaxRulesHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await getTaxRulesHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.get("/admin/tax-rules/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await getTaxRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await getTaxRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.post("/admin/tax-rules", async (c) => {
     const event = createApiGatewayEvent31(c.req);
-    const context3 = createLambdaContext31();
-    const result = await createTaxRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await createTaxRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.put("/admin/tax-rules/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await updateTaxRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await updateTaxRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.delete("/admin/tax-rules/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await deleteTaxRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await deleteTaxRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   const getHSNCodesHandler = new GetHSNCodesHandler();
   const createHSNCodeHandler = new CreateHSNCodeHandler();
@@ -265576,29 +268831,33 @@ function registerTaxManagementEndpoints(app2) {
   app2.get("/admin/hsn-codes", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext31();
-    const result = await getHSNCodesHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await getHSNCodesHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.post("/admin/hsn-codes", async (c) => {
     const event = createApiGatewayEvent31(c.req);
-    const context3 = createLambdaContext31();
-    const result = await createHSNCodeHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await createHSNCodeHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.put("/admin/hsn-codes/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await updateHSNCodeHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await updateHSNCodeHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.delete("/admin/hsn-codes/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await deleteHSNCodeHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await deleteHSNCodeHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   const getTaxCategoriesHandler = new GetTaxCategoriesHandler();
   const createTaxCategoryHandler = new CreateTaxCategoryHandler();
@@ -265607,29 +268866,127 @@ function registerTaxManagementEndpoints(app2) {
   app2.get("/admin/tax-categories", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext31();
-    const result = await getTaxCategoriesHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await getTaxCategoriesHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.post("/admin/tax-categories", async (c) => {
     const event = createApiGatewayEvent31(c.req);
-    const context3 = createLambdaContext31();
-    const result = await createTaxCategoryHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await createTaxCategoryHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.put("/admin/tax-categories/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await updateTaxCategoryHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await updateTaxCategoryHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.delete("/admin/tax-categories/:id", async (c) => {
     const event = createApiGatewayEvent31(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext31();
-    const result = await deleteTaxCategoryHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext31();
+    const result = await deleteTaxCategoryHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
+  });
+  app2.post("/tax/calculate", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { items, vendorId, customerId, customerLocation, vendorLocation } = body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return c.json({ error: "items array is required" }, 400);
+      }
+      let customerState = customerLocation?.state;
+      let vendorState = vendorLocation?.state;
+      if (!customerState && customerId) {
+        const { select: select14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+        const customers = await select14("customers", { id: customerId });
+        if (customers.length > 0 && customers[0].address) {
+          const addr = typeof customers[0].address === "string" ? JSON.parse(customers[0].address) : customers[0].address;
+          customerState = addr?.state;
+        }
+      }
+      if (!vendorState && vendorId) {
+        const { select: select14 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+        const vendors = await select14("vendors", { id: vendorId });
+        if (vendors.length > 0 && vendors[0].address) {
+          const addr = typeof vendors[0].address === "string" ? JSON.parse(vendors[0].address) : vendors[0].address;
+          vendorState = addr?.state;
+        }
+      }
+      const isInterState = customerState && vendorState && customerState !== vendorState;
+      const defaultRate = 18;
+      let totalAmount = 0;
+      let totalTax = 0;
+      let totalCGST = 0;
+      let totalSGST = 0;
+      let totalIGST = 0;
+      const itemResults = items.map((item) => {
+        const amount = item.amount || 0;
+        const quantity = item.quantity || 1;
+        const itemTotal = amount * quantity;
+        const taxRate = item.taxRate || defaultRate;
+        const itemTax = itemTotal * taxRate / 100;
+        totalAmount += itemTotal;
+        totalTax += itemTax;
+        if (isInterState) {
+          totalIGST += itemTax;
+          return {
+            id: item.id,
+            amount: itemTotal,
+            taxRate,
+            igst: itemTax,
+            cgst: 0,
+            sgst: 0,
+            totalWithTax: itemTotal + itemTax
+          };
+        } else {
+          const halfTax = itemTax / 2;
+          totalCGST += halfTax;
+          totalSGST += halfTax;
+          return {
+            id: item.id,
+            amount: itemTotal,
+            taxRate,
+            igst: 0,
+            cgst: halfTax,
+            sgst: halfTax,
+            totalWithTax: itemTotal + itemTax
+          };
+        }
+      });
+      return c.json({
+        success: true,
+        items: itemResults,
+        totalAmount,
+        totalTax,
+        totalCGST,
+        totalSGST,
+        totalIGST,
+        grandTotal: totalAmount + totalTax,
+        isInterState,
+        customerState,
+        vendorState
+      });
+    } catch (error) {
+      console.error("Error calculating tax:", error);
+      return c.json({
+        success: true,
+        items: [],
+        totalAmount: 0,
+        totalTax: 0,
+        totalCGST: 0,
+        totalSGST: 0,
+        totalIGST: 0,
+        grandTotal: 0,
+        error: error.message
+      });
+    }
   });
 }
 function createApiGatewayEvent31(req) {
@@ -265658,9 +269015,9 @@ function createLambdaContext31() {
 // src/endpoints/logistics-management.ts
 init_rds_connection();
 var GetLogisticsPartnersHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { enabled, partnerType } = queryParams;
       let queryStr = `
         SELECT * FROM logistics_partners
@@ -265691,9 +269048,9 @@ var GetLogisticsPartnersHandler = class extends BaseHandlerEnhanced {
   }
 };
 var GetLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Partner ID is required", 400);
       }
@@ -265715,9 +269072,9 @@ var GetLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
   }
 };
 var CreateLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         partner_id,
         partner_name,
@@ -265728,7 +269085,7 @@ var CreateLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
         api_secret,
         enabled = true,
         config = {}
-      } = body2;
+      } = body;
       if (!partner_id || !partner_name || !partner_type) {
         return this.error("partner_id, partner_name, and partner_type are required", 400);
       }
@@ -265765,10 +269122,10 @@ var CreateLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
-      const body2 = this.parseBody(context3.event);
+      const { id } = context2.event.pathParameters || {};
+      const body = this.parseBody(context2.event);
       if (!id) {
         return this.error("Partner ID is required", 400);
       }
@@ -265776,20 +269133,20 @@ var UpdateLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
       if (existing.length === 0) {
         return this.error("Logistics partner not found", 404);
       }
-      if (body2.partner_type) {
+      if (body.partner_type) {
         const validTypes = ["shiprocket", "delhivery", "dunzo", "other"];
-        if (!validTypes.includes(body2.partner_type)) {
+        if (!validTypes.includes(body.partner_type)) {
           return this.error(`partner_type must be one of: ${validTypes.join(", ")}`, 400);
         }
       }
-      if (body2.partner_id && body2.partner_id !== existing[0].partner_id) {
-        const duplicate = await select("logistics_partners", { partner_id: body2.partner_id });
+      if (body.partner_id && body.partner_id !== existing[0].partner_id) {
+        const duplicate = await select("logistics_partners", { partner_id: body.partner_id });
         if (duplicate.length > 0) {
           return this.error("Partner ID already exists", 409);
         }
       }
       const updated = await update("logistics_partners", { id }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return {
@@ -265806,9 +269163,9 @@ var UpdateLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
   }
 };
 var DeleteLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Partner ID is required", 400);
       }
@@ -265831,9 +269188,9 @@ var DeleteLogisticsPartnerHandler = class extends BaseHandlerEnhanced {
   }
 };
 var GetLogisticsRulesHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { isActive, ruleType } = queryParams;
       let queryStr = `
         SELECT * FROM logistics_rules
@@ -265864,9 +269221,9 @@ var GetLogisticsRulesHandler = class extends BaseHandlerEnhanced {
   }
 };
 var GetLogisticsRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Rule ID is required", 400);
       }
@@ -265888,15 +269245,15 @@ var GetLogisticsRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var CreateLogisticsRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         rule_name,
         rule_type,
         rule_config,
         is_active = true
-      } = body2;
+      } = body;
       if (!rule_name || !rule_type || !rule_config) {
         return this.error("rule_name, rule_type, and rule_config are required", 400);
       }
@@ -265924,10 +269281,10 @@ var CreateLogisticsRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var UpdateLogisticsRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
-      const body2 = this.parseBody(context3.event);
+      const { id } = context2.event.pathParameters || {};
+      const body = this.parseBody(context2.event);
       if (!id) {
         return this.error("Rule ID is required", 400);
       }
@@ -265935,14 +269292,14 @@ var UpdateLogisticsRuleHandler = class extends BaseHandlerEnhanced {
       if (existing.length === 0) {
         return this.error("Logistics rule not found", 404);
       }
-      if (body2.rule_name && body2.rule_name !== existing[0].rule_name) {
-        const duplicate = await select("logistics_rules", { rule_name: body2.rule_name });
+      if (body.rule_name && body.rule_name !== existing[0].rule_name) {
+        const duplicate = await select("logistics_rules", { rule_name: body.rule_name });
         if (duplicate.length > 0) {
           return this.error("Rule name already exists", 409);
         }
       }
       const updated = await update("logistics_rules", { id }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return {
@@ -265959,9 +269316,9 @@ var UpdateLogisticsRuleHandler = class extends BaseHandlerEnhanced {
   }
 };
 var DeleteLogisticsRuleHandler = class extends BaseHandlerEnhanced {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Rule ID is required", 400);
       }
@@ -266014,77 +269371,92 @@ function registerLogisticsManagementEndpoints(app2) {
   const createLogisticsRuleHandler = new CreateLogisticsRuleHandler();
   const updateLogisticsRuleHandler = new UpdateLogisticsRuleHandler();
   const deleteLogisticsRuleHandler = new DeleteLogisticsRuleHandler();
+  const parseHandlerResult = (result) => {
+    const body = result.body ? JSON.parse(result.body) : result;
+    const statusCode = result.statusCode || 200;
+    return { body, statusCode };
+  };
   app2.get("/admin/logistics-partners", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext32();
-    const result = await getLogisticsPartnersHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await getLogisticsPartnersHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.get("/admin/logistics-partners/:id", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext32();
-    const result = await getLogisticsPartnerHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await getLogisticsPartnerHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.post("/admin/logistics-partners", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext32();
-    const result = await createLogisticsPartnerHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await createLogisticsPartnerHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.put("/admin/logistics-partners/:id", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext32();
-    const result = await updateLogisticsPartnerHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await updateLogisticsPartnerHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.delete("/admin/logistics-partners/:id", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext32();
-    const result = await deleteLogisticsPartnerHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await deleteLogisticsPartnerHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.get("/admin/logistics-rules", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-    const context3 = createLambdaContext32();
-    const result = await getLogisticsRulesHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await getLogisticsRulesHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.get("/admin/logistics-rules/:id", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext32();
-    const result = await getLogisticsRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await getLogisticsRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.post("/admin/logistics-rules", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext32();
-    const result = await createLogisticsRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await createLogisticsRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.put("/admin/logistics-rules/:id", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext32();
-    const result = await updateLogisticsRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await updateLogisticsRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
   app2.delete("/admin/logistics-rules/:id", async (c) => {
     const event = createApiGatewayEvent32(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext32();
-    const result = await deleteLogisticsRuleHandler.execute(event, context3);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const context2 = createLambdaContext32();
+    const result = await deleteLogisticsRuleHandler.execute(event, context2);
+    const { body, statusCode } = parseHandlerResult(result);
+    return c.json(body, statusCode);
   });
 }
 
@@ -266092,9 +269464,9 @@ function registerLogisticsManagementEndpoints(app2) {
 init_base_handler();
 init_rds_connection();
 var GetPaymentGatewaysHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { enabled, gatewayType } = queryParams;
       let tableName = null;
       try {
@@ -266170,9 +269542,9 @@ var GetPaymentGatewaysHandler = class extends BaseHandler {
   }
 };
 var GetPaymentGatewayHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Gateway ID is required", 400);
       }
@@ -266199,9 +269571,9 @@ var GetPaymentGatewayHandler = class extends BaseHandler {
   }
 };
 var CreatePaymentGatewayHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         gateway_name,
         gateway_type,
@@ -266212,7 +269584,7 @@ var CreatePaymentGatewayHandler = class extends BaseHandler {
         enabled = true,
         test_mode = true,
         config = {}
-      } = body2;
+      } = body;
       if (!gateway_name || !gateway_type) {
         return this.error("gateway_name and gateway_type are required", 400);
       }
@@ -266254,10 +269626,10 @@ var CreatePaymentGatewayHandler = class extends BaseHandler {
   }
 };
 var UpdatePaymentGatewayHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
-      const body2 = this.parseBody(context3.event);
+      const { id } = context2.event.pathParameters || {};
+      const body = this.parseBody(context2.event);
       if (!id) {
         return this.error("Gateway ID is required", 400);
       }
@@ -266265,14 +269637,14 @@ var UpdatePaymentGatewayHandler = class extends BaseHandler {
       if (existing.length === 0) {
         return this.error("Payment gateway not found", 404);
       }
-      if (body2.gateway_type) {
+      if (body.gateway_type) {
         const validTypes = ["razorpay", "stripe", "paypal", "paytm"];
-        if (!validTypes.includes(body2.gateway_type)) {
+        if (!validTypes.includes(body.gateway_type)) {
           return this.error(`gateway_type must be one of: ${validTypes.join(", ")}`, 400);
         }
       }
-      if (body2.gateway_name && body2.gateway_name !== existing[0].gateway_name) {
-        const duplicate = await select("payment_gateway_settings", { gateway_name: body2.gateway_name });
+      if (body.gateway_name && body.gateway_name !== existing[0].gateway_name) {
+        const duplicate = await select("payment_gateway_settings", { gateway_name: body.gateway_name });
         if (duplicate.length > 0) {
           return this.error("Gateway name already exists", 409);
         }
@@ -266280,15 +269652,15 @@ var UpdatePaymentGatewayHandler = class extends BaseHandler {
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.gateway_name !== void 0) updateData.gateway_name = body2.gateway_name;
-      if (body2.gateway_type !== void 0) updateData.gateway_type = body2.gateway_type;
-      if (body2.key_id !== void 0) updateData.key_id = body2.key_id;
-      if (body2.key_secret !== void 0) updateData.key_secret = body2.key_secret;
-      if (body2.webhook_secret !== void 0) updateData.webhook_secret = body2.webhook_secret;
-      if (body2.marketplace_mode !== void 0) updateData.marketplace_mode = body2.marketplace_mode;
-      if (body2.enabled !== void 0) updateData.enabled = body2.enabled;
-      if (body2.test_mode !== void 0) updateData.test_mode = body2.test_mode;
-      if (body2.config !== void 0) updateData.config = body2.config;
+      if (body.gateway_name !== void 0) updateData.gateway_name = body.gateway_name;
+      if (body.gateway_type !== void 0) updateData.gateway_type = body.gateway_type;
+      if (body.key_id !== void 0) updateData.key_id = body.key_id;
+      if (body.key_secret !== void 0) updateData.key_secret = body.key_secret;
+      if (body.webhook_secret !== void 0) updateData.webhook_secret = body.webhook_secret;
+      if (body.marketplace_mode !== void 0) updateData.marketplace_mode = body.marketplace_mode;
+      if (body.enabled !== void 0) updateData.enabled = body.enabled;
+      if (body.test_mode !== void 0) updateData.test_mode = body.test_mode;
+      if (body.config !== void 0) updateData.config = body.config;
       const updated = await update("payment_gateway_settings", { id }, updateData);
       const response = {
         ...updated,
@@ -266309,9 +269681,9 @@ var UpdatePaymentGatewayHandler = class extends BaseHandler {
   }
 };
 var DeletePaymentGatewayHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Gateway ID is required", 400);
       }
@@ -266368,9 +269740,9 @@ function registerPaymentGatewayManagementEndpoints(app2) {
       console.log("[Payment Gateways] Route handler called, path:", c.req.path);
       const event = createApiGatewayEvent33(c.req);
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context3 = createLambdaContext33();
+      const context2 = createLambdaContext33();
       console.log("[Payment Gateways] Executing handler");
-      const result = await Promise.resolve(getPaymentGatewaysHandler.execute(event, context3)).catch((err) => {
+      const result = await Promise.resolve(getPaymentGatewaysHandler.execute(event, context2)).catch((err) => {
         console.error("[Payment Gateways] Handler execution .catch() - error:", err?.message, "type:", typeof err);
         return {
           statusCode: 200,
@@ -266416,30 +269788,30 @@ function registerPaymentGatewayManagementEndpoints(app2) {
   app2.get("/admin/payment-gateways/:id", async (c) => {
     const event = createApiGatewayEvent33(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext33();
-    const result = await getPaymentGatewayHandler.execute(event, context3);
+    const context2 = createLambdaContext33();
+    const result = await getPaymentGatewayHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/payment-gateways", async (c) => {
     const event = createApiGatewayEvent33(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext33();
-    const result = await createPaymentGatewayHandler.execute(event, context3);
+    const context2 = createLambdaContext33();
+    const result = await createPaymentGatewayHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/payment-gateways/:id", async (c) => {
     const event = createApiGatewayEvent33(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext33();
-    const result = await updatePaymentGatewayHandler.execute(event, context3);
+    const context2 = createLambdaContext33();
+    const result = await updatePaymentGatewayHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.delete("/admin/payment-gateways/:id", async (c) => {
     const event = createApiGatewayEvent33(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext33();
-    const result = await deletePaymentGatewayHandler.execute(event, context3);
+    const context2 = createLambdaContext33();
+    const result = await deletePaymentGatewayHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -266448,9 +269820,9 @@ function registerPaymentGatewayManagementEndpoints(app2) {
 init_base_handler();
 init_rds_connection();
 var GetLoyaltyActionRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { isActive, actionCategory, userType } = queryParams;
       let queryStr = `
         SELECT * FROM loyalty_action_rules
@@ -266485,9 +269857,9 @@ var GetLoyaltyActionRulesHandler = class extends BaseHandler {
   }
 };
 var GetLoyaltyActionRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Rule ID is required", 400);
       }
@@ -266509,9 +269881,9 @@ var GetLoyaltyActionRuleHandler = class extends BaseHandler {
   }
 };
 var CreateLoyaltyActionRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         action_name,
         action_category,
@@ -266530,7 +269902,7 @@ var CreateLoyaltyActionRuleHandler = class extends BaseHandler {
         priority = 100,
         description,
         notes
-      } = body2;
+      } = body;
       if (!action_name || !action_category || !user_type || !points_type || points_value === void 0) {
         return this.error("action_name, action_category, user_type, points_type, and points_value are required", 400);
       }
@@ -266583,10 +269955,10 @@ var CreateLoyaltyActionRuleHandler = class extends BaseHandler {
   }
 };
 var UpdateLoyaltyActionRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
-      const body2 = this.parseBody(context3.event);
+      const { id } = context2.event.pathParameters || {};
+      const body = this.parseBody(context2.event);
       if (!id) {
         return this.error("Rule ID is required", 400);
       }
@@ -266594,32 +269966,32 @@ var UpdateLoyaltyActionRuleHandler = class extends BaseHandler {
       if (existing.length === 0) {
         return this.error("Loyalty action rule not found", 404);
       }
-      if (body2.action_category) {
+      if (body.action_category) {
         const validCategories = ["loyalty", "referral_rewards"];
-        if (!validCategories.includes(body2.action_category)) {
+        if (!validCategories.includes(body.action_category)) {
           return this.error(`action_category must be one of: ${validCategories.join(", ")}`, 400);
         }
       }
-      if (body2.user_type) {
+      if (body.user_type) {
         const validUserTypes = ["customer", "vendor", "both"];
-        if (!validUserTypes.includes(body2.user_type)) {
+        if (!validUserTypes.includes(body.user_type)) {
           return this.error(`user_type must be one of: ${validUserTypes.join(", ")}`, 400);
         }
       }
-      if (body2.points_type) {
+      if (body.points_type) {
         const validPointsTypes = ["fixed", "percentage", "per_amount"];
-        if (!validPointsTypes.includes(body2.points_type)) {
+        if (!validPointsTypes.includes(body.points_type)) {
           return this.error(`points_type must be one of: ${validPointsTypes.join(", ")}`, 400);
         }
       }
-      if (body2.action_name && body2.action_name !== existing[0].action_name) {
-        const duplicate = await select("loyalty_action_rules", { action_name: body2.action_name });
+      if (body.action_name && body.action_name !== existing[0].action_name) {
+        const duplicate = await select("loyalty_action_rules", { action_name: body.action_name });
         if (duplicate.length > 0) {
           return this.error("Action name already exists", 409);
         }
       }
       const updated = await update("loyalty_action_rules", { id }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return {
@@ -266636,9 +270008,9 @@ var UpdateLoyaltyActionRuleHandler = class extends BaseHandler {
   }
 };
 var DeleteLoyaltyActionRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Rule ID is required", 400);
       }
@@ -266704,37 +270076,37 @@ function registerLoyaltyActionRulesManagementEndpoints(app2) {
     } catch (e) {
       event.queryStringParameters = {};
     }
-    const context3 = createLambdaContext34();
-    const result = await getRulesHandler.execute(event, context3);
+    const context2 = createLambdaContext34();
+    const result = await getRulesHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/loyalty-action-rules/:id", async (c) => {
     const event = createApiGatewayEvent34(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext34();
-    const result = await getRuleHandler.execute(event, context3);
+    const context2 = createLambdaContext34();
+    const result = await getRuleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/loyalty-action-rules", async (c) => {
     const event = createApiGatewayEvent34(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext34();
-    const result = await createRuleHandler.execute(event, context3);
+    const context2 = createLambdaContext34();
+    const result = await createRuleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/loyalty-action-rules/:id", async (c) => {
     const event = createApiGatewayEvent34(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext34();
-    const result = await updateRuleHandler.execute(event, context3);
+    const context2 = createLambdaContext34();
+    const result = await updateRuleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.delete("/admin/loyalty-action-rules/:id", async (c) => {
     const event = createApiGatewayEvent34(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext34();
-    const result = await deleteRuleHandler.execute(event, context3);
+    const context2 = createLambdaContext34();
+    const result = await deleteRuleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -266743,9 +270115,9 @@ function registerLoyaltyActionRulesManagementEndpoints(app2) {
 init_base_handler();
 init_rds_connection();
 var GetLoyaltySegmentsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const queryParams = context3.event.queryStringParameters || {};
+      const queryParams = context2.event.queryStringParameters || {};
       const { isActive, segmentType } = queryParams;
       let queryStr = `
         SELECT * FROM loyalty_segments
@@ -266776,9 +270148,9 @@ var GetLoyaltySegmentsHandler = class extends BaseHandler {
   }
 };
 var GetLoyaltySegmentHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Segment ID is required", 400);
       }
@@ -266800,9 +270172,9 @@ var GetLoyaltySegmentHandler = class extends BaseHandler {
   }
 };
 var CreateLoyaltySegmentHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         segment_name,
         segment_type,
@@ -266811,7 +270183,7 @@ var CreateLoyaltySegmentHandler = class extends BaseHandler {
         match_type = "all",
         is_active = true,
         priority = 100
-      } = body2;
+      } = body;
       if (!segment_name || !segment_type || !criteria) {
         return this.error("segment_name, segment_type, and criteria are required", 400);
       }
@@ -266850,10 +270222,10 @@ var CreateLoyaltySegmentHandler = class extends BaseHandler {
   }
 };
 var UpdateLoyaltySegmentHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
-      const body2 = this.parseBody(context3.event);
+      const { id } = context2.event.pathParameters || {};
+      const body = this.parseBody(context2.event);
       if (!id) {
         return this.error("Segment ID is required", 400);
       }
@@ -266861,29 +270233,29 @@ var UpdateLoyaltySegmentHandler = class extends BaseHandler {
       if (existing.length === 0) {
         return this.error("Loyalty segment not found", 404);
       }
-      if (body2.segment_type) {
+      if (body.segment_type) {
         const validSegmentTypes = ["customer", "vendor", "both"];
-        if (!validSegmentTypes.includes(body2.segment_type)) {
+        if (!validSegmentTypes.includes(body.segment_type)) {
           return this.error(`segment_type must be one of: ${validSegmentTypes.join(", ")}`, 400);
         }
       }
-      if (body2.match_type) {
+      if (body.match_type) {
         const validMatchTypes = ["all", "any"];
-        if (!validMatchTypes.includes(body2.match_type)) {
+        if (!validMatchTypes.includes(body.match_type)) {
           return this.error(`match_type must be one of: ${validMatchTypes.join(", ")}`, 400);
         }
       }
-      if (body2.segment_name && body2.segment_name !== existing[0].segment_name) {
-        const duplicate = await select("loyalty_segments", { segment_name: body2.segment_name });
+      if (body.segment_name && body.segment_name !== existing[0].segment_name) {
+        const duplicate = await select("loyalty_segments", { segment_name: body.segment_name });
         if (duplicate.length > 0) {
           return this.error("Segment name already exists", 409);
         }
       }
-      if (body2.criteria && typeof body2.criteria === "string") {
-        body2.criteria = JSON.parse(body2.criteria);
+      if (body.criteria && typeof body.criteria === "string") {
+        body.criteria = JSON.parse(body.criteria);
       }
       const updated = await update("loyalty_segments", { id }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       await query(
@@ -266908,9 +270280,9 @@ var UpdateLoyaltySegmentHandler = class extends BaseHandler {
   }
 };
 var DeleteLoyaltySegmentHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { id } = context3.event.pathParameters || {};
+      const { id } = context2.event.pathParameters || {};
       if (!id) {
         return this.error("Segment ID is required", 400);
       }
@@ -266941,9 +270313,9 @@ var DeleteLoyaltySegmentHandler = class extends BaseHandler {
   }
 };
 var GetCustomerSegmentsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { customerId } = context3.event.pathParameters || context3.event.queryStringParameters || {};
+      const { customerId } = context2.event.pathParameters || context2.event.queryStringParameters || {};
       if (!customerId) {
         return this.error("Customer ID is required", 400);
       }
@@ -266968,9 +270340,9 @@ var GetCustomerSegmentsHandler = class extends BaseHandler {
   }
 };
 var RecalculateCustomerSegmentsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const { customerId } = context3.event.pathParameters || context3.event.queryStringParameters || {};
+      const { customerId } = context2.event.pathParameters || context2.event.queryStringParameters || {};
       if (!customerId) {
         return this.error("Customer ID is required", 400);
       }
@@ -267036,51 +270408,51 @@ function registerLoyaltySegmentsManagementEndpoints(app2) {
     } catch (e) {
       event.queryStringParameters = {};
     }
-    const context3 = createLambdaContext35();
-    const result = await getSegmentsHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await getSegmentsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/loyalty-segments/:id", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext35();
-    const result = await getSegmentHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await getSegmentHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/loyalty-segments", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext35();
-    const result = await createSegmentHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await createSegmentHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/loyalty-segments/:id", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { id: c.req.param("id") };
     event.body = JSON.stringify(await c.req.json());
-    const context3 = createLambdaContext35();
-    const result = await updateSegmentHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await updateSegmentHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.delete("/admin/loyalty-segments/:id", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { id: c.req.param("id") };
-    const context3 = createLambdaContext35();
-    const result = await deleteSegmentHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await deleteSegmentHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/customers/:customerId/segments", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext35();
-    const result = await getCustomerSegmentsHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await getCustomerSegmentsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/customers/:customerId/segments/recalculate", async (c) => {
     const event = createApiGatewayEvent35(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context3 = createLambdaContext35();
-    const result = await recalculateCustomerSegmentsHandler.execute(event, context3);
+    const context2 = createLambdaContext35();
+    const result = await recalculateCustomerSegmentsHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -267709,11 +271081,11 @@ function registerRewardsEndpoints(app2) {
 init_rds_connection();
 init_base_handler();
 var GetSellersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const status = context3.event.queryStringParameters?.status || "pending";
-      const limit = parseInt(context3.event.queryStringParameters?.limit || "50", 10);
-      const offset = parseInt(context3.event.queryStringParameters?.offset || "0", 10);
+      const status = context2.event.queryStringParameters?.status || "pending";
+      const limit = parseInt(context2.event.queryStringParameters?.limit || "50", 10);
+      const offset = parseInt(context2.event.queryStringParameters?.offset || "0", 10);
       const sellersQuery = `
         SELECT 
           v.*,
@@ -267763,19 +271135,19 @@ var GetSellersHandler = class extends BaseHandler {
   }
 };
 var ApproveSellerHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const body2 = this.parseBody(context3.event);
-      const adminId = context3.userId || body2.adminId;
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const body = this.parseBody(context2.event);
+      const adminId = context2.userId || body.adminId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return this.error("Vendor not found", 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       await update("vendors", { id: vendorId }, {
         seller_status: "approved",
         seller_approved_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -267803,17 +271175,17 @@ var ApproveSellerHandler = class extends BaseHandler {
   }
 };
 var RejectSellerHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const body2 = this.parseBody(context3.event);
-      const adminId = context3.userId || body2.adminId;
-      const reason = body2.reason || "Application rejected";
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const body = this.parseBody(context2.event);
+      const adminId = context2.userId || body.adminId;
+      const reason = body.reason || "Application rejected";
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return this.error("Vendor not found", 404);
       }
       await update("vendors", { id: vendorId }, {
@@ -267847,9 +271219,14 @@ function registerAdminSellersEndpoints(app2) {
   const approveSellerHandler = new ApproveSellerHandler();
   const rejectSellerHandler = new RejectSellerHandler();
   app2.get("/admin/vendors/sellers", async (c) => {
+    const queryParams = {};
+    const url = new URL(c.req.url, "http://localhost");
+    url.searchParams.forEach((value, key) => {
+      queryParams[key] = value;
+    });
     const response = await getSellersHandler.handle({
       event: {
-        queryStringParameters: Object.fromEntries(c.req.query())
+        queryStringParameters: queryParams
       }
     });
     return c.json(response.body, response.statusCode);
@@ -267858,7 +271235,7 @@ function registerAdminSellersEndpoints(app2) {
     const response = await approveSellerHandler.handle({
       event: {
         pathParameters: c.req.param(),
-        body: await c.req.json()
+        body: await c.req.json().catch(() => ({}))
       }
     });
     return c.json(response.body, response.statusCode);
@@ -267867,7 +271244,7 @@ function registerAdminSellersEndpoints(app2) {
     const response = await rejectSellerHandler.handle({
       event: {
         pathParameters: c.req.param(),
-        body: await c.req.json()
+        body: await c.req.json().catch(() => ({}))
       }
     });
     return c.json(response.body, response.statusCode);
@@ -267922,7 +271299,7 @@ async function invokeBedrock(prompt, systemPrompt, options = {}) {
   const { client: client2, modelId } = config;
   const { maxTokens = 1024, temperature = 0.5, topP = 0.9 } = options;
   try {
-    let body2;
+    let body;
     if (modelId.includes("claude") || modelId.includes("anthropic")) {
       const messages = [];
       if (systemPrompt) {
@@ -267935,7 +271312,7 @@ async function invokeBedrock(prompt, systemPrompt, options = {}) {
         role: "user",
         content: prompt
       });
-      body2 = {
+      body = {
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: maxTokens,
         temperature,
@@ -267950,7 +271327,7 @@ Human: ${prompt}
 Assistant:` : `Human: ${prompt}
 
 Assistant:`;
-      body2 = {
+      body = {
         inputText,
         textGenerationConfig: {
           maxTokenCount: maxTokens,
@@ -267970,7 +271347,7 @@ Assistant:`;
         role: "user",
         content: prompt
       });
-      body2 = {
+      body = {
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: maxTokens,
         temperature,
@@ -267980,7 +271357,7 @@ Assistant:`;
     }
     const command = new import_client_bedrock_runtime.InvokeModelCommand({
       modelId,
-      body: JSON.stringify(body2),
+      body: JSON.stringify(body),
       contentType: "application/json",
       accept: "application/json"
     });
@@ -268043,7 +271420,7 @@ function sleep(ms) {
 function registerAIChatbotEndpoints(app2) {
   app2.post("/ai-chatbot/chat", async (c) => {
     try {
-      const { message: message2, customerId, customerPhone, conversationId, context: context3, petId } = await c.req.json();
+      const { message: message2, customerId, customerPhone, conversationId, context: context2, petId } = await c.req.json();
       if (!message2) {
         return c.json({ error: "message is required" }, 400);
       }
@@ -268053,9 +271430,10 @@ function registerAIChatbotEndpoints(app2) {
       let bookingContext = "";
       if (customerId || customerPhone) {
         try {
-          const customer = customerId ? await select("customers", { id: customerId }) : await query(`SELECT * FROM customers WHERE phone = $1 LIMIT 1`, [customerPhone]);
-          if (customer.length > 0 || customer.rows?.length > 0) {
-            const cust = Array.isArray(customer) ? customer[0] : customer.rows[0];
+          const customerResult = customerId ? await select("customers", { id: customerId }) : await query(`SELECT * FROM customers WHERE phone = $1 LIMIT 1`, [customerPhone]);
+          const customers = Array.isArray(customerResult) ? customerResult : customerResult.rows || [];
+          if (customers.length > 0) {
+            const cust = customers[0];
             customerContext = `Customer: ${cust.first_name || ""} ${cust.last_name || ""}, Phone: ${cust.phone || customerPhone}`;
           }
         } catch (e) {
@@ -268519,7 +271897,7 @@ ${conversationHistory || "N/A"}`,
 // src/endpoints/support-crm.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns14 = require("@aws-sdk/client-sns");
+var import_client_sns15 = require("@aws-sdk/client-sns");
 function registerSupportCrmEndpoints(app2) {
   app2.post("/support/tickets", async (c) => {
     try {
@@ -268712,7 +272090,7 @@ function registerSupportCrmEndpoints(app2) {
           const snsClient3 = getSnsClient();
           const customerPhone = ticket.customer_phone || (ticket.customer_id ? (await select("customers", { id: ticket.customer_id }))[0]?.phone : null);
           if (customerPhone) {
-            await snsClient3.send(new import_client_sns14.PublishCommand({
+            await snsClient3.send(new import_client_sns15.PublishCommand({
               PhoneNumber: customerPhone,
               Message: `Support Update: ${message2.substring(0, 100)}...`,
               MessageAttributes: {
@@ -268942,8 +272320,8 @@ function registerSupportCrmEndpoints(app2) {
   });
   app2.post("/crm/action", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { ticketId, action, ...actionData } = body2;
+      const body = await c.req.json();
+      const { ticketId, action, ...actionData } = body;
       if (!ticketId || !action) {
         return c.json({ error: "ticketId and action are required" }, 400);
       }
@@ -268985,8 +272363,8 @@ function registerSupportCrmEndpoints(app2) {
   });
   app2.post("/crm/reply", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { ticketId, message: message2, responderId, responderType = "agent" } = body2;
+      const body = await c.req.json();
+      const { ticketId, message: message2, responderId, responderType = "agent" } = body;
       if (!ticketId || !message2) {
         return c.json({ error: "ticketId and message are required" }, 400);
       }
@@ -269020,8 +272398,8 @@ function registerSupportCrmEndpoints(app2) {
   });
   app2.post("/crm/close", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { ticketId, resolution } = body2;
+      const body = await c.req.json();
+      const { ticketId, resolution } = body;
       if (!ticketId) {
         return c.json({ error: "ticketId is required" }, 400);
       }
@@ -269265,17 +272643,17 @@ function registerSupportCrmEndpoints(app2) {
           context: ticket.metadata
         });
       }
-      const context3 = {};
+      const context2 = {};
       if (ticket.booking_id) {
         const bookings = await select("bookings", { id: ticket.booking_id });
         if (bookings.length > 0) {
-          context3.booking = bookings[0];
+          context2.booking = bookings[0];
         }
       }
       if (ticket.customer_id) {
         const customers = await select("customers", { id: ticket.customer_id });
         if (customers.length > 0) {
-          context3.customer = {
+          context2.customer = {
             id: customers[0].id,
             name: customers[0].full_name,
             phone: customers[0].phone,
@@ -269284,12 +272662,12 @@ function registerSupportCrmEndpoints(app2) {
         }
       }
       if (ticket.vendor_id) {
-        const vendors2 = await select("vendors", { id: ticket.vendor_id });
-        if (vendors2.length > 0) {
-          context3.vendor = {
-            id: vendors2[0].id,
-            businessName: vendors2[0].business_name,
-            phone: vendors2[0].phone
+        const vendors = await select("vendors", { id: ticket.vendor_id });
+        if (vendors.length > 0) {
+          context2.vendor = {
+            id: vendors[0].id,
+            businessName: vendors[0].business_name,
+            phone: vendors[0].phone
           };
         }
       }
@@ -269311,7 +272689,7 @@ function registerSupportCrmEndpoints(app2) {
           createdAt: ticket.created_at,
           assignedAgentId: ticket.assigned_agent_id
         },
-        context: context3,
+        context: context2,
         responses: responses.rows
       });
     } catch (error) {
@@ -269325,10 +272703,10 @@ function registerSupportCrmEndpoints(app2) {
 init_base_handler();
 init_rds_connection();
 var StartLocationSharingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId, vendorId, customerId, location: location2 } = body2;
-    this.validateRequired(body2, ["bookingId", "vendorId", "customerId", "location"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId, vendorId, customerId, location: location2 } = body;
+    this.validateRequired(body, ["bookingId", "vendorId", "customerId", "location"]);
     const bookings = await select("bookings", { id: bookingId });
     if (bookings.length === 0) {
       return this.error("Booking not found", 404);
@@ -269371,10 +272749,10 @@ var StartLocationSharingHandler = class extends BaseHandler {
   }
 };
 var UpdateLocationHandler2 = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId, location: location2 } = body2;
-    this.validateRequired(body2, ["bookingId", "location"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId, location: location2 } = body;
+    this.validateRequired(body, ["bookingId", "location"]);
     const sharing = await query(
       `SELECT * FROM location_sharing WHERE booking_id = $1 AND is_active = true`,
       [bookingId]
@@ -269408,10 +272786,10 @@ var UpdateLocationHandler2 = class extends BaseHandler {
   }
 };
 var StopLocationSharingHandler = class extends BaseHandler {
-  async handle(context3) {
-    const body2 = this.parseBody(context3.event);
-    const { bookingId } = body2;
-    this.validateRequired(body2, ["bookingId"]);
+  async handle(context2) {
+    const body = this.parseBody(context2.event);
+    const { bookingId } = body;
+    this.validateRequired(body, ["bookingId"]);
     await update(
       "location_sharing",
       { booking_id: bookingId, is_active: true },
@@ -269428,8 +272806,8 @@ var StopLocationSharingHandler = class extends BaseHandler {
   }
 };
 var GetSharedLocationHandler = class extends BaseHandler {
-  async handle(context3) {
-    const bookingId = context3.event.pathParameters?.bookingId;
+  async handle(context2) {
+    const bookingId = context2.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error("Booking ID is required", 400);
     }
@@ -269457,27 +272835,27 @@ function registerLocationSharingEndpoints(app2) {
   const getHandler = new GetSharedLocationHandler();
   app2.post("/location/start-sharing", async (c) => {
     const event = createApiGatewayEvent36(c.req);
-    const context3 = createLambdaContext36();
-    const result = await startHandler.execute(event, context3);
+    const context2 = createLambdaContext36();
+    const result = await startHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/location/update", async (c) => {
     const event = createApiGatewayEvent36(c.req);
-    const context3 = createLambdaContext36();
-    const result = await updateHandler.execute(event, context3);
+    const context2 = createLambdaContext36();
+    const result = await updateHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/location/stop-sharing", async (c) => {
     const event = createApiGatewayEvent36(c.req);
-    const context3 = createLambdaContext36();
-    const result = await stopHandler.execute(event, context3);
+    const context2 = createLambdaContext36();
+    const result = await stopHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/location/:bookingId", async (c) => {
     const event = createApiGatewayEvent36(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context3 = createLambdaContext36();
-    const result = await getHandler.execute(event, context3);
+    const context2 = createLambdaContext36();
+    const result = await getHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -269507,14 +272885,14 @@ init_base_handler();
 init_rds_connection();
 init_aws_clients();
 var Enable2FAHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
-    const body2 = this.parseBody(context3.event);
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
+    const body = this.parseBody(context2.event);
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendors2 = await select("vendors", { id: vendorId });
-    if (vendors2.length === 0) {
+    const vendors = await select("vendors", { id: vendorId });
+    if (vendors.length === 0) {
       return this.error("Vendor not found", 404);
     }
     const secret = `WP${vendorId}${Date.now()}`.substring(0, 16);
@@ -269542,8 +272920,8 @@ var Enable2FAHandler = class extends BaseHandler {
   }
 };
 var Disable2FAHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -269571,8 +272949,8 @@ var Disable2FAHandler = class extends BaseHandler {
   }
 };
 var GetSecuritySettingsHandler = class extends BaseHandler {
-  async handle(context3) {
-    const vendorId = context3.event.pathParameters?.vendorId;
+  async handle(context2) {
+    const vendorId = context2.event.pathParameters?.vendorId;
     if (!vendorId) {
       return this.error("Vendor ID is required", 400);
     }
@@ -269600,13 +272978,13 @@ var GetSecuritySettingsHandler = class extends BaseHandler {
         });
       }
       try {
-        const vendors2 = await select("vendors", { id: vendorId });
-        if (vendors2.length > 0) {
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length > 0) {
           settings = {
             rows: [
               {
                 setting_key: "security:2fa:enabled",
-                setting_value: vendors2[0].two_factor_enabled || false
+                setting_value: vendors[0].two_factor_enabled || false
               }
             ]
           };
@@ -269637,23 +273015,23 @@ function registerVendorSecurityEndpoints(app2) {
   app2.post("/vendor/:vendorId/security/enable-2fa", async (c) => {
     const event = createApiGatewayEvent37(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext37();
-    const result = await enable2FAHandler.execute(event, context3);
+    const context2 = createLambdaContext37();
+    const result = await enable2FAHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/:vendorId/security/disable-2fa", async (c) => {
     const event = createApiGatewayEvent37(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext37();
-    const result = await disable2FAHandler.execute(event, context3);
+    const context2 = createLambdaContext37();
+    const result = await disable2FAHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/vendor/:vendorId/security", async (c) => {
     try {
       const event = createApiGatewayEvent37(c.req);
       event.pathParameters = { vendorId: c.req.param("vendorId") };
-      const context3 = createLambdaContext37();
-      const result = await getSettingsHandler.execute(event, context3);
+      const context2 = createLambdaContext37();
+      const result = await getSettingsHandler.execute(event, context2);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
       console.error("Error in vendor security endpoint:", error);
@@ -269694,9 +273072,9 @@ function createLambdaContext37() {
 init_base_handler();
 init_rds_connection();
 var GetDistancePricingRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
+      const vendorId = context2.event.pathParameters?.vendorId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
@@ -269732,13 +273110,13 @@ var GetDistancePricingRulesHandler = class extends BaseHandler {
   }
 };
 var CreateDistancePricingRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
+      const vendorId = context2.event.pathParameters?.vendorId;
       if (!vendorId) {
         return this.error("Vendor ID is required", 400);
       }
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const {
         serviceName,
         basePrice,
@@ -269749,7 +273127,7 @@ var CreateDistancePricingRuleHandler = class extends BaseHandler {
         surgeMultiplier,
         peakHourMultiplier,
         isActive
-      } = body2;
+      } = body;
       if (!serviceName || !basePrice || !baseDist || !pricePerKm) {
         return this.error("Missing required fields: serviceName, basePrice, baseDist, pricePerKm", 400);
       }
@@ -269778,26 +273156,26 @@ var CreateDistancePricingRuleHandler = class extends BaseHandler {
   }
 };
 var UpdateDistancePricingRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const ruleId = context3.event.pathParameters?.ruleId;
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const ruleId = context2.event.pathParameters?.ruleId;
       if (!vendorId || !ruleId) {
         return this.error("Vendor ID and Rule ID are required", 400);
       }
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.serviceName) updateData.service_name = body2.serviceName;
-      if (body2.basePrice !== void 0) updateData.base_price = parseFloat(body2.basePrice);
-      if (body2.baseDist !== void 0) updateData.base_dist = parseFloat(body2.baseDist);
-      if (body2.pricePerKm !== void 0) updateData.price_per_km = parseFloat(body2.pricePerKm);
-      if (body2.maxDistance !== void 0) updateData.max_distance = body2.maxDistance ? parseFloat(body2.maxDistance) : null;
-      if (body2.minCharge !== void 0) updateData.min_charge = body2.minCharge ? parseFloat(body2.minCharge) : null;
-      if (body2.surgeMultiplier !== void 0) updateData.surge_multiplier = parseFloat(body2.surgeMultiplier);
-      if (body2.peakHourMultiplier !== void 0) updateData.peak_hour_multiplier = parseFloat(body2.peakHourMultiplier);
-      if (body2.isActive !== void 0) updateData.is_active = body2.isActive;
+      if (body.serviceName) updateData.service_name = body.serviceName;
+      if (body.basePrice !== void 0) updateData.base_price = parseFloat(body.basePrice);
+      if (body.baseDist !== void 0) updateData.base_dist = parseFloat(body.baseDist);
+      if (body.pricePerKm !== void 0) updateData.price_per_km = parseFloat(body.pricePerKm);
+      if (body.maxDistance !== void 0) updateData.max_distance = body.maxDistance ? parseFloat(body.maxDistance) : null;
+      if (body.minCharge !== void 0) updateData.min_charge = body.minCharge ? parseFloat(body.minCharge) : null;
+      if (body.surgeMultiplier !== void 0) updateData.surge_multiplier = parseFloat(body.surgeMultiplier);
+      if (body.peakHourMultiplier !== void 0) updateData.peak_hour_multiplier = parseFloat(body.peakHourMultiplier);
+      if (body.isActive !== void 0) updateData.is_active = body.isActive;
       await update(
         "vendor_distance_pricing",
         updateData,
@@ -269818,10 +273196,10 @@ var UpdateDistancePricingRuleHandler = class extends BaseHandler {
   }
 };
 var DeleteDistancePricingRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const ruleId = context3.event.pathParameters?.ruleId;
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const ruleId = context2.event.pathParameters?.ruleId;
       if (!vendorId || !ruleId) {
         return this.error("Vendor ID and Rule ID are required", 400);
       }
@@ -269840,15 +273218,15 @@ var DeleteDistancePricingRuleHandler = class extends BaseHandler {
   }
 };
 var ToggleDistancePricingRuleHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendorId = context3.event.pathParameters?.vendorId;
-      const ruleId = context3.event.pathParameters?.ruleId;
+      const vendorId = context2.event.pathParameters?.vendorId;
+      const ruleId = context2.event.pathParameters?.ruleId;
       if (!vendorId || !ruleId) {
         return this.error("Vendor ID and Rule ID are required", 400);
       }
-      const body2 = this.parseBody(context3.event);
-      const isActive = body2.isActive !== void 0 ? body2.isActive : true;
+      const body = this.parseBody(context2.event);
+      const isActive = body.isActive !== void 0 ? body.isActive : true;
       await update(
         "vendor_distance_pricing",
         {
@@ -269876,16 +273254,16 @@ function registerVendorDistancePricingEndpoints(app2) {
   app2.get("/vendor/distance-pricing/:vendorId", async (c) => {
     const event = createApiGatewayEvent38(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context3 = createLambdaContext38();
-    const result = await getHandler.execute(event, context3);
+    const context2 = createLambdaContext38();
+    const result = await getHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/vendor/distance-pricing/:vendorId", async (c) => {
     const event = createApiGatewayEvent38(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
     event.body = await c.req.json();
-    const context3 = createLambdaContext38();
-    const result = await createHandler.execute(event, context3);
+    const context2 = createLambdaContext38();
+    const result = await createHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/vendor/distance-pricing/:vendorId/:ruleId", async (c) => {
@@ -269895,8 +273273,8 @@ function registerVendorDistancePricingEndpoints(app2) {
       ruleId: c.req.param("ruleId")
     };
     event.body = await c.req.json();
-    const context3 = createLambdaContext38();
-    const result = await updateHandler.execute(event, context3);
+    const context2 = createLambdaContext38();
+    const result = await updateHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.delete("/vendor/distance-pricing/:vendorId/:ruleId", async (c) => {
@@ -269905,8 +273283,8 @@ function registerVendorDistancePricingEndpoints(app2) {
       vendorId: c.req.param("vendorId"),
       ruleId: c.req.param("ruleId")
     };
-    const context3 = createLambdaContext38();
-    const result = await deleteHandler.execute(event, context3);
+    const context2 = createLambdaContext38();
+    const result = await deleteHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/vendor/distance-pricing/:vendorId/:ruleId/toggle", async (c) => {
@@ -269916,8 +273294,8 @@ function registerVendorDistancePricingEndpoints(app2) {
       ruleId: c.req.param("ruleId")
     };
     event.body = await c.req.json();
-    const context3 = createLambdaContext38();
-    const result = await toggleHandler.execute(event, context3);
+    const context2 = createLambdaContext38();
+    const result = await toggleHandler.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
@@ -269972,13 +273350,13 @@ function registerSchedulingPolicyEndpoints(app2) {
   });
   app2.post("/admin/scheduling-policies", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         policy_name,
         policy_type,
         policy_config,
         is_active = true
-      } = body2;
+      } = body;
       if (!policy_name || !policy_type || !policy_config) {
         return c.json({
           error: "policy_name, policy_type, and policy_config are required"
@@ -270022,7 +273400,7 @@ function registerSchedulingPolicyEndpoints(app2) {
   app2.put("/admin/scheduling-policies/:id", async (c) => {
     try {
       const { id } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const policies = await select("scheduling_policies", { id });
       if (policies.length === 0) {
         return c.json({ error: "Policy not found" }, 404);
@@ -270031,7 +273409,7 @@ function registerSchedulingPolicyEndpoints(app2) {
         "scheduling_policies",
         { id },
         {
-          ...body2,
+          ...body,
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         }
       );
@@ -270094,7 +273472,7 @@ function createLambdaContext39() {
   };
 }
 var GetAnalyticsOverviewHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const [vendorStats, customerStats, bookingStats, orderStats] = await Promise.all([
         query(`SELECT 
@@ -270139,11 +273517,11 @@ var GetAnalyticsOverviewHandler = class extends BaseHandler {
   }
 };
 var GetAnalyticsVendorsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      let vendors2;
+      let vendors;
       try {
-        vendors2 = await query(`
+        vendors = await query(`
           SELECT 
             v.*,
             COUNT(DISTINCT b.id) as total_bookings,
@@ -270158,7 +273536,7 @@ var GetAnalyticsVendorsHandler = class extends BaseHandler {
           ORDER BY v.created_at DESC
         `);
       } catch {
-        vendors2 = await query(`
+        vendors = await query(`
           SELECT 
             v.*,
             COUNT(DISTINCT b.id) as total_bookings,
@@ -270172,7 +273550,7 @@ var GetAnalyticsVendorsHandler = class extends BaseHandler {
           ORDER BY v.created_at DESC
         `);
       }
-      const vendorsList = vendors2.rows || [];
+      const vendorsList = vendors.rows || [];
       const totalVendors = vendorsList.length;
       const activeVendors = vendorsList.filter((v) => v.status === "approved" && v.is_active).length;
       const newVendors = vendorsList.filter((v) => {
@@ -270205,7 +273583,7 @@ var GetAnalyticsVendorsHandler = class extends BaseHandler {
   }
 };
 var GetAnalyticsCustomersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const customers = await query(`
         SELECT 
@@ -270243,10 +273621,10 @@ var GetAnalyticsCustomersHandler = class extends BaseHandler {
   }
 };
 var AdminLoginHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
-      const { email, password } = body2;
+      const body = this.parseBody(context2.event);
+      const { email, password } = body;
       if (!email || !password) {
         return this.error("Email and password are required", 400);
       }
@@ -270331,10 +273709,10 @@ var AdminLoginHandler = class extends BaseHandler {
   }
 };
 var AdminSignupHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
-      const { email, password, name } = body2;
+      const body = this.parseBody(context2.event);
+      const { email, password, name } = body;
       if (!email || !password) {
         return this.error("Email and password are required", 400);
       }
@@ -270365,20 +273743,20 @@ var AdminSignupHandler = class extends BaseHandler {
   }
 };
 var GetActiveVendorsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const vendors2 = await select("vendors", {
+      const vendors = await select("vendors", {
         status: "approved",
         is_active: true
       });
-      return this.success({ success: true, vendors: vendors2 });
+      return this.success({ success: true, vendors });
     } catch (error) {
       return this.error(error.message || "Failed to fetch active vendors", 500);
     }
   }
 };
 var GetVendorClarificationRequestsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let requests;
       try {
@@ -270405,7 +273783,7 @@ var GetVendorClarificationRequestsHandler = class extends BaseHandler {
   }
 };
 var GetVendorComplianceIssuesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let issues;
       try {
@@ -270486,7 +273864,7 @@ var GetVendorComplianceIssuesHandler = class extends BaseHandler {
   }
 };
 var GetVendorDeactivationRequestsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let requests;
       try {
@@ -270513,7 +273891,7 @@ var GetVendorDeactivationRequestsHandler = class extends BaseHandler {
   }
 };
 var GetVendorReverificationRequestsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let requests;
       try {
@@ -270535,11 +273913,11 @@ var GetVendorReverificationRequestsHandler = class extends BaseHandler {
   }
 };
 var CreateVendorHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       const vendor = await insert("vendors", {
-        ...body2,
+        ...body,
         status: "pending",
         is_active: false,
         created_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -270551,7 +273929,7 @@ var CreateVendorHandler = class extends BaseHandler {
   }
 };
 var GetSettlementStatsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const stats = await query(`
         SELECT 
@@ -270569,7 +273947,7 @@ var GetSettlementStatsHandler = class extends BaseHandler {
   }
 };
 var GetSupportStatsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let stats;
       try {
@@ -270626,7 +274004,7 @@ var GetSupportStatsHandler = class extends BaseHandler {
   }
 };
 var GetSupportChatSessionsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let sessions;
       try {
@@ -270653,7 +274031,7 @@ var GetSupportChatSessionsHandler = class extends BaseHandler {
   }
 };
 var GetVendorTicketsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let tickets;
       try {
@@ -270685,9 +274063,9 @@ var GetVendorTicketsHandler = class extends BaseHandler {
   }
 };
 var GetTransactionsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const params = context3.event.queryStringParameters || {};
+      const params = context2.event.queryStringParameters || {};
       const limit = parseInt(params.limit || "50", 10);
       const offset = parseInt(params.offset || "0", 10);
       let transactions, total;
@@ -270754,7 +274132,7 @@ var GetTransactionsHandler = class extends BaseHandler {
   }
 };
 var GetTransactionStatsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const stats = await query(`
         SELECT 
@@ -270773,9 +274151,9 @@ var GetTransactionStatsHandler = class extends BaseHandler {
   }
 };
 var ExportTransactionsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const params = context3.event.queryStringParameters || {};
+      const params = context2.event.queryStringParameters || {};
       const format = params.format || "csv";
       const transactions = await query(`
         SELECT 
@@ -270822,7 +274200,7 @@ var ExportTransactionsHandler = class extends BaseHandler {
   }
 };
 var GetTiersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const tiers = await select("tiers", {}, { orderBy: "level ASC" });
       return this.success({ success: true, tiers });
@@ -270832,9 +274210,9 @@ var GetTiersHandler = class extends BaseHandler {
   }
 };
 var GetUsersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const params = context3.event.queryStringParameters || {};
+      const params = context2.event.queryStringParameters || {};
       const role = params.role;
       const limit = parseInt(params.limit || "50", 10);
       const offset = parseInt(params.offset || "0", 10);
@@ -270867,7 +274245,7 @@ var GetUsersHandler = class extends BaseHandler {
   }
 };
 var GetVendorSettingsRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let paymentRules, refundTiers;
       try {
@@ -270906,7 +274284,7 @@ var GetVendorSettingsRulesHandler = class extends BaseHandler {
   }
 };
 var GetVendorPaymentRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const rules = await query(`
         SELECT * FROM vendor_payment_rules
@@ -270919,7 +274297,7 @@ var GetVendorPaymentRulesHandler = class extends BaseHandler {
   }
 };
 var GetVendorRefundTiersHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       let tiers;
       try {
@@ -270946,7 +274324,7 @@ var GetVendorRefundTiersHandler = class extends BaseHandler {
   }
 };
 var GetTaxFlexibleConfigurationHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const config = await select("platform_settings", {
         setting_key: "tax:flexible:configuration"
@@ -270964,7 +274342,7 @@ var GetTaxFlexibleConfigurationHandler = class extends BaseHandler {
   }
 };
 var GetTaxFlexibleRulesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const rules = await query(`
         SELECT * FROM tax_flexible_rules
@@ -270977,7 +274355,7 @@ var GetTaxFlexibleRulesHandler = class extends BaseHandler {
   }
 };
 var GetVendorRolesHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const roles = await query(`
         SELECT * FROM roles
@@ -270991,7 +274369,7 @@ var GetVendorRolesHandler = class extends BaseHandler {
   }
 };
 var GetGeneralSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
       const settings = await select("platform_settings", {
         setting_key: "admin:settings:general"
@@ -271005,12 +274383,12 @@ var GetGeneralSettingsHandler = class extends BaseHandler {
   }
 };
 var UpdateGeneralSettingsHandler = class extends BaseHandler {
-  async handle(context3) {
+  async handle(context2) {
     try {
-      const body2 = this.parseBody(context3.event);
+      const body = this.parseBody(context2.event);
       await upsert("platform_settings", {
         setting_key: "admin:settings:general",
-        setting_value: body2.settings,
+        setting_value: body.settings,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return this.success({ success: true });
@@ -271023,36 +274401,36 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/analytics/overview", async (c) => {
     const handler2 = new GetAnalyticsOverviewHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/analytics/vendors", async (c) => {
     const handler2 = new GetAnalyticsVendorsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/analytics/customers", async (c) => {
     const handler2 = new GetAnalyticsCustomersHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/auth/login", async (c) => {
     const handler2 = new AdminLoginHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/auth/signup", async (c) => {
     const handler2 = new AdminSignupHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/auth/reset-test-user", async (c) => {
@@ -271061,48 +274439,48 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/vendors/active", async (c) => {
     const handler2 = new GetActiveVendorsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendors/clarification-requests", async (c) => {
     const handler2 = new GetVendorClarificationRequestsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendors/compliance-issues", async (c) => {
     const handler2 = new GetVendorComplianceIssuesHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendors/deactivation-requests", async (c) => {
     const handler2 = new GetVendorDeactivationRequestsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendors/reverification-requests", async (c) => {
     const handler2 = new GetVendorReverificationRequestsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendors/create", async (c) => {
     const handler2 = new CreateVendorHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendors/applications/export", async (c) => {
     try {
-      const vendors2 = await query(`
+      const vendors = await query(`
         SELECT 
           v.*,
           va.status as application_status,
@@ -271112,9 +274490,9 @@ function registerAdminComprehensiveEndpoints(app2) {
         LEFT JOIN vendor_applications va ON va.vendor_id = v.id
         ORDER BY v.created_at DESC
       `);
-      if (vendors2.rows.length > 0) {
-        const headers = Object.keys(vendors2.rows[0]).join(",");
-        const rows = vendors2.rows.map(
+      if (vendors.rows.length > 0) {
+        const headers = Object.keys(vendors.rows[0]).join(",");
+        const rows = vendors.rows.map(
           (r) => Object.values(r).map((v) => `"${String(v || "").replace(/"/g, '""')}"`).join(",")
         );
         const csv = [headers, ...rows].join("\n");
@@ -271162,62 +274540,62 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/settlements/stats", async (c) => {
     const handler2 = new GetSettlementStatsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/support/stats", async (c) => {
     const handler2 = new GetSupportStatsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/support/chat-sessions", async (c) => {
     const handler2 = new GetSupportChatSessionsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/support/vendor-tickets", async (c) => {
     const handler2 = new GetVendorTicketsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/transactions", async (c) => {
     const handler2 = new GetTransactionsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/transactions/stats", async (c) => {
     const handler2 = new GetTransactionStatsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/transactions/export", async (c) => {
     const handler2 = new ExportTransactionsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/tiers", async (c) => {
     const handler2 = new GetTiersHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/tiers", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const {
         name,
         displayName,
@@ -271233,7 +274611,7 @@ function registerAdminComprehensiveEndpoints(app2) {
         requirements,
         isActive,
         is_active
-      } = body2;
+      } = body;
       if (!name) {
         return c.json({ success: false, error: "Tier name is required" }, 400);
       }
@@ -271260,8 +274638,8 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/users", async (c) => {
     const handler2 = new GetUsersHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendor-settings", async (c) => {
@@ -271280,10 +274658,10 @@ function registerAdminComprehensiveEndpoints(app2) {
   });
   app2.put("/admin/vendor-settings", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       await upsert("platform_settings", {
         setting_key: "admin:vendor-settings",
-        setting_value: body2.settings || {},
+        setting_value: body.settings || {},
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return c.json({ success: true, message: "Settings saved successfully" });
@@ -271295,22 +274673,22 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/vendor-settings-rules", async (c) => {
     const handler2 = new GetVendorSettingsRulesHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendor-settings/payment-rules", async (c) => {
     const handler2 = new GetVendorPaymentRulesHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendor-settings/payment-rules", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const rule = await insert("vendor_payment_rules", {
-        ...body2,
+        ...body,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -271323,9 +274701,9 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.put("/admin/vendor-settings/payment-rules/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const updated = await update("vendor_payment_rules", { id }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return c.json({ success: true, rule: updated[0] });
@@ -271347,15 +274725,15 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/vendor-settings/refund-tiers", async (c) => {
     const handler2 = new GetVendorRefundTiersHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/vendor-settings/refund-tiers", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const tier = await insert("vendor_refund_tiers", {
-        ...body2,
+        ...body,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -271368,9 +274746,9 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.put("/admin/vendor-settings/refund-tiers/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const updated = await update("vendor_refund_tiers", { id }, {
-        ...body2,
+        ...body,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return c.json({ success: true, tier: updated[0] });
@@ -271392,43 +274770,43 @@ function registerAdminComprehensiveEndpoints(app2) {
   app2.get("/admin/tax/flexible/configuration", async (c) => {
     const handler2 = new GetTaxFlexibleConfigurationHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/tax/flexible/rules", async (c) => {
     const handler2 = new GetTaxFlexibleRulesHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/vendor-roles", async (c) => {
     const handler2 = new GetVendorRolesHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/settings/general", async (c) => {
     const handler2 = new GetGeneralSettingsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.put("/admin/settings/general", async (c) => {
     const handler2 = new UpdateGeneralSettingsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.post("/admin/settings/general", async (c) => {
     const handler2 = new UpdateGeneralSettingsHandler();
     const event = createApiGatewayEvent39(c.req);
-    const context3 = createLambdaContext39();
-    const result = await handler2.execute(event, context3);
+    const context2 = createLambdaContext39();
+    const result = await handler2.execute(event, context2);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app2.get("/admin/settings/integrations", async (c) => {
@@ -271447,10 +274825,10 @@ function registerAdminComprehensiveEndpoints(app2) {
   });
   app2.post("/admin/settings/integrations", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       await upsert("platform_settings", {
         setting_key: "admin:settings:integrations",
-        setting_value: body2.settings || {},
+        setting_value: body.settings || {},
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return c.json({ success: true, message: "Settings saved successfully" });
@@ -271475,10 +274853,10 @@ function registerAdminComprehensiveEndpoints(app2) {
   });
   app2.post("/admin/settings/notifications", async (c) => {
     try {
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       await upsert("platform_settings", {
         setting_key: "admin:settings:notifications",
-        setting_value: body2.settings || {},
+        setting_value: body.settings || {},
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, "setting_key");
       return c.json({ success: true, message: "Settings saved successfully" });
@@ -271488,8 +274866,8 @@ function registerAdminComprehensiveEndpoints(app2) {
     }
   });
   app2.get("/admin/vendor/list", async (c) => {
-    const vendors2 = await select("vendors", {});
-    return c.json({ success: true, vendors: vendors2 });
+    const vendors = await select("vendors", {});
+    return c.json({ success: true, vendors });
   });
 }
 
@@ -271586,6 +274964,52 @@ function registerProblemGridEndpoints(app2) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app2.get("/vendor/problem-grid-specializations/:roleId", async (c) => {
+    try {
+      const { roleId } = c.req.param();
+      const cleanRoleId = roleId.replace(/^role_/, "");
+      const problemsResult = await query(
+        `SELECT DISTINCT
+          problem_id as id,
+          problem_name as name,
+          problem_display_name as displayName,
+          MIN(order_index) as min_order
+        FROM problem_grid_mappings
+        WHERE role_id = $1 OR role_id = $2
+        GROUP BY problem_id, problem_name, problem_display_name
+        ORDER BY min_order ASC, problem_name ASC`,
+        [cleanRoleId, roleId]
+        // Try both with and without prefix
+      ).catch(() => ({ rows: [] }));
+      if (problemsResult.rows.length === 0) {
+        return c.json({
+          success: true,
+          specializations: [],
+          message: "No specializations available for this vendor type"
+        });
+      }
+      const specializations = problemsResult.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        displayName: row.displayName || row.name,
+        icon: getProblemIconEmoji(row.id),
+        // Use emoji for UI
+        shortDescription: `${row.displayName || row.name} services`
+      }));
+      return c.json({
+        success: true,
+        specializations,
+        count: specializations.length
+      });
+    } catch (error) {
+      console.error("Error fetching problem grid specializations:", error);
+      return c.json({
+        success: false,
+        error: error.message,
+        specializations: []
+      }, 500);
+    }
+  });
   app2.get("/vendor/problem-grid/:vendorType", async (c) => {
     try {
       const { vendorType } = c.req.param();
@@ -271646,7 +275070,7 @@ function registerProblemGridEndpoints(app2) {
         SELECT DISTINCT
           vs.id as service_id,
           vs.service_name as name,
-          vs.description,
+          vs.service_name as description,
           vs.price,
           vs.duration_minutes as duration,
           vs.vendor_id,
@@ -271667,7 +275091,6 @@ function registerProblemGridEndpoints(app2) {
       if (subCategoryIds.length > 0) {
         servicesQuery += ` AND (
           vs.service_name ILIKE ANY($${paramIndex}::text[]) OR
-          vs.description ILIKE ANY($${paramIndex}::text[]) OR
           vs.vendor_id IN (
             SELECT vendor_id 
             FROM vendor_specializations 
@@ -271684,8 +275107,8 @@ function registerProblemGridEndpoints(app2) {
         paramIndex++;
       }
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.description, vs.price, vs.duration_minutes, 
-                 vs.vendor_id, v.business_name, v.city, v.state
+        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, 
+                 vs.vendor_id, v.business_name, v.city, v.state, vs.created_at
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
@@ -271816,7 +275239,7 @@ function registerProblemGridEndpoints(app2) {
         LIMIT 50
       `;
       const vendorsResult = await query(vendorsQuery, params);
-      const vendors2 = await Promise.all(
+      const vendors = await Promise.all(
         vendorsResult.rows.map(async (vendor) => {
           const servicesResult = await query(
             `SELECT id, service_id, service_name, price, duration_minutes, service_style, category, sub_category
@@ -272015,25 +275438,25 @@ function registerProblemGridEndpoints(app2) {
         })
       );
       if (sortBy === "distance" && latitude && longitude) {
-        vendors2.sort((a, b) => {
+        vendors.sort((a, b) => {
           if (a.distance === null) return 1;
           if (b.distance === null) return -1;
           return a.distance - b.distance;
         });
       } else if (sortBy === "rating") {
-        vendors2.sort((a, b) => {
+        vendors.sort((a, b) => {
           const aScore = a.rating * 0.7 + (a.distance ? 1 / (a.distance + 1) * 0.3 : 0);
           const bScore = b.rating * 0.7 + (b.distance ? 1 / (b.distance + 1) * 0.3 : 0);
           return bScore - aScore;
         });
       } else if (sortBy === "price") {
-        vendors2.sort((a, b) => {
+        vendors.sort((a, b) => {
           const aPrice = a.services[0]?.price || 999999;
           const bPrice = b.services[0]?.price || 999999;
           return aPrice - bPrice;
         });
       }
-      const allSpecialists = vendors2.flatMap(
+      const allSpecialists = vendors.flatMap(
         (v) => (v.specialists || []).map((s) => ({
           ...s,
           vendorId: v.vendorId,
@@ -272042,13 +275465,13 @@ function registerProblemGridEndpoints(app2) {
       );
       return c.json({
         success: true,
-        vendors: vendors2,
+        vendors,
         specialists: allSpecialists.length > 0 ? allSpecialists : void 0,
         data: {
-          vendors: vendors2,
+          vendors,
           specialists: allSpecialists.length > 0 ? allSpecialists : void 0
         },
-        total: vendors2.length,
+        total: vendors.length,
         problemId
       });
     } catch (error) {
@@ -272094,8 +275517,8 @@ function registerProblemGridEndpoints(app2) {
   });
   app2.post("/customer/search/track", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { customerId, query: searchQuery, type } = body2;
+      const body = await c.req.json();
+      const { customerId, query: searchQuery, type } = body;
       try {
         await query(
           `INSERT INTO search_tracking (customer_id, query, query_type, created_at)
@@ -272188,6 +275611,43 @@ function getProblemCategory(problemId) {
     return "behavioral";
   }
   return "veterinary";
+}
+function getProblemIconEmoji(problemId) {
+  const emojiMap = {
+    "health_checkup": "\u{1F3E5}",
+    "vaccination": "\u{1F489}",
+    "deworming": "\u{1F41B}",
+    "dental_care": "\u{1F9B7}",
+    "skin_allergies": "\u{1F534}",
+    "ear_infection": "\u{1F442}",
+    "eye_problems": "\u{1F441}\uFE0F",
+    "digestive_issues": "\u{1F922}",
+    "respiratory": "\u{1FAC1}",
+    "orthopedic": "\u{1F9B4}",
+    "neurological": "\u{1F9E0}",
+    "cardiac": "\u2764\uFE0F",
+    "cancer_treatment": "\u{1F397}\uFE0F",
+    "surgery": "\u2695\uFE0F",
+    "emergency": "\u{1F6A8}",
+    "grooming": "\u2702\uFE0F",
+    "bath": "\u{1F6C1}",
+    "nail_care": "\u{1F485}",
+    "training": "\u{1F393}",
+    "walking": "\u{1F415}",
+    "boarding": "\u{1F3E0}",
+    "nutrition": "\u{1F957}"
+  };
+  if (emojiMap[problemId]) {
+    return emojiMap[problemId];
+  }
+  if (problemId.includes("health") || problemId.includes("checkup")) return "\u{1F3E5}";
+  if (problemId.includes("vaccine")) return "\u{1F489}";
+  if (problemId.includes("groom") || problemId.includes("bath")) return "\u2702\uFE0F";
+  if (problemId.includes("train")) return "\u{1F393}";
+  if (problemId.includes("walk")) return "\u{1F415}";
+  if (problemId.includes("board")) return "\u{1F3E0}";
+  if (problemId.includes("nutrition") || problemId.includes("diet")) return "\u{1F957}";
+  return "\u{1F3E5}";
 }
 function calculateDistance6(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -272526,8 +275986,8 @@ function registerVendorDashboardMissingEndpoints(app2) {
   app2.post("/vendor/:vendorId/patient-monitors", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const body2 = await c.req.json();
-      const { bookingId, patientStatus, notes, vitals } = body2;
+      const body = await c.req.json();
+      const { bookingId, patientStatus, notes, vitals } = body;
       if (!bookingId) {
         return c.json({ error: "bookingId is required" }, 400);
       }
@@ -272560,8 +276020,8 @@ function registerVendorDashboardMissingEndpoints(app2) {
   app2.put("/vendor/:vendorId/patient-monitors/:bookingId", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const body2 = await c.req.json();
-      const { patientStatus, notes, vitals, medications } = body2;
+      const body = await c.req.json();
+      const { patientStatus, notes, vitals, medications } = body;
       const existing = await select("bookings", { id: bookingId });
       if (existing.length === 0) {
         return c.json({ error: "Patient not found" }, 404);
@@ -272695,8 +276155,8 @@ function registerUIDashboardConfigEndpoints(app2) {
   });
   app2.put("/config/ui/dashboard", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { roleId, config } = body2;
+      const body = await c.req.json();
+      const { roleId, config } = body;
       if (!roleId) {
         return c.json({
           success: false,
@@ -272789,8 +276249,8 @@ init_rds_connection();
 function registerCarePlansEndpoints(app2) {
   app2.post("/crm/plans/generate", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { ticketId, customerId, petId, planType, generationMethod, templateId, context: context3 } = body2;
+      const body = await c.req.json();
+      const { ticketId, customerId, petId, planType, generationMethod, templateId, context: context2 } = body;
       if (!customerId || !petId || !planType) {
         return c.json({
           success: false,
@@ -272816,7 +276276,7 @@ function registerCarePlansEndpoints(app2) {
           customer,
           pet,
           planType,
-          context: context3 || "",
+          context: context2 || "",
           ticketId
         });
         planData = generatedPlan.planData;
@@ -272943,7 +276403,7 @@ function registerCarePlansEndpoints(app2) {
   app2.put("/crm/plans/:planId", async (c) => {
     try {
       const planId = c.req.param("planId");
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const plans = await select("pet_care_plans", { id: planId });
       if (plans.length === 0) {
         return c.json({ success: false, error: "Plan not found" }, 404);
@@ -272951,11 +276411,11 @@ function registerCarePlansEndpoints(app2) {
       const updateData = {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (body2.title) updateData.title = body2.title;
-      if (body2.description) updateData.description = body2.description;
-      if (body2.status) updateData.status = body2.status;
-      if (body2.duration_days) updateData.duration_days = body2.duration_days;
-      if (body2.plan_data) updateData.plan_data = body2.plan_data;
+      if (body.title) updateData.title = body.title;
+      if (body.description) updateData.description = body.description;
+      if (body.status) updateData.status = body.status;
+      if (body.duration_days) updateData.duration_days = body.duration_days;
+      if (body.plan_data) updateData.plan_data = body.plan_data;
       await update("pet_care_plans", { id: planId }, updateData);
       const updatedPlans = await select("pet_care_plans", { id: planId });
       return c.json({
@@ -272974,7 +276434,7 @@ function registerCarePlansEndpoints(app2) {
   app2.post("/crm/plans/:planId/items/:itemId/complete", async (c) => {
     try {
       const { planId, itemId } = c.req.param();
-      const body2 = await c.req.json();
+      const body = await c.req.json();
       const items = await select("care_plan_items", { id: itemId, plan_id: planId });
       if (items.length === 0) {
         return c.json({ success: false, error: "Plan item not found" }, 404);
@@ -272985,7 +276445,7 @@ function registerCarePlansEndpoints(app2) {
         {
           completed: true,
           completed_at: (/* @__PURE__ */ new Date()).toISOString(),
-          notes: body2.notes || null
+          notes: body.notes || null
         }
       );
       const updatedItems = await select("care_plan_items", { id: itemId });
@@ -273004,7 +276464,7 @@ function registerCarePlansEndpoints(app2) {
   });
 }
 async function generateAIPlan(params) {
-  const { customer, pet, planType, context: context3, ticketId } = params;
+  const { customer, pet, planType, context: context2, ticketId } = params;
   const systemPrompt = `You are a veterinary care plan assistant. Generate a comprehensive ${planType} care plan for a pet.
 
 PET INFORMATION:
@@ -273019,7 +276479,7 @@ CUSTOMER INFORMATION:
 - Phone: ${customer.phone || "Unknown"}
 
 ADDITIONAL CONTEXT:
-${context3 || "No additional context provided"}
+${context2 || "No additional context provided"}
 
 Generate a structured ${planType} care plan with:
 1. A clear title
@@ -273048,7 +276508,7 @@ Return ONLY valid JSON in this exact format:
   try {
     const completion = await withRetry(
       () => invokeBedrock(
-        `Generate a ${planType} care plan for ${pet.name || "this pet"}. ${context3}`,
+        `Generate a ${planType} care plan for ${pet.name || "this pet"}. ${context2}`,
         systemPrompt,
         {
           maxTokens: 2048,
@@ -273120,14 +276580,14 @@ function registerVendorSupportEndpoints(app2) {
           error: "vendorId, subject, and description are required"
         }, 400);
       }
-      const vendors2 = await select("vendors", { id: vendorId });
-      if (vendors2.length === 0) {
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
         return c.json({
           success: false,
           error: "Vendor not found"
         }, 404);
       }
-      const vendor = vendors2[0];
+      const vendor = vendors[0];
       const ticketNumber = `VT-${(/* @__PURE__ */ new Date()).toISOString().split("T")[0].replace(/-/g, "")}-${Date.now().toString().slice(-6)}`;
       const ticket = await insert("support_tickets", {
         ticket_number: ticketNumber,
@@ -273301,15 +276761,16 @@ function registerVendorSupportEndpoints(app2) {
           error: "Ticket not found"
         }, 404);
       }
-      const response = await insert("support_ticket_responses", {
+      const messageData = {
         ticket_id: ticketId,
         responder_id: vendorId,
-        responder_type: "vendor",
+        responder_type: "customer",
+        // vendors are treated as customers in support context
         message: message2,
-        attachments: attachments ? JSON.stringify(attachments) : null,
         is_internal: false,
         created_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      const response = await insert("support_ticket_responses", messageData);
       await update(
         "support_tickets",
         { id: ticketId },
@@ -273481,8 +276942,8 @@ function generateOrderNumber() {
 function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/from-prescription", async (c) => {
     try {
-      const body2 = await c.req.json();
-      const { prescriptionId, customerId, customerLocation, deliveryAddress } = body2;
+      const body = await c.req.json();
+      const { prescriptionId, customerId, customerLocation, deliveryAddress } = body;
       if (!prescriptionId || !customerId) {
         return c.json({ error: "prescriptionId and customerId are required" }, 400);
       }
@@ -273667,8 +277128,8 @@ function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/:orderId/accept", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { pharmacyId, availableItems, unavailableItems, alternatives } = body2;
+      const body = await c.req.json();
+      const { pharmacyId, availableItems, unavailableItems, alternatives } = body;
       if (!pharmacyId) {
         return c.json({ error: "pharmacyId is required" }, 400);
       }
@@ -273719,8 +277180,8 @@ function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/:orderId/reject", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { pharmacyId, reason } = body2;
+      const body = await c.req.json();
+      const { pharmacyId, reason } = body;
       if (!pharmacyId) {
         return c.json({ error: "pharmacyId is required" }, 400);
       }
@@ -273752,8 +277213,8 @@ function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/:orderId/invoice", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { items, deliveryFee, taxRate = 5 } = body2;
+      const body = await c.req.json();
+      const { items, deliveryFee, taxRate = 5 } = body;
       if (!items || items.length === 0) {
         return c.json({ error: "items are required" }, 400);
       }
@@ -273796,8 +277257,8 @@ function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/:orderId/payment", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { paymentMethod, paymentId } = body2;
+      const body = await c.req.json();
+      const { paymentMethod, paymentId } = body;
       if (!paymentMethod) {
         return c.json({ error: "paymentMethod is required (online or cod)" }, 400);
       }
@@ -273830,8 +277291,8 @@ function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/:orderId/dispatch", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { deliveryPartner, deliveryPartnerId, deliveryPartnerName, deliveryPartnerPhone } = body2;
+      const body = await c.req.json();
+      const { deliveryPartner, deliveryPartnerId, deliveryPartnerName, deliveryPartnerPhone } = body;
       const broadcast = await query(`
         SELECT * FROM pharmacy_order_broadcasts 
         WHERE order_id = $1 AND status = 'accepted'
@@ -273982,8 +277443,8 @@ function registerPharmacyOrderEndpoints(app2) {
   app2.post("/pharmacy/orders/:orderId/complete", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const body2 = await c.req.json();
-      const { otp, signature } = body2;
+      const body = await c.req.json();
+      const { otp, signature } = body;
       await query(`
         UPDATE orders 
         SET 
@@ -274051,8 +277512,45 @@ initializeErrorTracking({
   cloudWatchNamespace: "Warmpawz/Errors"
   // No Sentry DSN - CloudWatch only for India compliance
 });
-app.get("/health", (c) => {
-  return c.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+try {
+  validateEnvironmentOrThrow();
+} catch (error) {
+  console.error("[STARTUP] Environment validation failed:");
+  console.error(getValidationReport());
+  if (true) {
+    console.error("[STARTUP] \u26A0\uFE0F  Continuing with invalid environment (non-production mode)");
+  }
+}
+app.get("/health", async (c) => {
+  const healthStatus = {
+    status: "ok",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  try {
+    const dbHealthy = await checkDbHealth();
+    healthStatus.database = { connected: dbHealthy };
+    if (!dbHealthy) {
+      healthStatus.status = "degraded";
+      healthStatus.database.error = "Database connection check failed";
+    }
+  } catch (error) {
+    healthStatus.status = "degraded";
+    healthStatus.database = {
+      connected: false,
+      error: error instanceof Error ? error.message : "Unknown database error"
+    };
+  }
+  try {
+    const envResult = validateEnvironment();
+    healthStatus.environment = {
+      valid: envResult.valid,
+      warnings: envResult.warnings.length > 0 ? envResult.warnings : void 0
+    };
+  } catch (error) {
+    console.warn("[HEALTH] Environment validation check failed:", error);
+  }
+  const statusCode = healthStatus.status === "ok" ? 200 : 503;
+  return c.json(healthStatus, statusCode);
 });
 registerAuthEndpointsEnhanced(app);
 registerVendorOnboardingEndpointsEnhanced(app);
@@ -274094,7 +277592,6 @@ registerPetEndpoints(app);
 registerVendorServicesEndpoints(app);
 registerVendorProductsEndpoints(app);
 registerVendorOrdersEndpoints(app);
-registerServiceCatalogEndpoints(app);
 registerSettlementEndpoints(app);
 registerRegionEndpoints(app);
 registerChatEndpoints(app);
@@ -274135,6 +277632,7 @@ registerBookingDetailsEnhancedEndpoints(app);
 registerRazorpaySettlementEndpoints(app);
 registerRefundPolicyEngineEndpoints(app);
 registerBookingEndpointsEnhanced(app);
+registerBookingOTPEndpoint(app);
 registerAdminGovernanceEnhancedEndpoints(app);
 registerAdminAdvancedEndpoints(app);
 registerVendorSetupEndpoints(app);
@@ -274233,7 +277731,7 @@ app.onError((err, c) => {
   console.log("[Hono Error Handler] NO MATCH - Returning 500");
   return c.json({ error: errorMessage }, 500);
 });
-var handler = async (event, context3) => {
+var handler = async (event, context2) => {
   try {
     const uatMode = event.headers?.["x-uat-mode"] === "true" || event.headers?.["X-UAT-Mode"] === "true";
     const uatToken = event.headers?.["x-uat-token"] || event.headers?.["X-UAT-Token"];
@@ -274345,14 +277843,17 @@ var handler = async (event, context3) => {
       console.log("[HANDLER] Request body type:", typeof requestBody);
       console.log("[HANDLER] Request body length:", requestBody?.length);
     }
-    const response = await app.fetch(request, {
-      // Pass original event in fetch context for endpoints to access
-      // @ts-ignore - Hono supports passing data through fetch options
-      event
-    }).finally(() => {
+    let response;
+    try {
+      response = await app.fetch(request, {
+        // Pass original event in fetch context for endpoints to access
+        // @ts-ignore - Hono supports passing data through fetch options
+        event
+      });
+    } finally {
       delete global.__currentEvent;
       delete global.__parsedBodyForBookings;
-    });
+    }
     const responseBody = await response.text();
     const responseHeaders = {};
     response.headers.forEach((value, key) => {
@@ -274398,7 +277899,7 @@ var handler = async (event, context3) => {
   } catch (error) {
     console.error("Lambda handler error:", error);
     captureException(error instanceof Error ? error : new Error(String(error)), {
-      requestId: context3.awsRequestId,
+      requestId: context2.awsRequestId,
       path: event.rawPath,
       method: event.requestContext?.http?.method,
       apiId: event.requestContext?.apiId

@@ -126,7 +126,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
 
       {/* Filter Tabs */}
       <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex gap-0 overflow-x-auto pb-0">
+        <div className="flex gap-3 overflow-x-auto pb-0">
           {[
             { id: 'all', label: 'All' },
             { id: 'processing', label: 'Processing' },
@@ -174,7 +174,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                     <p className="text-sm text-gray-500">Order #{order.order_number}</p>
                     <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString()}</p>
                   </div>
-                  <span className={`text-xs px-0 py-0 rounded-full flex items-center gap-0 ${getStatusColor(order.status)}`}>
+                  <span className={`text-xs px-0 py-0 rounded-full flex items-center gap-3 ${getStatusColor(order.status)}`}>
                     {getStatusIcon(order.status)} {order.status.replace(/_/g, ' ')}
                   </span>
                 </div>
@@ -182,7 +182,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                 {/* Order Items */}
                 <div className="p-4 space-y-3">
                   {order.items.slice(0, 2).map((item) => (
-                    <div key={item.id} className="flex items-center gap-0">
+                    <div key={item.id} className="flex items-center gap-3">
                       <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
                         {item.product_image ? (
                           <img src={item.product_image} alt={item.product_name} className="w-full h-full object-cover rounded-lg" />
@@ -207,7 +207,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                     <p className="text-sm text-gray-500">Total</p>
                     <p className="text-lg font-bold text-gray-900">₹{order.total_amount.toLocaleString()}</p>
                   </div>
-                  <div className="flex gap-0">
+                  <div className="flex gap-3">
                     {order.awb_number && order.status !== 'delivered' && order.status !== 'cancelled' && (
                       <button
                         onClick={() => handleTrackOrder(order.awb_number!)}
@@ -286,7 +286,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                 <p className="text-xl font-bold text-orange-600">₹{selectedOrder.total_amount.toLocaleString()}</p>
               </div>
 
-              <div className="flex gap-0 pt-0">
+              <div className="flex gap-3 pt-0">
                 {selectedOrder.awb_number && selectedOrder.status !== 'delivered' && selectedOrder.status !== 'cancelled' && (
                   <button
                     onClick={() => handleTrackOrder(selectedOrder.awb_number!)}
@@ -324,7 +324,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
               rows={4}
               className="w-full px-4 py-0 border rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
-            <div className="flex gap-0 mt-4">
+            <div className="flex gap-3 mt-4">
               <button
                 onClick={() => {
                   setShowRefundModal(false);

@@ -86,7 +86,7 @@ export function CapabilityGate({
   showDisabledMessage = false,
   disabledMessage,
 }: CapabilityGateProps) {
-  const { capabilities, loading, roleName } = useVendorCapabilities();
+  const { capabilities, loading, roleName } = useVendorCapabilities(undefined);
   
   // Show nothing while loading (prevents flickering)
   if (loading) {
@@ -102,7 +102,7 @@ export function CapabilityGate({
         return (
           <ModuleDisabledMessage
             moduleName={capability}
-            customMessage={disabledMessage}
+            reason={disabledMessage || `The ${capability} feature is not available for your account`}
           />
         );
       }
@@ -120,7 +120,7 @@ export function CapabilityGate({
         return (
           <ModuleDisabledMessage
             moduleName={missingCaps.join(', ')}
-            customMessage={disabledMessage || `This feature requires: ${missingCaps.join(', ')}`}
+            reason={disabledMessage || `This feature requires: ${missingCaps.join(', ')}`}
           />
         );
       }
@@ -137,7 +137,7 @@ export function CapabilityGate({
         return (
           <ModuleDisabledMessage
             moduleName={requireAny.join(' or ')}
-            customMessage={disabledMessage || `This feature requires one of: ${requireAny.join(', ')}`}
+            reason={disabledMessage || `This feature requires one of: ${requireAny.join(', ')}`}
           />
         );
       }
@@ -159,7 +159,7 @@ export function CapabilityGate({
  * Useful for conditional logic outside of JSX
  */
 export function useHasCapability(capability: string): boolean {
-  const { capabilities, loading } = useVendorCapabilities();
+  const { capabilities, loading } = useVendorCapabilities(undefined);
   
   if (loading) return false;
   
@@ -170,7 +170,7 @@ export function useHasCapability(capability: string): boolean {
  * Hook to check if vendor has all specified capabilities
  */
 export function useHasAllCapabilities(requiredCapabilities: string[]): boolean {
-  const { capabilities, loading } = useVendorCapabilities();
+  const { capabilities, loading } = useVendorCapabilities(undefined);
   
   if (loading || !requiredCapabilities.length) return false;
   
@@ -181,7 +181,7 @@ export function useHasAllCapabilities(requiredCapabilities: string[]): boolean {
  * Hook to check if vendor has any of the specified capabilities
  */
 export function useHasAnyCapability(requiredCapabilities: string[]): boolean {
-  const { capabilities, loading } = useVendorCapabilities();
+  const { capabilities, loading } = useVendorCapabilities(undefined);
   
   if (loading || !requiredCapabilities.length) return false;
   

@@ -6,15 +6,38 @@
 /**
  * Check if this is a hard refresh
  * Uses multiple methods for reliability
+ * 
+ * FIXED: Re-enabled proper hard refresh detection with conservative approach
  */
 export function isHardRefresh(): boolean {
   if (typeof window === 'undefined') return false;
+  
+  // Add debug logging for troubleshooting
+  const debugInfo = {
+    hasToken: !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken')),
+    hasSessionFlag: !!sessionStorage.getItem('_warmpawz_has_session'),
+    justLoggedIn: !!sessionStorage.getItem('_warmpawz_just_logged_in'),
+    pathname: window.location.pathname,
+    navigationType: 'unknown'
+  };
+  
+  try {
+    const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    if (perfEntries.length > 0) {
+      debugInfo.navigationType = perfEntries[0].type;
+    }
+  } catch (e) {
+    // Performance API not available
+  }
+  
+  console.log('[Session Debug] isHardRefresh check:', debugInfo);
   
   // CRITICAL: Check if user just logged in - never clear session in this case
   const justLoggedIn = sessionStorage.getItem('_warmpawz_just_logged_in');
   if (justLoggedIn) {
     // Clear the flag but don't clear session
     sessionStorage.removeItem('_warmpawz_just_logged_in');
+    console.log('[Session] Just logged in - preserving session');
     return false;
   }
   
@@ -22,46 +45,54 @@ export function isHardRefresh(): boolean {
   const hasSessionFlag = sessionStorage.getItem('_warmpawz_has_session');
   if (hasSessionFlag) {
     // Session flag exists, not a hard refresh (sessionStorage persists within tab)
+    console.log('[Session] Session flag exists - preserving session');
+    return false;
+  }
+  
+  // Check if we're on the auth page - if so, don't clear (user is logging in)
+  if (window.location.pathname.includes('/auth')) {
+    console.log('[Session] On auth page - preserving session');
     return false;
   }
   
   // Method 1: Check navigation type (most reliable)
+  const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
+  
   try {
     const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
     if (perfEntries.length > 0) {
       const navType = perfEntries[0].type;
+      
       if (navType === 'reload') {
-        // Hard refresh detected - but only clear if we had a session before
-        const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
-        return hasToken; // Only consider it a "hard refresh" if there was a session to clear
+        // Hard refresh detected (F5 or Ctrl+R)
+        // Only clear if we had a session before
+        if (hasToken) {
+          console.log('[Session] Hard refresh detected with existing token - CLEARING SESSION');
+          return true;
+        }
       }
+      
       if (navType === 'navigate' || navType === 'back_forward') {
         // Normal navigation - not a hard refresh
+        console.log('[Session] Normal navigation - preserving session');
         return false;
       }
     }
   } catch (e) {
-    // Performance API not available
+    console.warn('[Session] Performance API not available:', e);
   }
   
-  // Method 2: If we have tokens but no session flag AND navigation type was reload
-  // This is a hard refresh scenario
-  const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
-  
-  // Only consider it hard refresh if:
-  // 1. We have tokens (there was a session)
-  // 2. No session flag (sessionStorage was cleared = browser refresh or new tab)
-  // 3. This is not a fresh login (handled above)
+  // Method 2: Conservative fallback
+  // If we have tokens but no session flag, check navigation type
+  // Don't automatically clear - only clear if we confirmed reload above
   if (hasToken && !hasSessionFlag) {
-    // Check if we're on the auth page - if so, don't clear (user is logging in)
-    if (typeof window !== 'undefined' && window.location.pathname.includes('/auth')) {
-      return false;
-    }
-    // For other pages, this is likely a new tab or hard refresh
-    // Be conservative - only clear on explicit reload
-    return false; // Changed: Don't auto-clear to avoid login loops
+    console.log('[Session] Has token but no session flag - treating as new tab, preserving session for now');
+    // This is likely a new tab - don't clear session
+    // New tabs should redirect to login naturally via the app logic
+    return false;
   }
   
+  console.log('[Session] No hard refresh detected - preserving session');
   return false;
 }
 

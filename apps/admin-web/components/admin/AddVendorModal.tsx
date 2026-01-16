@@ -193,7 +193,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
 
         {/* Progress Bar */}
         <div className="px-0 py-4 bg-gray-50">
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             {[1, 2, 3, 4, 5].map((step) => (
               <div key={step} className="flex-1">
                 <div className={`h-2 rounded-full ${step <= currentStep ? 'bg-[#FF8C42]' : 'bg-gray-200'}`} />
@@ -401,7 +401,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
             Previous
           </Button>
           
-          <div className="flex gap-0">
+          <div className="flex gap-3">
             {currentStep < 5 ? (
               <Button onClick={nextStep} disabled={!canProceed()}>
                 Next

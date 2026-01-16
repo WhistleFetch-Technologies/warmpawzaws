@@ -542,6 +542,52 @@ export function registerAdminEndpoints(app: Hono) {
         vendorId = vendors[0].id;
       }
       
+      // ✅ FIX: Ensure facility/profile is provisioned after approval
+      // Update vendor record with any missing facility fields from application data
+      // Do this BEFORE status update so facility data is available immediately
+      try {
+        const application = await select('vendor_onboarding_applications', { id: applicationId });
+        const currentVendor = await select('vendors', { id: vendorId });
+        const vendorRecord = currentVendor.length > 0 ? currentVendor[0] : null;
+        
+        if (application.length > 0) {
+          const appPayload = application[0].application_payload || {};
+          const facilityUpdate: any = {};
+          
+          // Ensure address fields are populated (even if from application)
+          if (appPayload.address && (!vendorRecord?.address || vendorRecord.address === 'Unknown' || vendorRecord.address === 'Not specified')) {
+            facilityUpdate.address = appPayload.address;
+          }
+          if (appPayload.city && (!vendorRecord?.city || vendorRecord.city === 'Unknown' || vendorRecord.city === 'Not specified')) {
+            facilityUpdate.city = appPayload.city;
+          }
+          if (appPayload.state && (!vendorRecord?.state || vendorRecord.state === 'Unknown' || vendorRecord.state === 'Not specified')) {
+            facilityUpdate.state = appPayload.state;
+          }
+          if ((appPayload.pincode || appPayload.pinCode) && (!vendorRecord?.pincode || vendorRecord.pincode === '000000')) {
+            facilityUpdate.pincode = appPayload.pincode || appPayload.pinCode;
+          }
+          if (appPayload.latitude && !vendorRecord?.latitude) {
+            facilityUpdate.latitude = appPayload.latitude;
+          }
+          if (appPayload.longitude && !vendorRecord?.longitude) {
+            facilityUpdate.longitude = appPayload.longitude;
+          }
+          
+          // Update vendor if any facility fields need to be set
+          if (Object.keys(facilityUpdate).length > 0) {
+            await update('vendors', { id: vendorId }, {
+              ...facilityUpdate,
+              updated_at: new Date().toISOString(),
+            });
+            console.log(`✅ [Vendor Approval] Provisioned facility fields for vendor ${vendorId}:`, Object.keys(facilityUpdate));
+          }
+        }
+      } catch (facilityErr: any) {
+        console.warn(`⚠️ [Vendor Approval] Failed to provision facility (non-critical):`, facilityErr.message);
+        // Don't fail approval if facility provisioning fails - vendor can update later
+      }
+      
       // Update vendor status to approved
       await update(
         'vendors',

@@ -224,7 +224,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                   <div className="flex-1">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="flex items-center gap-0">
+                        <div className="flex items-center gap-3">
                           <TestTube className="text-orange-500" size={18} />
                           <span className="font-semibold text-gray-900">{test.test_name}</span>
                           {test.test_code && (
@@ -244,7 +244,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                             <span>Sample: {test.sample_type}</span>
                           )}
                           {test.duration_minutes && (
-                            <span className="flex items-center gap-0">
+                            <span className="flex items-center gap-3">
                               <Clock size={14} />
                               {test.duration_minutes} min
                             </span>
@@ -252,7 +252,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                         </div>
                         {test.preparation_instructions && (
                           <div className="mt-0 p-0 bg-blue-50 rounded text-xs text-blue-700">
-                            <FileText size={12} className="inline mr-0" />
+                            <FileText size={12} className="inline mr-2" />
                             {test.preparation_instructions}
                           </div>
                         )}
@@ -317,7 +317,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             <label className="block text-sm font-medium text-gray-700 mb-0">
               Sample Collection
             </label>
-            <div className="grid grid-cols-2 gap-0">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('center')}
@@ -363,7 +363,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Calendar className="inline mr-0" size={16} />
+                <Calendar className="inline mr-2" size={16} />
                 Preferred Date *
               </label>
               <input
@@ -377,7 +377,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Clock className="inline mr-0" size={16} />
+                <Clock className="inline mr-2" size={16} />
                 Preferred Time *
               </label>
               <input
@@ -398,7 +398,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         )}
 
         {/* Actions */}
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           {onCancel && (
             <button
               type="button"

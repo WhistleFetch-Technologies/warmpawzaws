@@ -133,11 +133,28 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
     };
 
     const showToastNotification = (notification: any) => {
+      // ✅ FIX: Ensure title is a string, not an object
+      // Handle different notification structures from API
+      const title = typeof notification.title === 'string' 
+        ? notification.title 
+        : notification.text || notification.message || 'New Notification';
+      
+      const message = typeof notification.message === 'string'
+        ? notification.message
+        : typeof notification.text === 'string'
+        ? notification.text
+        : '';
+      
       const icon = notification.type === 'chat_message' ? '💬' : '🔔';
       
-      toast(notification.title, {
-        description: notification.message,
-        icon: icon,
+      // ✅ FIX: Ensure icon is a string, not an object
+      const iconString = typeof notification.icon === 'string' 
+        ? notification.icon 
+        : icon;
+      
+      toast(title, {
+        description: message,
+        icon: iconString,
         duration: 6000,
         action: {
           label: 'View',

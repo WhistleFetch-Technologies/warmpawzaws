@@ -42,7 +42,7 @@ export function ServicePreviewModal({
 
         <div className="p-0 space-y-6">
           <div>
-            <div className="flex items-center gap-0 mb-0">
+            <div className="flex items-center gap-3 mb-0">
               <Package className="w-5 h-5 text-gray-400" />
               <h4 className="text-xl font-bold text-gray-900">{service.name}</h4>
               <StatusBadge status={service.status} />
@@ -55,7 +55,7 @@ export function ServicePreviewModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-3 mb-0">
                 <DollarSign className="w-4 h-4 text-gray-400" />
                 <span className="text-sm text-gray-600">Price</span>
               </div>
@@ -64,7 +64,7 @@ export function ServicePreviewModal({
 
             {service.duration && (
               <div className="p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-3 mb-0">
                   <Clock className="w-4 h-4 text-gray-400" />
                   <span className="text-sm text-gray-600">Duration</span>
                 </div>
@@ -74,7 +74,7 @@ export function ServicePreviewModal({
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-gray-700">Category:</span>
               <span className="px-0 py-0 text-xs bg-blue-100 text-blue-700 rounded-full">
                 {service.category}
@@ -82,14 +82,14 @@ export function ServicePreviewModal({
             </div>
 
             {service.serviceType && (
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <MapPin className="w-4 h-4 text-gray-400" />
                 <span className="text-sm font-medium text-gray-700">Service Type:</span>
                 <span className="text-sm text-gray-600 capitalize">{service.serviceType}</span>
               </div>
             )}
 
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-gray-700">Created:</span>
               <span className="text-sm text-gray-600">
                 {service.createdAt ? new Date(service.createdAt).toLocaleDateString() : 'N/A'}
@@ -98,7 +98,7 @@ export function ServicePreviewModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-0 p-0 border-t">
+        <div className="flex items-center justify-end gap-3 p-0 border-t">
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

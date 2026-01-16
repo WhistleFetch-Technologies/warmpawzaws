@@ -350,6 +350,21 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     setEditMode(false);
   };
 
+  const handleLogout = () => {
+    // Clear all localStorage items
+    localStorage.removeItem('customerPhone');
+    localStorage.removeItem('customerId');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('customerData');
+    localStorage.removeItem('customerOnboardingComplete');
+    localStorage.removeItem('customerJourneyStage');
+    
+    // Redirect to auth page
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth';
+    }
+  };
+
   // ============================================
   // BOOKINGS FUNCTIONS
   // ============================================
@@ -765,7 +780,10 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
               ))}
 
               {/* Logout Button */}
-              <button className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-6">
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-6"
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center">
                     <LogOut className="w-7 h-7 text-red-600" />

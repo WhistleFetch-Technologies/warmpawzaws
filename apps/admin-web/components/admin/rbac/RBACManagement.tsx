@@ -205,7 +205,7 @@ export function RBACManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-indigo-100 rounded-xl">
             <Shield className="w-6 h-6 text-indigo-600" />
           </div>
@@ -216,18 +216,18 @@ export function RBACManagement() {
         </div>
         <button
           onClick={() => handleOpenRoleModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Create Role
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {roles.map((role) => (
           <div key={role.roleId} className="bg-white rounded-xl border-2 border-gray-200 p-0">
             <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <div className="p-0 bg-indigo-100 rounded-lg">
                   <Shield className="w-5 h-5 text-indigo-600" />
                 </div>
@@ -236,7 +236,7 @@ export function RBACManagement() {
                   <p className="text-sm text-gray-600">{role.roleCode}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 {role.isSystem && (
                   <span className="px-0 py-0 bg-purple-100 text-purple-700 text-xs font-medium rounded">
                     System
@@ -253,20 +253,20 @@ export function RBACManagement() {
             <p className="text-sm text-gray-600 mb-4">{role.description}</p>
 
             <div className="flex items-center gap-4 mb-4 text-sm">
-              <div className="flex items-center gap-0 text-gray-600">
+              <div className="flex items-center gap-3 text-gray-600">
                 <Users className="w-4 h-4" />
                 <span>{role.userCount} users</span>
               </div>
-              <div className="flex items-center gap-0 text-gray-600">
+              <div className="flex items-center gap-3 text-gray-600">
                 <Key className="w-4 h-4" />
                 <span>{role.permissions.length} permissions</span>
               </div>
             </div>
 
-            <div className="flex gap-0">
+            <div className="flex gap-3">
               <button
                 onClick={() => handleOpenRoleModal(role)}
-                className="flex-1 flex items-center justify-center gap-0 px-0 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                className="flex-1 flex items-center justify-center gap-3 px-0 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit
@@ -274,7 +274,7 @@ export function RBACManagement() {
               {!role.isSystem && (
                 <button
                   onClick={() => handleDeleteRole(role.roleId, role.isSystem)}
-                  className="flex-1 flex items-center justify-center gap-0 px-0 py-0 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
+                  className="flex-1 flex items-center justify-center gap-3 px-0 py-0 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete
@@ -361,7 +361,7 @@ export function RBACManagement() {
                     return (
                       <div key={category} className="border-b border-gray-200 last:border-b-0">
                         <div className="bg-gray-50 px-4 py-0 flex items-center justify-between">
-                          <label className="flex items-center gap-0 cursor-pointer">
+                          <label className="flex items-center gap-3 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={allSelected}
@@ -378,7 +378,7 @@ export function RBACManagement() {
                           {categoryPerms.map(permission => (
                             <label
                               key={permission.permissionId}
-                              className="flex items-start gap-0 p-0 hover:bg-gray-50 rounded-lg cursor-pointer"
+                              className="flex items-start gap-3 p-0 hover:bg-gray-50 rounded-lg cursor-pointer"
                             >
                               <input
                                 type="checkbox"
@@ -401,7 +401,7 @@ export function RBACManagement() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -413,7 +413,7 @@ export function RBACManagement() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowRoleModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -423,7 +423,7 @@ export function RBACManagement() {
               <button
                 onClick={handleSaveRole}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

@@ -155,12 +155,12 @@ export function RegionalPricingEditor({
   if (requiredRegions.length === 0) {
     return (
       <div className={`p-4 border-2 border-gray-200 rounded-lg bg-white ${className}`}>
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <DollarSign className="w-5 h-5 text-orange-600" />
           <label className="text-base font-medium text-gray-900">Regional Pricing</label>
         </div>
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-          <Info className="w-4 h-4 inline mr-0" />
+          <Info className="w-4 h-4 inline mr-2" />
           Select regional availability first to configure pricing
         </div>
       </div>
@@ -175,7 +175,7 @@ export function RegionalPricingEditor({
   return (
     <div className={`p-4 border-2 border-gray-200 rounded-lg bg-white ${className}`}>
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <DollarSign className="w-5 h-5 text-orange-600" />
           <label className="text-base font-medium text-gray-900">Regional Pricing</label>
           <span className="text-sm text-gray-500">
@@ -186,7 +186,7 @@ export function RegionalPricingEditor({
           <button
             type="button"
             onClick={autoFillPricing}
-            className="text-xs text-orange-600 hover:text-orange-700 hover:underline flex items-center gap-0"
+            className="text-xs text-orange-600 hover:text-orange-700 hover:underline flex items-center gap-3"
           >
             <TrendingUp className="w-3 h-3" />
             Auto-fill from first region
@@ -196,7 +196,7 @@ export function RegionalPricingEditor({
 
       {missingPricing.length > 0 && (
         <div className="mb-4 p-0 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-          <AlertCircle className="w-4 h-4 inline mr-0" />
+          <AlertCircle className="w-4 h-4 inline mr-2" />
           Missing pricing for: {missingPricing.map(r => r.regionName).join(', ')}
         </div>
       )}
@@ -215,7 +215,7 @@ export function RegionalPricingEditor({
               key={region.regionId}
               className="border-2 border-gray-200 rounded-lg p-4 hover:border-orange-300 transition-colors"
             >
-              <div className="flex items-center gap-0 mb-4">
+              <div className="flex items-center gap-3 mb-4">
                 <span className="text-3xl">{flag}</span>
                 <div className="flex-1">
                   <div className="font-medium text-lg">{region.regionName}</div>
@@ -270,7 +270,7 @@ export function RegionalPricingEditor({
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-0">
                     Tax Rate (%)
-                    <span className="text-gray-500 ml-0">
+                    <span className="text-gray-500 ml-2">
                       (Default: {region.business.taxRate}%)
                     </span>
                   </label>
@@ -365,7 +365,7 @@ export function RegionalPricingEditor({
         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="text-sm">
             <div className="font-medium text-blue-900 mb-0">Pricing Summary</div>
-            <div className="grid grid-cols-2 gap-0">
+            <div className="grid grid-cols-2 gap-3">
               {requiredRegions.map((region) => {
                 const pricing = getPricingForRegion(region.regionId);
                 const finalPrice = calculateFinalPrice(pricing, region);
@@ -376,7 +376,7 @@ export function RegionalPricingEditor({
                     key={region.regionId}
                     className="flex items-center justify-between p-0 bg-white rounded"
                   >
-                    <span className="flex items-center gap-0">
+                    <span className="flex items-center gap-3">
                       <span>{flag}</span>
                       <span>{region.regionName}</span>
                     </span>

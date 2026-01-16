@@ -247,18 +247,18 @@ export function ApplicationDetailModal({
 
         {/* Footer Actions */}
         <div className="px-0 py-4 border-t border-gray-200 flex items-center justify-between">
-          <div className="flex gap-0">
+          <div className="flex gap-3">
             <Button
               variant="outline"
               onClick={handleRequestClarification}
               disabled={clarifying}
             >
-              <AlertCircle className="w-4 h-4 mr-0" />
+              <AlertCircle className="w-4 h-4 mr-2" />
               Request Info
             </Button>
           </div>
           
-          <div className="flex gap-0">
+          <div className="flex gap-3">
             <Button
               variant="outline"
               onClick={() => {
@@ -271,7 +271,7 @@ export function ApplicationDetailModal({
               disabled={rejecting || approving}
               className="text-red-600 hover:bg-red-50"
             >
-              <XCircle className="w-4 h-4 mr-0" />
+              <XCircle className="w-4 h-4 mr-2" />
               Reject
             </Button>
             <Button
@@ -279,7 +279,7 @@ export function ApplicationDetailModal({
               disabled={rejecting || approving || clarifying}
               className="bg-green-600 hover:bg-green-700"
             >
-              <CheckCircle className="w-4 h-4 mr-0" />
+              <CheckCircle className="w-4 h-4 mr-2" />
               {approving ? 'Approving...' : 'Approve'}
             </Button>
           </div>

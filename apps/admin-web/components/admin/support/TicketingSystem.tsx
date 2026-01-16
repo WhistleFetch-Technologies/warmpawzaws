@@ -60,7 +60,7 @@ export function TicketingSystem() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-green-100 rounded-xl">
             <Ticket className="w-6 h-6 text-green-600" />
           </div>
@@ -71,7 +71,7 @@ export function TicketingSystem() {
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Create Ticket
@@ -159,7 +159,7 @@ export function TicketingSystem() {
               </div>
             </div>
 
-            <div className="border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -169,7 +169,7 @@ export function TicketingSystem() {
               <button
                 onClick={handleCreate}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>
