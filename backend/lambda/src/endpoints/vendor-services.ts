@@ -537,19 +537,50 @@ export function registerVendorServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
       
+      // ✅ Get vendor to determine serviceStyle
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const vendor = vendors[0];
+      
       const serviceData = await c.req.json();
       const {
         serviceName,
         description,
-        category,
+        category, // API accepts 'category'
+        categoryName, // ✅ NEW: Also accept 'categoryName' from UI
         subCategory,
-        serviceStyle,
+        subCategoryName, // ✅ NEW: Also accept 'subCategoryName' from UI
+        serviceStyle, // Optional: can be derived from vendor
         price,
         duration,
       } = serviceData;
 
-      if (!serviceName || !serviceStyle || !price) {
-        return c.json({ error: 'serviceName, serviceStyle, and price are required' }, 400);
+      // ✅ FIX: Map categoryName to category if category is not provided
+      const effectiveCategory = category || categoryName || null;
+      const effectiveSubCategory = subCategory || subCategoryName || null;
+
+      // ✅ FIX: Determine serviceStyle from vendor if not provided
+      let effectiveServiceStyle = serviceStyle || vendor.service_style || vendor.serviceStyle || 'at_center';
+      
+      // For custom services, typically "at_center" or "both" - default to at_center
+      if (!effectiveServiceStyle || effectiveServiceStyle === 'at_home' || effectiveServiceStyle === 'tele') {
+        // Custom services are typically center-based, but allow vendor's style if it's at_center or both
+        if (vendor.service_style === 'at_center' || vendor.service_style === 'both') {
+          effectiveServiceStyle = vendor.service_style === 'both' ? 'at_center' : 'at_center';
+        } else {
+          effectiveServiceStyle = 'at_center'; // Default for custom services
+        }
+      }
+
+      // ✅ FIX: Category is required in vendor_services table - validate it
+      if (!effectiveCategory) {
+        return c.json({ error: 'category (or categoryName) is required' }, 400);
+      }
+
+      if (!serviceName || !price) {
+        return c.json({ error: 'serviceName and price are required' }, 400);
       }
 
       // Create base service first
@@ -557,7 +588,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       const baseService = await insert('services', {
         name: serviceName,
         description: description || null,
-        category: category || null,
+        category: effectiveCategory, // ✅ Use effective category
         price: price, // Required column
         duration_minutes: duration || 30,
         is_active: true,
@@ -569,9 +600,9 @@ export function registerVendorServicesEndpoints(app: Hono) {
         vendor_id: vendorId,
         service_id: baseService[0].id,
         service_name: serviceName,
-        category: category || null,
-        sub_category: subCategory || null,
-        service_style: serviceStyle,
+        category: effectiveCategory, // ✅ Use effective category (required field)
+        sub_category: effectiveSubCategory || null,
+        service_style: effectiveServiceStyle, // ✅ Use effective service style
         price: price,
         custom_price: price,
         duration_minutes: duration || 30,

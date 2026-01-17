@@ -207,7 +207,10 @@ export function registerLogisticsEndpoints(app: Hono) {
           awb_code: result.awb_code,
           status: 'awb_generated',
         }
-      ).catch(() => {});
+      ).catch((error) => {
+        // Expected: notification may fail, but don't fail the main operation
+        console.warn('[LOGISTICS] Error sending notification:', error instanceof Error ? error.message : 'Unknown error');
+      });
 
       return c.json({
         success: true,

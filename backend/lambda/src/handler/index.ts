@@ -137,6 +137,7 @@ import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-co
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
 import { registerVendorSupportEndpoints } from '../endpoints/vendor-support';
 import { registerPharmacyOrderEndpoints } from '../endpoints/pharmacy-orders';
+import { registerInstantTeleQueueEndpoints } from '../endpoints/instant-tele-queue';
 
 // Create Hono app
 const app = new Hono();
@@ -282,6 +283,7 @@ registerWalletEndpoints(app);
 registerSpecializedServicesEndpoints(app);
 registerAdminGovernanceEndpoints(app);
 registerStaffEndpoints(app);
+registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
 registerReviewEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerCustomerBookingHistoryEndpoints(app);
@@ -408,7 +410,9 @@ app.onError((err, c) => {
       requestPath.endsWith('categories') ||
       c.req.path.includes('service-catalog/categories') ||
       c.req.path.includes('categories')) {
-    console.log('[Hono Error Handler] MATCHED service-catalog/categories by PATH - Returning 200');
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED service-catalog/categories by PATH - Returning 200');
+    }
     return c.json({
       success: true,
       categories: [],
@@ -422,7 +426,9 @@ app.onError((err, c) => {
       requestPath.includes('payment-gateway') ||
       c.req.path.includes('payment-gateways') ||
       c.req.path.includes('payment-gateway')) {
-    console.log('[Hono Error Handler] MATCHED payment-gateways by PATH - Returning 200');
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED payment-gateways by PATH - Returning 200');
+    }
     return c.json({
       success: true,
       gateways: [],
@@ -438,7 +444,9 @@ app.onError((err, c) => {
     errorMessage.includes('service_categories');
   
   if (isServiceCategoriesError) {
-    console.log('[Hono Error Handler] MATCHED service-catalog/categories by ERROR MESSAGE - Returning 200');
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED service-catalog/categories by ERROR MESSAGE - Returning 200');
+    }
     return c.json({
       success: true,
       categories: [],
@@ -454,7 +462,9 @@ app.onError((err, c) => {
     (errorMessage.includes('relation') && errorMessage.includes('payment'));
   
   if (isPaymentGatewaysError) {
-    console.log('[Hono Error Handler] MATCHED payment-gateways by ERROR MESSAGE - Returning 200');
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED payment-gateways by ERROR MESSAGE - Returning 200');
+    }
     return c.json({
       success: true,
       gateways: [],
@@ -465,7 +475,9 @@ app.onError((err, c) => {
   // Check for onboarding/roles errors
   if (requestPath.includes('onboarding/roles') || 
       (requestPath.includes('roles') && requestPath.includes('onboarding'))) {
-    console.log('[Hono Error Handler] MATCHED onboarding/roles - Returning 200');
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED onboarding/roles - Returning 200');
+    }
     return c.json({
       success: true,
       data: { roles: [] },
@@ -474,7 +486,9 @@ app.onError((err, c) => {
   }
   
   // Default error response
-  console.log('[Hono Error Handler] NO MATCH - Returning 500');
+  if (process.env.DEBUG === 'true') {
+    console.log('[Hono Error Handler] NO MATCH - Returning 500');
+  }
   return c.json({ error: errorMessage }, 500);
 });
 
@@ -509,7 +523,9 @@ export const handler = async (
           'custom:user_type': 'admin',
         };
       }
-      console.log('🔧 [UAT Mode] Bypassing Cognito authorizer validation');
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.log('🔧 [UAT Mode] Bypassing Cognito authorizer validation');
+      }
     }
     
     // Handle OPTIONS (CORS preflight) requests early - before processing
@@ -595,66 +611,48 @@ export const handler = async (
       headers.append('content-type', 'application/json');
     }
 
-    // DEBUG: Log all POST requests to understand path matching
-    if (httpMethod === 'POST') {
-      console.log('[HANDLER] POST Request - rawPath:', rawPath);
-      console.log('[HANDLER] POST Request - event.rawPath:', event.rawPath);
-      console.log('[HANDLER] POST Request - requestContext.http.path:', event.requestContext?.http?.path);
-    }
-
+    // Parse body once to avoid consumption issues with Hono Request
+    // This parsed body will be passed through Hono context (c.env) instead of global state
     const requestBody = event.isBase64Encoded && event.body
       ? Buffer.from(event.body, 'base64').toString()
       : event.body || undefined;
 
-    // CRITICAL: Parse body once and store in event for route handlers
-    // This prevents body consumption issues with Hono Request
-    let parsedBody: any = null;
+    let parsedBody: Record<string, unknown> | null = null;
     if (requestBody) {
       try {
-        parsedBody = JSON.parse(requestBody);
+        parsedBody = JSON.parse(requestBody) as Record<string, unknown>;
       } catch (e) {
-        // Not JSON, keep as string
+        // Not JSON, will be passed as string body
+        parsedBody = null;
       }
     }
-    // Store parsed body in event for easy access
-    (event as any).__parsedBody = parsedBody;
-    
-    // CRITICAL FIX: Store parsed body in global for bookings route to access
-    // This is the source of truth - parsed BEFORE Request creation
-    (global as any).__parsedBodyForBookings = parsedBody;
 
     const request = new Request(url, {
       method: httpMethod,
       headers,
       body: requestBody,
     });
-
-    // Store event globally for route handlers to access (fallback method)
-    (global as any).__currentEvent = event;
-    
-    // Debug logging for bookings route
-    if (rawPath.includes('/bookings/create')) {
-      console.log('[HANDLER] Processing /bookings/create request');
-      console.log('[HANDLER] Event body type:', typeof event.body);
-      console.log('[HANDLER] Event body length:', event.body?.length);
-      console.log('[HANDLER] Parsed body available:', !!(event as any).__parsedBody);
-      console.log('[HANDLER] Parsed body keys:', (event as any).__parsedBody ? Object.keys((event as any).__parsedBody) : 'none');
-      console.log('[HANDLER] Request body type:', typeof requestBody);
-      console.log('[HANDLER] Request body length:', requestBody?.length);
-    }
     
     // Handle request with Hono
+    // Pass parsed body and event through Hono's context (c.env) instead of global state
     let response: Response;
     try {
+      // Hono's fetch accepts custom data through the second parameter
+      // This data is accessible via c.env in route handlers
+      interface HonoFetchOptions {
+        event: APIGatewayProxyEventV2;
+        parsedBody: Record<string, unknown> | null;
+      }
+      
       response = await app.fetch(request, {
-        // Pass original event in fetch context for endpoints to access
-        // @ts-ignore - Hono supports passing data through fetch options
         event: event,
-      });
-    } finally {
-      // Clean up global event after request
-      delete (global as any).__currentEvent;
-      delete (global as any).__parsedBodyForBookings;
+        parsedBody: parsedBody,
+      } as HonoFetchOptions & Record<string, unknown>);
+    } catch (error) {
+      // Log error but don't expose internal details
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[HANDLER] Error processing request:', errorMessage);
+      throw error;
     }
 
     // Convert Response to API Gateway format

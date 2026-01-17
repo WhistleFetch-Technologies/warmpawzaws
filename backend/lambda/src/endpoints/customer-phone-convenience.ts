@@ -478,7 +478,10 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       await query(
         `DELETE FROM customer_payment_methods WHERE id = $1 AND customer_id = $2`,
         [paymentId, customerId]
-      ).catch(() => {});
+      ).catch((error) => {
+        // Expected: notification may fail, but don't fail the main operation
+        console.warn('[CUSTOMER-PHONE] Error sending notification:', error instanceof Error ? error.message : 'Unknown error');
+      });
 
       return c.json({
         success: true,

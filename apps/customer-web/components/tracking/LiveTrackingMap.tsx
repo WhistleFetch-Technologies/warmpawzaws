@@ -86,23 +86,33 @@ export function LiveTrackingMap({
             const data = JSON.parse(event.data);
             console.log('[LiveTracking] Location update:', data);
             
+            // Handle both old format (direct lat/lng) and new format (tracking object)
+            const tracking = data.tracking || data;
+            const currentLocation = tracking.current_location || {
+              latitude: tracking.latitude || data.latitude,
+              longitude: tracking.longitude || data.longitude,
+            };
+            
             setTrackingData(prev => ({
               ...prev,
-              status: 'active',
-              currentLocation: {
-                latitude: data.latitude,
-                longitude: data.longitude,
-              },
-              route: [
+              status: tracking.status || 'active',
+              currentLocation: currentLocation ? {
+                latitude: currentLocation.latitude || currentLocation.lat,
+                longitude: currentLocation.longitude || currentLocation.lng,
+              } : prev.currentLocation,
+              route: tracking.route || (currentLocation ? [
                 ...prev.route,
                 { 
-                  latitude: data.latitude, 
-                  longitude: data.longitude, 
-                  timestamp: data.timestamp || new Date().toISOString()
+                  latitude: currentLocation.latitude || currentLocation.lat, 
+                  longitude: currentLocation.longitude || currentLocation.lng, 
+                  timestamp: tracking.current_location?.timestamp || data.timestamp || new Date().toISOString()
                 }
-              ],
-              eta: data.eta,
-              lastUpdate: data.timestamp || new Date().toISOString(),
+              ] : prev.route),
+              eta: tracking.eta_minutes ? `${tracking.eta_minutes} min` : tracking.eta || prev.eta,
+              staffName: tracking.staff_name || prev.staffName,
+              staffPhone: tracking.staff_phone || prev.staffPhone,
+              totalDistance: tracking.distance_traveled_km ? tracking.distance_traveled_km * 1000 : prev.totalDistance,
+              lastUpdate: tracking.current_location?.timestamp || data.timestamp || new Date().toISOString(),
             }));
           } catch (error) {
             console.error('[LiveTracking] Failed to parse location data:', error);

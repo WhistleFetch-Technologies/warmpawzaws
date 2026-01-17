@@ -471,7 +471,9 @@ export function registerVendorSetupEndpoints(app: Hono) {
         `UPDATE vendors SET setup_completed = true, status = 'active', updated_at = NOW()
          WHERE id = $1`,
         [vendorId]
-      ).catch(() => {});
+      ).catch((error) => {
+        console.warn('[VENDOR-SETUP] Error updating vendor setup status:', error instanceof Error ? error.message : 'Unknown error');
+      });
 
       return c.json({
         success: true,

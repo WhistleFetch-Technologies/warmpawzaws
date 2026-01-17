@@ -299,7 +299,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
           channels: { email: true, sms: false, inApp: true, push: false },
           is_read: false,
           // Note: notifications table doesn't have metadata column
-        }).catch(() => {});
+        }).catch((error) => {
+          // Expected: notification may fail, but don't fail the main operation
+          console.warn('[VENDOR-PROFILE] Error creating notification:', error instanceof Error ? error.message : 'Unknown error');
+        });
 
         // Send SNS notification
         const snsClient = getSnsClient();
@@ -653,7 +656,12 @@ export function registerVendorProfileEndpoints(app: Hono) {
              updated_at = NOW()
          WHERE vendor_id = $1`,
         [vendorId]
-      ).catch(() => {}); // Ignore if table doesn't exist
+      ).catch((error) => {
+        // Expected: table may not exist in all environments
+        if (error instanceof Error && !error.message.includes('does not exist')) {
+          console.warn('[VENDOR-PROFILE] Unexpected error updating vendor onboarding:', error.message);
+        }
+      }); // Ignore if table doesn't exist
 
       return c.json({ success: true, message: 'Bank account saved successfully' });
     } catch (error: any) {

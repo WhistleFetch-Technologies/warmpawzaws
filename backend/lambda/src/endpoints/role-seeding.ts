@@ -593,7 +593,12 @@ async function seedOnboardingForm(roleId: string): Promise<boolean> {
           CREATE INDEX IF NOT EXISTS idx_onboarding_forms_is_active ON onboarding_forms(is_active);
         END IF;
       END $$;
-    `).catch(() => {}); // Ignore if already exists
+    `).catch((error) => {
+      // Expected: ignore if column already exists
+      if (error instanceof Error && !error.message.includes('already exists')) {
+        console.warn('[ROLE-SEEDING] Unexpected error adding is_active column:', error.message);
+      }
+    }); // Ignore if already exists
 
     // Check if form already exists
     const existingForm = await select('onboarding_forms', { role_id: roleId });
@@ -705,7 +710,12 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
       CREATE INDEX IF NOT EXISTS idx_service_catalog_service_style ON service_catalog(service_style);
       CREATE INDEX IF NOT EXISTS idx_service_catalog_status ON service_catalog(status, publish_status);
       CREATE INDEX IF NOT EXISTS idx_service_catalog_role_id ON service_catalog(role_id);
-    `).catch(() => {}); // Ignore if already exists
+    `).catch((error) => {
+      // Expected: ignore if column already exists
+      if (error instanceof Error && !error.message.includes('already exists')) {
+        console.warn('[ROLE-SEEDING] Unexpected error adding is_active column:', error.message);
+      }
+    }); // Ignore if already exists
 
     // Get existing services for this role (using applicable_roles array, role_id is optional)
     let existingServices: any[] = [];
@@ -756,6 +766,16 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
           const serviceId = `svc_${roleId}_${entry.serviceStyle || mappedStyle}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           try {
             // Use applicable_roles array (primary) and role_id (if column exists, for backward compatibility)
+            // ✅ FIX: Include role mappings in applicable_roles for better matching (e.g., 'pet_trainer' -> ['pet_trainer', 'trainer'])
+            const roleMappings: Record<string, string[]> = {
+              'pet_trainer': ['pet_trainer', 'trainer'],
+              'pet_walker': ['pet_walker', 'walker'],
+              'pet_groomer': ['pet_groomer', 'groomer'],
+              'veterinarian': ['veterinarian', 'vet'],
+            };
+            const mappedRoles = roleMappings[roleId] || [roleId];
+            const applicableRoles = [roleId, ...mappedRoles.filter(r => r !== roleId)]; // Ensure roleId is first, then mapped roles
+            
             const insertData: any = {
               service_id: serviceId,
               service_name: entry.serviceName,
@@ -764,7 +784,7 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
               base_price: entry.basePrice || 0,
               duration_minutes: entry.duration || 30,
               service_style: entry.serviceStyle || mappedStyle,
-              applicable_roles: [roleId], // Primary way to link to role
+              applicable_roles: applicableRoles, // ✅ Include both roleId and mapped roles (e.g., ['pet_trainer', 'trainer'])
               status: 'active',
               publish_status: 'published',
               display_order: 0,
@@ -785,6 +805,16 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
               console.warn(`Retrying insert without optional columns for ${entry.serviceName}:`, err.message);
               try {
                 // Retry with minimal required columns only
+                // ✅ FIX: Include role mappings in applicable_roles (same as above)
+                const roleMappings: Record<string, string[]> = {
+                  'pet_trainer': ['pet_trainer', 'trainer'],
+                  'pet_walker': ['pet_walker', 'walker'],
+                  'pet_groomer': ['pet_groomer', 'groomer'],
+                  'veterinarian': ['veterinarian', 'vet'],
+                };
+                const mappedRoles = roleMappings[roleId] || [roleId];
+                const applicableRoles = [roleId, ...mappedRoles.filter(r => r !== roleId)];
+                
                 await insert('service_catalog', {
                   service_id: serviceId,
                   service_name: entry.serviceName,
@@ -793,7 +823,7 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
                   base_price: entry.basePrice || 0,
                   duration_minutes: entry.duration || 30,
                   service_style: entry.serviceStyle || mappedStyle,
-                  applicable_roles: [roleId],
+                  applicable_roles: applicableRoles, // ✅ Include both roleId and mapped roles
                   status: 'active',
                   publish_status: 'published',
                   display_order: 0,
@@ -922,10 +952,14 @@ export function registerRoleSeedingEndpoints(app: Hono) {
   app.post('/admin/roles/resurrect', async (c) => {
     try {
       // Delete all existing system roles
-      await query('DELETE FROM roles WHERE is_system_role = true').catch(() => {});
+      await query('DELETE FROM roles WHERE is_system_role = true').catch((error) => {
+        console.warn('[ROLE-SEEDING] Error deleting system roles:', error instanceof Error ? error.message : 'Unknown error');
+      });
       
       // Delete all role permissions for system roles
-      await query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE is_system_role = true)').catch(() => {});
+      await query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE is_system_role = true)').catch((error) => {
+        console.warn('[ROLE-SEEDING] Error deleting role permissions:', error instanceof Error ? error.message : 'Unknown error');
+      });
       
       // Re-seed all roles by calling the seed endpoint logic
       const stats = {

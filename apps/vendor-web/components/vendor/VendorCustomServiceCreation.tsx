@@ -288,7 +288,8 @@ export function VendorCustomServiceCreation({
       toast.error('Service description is required');
       return false;
     }
-    if (!categoryName.trim()) {
+    // ✅ FIX: If "other" is selected, validate that custom category name is provided
+    if (!categoryName.trim() || (categoryName === 'other' && !subCategoryName.trim())) {
       toast.error('Category name is required');
       return false;
     }
@@ -323,13 +324,19 @@ export function VendorCustomServiceCreation({
       setSaving(true);
       console.log('💾 Creating custom service...');
       
+      // ✅ FIX: If "other" is selected, use subCategoryName as the actual category name
+      const effectiveCategoryName = categoryName === 'other' && subCategoryName.trim()
+        ? subCategoryName.trim() // Use custom category name when "other" is selected
+        : categoryName.trim(); // Use selected category name otherwise
+      
       const customService: CustomService = {
         serviceName: serviceName.trim(),
         description: description.trim(),
         duration: isPackage ? sessionDuration : duration,
         price: isPackage ? 0 : price,
-        categoryName: categoryName.trim(),
-        subCategoryName: subCategoryName.trim() || undefined,
+        categoryName: effectiveCategoryName, // ✅ Use effective category (handles "other" case)
+        subCategoryName: categoryName === 'other' ? undefined : (subCategoryName.trim() || undefined), // ✅ Don't send subCategory if "other" was used as category
+        serviceStyle: serviceStyle || 'at_center', // ✅ NEW: Include serviceStyle (required by API, but API can derive from vendor if missing)
         isPackage,
         packageDetails: isPackage ? {
           sessionsPerDay,
@@ -611,17 +618,18 @@ export function VendorCustomServiceCreation({
       {/* ✅ FIX: Improved Dialog styling to match theme */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-[420px] max-h-[90vh] overflow-y-auto bg-gradient-to-b from-white to-orange-50/30 border-2 border-[#FF8C42]/20">
-          <DialogHeader className="border-b border-orange-100 pb-4 mb-4">
+          <DialogHeader className="border-b border-orange-100 pb-4 mb-4 space-y-2">
             <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               Create Custom Service
             </DialogTitle>
-            <DialogDescription className="text-sm text-gray-600 mt-1">
+            {/* ✅ FIX: Fixed overlapping warning text by adding proper spacing and margins */}
+            <DialogDescription className="text-sm text-gray-600 mt-2 mb-0 leading-relaxed">
               Add a new custom service for your center. All services require admin approval before going live.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 mt-4">
             {/* Service Name */}
             <div className="space-y-2">
               <Label htmlFor="serviceName">Service Name *</Label>
@@ -691,10 +699,16 @@ export function VendorCustomServiceCreation({
               {/* ✅ Custom Category Name Input (when "Other" selected) */}
               {categoryName === 'other' && (
                 <div className="mt-2">
+                  <Label htmlFor="customCategoryName">Custom Category Name *</Label>
                   <Input
+                    id="customCategoryName"
                     placeholder="Enter custom category name..."
                     value={subCategoryName}
-                    onChange={(e) => setSubCategoryName(e.target.value)}
+                    onChange={(e) => {
+                      // ✅ FIX: Store custom category name in subCategoryName temporarily,
+                      // then use it as categoryName when submitting
+                      setSubCategoryName(e.target.value);
+                    }}
                     className="border-[#FF8C42]"
                   />
                   <p className="text-xs text-gray-500 mt-1">

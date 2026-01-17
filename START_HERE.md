@@ -1,66 +1,103 @@
-# 🎯 START HERE - Pharmacy UAT Fixes
+# 🚀 START HERE - Immediate Actions
 
-## ✅ What's Done
+## ✅ Verification Complete!
 
-All code changes have been applied:
-- ✅ Capability mapping fixed
-- ✅ Role configuration updated
-- ✅ Dashboard filtering implemented
-- ✅ Database migration files updated
-
-## ⚡ What You Need to Do
-
-### Step 1: Set Database Connection
-
+All files are in place. Run this command to verify:
 ```bash
-export DATABASE_URL="postgresql://user:password@host:port/database"
+./verify-setup.sh
 ```
 
-**Replace with your actual database connection string.**
+---
 
-### Step 2: Run Migrations
+## ⚡ DO THESE 3 THINGS NOW:
+
+### 1️⃣ RUN DATABASE MIGRATION (Required)
+
+**This is the ONLY blocker. Do this first!**
 
 ```bash
-cd db
-npm install
-npm run migrate:up
+# Get your database connection details ready, then:
+psql -h <your-db-host> -U <username> -d warmpawz_db \
+  -f backend/lambda/src/database/schemas/instant-tele-queue.sql
 ```
 
-### Step 3: Test
+**Verify it worked:**
+```sql
+SELECT table_name FROM information_schema.tables 
+WHERE table_name IN ('staff_tele_availability', 'tele_queue');
+-- Should return 2 rows
+```
 
-1. Clear browser cache
-2. Login: `9606901516` / `123456`
-3. Verify dashboard shows only Pharmacy features
-
----
-
-## 📋 Quick Reference
-
-**Files Updated:**
-- `apps/vendor-web/components/vendor/hooks/useVendorCapabilities.ts`
-- `apps/vendor-web/lib/role-config.ts`
-- `apps/vendor-web/components/vendor/VendorDashboard.tsx`
-- `db/migrations/047_seed_roles.sql`
-- `db/migrations/051_seed_role_permissions.sql`
-
-**What Migrations Do:**
-- Add 11 capabilities to Pharmacy role
-- Configure role permissions correctly
-
-**Expected Result:**
-- Pharmacy dashboard shows only relevant features
-- Inventory button persists after clicking
-- No appointments/consultations visible
+⏱️ **Time:** 2-3 minutes
 
 ---
 
-## 🆘 Need Help?
+### 2️⃣ DEPLOY BACKEND
 
-See detailed guides:
-- `COMMANDS_TO_RUN.md` - Exact commands
-- `PHARMACY_UAT_NEXT_STEPS.md` - Full guide
-- `ACTION_REQUIRED.md` - Quick action items
+```bash
+cd backend/lambda
+npm run build
+# Then deploy using your method (serverless deploy, AWS SAM, etc.)
+```
+
+**Verify:**
+```bash
+# Test endpoint responds
+curl https://your-api.com/customer/tele/available-providers?roleId=veterinarian
+# Should return: {"success": true, "providers": [], "total": 0}
+```
+
+⏱️ **Time:** 5-10 minutes
 
 ---
 
-**That's it! Just 2 commands: set DATABASE_URL, then run migrations.** 🚀
+### 3️⃣ DEPLOY FRONTEND
+
+```bash
+# Vendor Web
+cd apps/vendor-web
+npm run build
+# Deploy to hosting
+
+# Customer Web  
+cd apps/customer-web
+npm run build
+# Deploy to hosting
+```
+
+**Verify:**
+- Vendor: Visit `/staff/dashboard` → See "Instant Tele" widget
+- Customer: Visit Vet Services → Click "Tele Consultation" → Page loads
+
+⏱️ **Time:** 5-10 minutes
+
+---
+
+## 🎯 Quick Test
+
+After deployment, test this flow:
+
+1. **Staff Login** → `/staff/login`
+2. **Go to Dashboard** → See "Instant Tele Consultation" widget
+3. **Click "Instant Tele"** → Toggle "Available Now"
+4. **Customer** → Vet Services → Tele Consultation → See provider in list
+
+---
+
+## 📚 Detailed Guides
+
+- **Full checklist:** `IMMEDIATE_ACTIONS.md`
+- **Integration guide:** `NEXT_STEPS_IMPLEMENTATION_GUIDE.md`
+- **Technical details:** `GPS_TRACKING_AND_INSTANT_TELE_QUEUE_IMPLEMENTATION.md`
+
+---
+
+## ✅ Status
+
+- ✅ All code written
+- ✅ All files created
+- ✅ All integrations complete
+- ✅ Verified: All files exist
+- ⏳ **Waiting:** Database migration
+
+**You're ready! Just run the 3 steps above.** 🚀

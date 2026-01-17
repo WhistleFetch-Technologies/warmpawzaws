@@ -14,10 +14,12 @@ import {
   User,
   Package,
   Navigation,
-  CheckCircle2
+  CheckCircle2,
+  Video
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { InstantTeleQueueWidget } from '@/components/staff/InstantTeleQueueWidget';
 
 export default function StaffDashboardPage() {
   const router = useRouter();
@@ -153,6 +155,13 @@ export default function StaffDashboardPage() {
       href: '/staff/settings',
       color: 'bg-gray-500',
     },
+    {
+      title: 'Instant Tele',
+      description: 'Queue management',
+      icon: Video,
+      href: '/staff/instant-tele',
+      color: 'bg-indigo-500',
+    },
   ];
 
   return (
@@ -229,6 +238,13 @@ export default function StaffDashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Instant Tele Queue Widget */}
+        {staff && (
+          <div className="mb-6">
+            <InstantTeleQueueWidget staffId={staff.id} />
+          </div>
+        )}
 
         {/* Menu Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

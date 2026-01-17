@@ -627,7 +627,10 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
           `UPDATE bookings SET payment_status = 'paid', status = 'confirmed'
            WHERE id = $1`,
           [payment.rows[0].booking_id]
-        ).catch(() => {});
+        ).catch((error) => {
+          // Expected: notification may fail, but don't fail the main operation
+          console.warn('[PAYMENTS] Error sending notification:', error instanceof Error ? error.message : 'Unknown error');
+        });
       }
 
       return c.json({

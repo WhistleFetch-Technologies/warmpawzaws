@@ -75,19 +75,12 @@ if [ "$RUN_ALL" = "y" ]; then
     echo -e "${GREEN}✅ Migrations completed!${NC}"
 else
     # Option 2: Run specific migrations
+    # Role seeding migrations (047 and 051) removed - no longer seeding roles on rollout
     echo ""
-    echo -e "${BLUE}📋 Option 2: Run specific migrations${NC}"
+    echo -e "${YELLOW}⚠️  Role seeding migrations have been removed from rollout scripts${NC}"
+    echo -e "${YELLOW}   Migrations 047 (Seed Roles) and 051 (Role Permissions) are skipped${NC}"
     echo ""
-    
-    echo -e "${BLUE}Running Migration 047 (Seed Roles)...${NC}"
-    node run-migration.js migrations/047_seed_roles.sql
-    
-    echo ""
-    echo -e "${BLUE}Running Migration 051 (Role Permissions)...${NC}"
-    node run-migration.js migrations/051_seed_role_permissions.sql
-    
-    echo ""
-    echo -e "${GREEN}✅ Specific migrations completed!${NC}"
+    echo -e "${GREEN}✅ No role seeding migrations to run!${NC}"
 fi
 
 echo ""

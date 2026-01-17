@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
+import { useRouter } from 'next/navigation';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -21,6 +22,7 @@ interface VetServiceRouterProps {
  * Vet services require a pet to be selected before booking
  */
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
   const [featuredVets, setFeaturedVets] = useState<any[]>([]);
@@ -430,7 +432,33 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   // Navigate to services listing page for this style
                   if (service.id === 'clinic') {
                     handleNavigate('vet-clinic-list');
-                  } else if (service.id === 'tele' || service.id === 'home') {
+                  } else if (service.id === 'tele') {
+                    // For tele, navigate to instant tele queue page
+                    if (typeof window !== 'undefined') {
+                      const selectedPetId = pets.length > 0 ? pets[0].id : null;
+                      try {
+                        // Try using Next.js router if available
+                        router.push(`/booking/tele?roleId=veterinarian&category=vet${selectedPetId ? `&petId=${selectedPetId}` : ''}`);
+                      } catch (error) {
+                        // Fallback to window.location or onNavigate
+                        if (selectedPetId) {
+                          window.location.href = `/booking/tele?roleId=veterinarian&category=vet&petId=${selectedPetId}`;
+                        } else {
+                          handleNavigate('vet-services-by-style', { 
+                            serviceStyle: 'tele', 
+                            serviceTypeName: service.name,
+                            category: 'vet'
+                          });
+                        }
+                      }
+                    } else {
+                      handleNavigate('vet-services-by-style', { 
+                        serviceStyle: 'tele', 
+                        serviceTypeName: service.name,
+                        category: 'vet'
+                      });
+                    }
+                  } else if (service.id === 'home') {
                     // Navigate to service listing by style - shows actual configured services
                     handleNavigate('vet-services-by-style', { 
                       serviceStyle, 

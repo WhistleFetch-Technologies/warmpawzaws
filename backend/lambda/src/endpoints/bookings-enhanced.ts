@@ -43,6 +43,29 @@ const MAX_ADVANCE_BOOKING_DAYS = 60;
 const MIN_NOTICE_HOURS = 1;
 
 // ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+/**
+ * Type for API Gateway event structure used in booking endpoints
+ */
+interface ApiGatewayEventLike {
+  httpMethod: string;
+  path: string;
+  headers: Record<string, string>;
+  body: string;
+  pathParameters: Record<string, string>;
+  queryStringParameters: Record<string, string>;
+  requestContext: {
+    requestId: string;
+    http?: { method: string; path: string };
+  };
+  rawPath?: string;
+  rawQueryString?: string;
+  isBase64Encoded: boolean;
+}
+
+// ============================================================================
 // VALIDATION UTILITIES
 // ============================================================================
 
@@ -370,7 +393,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
       return this.success(response, requestId);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error.message === 'SLOT_CONFLICT' || error.code === '55P03') {
         return this.error(
           'This time slot is already booked. Please select a different time.',
@@ -419,7 +442,7 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     // Get status history (check if table exists)
-    let history: any[] = [];
+    let history: Array<Record<string, unknown>> = [];
     try {
       const tableCheck = await query(
         `SELECT EXISTS (
@@ -441,7 +464,7 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
         // Table doesn't exist, return empty history
         console.warn('[Booking History] booking_status_history table does not exist');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If query fails, return empty history
       console.warn('[Booking History] Error querying status history:', error.message);
       history = [];
@@ -727,7 +750,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
           },
         },
       }, requestId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error calculating refund preview:', error);
       return this.error(
         error.message || 'Failed to calculate refund preview',
@@ -893,7 +916,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         message: 'Booking cancelled successfully',
         refund: refundInfo,
       }, requestId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error cancelling booking:', error);
       return this.error(
         error.message || 'Failed to cancel booking',
@@ -1057,7 +1080,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         newDate,
         newTime,
       }, requestId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error.message === 'SLOT_CONFLICT' || error.code === '55P03') {
         return this.error(
           'This time slot is already booked. Please select a different time.',
@@ -1094,21 +1117,36 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
 
   app.post('/bookings/create', async (c) => {
     try {
-      // CRITICAL FIX: Use pre-parsed body from handler/index.ts global
+      // Use pre-parsed body from handler context (c.env) instead of global state
       // This avoids the body consumption issue with Hono Request
-      let body = (global as any).__parsedBodyForBookings;
+      const contextData = c.env as { parsedBody?: Record<string, unknown>; event?: unknown } | undefined;
+      let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
       
-      // Fallback: try to parse from request if global not available
+      // Fallback: try to parse from request if context not available
       if (!body || Object.keys(body).length === 0) {
         try {
-          body = await c.req.json();
+          body = await c.req.json() as Record<string, unknown>;
         } catch (e) {
           body = {};
         }
       }
       
       // Create API Gateway event with validated body
-      const event: any = {
+      const event: {
+        httpMethod: string;
+        path: string;
+        headers: Record<string, string>;
+        body: string;
+        pathParameters: Record<string, string>;
+        queryStringParameters: Record<string, string>;
+        requestContext: {
+          requestId: string;
+          http?: { method: string; path: string };
+        };
+        rawPath?: string;
+        rawQueryString?: string;
+        isBase64Encoded: boolean;
+      } = {
         httpMethod: 'POST',
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
@@ -1130,7 +1168,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       const context = createLambdaContext();
       const result: any = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error in bookings/create:', error);
       return c.json({ error: error.message }, 500);
     }
@@ -1139,19 +1177,20 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   // Compatibility endpoint for frontend
   app.post('/booking/create', async (c) => {
     try {
-      // CRITICAL FIX: Use pre-parsed body from handler/index.ts global
-      let body = (global as any).__parsedBodyForBookings;
+      // Use pre-parsed body from handler context (c.env) instead of global state
+      const contextData = c.env as { parsedBody?: Record<string, unknown>; event?: unknown } | undefined;
+      let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
       
-      // Fallback: try to parse from request if global not available
+      // Fallback: try to parse from request if context not available
       if (!body || Object.keys(body).length === 0) {
         try {
-          body = await c.req.json();
+          body = await c.req.json() as Record<string, unknown>;
         } catch (e) {
           body = {};
         }
       }
       
-      const event: any = {
+      const event: ApiGatewayEventLike = {
         httpMethod: 'POST',
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
@@ -1170,9 +1209,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result: any = await createHandler.execute(event, context);
+      const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error in booking/create:', error);
       return c.json({ error: error.message }, 500);
     }
@@ -1181,17 +1220,19 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   // Customer-facing alias for booking creation
   app.post('/customer/booking/create', async (c) => {
     try {
-      let body = (global as any).__parsedBodyForBookings;
+      // Use pre-parsed body from handler context (c.env) instead of global state
+      const contextData = c.env as { parsedBody?: Record<string, unknown>; event?: unknown } | undefined;
+      let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
       
       if (!body || Object.keys(body).length === 0) {
         try {
-          body = await c.req.json();
+          body = await c.req.json() as Record<string, unknown>;
         } catch (e) {
           body = {};
         }
       }
       
-      const event: any = {
+      const event: ApiGatewayEventLike = {
         httpMethod: 'POST',
         path: c.req.path,
         headers: Object.fromEntries(c.req.raw.headers),
@@ -1210,9 +1251,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result: any = await createHandler.execute(event, context);
+      const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error in customer/booking/create:', error);
       return c.json({ error: error.message }, 500);
     }
@@ -1295,13 +1336,14 @@ async function createApiGatewayEventWithBody(c: any): Promise<any> {
     console.warn('[BOOKINGS] Error processing headers:', e);
   }
 
-  // CRITICAL FIX: Use pre-parsed body from handler/index.ts global
-  let body = (global as any).__parsedBodyForBookings;
+  // Use pre-parsed body from handler context (c.env) instead of global state
+  const contextData = c.env as { parsedBody?: Record<string, unknown>; event?: unknown } | undefined;
+  let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
   
-  // Fallback: try to parse from request if global not available
+  // Fallback: try to parse from request if context not available
   if (!body || Object.keys(body).length === 0) {
     try {
-      body = await c.req.json();
+      body = await c.req.json() as Record<string, unknown>;
     } catch (e) {
       body = {};
     }
@@ -1430,7 +1472,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
         message: 'OTP generated successfully. Share this with your service provider.',
         expiresAt: expiresAt.toISOString(),
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating booking OTP:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
@@ -1490,7 +1532,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
         verified: true,
         message: 'OTP verified successfully. Service can now begin.',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error verifying booking OTP:', error);
       return c.json({ success: false, error: error.message }, 500);
     }

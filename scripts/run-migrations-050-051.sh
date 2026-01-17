@@ -18,9 +18,9 @@ node run-migration.js ../db/migrations/050_complete_role_form_schemas.sql
 
 echo ""
 
-# Run migration 051
-echo "🔐 Migration 051: Role Permissions"
-node run-migration.js ../db/migrations/051_seed_role_permissions.sql
+# Migration 051 (Role Permissions seeding) removed - no longer seeding roles on rollout
+# echo "🔐 Migration 051: Role Permissions"
+# node run-migration.js ../db/migrations/051_seed_role_permissions.sql
 
 echo ""
 echo "✅ Migrations completed!"

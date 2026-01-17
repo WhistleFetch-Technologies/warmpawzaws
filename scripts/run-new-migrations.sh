@@ -113,33 +113,11 @@ cd "$PROJECT_ROOT"
 
 echo ""
 
-echo -e "${BLUE}Step 3: Running Migration 051 (Role Permissions)...${NC}"
+# Migration 051 (Role Permissions seeding) removed - no longer seeding roles on rollout
+# echo -e "${BLUE}Step 3: Running Migration 051 (Role Permissions)...${NC}"
+# [migration 051 code removed]
 
-cd "$PROJECT_ROOT/db"
-node -e "
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const migrationFile = path.join('$MIGRATIONS_DIR', '051_seed_role_permissions.sql');
-const sql = fs.readFileSync(migrationFile, 'utf8');
-
-pool.query(sql)
-  .then(() => {
-    console.log('✅ Migration 051 completed successfully');
-    return pool.end();
-  })
-  .catch(err => {
-    console.error('❌ Migration 051 failed:', err.message);
-    process.exit(1);
-  });
-" || exit 1
-cd "$PROJECT_ROOT"
-
-echo ""
-
-echo -e "${BLUE}Step 4: Verifying migrations...${NC}"
+echo -e "${BLUE}Step 3: Verifying migrations...${NC}"
 
 # Run verification queries
 cd "$PROJECT_ROOT/db"
@@ -169,35 +147,16 @@ async function verify() {
       missing.forEach(r => console.log(\`      - \${r.name}\`));
     }
     
-    // Check permissions
-    const permResult = await pool.query(\`
-      SELECT 
-        r.name,
-        COUNT(rp.id) as permission_count
-      FROM roles r
-      LEFT JOIN role_permissions rp ON r.id = rp.role_id
-      WHERE r.is_active = true
-      GROUP BY r.id, r.name
-      ORDER BY r.name
-    \`);
-    
-    console.log('\\n🔐 Role Permissions:');
-    const rolesWithPerms = permResult.rows.filter(r => r.permission_count > 0);
-    console.log(\`   ✅ \${rolesWithPerms.length}/20 roles have permissions\`);
-    
-    if (rolesWithPerms.length < 20) {
-      const missing = permResult.rows.filter(r => r.permission_count === 0);
-      console.log('   ⚠️  Roles missing permissions:');
-      missing.forEach(r => console.log(\`      - \${r.name}\`));
-    }
+    // Permission check removed - no longer verifying role permissions seeding
+    // Role permissions seeding has been removed from rollout scripts
     
     // Summary
     console.log('\\n📊 Summary:');
-    if (rolesWithSchemas.length === 20 && rolesWithPerms.length === 20) {
-      console.log('   ✅ All 20 roles have complete schemas and permissions!');
+    if (rolesWithSchemas.length === 20) {
+      console.log('   ✅ All 20 roles have complete schemas!');
       process.exit(0);
     } else {
-      console.log('   ⚠️  Some roles are missing schemas or permissions');
+      console.log('   ⚠️  Some roles are missing schemas');
       process.exit(1);
     }
   } catch (err) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Run Pharmacy UAT Migrations (047 & 051) on AWS RDS
- * Connects to RDS cluster and runs the Pharmacy role configuration migrations
+ * Run Instant Tele Queue Migration on AWS RDS
+ * Automatically retrieves credentials from AWS Secrets Manager
  */
 
 const { Pool } = require('pg');
@@ -14,7 +14,7 @@ const REGION = process.env.AWS_REGION || 'ap-south-1';
 
 async function runMigration() {
   console.log('╔════════════════════════════════════════════════════════════╗');
-  console.log('║   Pharmacy UAT Migrations - AWS RDS                       ║');
+  console.log('║   Instant Tele Queue Migration - AWS RDS                  ║');
   console.log('╚════════════════════════════════════════════════════════════╝');
   console.log('');
   console.log(`Environment: ${ENVIRONMENT}`);
@@ -85,6 +85,7 @@ async function runMigration() {
 
       // Connect to database
       console.log('🔗 Connecting to database...');
+      console.log(`   This may take a moment if database is in a VPC...`);
       const pool = new Pool({
         host: endpoint,
         port: parseInt(port, 10),
@@ -94,7 +95,8 @@ async function runMigration() {
         ssl: {
           rejectUnauthorized: false
         },
-        connectionTimeoutMillis: 10000,
+        connectionTimeoutMillis: 30000, // Increased to 30 seconds
+        query_timeout: 60000, // 60 seconds for queries
       });
 
       // Test connection
@@ -102,93 +104,109 @@ async function runMigration() {
       console.log('✅ Connection successful');
       console.log('');
 
-      // Migration 047 (Seed Roles) and 051 (Role Permissions) removed - no longer seeding roles on rollout
-      // Role seeding has been removed from rollout scripts
-
-      // Verify Pharmacy role configuration
-      console.log('🔍 Verifying Pharmacy role configuration...');
-      console.log('────────────────────────────────────────────────────────────');
+      // Read migration file
+      console.log('⚙️  Running migration...');
+      console.log('─────────────────────────');
+      const migrationPath = path.join(__dirname, '..', 'backend', 'lambda', 'src', 'database', 'schemas', 'instant-tele-queue.sql');
       
-      // Check Pharmacy role exists
-      const roleCheck = await pool.query(`
-        SELECT id, name, display_name, 
-               config->'capabilities' as capabilities_json,
-               jsonb_array_length(config->'capabilities') as cap_count
-        FROM roles 
-        WHERE name = 'pharmacy'
-      `);
-
-      if (roleCheck.rows.length === 0) {
-        console.error('❌ ERROR: Pharmacy role not found');
-        await pool.end();
+      if (!fs.existsSync(migrationPath)) {
+        console.error(`❌ ERROR: Migration file not found: ${migrationPath}`);
         process.exit(1);
       }
 
-      const role = roleCheck.rows[0];
-      console.log(`✅ Pharmacy role found: ${role.display_name}`);
-      console.log(`   Role ID: ${role.id}`);
-      console.log(`   Capabilities in config: ${role.cap_count}`);
+      const sql = fs.readFileSync(migrationPath, 'utf8');
 
-      // Check permissions
-      const permCheck = await pool.query(`
-        SELECT COUNT(*) as count
-        FROM role_permissions
-        WHERE role_id = $1
-      `, [role.id]);
-
-      console.log(`   Permissions in database: ${permCheck.rows[0].count}`);
+      // Check current state
+      console.log('📊 Current database state:');
+      const stateResult = await pool.query(`
+        SELECT 
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'staff_tele_availability')
+            THEN '✅ staff_tele_availability exists'
+            ELSE '❌ staff_tele_availability missing'
+          END as staff_tele_availability_status,
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tele_queue')
+            THEN '✅ tele_queue exists'
+            ELSE '❌ tele_queue missing'
+          END as tele_queue_status;
+      `);
+      console.log(`   ${stateResult.rows[0].staff_tele_availability_status}`);
+      console.log(`   ${stateResult.rows[0].tele_queue_status}`);
       console.log('');
 
-      // List all capabilities
-      const capabilities = role.capabilities_json || [];
-      const expectedCaps = [
-        'inventory_manage',
-        'product_catalog',
-        'orders',
-        'order_dispatch',
-        'order_broadcast',
-        'availability_check',
-        'prescription_create',
-        'prescription_verification',
-        'delivery',
-        'expiry_management',
-        'controlled_substances'
-      ];
-
-      console.log('📋 Pharmacy Capabilities:');
-      expectedCaps.forEach(cap => {
-        const found = capabilities.includes(cap) ? '✅' : '❌';
-        console.log(`   ${found} ${cap}`);
-      });
-      console.log('');
-
-      if (capabilities.length >= expectedCaps.length && permCheck.rows[0].count >= expectedCaps.length) {
-        console.log('✅ SUCCESS: Pharmacy role has all required capabilities!');
+      // Execute migration
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(sql);
+        await client.query('COMMIT');
+        console.log('✅ Migration completed!');
         console.log('');
-        console.log('Next steps:');
-        console.log('  1. Clear browser cache (or use Incognito)');
-        console.log('  2. Login as Pharmacy vendor (phone: 9606901516, OTP: 123456)');
-        console.log('  3. Verify dashboard shows only Pharmacy-relevant features');
-        console.log('  4. Test Inventory button persists after clicking');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      // Verify tables
+      console.log('🔍 Verifying created tables...');
+      const result = await pool.query(`
+        SELECT 
+          t.table_name,
+          (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as column_count,
+          (SELECT COUNT(*) FROM information_schema.indexes WHERE tablename = t.table_name) as index_count
+        FROM information_schema.tables t
+        WHERE table_schema = 'public' 
+          AND table_name IN ('staff_tele_availability', 'tele_queue')
+        ORDER BY table_name;
+      `);
+
+      if (result.rows.length > 0) {
+        console.log('✅ Created tables:');
+        result.rows.forEach(row => {
+          console.log(`   - ${row.table_name} (${row.column_count} columns, ${row.index_count} indexes)`);
+        });
       } else {
-        console.log('⚠️  WARNING: Some capabilities may be missing');
-        console.log(`   Expected: ${expectedCaps.length}, Found: ${capabilities.length}`);
+        console.log('⚠️  No tables found (may already exist or migration had issues)');
+      }
+
+      // Check indexes
+      console.log('');
+      console.log('📑 Created indexes:');
+      const indexesResult = await pool.query(`
+        SELECT indexname, tablename 
+        FROM pg_indexes 
+        WHERE tablename IN ('staff_tele_availability', 'tele_queue')
+        ORDER BY tablename, indexname;
+      `);
+
+      if (indexesResult.rows.length > 0) {
+        indexesResult.rows.forEach(idx => {
+          console.log(`   ✅ ${idx.indexname} on ${idx.tablename}`);
+        });
       }
 
       await pool.end();
       console.log('');
       console.log('🎉 Migration and verification complete!');
+      console.log('');
+      console.log('📋 Next steps:');
+      console.log('   1. Deploy backend Lambda function');
+      console.log('   2. Deploy frontend applications');
+      console.log('   3. Test the features');
+      console.log('');
 
     } catch (secretError) {
       console.error('');
-      console.error('❌ ERROR: Could not retrieve credentials from Secrets Manager');
-      console.error(`   Secret name: ${secretName}`);
+      console.error('❌ Failed to get credentials from Secrets Manager:');
+      console.error(`   Secret: ${secretName}`);
       console.error(`   Error: ${secretError.message}`);
       console.error('');
-      console.error('Troubleshooting:');
-      console.error('  1. Check AWS credentials are configured');
-      console.error('  2. Verify secret exists: aws secretsmanager list-secrets --region ' + REGION);
-      console.error('  3. Check IAM permissions for Secrets Manager');
+      console.error('💡 Alternative: Use the interactive migration script:');
+      console.error('   node scripts/run-instant-tele-queue-migration.js');
+      console.error('');
       process.exit(1);
     }
 
