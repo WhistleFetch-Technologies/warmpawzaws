@@ -315,16 +315,31 @@ export function DynamicVendorOnboardingForm({
       // ✅ FIX: Handle new response structure (fields, sections, schema)
       if (data && (data.schema || data.fields || data.sections)) {
         // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
-        const transformField = (f: any) => ({
-          ...f,
-          name: f.name || f.fieldName || f.id, // Use name, fallback to fieldName, then id
-          isActive: f.isActive !== false && f.is_active !== false, // Handle both casing
-          validation: {
-            required: f.isMandatory || f.validation?.required,
-            ...f.validation
+        const transformField = (f: any) => {
+          // Normalize options - convert string arrays to {value, label} objects for multiselect/select fields
+          let normalizedOptions = f.options;
+          if (f.options && Array.isArray(f.options) && f.options.length > 0) {
+            if (typeof f.options[0] === 'string') {
+              // Convert string array to object array: ["opt1"] => [{value: "opt1", label: "opt1"}]
+              normalizedOptions = f.options.map((opt: string) => ({
+                value: opt,
+                label: opt
+              }));
+            }
+            // If already objects, keep as-is (support both formats)
           }
-        });
-        
+          
+          return {
+            ...f,
+            name: f.name || f.fieldName || f.id,
+            isActive: f.isActive !== false && f.is_active !== false,
+            options: normalizedOptions, // Add normalized options
+            validation: {
+              required: f.isMandatory || f.validation?.required,
+              ...f.validation
+            }
+          };
+        };
         // Transform sections to have properly named fields
         const transformedSections = (data.sections || []).map((section: any) => ({
           ...section,
@@ -1265,7 +1280,7 @@ export function DynamicVendorOnboardingForm({
       </div>
     );
   }
-
+console.log("------------------------------------->",formData);
   // ✅ Check if form has empty sections (no published form)
   if (form.sections.length === 0) {
     return (

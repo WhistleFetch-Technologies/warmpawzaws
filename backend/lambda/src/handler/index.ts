@@ -271,6 +271,7 @@ registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/d
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
 registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
+registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
@@ -286,7 +287,6 @@ registerStaffEndpoints(app);
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
 registerReviewEndpoints(app);
 registerVendorScheduleEndpoints(app);
-registerCustomerBookingHistoryEndpoints(app);
 registerPrescriptionEndpoints(app);
 registerPharmacyOrderEndpoints(app);
 registerMedicalRecordsEndpoints(app);
@@ -295,6 +295,9 @@ registerAnalyticsEndpoints(app);
 registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);
+// Register vendor setup endpoints BEFORE vendor services to ensure /vendor/:vendorId/services/available
+// is matched before /vendor/:vendorId/services/:serviceStyle
+registerVendorSetupEndpoints(app);
 registerVendorServicesEndpoints(app);
 registerVendorPricingEndpoints(app);
 registerVendorProductsEndpoints(app);
@@ -344,7 +347,7 @@ registerBookingEndpointsEnhanced(app); // Moved here to test route order (after 
 registerBookingOTPEndpoint(app); // Booking OTP generation for home/center services
 registerAdminGovernanceEnhancedEndpoints(app);
 registerAdminAdvancedEndpoints(app);
-registerVendorSetupEndpoints(app);
+// registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering
 registerCustomerAppointmentsEndpoints(app);
 registerCustomerOrdersEndpoints(app);
 registerVendorAnalyticsEndpoints(app);
@@ -695,17 +698,25 @@ export const handler = async (
     
     const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
     
+    // Check if Hono CORS middleware already set CORS headers
+    const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['Access-Control-Allow-Origin'];
+    
     // Merge CORS headers with response headers
+    // Only set CORS headers if Hono didn't already set them (prevents duplicates)
+    const finalHeaders: Record<string, string> = { ...responseHeaders };
+    
+    if (!hasCorsHeaders) {
+      // Only set CORS headers if they weren't already set by Hono middleware
+      finalHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
+      finalHeaders['Access-Control-Allow-Credentials'] = 'true';
+      finalHeaders['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD';
+      finalHeaders['Access-Control-Allow-Headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token';
+    }
+    
     return {
       statusCode: response.status,
       body: responseBody,
-      headers: {
-        ...responseHeaders,
-        'Access-Control-Allow-Origin': responseHeaders['access-control-allow-origin'] || allowedOrigin,
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token',
-      },
+      headers: finalHeaders,
     };
   } catch (error) {
     console.error('Lambda handler error:', error);
@@ -750,6 +761,7 @@ export const handler = async (
     
     const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
     
+    // Ensure CORS headers in error responses (Hono middleware won't run for errors)
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Internal Server Error' }),

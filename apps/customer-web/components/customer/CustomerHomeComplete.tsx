@@ -1274,47 +1274,7 @@ export function CustomerHomeComplete({
         </div>
       </div>
 
-      {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto">
-        <div className="flex items-center justify-around">
-          <button className="flex flex-col items-center gap-1">
-            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
-            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
-          </button>
-          <button 
-            onClick={() => onNavigate && onNavigate('cart')}
-            className="flex flex-col items-center gap-1 relative"
-          >
-            <div className="relative">
-              <ShoppingCart className="w-6 h-6 text-gray-400" />
-              {itemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </div>
-            <span className="text-xs text-gray-400">Cart</span>
-          </button>
-          <button 
-            onClick={() => onNavigate && onNavigate('my-bookings')}
-            className="flex flex-col items-center gap-1"
-          >
-            <Calendar className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Bookings</span>
-          </button>
-          <button 
-            onClick={() => onProfileClick && onProfileClick()}
-            className="flex flex-col items-center gap-1"
-          >
-            <User className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Profile</span>
-          </button>
-        </div>
-        {/* Home Indicator */}
-        <div className="flex justify-center mt-2">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
-        </div>
-      </div>
+      {/* Bottom Navigation is now handled by CustomerScreenWrapper in CustomerHomeWrapper */}
 
       {/* AI Assistant Floating Action Button */}
       <button

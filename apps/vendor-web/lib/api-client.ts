@@ -20,7 +20,10 @@ function getRuntimeConfig(): RuntimeConfig {
 }
 
 function getApiBaseUrl(): string {
-  // Priority: runtime-config.js (deploy-time) → build-time env (local dev)
+  if (process.env.NEXT_PUBLIC_API_BASE_URL && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+
   const cfg = getRuntimeConfig();
   return (
     cfg.apiBaseUrl ||
@@ -44,7 +47,7 @@ export class ApiClient {
 
   constructor(baseUrl: string = getApiBaseUrl()) {
     this.baseUrl = baseUrl || '';
-    
+
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log('🔧 [UAT Mode] API Client Initialized (Vendor)');
@@ -79,7 +82,7 @@ export class ApiClient {
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
     const url = `${base}${path}`;
     const token = this.getAuthToken();
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -88,13 +91,13 @@ export class ApiClient {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    
+
     // UAT Mode: Log API requests for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
       console.log('   Full URL:', url);
     }
-    
+
     const response = await fetch(url, {
       ...options,
       headers,
@@ -102,7 +105,7 @@ export class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      
+
       // Handle 401 by clearing token and redirecting to auth
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
@@ -111,8 +114,16 @@ export class ApiClient {
           window.location.href = '/auth';
         }
       }
+
+      // ✅ FIX: Handle error response structure from BaseHandlerEnhanced
+      // Response format: { success: false, error: { code, message, details }, meta: {...} }
+      const errorMessage = (typeof error.error === 'object' && error.error?.message) 
+        ? error.error.message 
+        : (typeof error.error === 'string' 
+          ? error.error 
+          : (error.message || `HTTP ${response.status}`));
       
-      throw new Error(error.error || error.message || `HTTP ${response.status}`);
+      throw new Error(errorMessage);
     }
 
     return response.json();
@@ -130,7 +141,7 @@ export class ApiClient {
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+
       // Don't set Content-Type for FormData - browser will set it with boundary
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         method: 'POST',
@@ -140,12 +151,20 @@ export class ApiClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(error.error || error.message || `HTTP ${response.status}`);
+        
+        // ✅ FIX: Handle error response structure from BaseHandlerEnhanced
+        const errorMessage = (typeof error.error === 'object' && error.error?.message) 
+          ? error.error.message 
+          : (typeof error.error === 'string' 
+            ? error.error 
+            : (error.message || `HTTP ${response.status}`));
+        
+        throw new Error(errorMessage);
       }
 
       return response.json();
     }
-    
+
     // Regular JSON POST
     return this.request<T>(endpoint, {
       method: 'POST',

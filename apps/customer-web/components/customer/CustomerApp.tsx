@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CustomerOnboarding } from './CustomerOnboarding';
 import { CustomerUserProfile } from './CustomerUserProfile';
 import { CustomerPetProfile } from './CustomerPetProfile';
-import { CustomerHomeWrapper } from './CustomerHomeWrapper';
+import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { isUatMode } from '@/lib/api-client';
 
 interface CustomerSession {

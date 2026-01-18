@@ -133,6 +133,105 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/bookings/:bookingId
+   * Get detailed booking information (convenience endpoint)
+   */
+  app.get("/customer/bookings/:bookingId", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+
+      const bookingQuery = await query(
+        `SELECT b.*,
+                v.business_name as vendor_name,
+                v.owner_name as vendor_owner,
+                v.phone as vendor_phone,
+                v.email as vendor_email,
+                v.address as vendor_address,
+                v.city as vendor_city,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                s.name as service_name,
+                s.description as service_description,
+                s.category as service_category,
+                s.duration_minutes as service_duration,
+                st.name as staff_name,
+                st.phone as staff_phone
+         FROM bookings b
+         LEFT JOIN vendors v ON b.vendor_id = v.id
+         LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN staff st ON b.staff_id = st.id
+         WHERE b.id = $1`,
+        [bookingId]
+      );
+
+      if (bookingQuery.rows.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookingQuery.rows[0];
+
+      // Get prescription if exists
+      const prescriptions = await query(
+        'SELECT * FROM prescriptions WHERE booking_id = $1',
+        [bookingId]
+      );
+
+      // Get review if exists
+      const reviews = await query(
+        'SELECT * FROM reviews WHERE booking_id = $1 AND customer_id = $2',
+        [bookingId, booking.customer_id]
+      );
+
+      return c.json({
+        success: true,
+        booking: {
+          id: booking.id,
+          customerId: booking.customer_id,
+          vendor: {
+            id: booking.vendor_id,
+            businessName: booking.vendor_name,
+            ownerName: booking.vendor_owner,
+            phone: booking.vendor_phone,
+            email: booking.vendor_email,
+            address: booking.vendor_address,
+            city: booking.vendor_city,
+            state: booking.vendor_state,
+            pincode: booking.vendor_pincode,
+          },
+          service: {
+            id: booking.service_id,
+            name: booking.service_name,
+            description: booking.service_description,
+            category: booking.service_category,
+            duration: booking.service_duration,
+          },
+          staff: booking.staff_id ? {
+            id: booking.staff_id,
+            name: booking.staff_name,
+            phone: booking.staff_phone,
+          } : null,
+          status: booking.status,
+          paymentStatus: booking.payment_status,
+          bookingDate: booking.booking_date,
+          bookingTime: booking.booking_time,
+          address: booking.address,
+          city: booking.city,
+          state: booking.state,
+          pincode: booking.pincode,
+          notes: booking.notes,
+          createdAt: booking.created_at,
+          updatedAt: booking.updated_at,
+          prescription: prescriptions.rows.length > 0 ? prescriptions.rows[0] : null,
+          review: reviews.rows.length > 0 ? reviews.rows[0] : null,
+        }
+      });
+    } catch (error: any) {
+      console.error('Error fetching booking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /customer/:customerId/bookings/:bookingId
    * Get detailed booking information
    */

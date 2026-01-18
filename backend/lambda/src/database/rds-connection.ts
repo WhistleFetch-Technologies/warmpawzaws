@@ -296,12 +296,72 @@ export async function insert(
   if (dataArray.length === 0) return [];
 
   const keys = Object.keys(dataArray[0]);
+  
+  // ✅ FIX: Identify JSONB columns and TEXT[] array columns
+  const isJsonbColumn = (key: string, value: any): boolean => {
+    // Known JSONB columns
+    if (key === 'metadata' || 
+        key === 'operating_hours' || 
+        key === 'config' ||
+        key === 'application_payload' ||
+        key === 'uploaded_documents' ||
+        key === 'fields' ||
+        key === 'sections' ||
+        key === 'channels' ||
+        key.endsWith('_config') ||
+        key.endsWith('_metadata')) {
+      return true;
+    }
+    // If value is an object (not Date, not Array), treat as JSONB
+    return typeof value === 'object' && value !== null && !(value instanceof Date) && !Array.isArray(value);
+  };
+
+  // Identify TEXT[] array columns
+  const isTextArrayColumn = (key: string, value: any): boolean => {
+    // Known TEXT[] columns
+    if (key === 'preferred_proteins' || 
+        key === 'dietary_restrictions' ||
+        key.endsWith('_array') ||
+        (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string')) {
+      return true;
+    }
+    return false;
+  };
+
+  // Build placeholders with proper casting
   const placeholders = dataArray.map((_, idx) => {
     const start = idx * keys.length + 1;
-    return `(${keys.map((_, i) => `$${start + i}`).join(', ')})`;
+    return `(${keys.map((key, i) => {
+      const value = (dataArray[idx] as any)[key];
+      const paramNum = start + i;
+      // Cast to TEXT[] if it's a TEXT[] array column
+      if (isTextArrayColumn(key, value) && Array.isArray(value)) {
+        return `$${paramNum}::text[]`;
+      }
+      // Cast to JSONB if it's a JSONB column and value is an object
+      if (isJsonbColumn(key, value) && typeof value === 'object' && value !== null) {
+        return `$${paramNum}::jsonb`;
+      }
+      return `$${paramNum}`;
+    }).join(', ')})`;
   }).join(', ');
 
-  const values = dataArray.flatMap(row => keys.map(key => (row as any)[key]));
+  // Prepare values with proper formatting
+  const values = dataArray.flatMap(row => 
+    keys.map(key => {
+      const value = (row as any)[key];
+      // TEXT[] arrays are passed as-is (PostgreSQL driver handles them)
+      if (isTextArrayColumn(key, value) && Array.isArray(value)) {
+        return value; // Pass array directly, PostgreSQL driver will handle it
+      }
+      // Stringify JSONB objects for proper database insertion
+      if (isJsonbColumn(key, value) && typeof value === 'object' && value !== null) {
+        return JSON.stringify(value);
+      }
+      return value;
+    })
+  );
+  
   const columns = keys.join(', ');
   const returning = keys.includes('id') ? ' RETURNING *' : ' RETURNING *';
 
@@ -329,8 +389,13 @@ export async function update(
       // Check if this is likely a JSONB column based on common patterns
       const isJsonbColumn = key === 'metadata' || 
                            key === 'operating_hours' || 
-                           key === 'config' || 
+                           key === 'config' ||
+                           key === 'application_payload' ||
+                           key === 'uploaded_documents' ||
+                           key === 'fields' ||
+                           key === 'sections' ||
                            key.endsWith('_config') ||
+                           key.endsWith('_metadata') ||
                            (typeof value === 'object' && value !== null && !(value instanceof Date));
       
       if (isJsonbColumn && typeof value === 'object' && value !== null) {

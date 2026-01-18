@@ -184,10 +184,16 @@ export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/services/:serviceStyle
    * Get services for a specific style
+   * NOTE: This route must come AFTER /vendor/:vendorId/services/available to avoid route conflicts
    */
   app.get("/vendor/:vendorId/services/:serviceStyle", async (c) => {
     try {
       const { vendorId, serviceStyle } = c.req.param();
+
+      // Exclude 'available' from being treated as a service style
+      if (serviceStyle === 'available') {
+        return c.json({ error: 'Use /vendor/:vendorId/services/available endpoint instead' }, 400);
+      }
 
       if (!['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
         return c.json({ error: 'Invalid service style' }, 400);

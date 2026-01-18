@@ -20,7 +20,10 @@ function getRuntimeConfig(): RuntimeConfig {
 }
 
 function getApiBaseUrl(): string {
-  // Priority: runtime-config.js (deploy-time) → build-time env (local dev)
+  if (process.env.NEXT_PUBLIC_API_BASE_URL && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+
   const cfg = getRuntimeConfig();
   return (
     cfg.apiBaseUrl ||
@@ -44,7 +47,7 @@ export class ApiClient {
 
   constructor(baseUrl: string = getApiBaseUrl()) {
     this.baseUrl = baseUrl || '';
-    
+
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log('🔧 [UAT Mode] API Client Initialized');
@@ -75,21 +78,21 @@ export class ApiClient {
     if (!this.baseUrl) {
       throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
     }
-    
+
     // Import error handling utilities
     const { resilientFetch, isOnline, OfflineQueue, ApiError } = await import('./error-handling');
-    
+
     // Initialize offline queue
     if (!this.offlineQueue) {
       this.offlineQueue = new OfflineQueue();
     }
-    
+
     // Fix: Normalize URL to avoid double slashes
     const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
     const url = `${base}${path}`;
     const token = this.getAuthToken();
-    
+
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string>),
     };
@@ -103,13 +106,13 @@ export class ApiClient {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    
+
     // UAT Mode: Log API requests for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
       console.log('   Full URL:', url);
     }
-    
+
     // Check if offline
     if (!isOnline()) {
       // Queue request if it's a POST/PUT/DELETE
@@ -125,7 +128,7 @@ export class ApiClient {
         throw new ApiError('No network connection', 'offline', undefined, false);
       }
     }
-    
+
     try {
       const response = await resilientFetch(url, {
         ...options,
@@ -134,7 +137,7 @@ export class ApiClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        
+
         // Handle 401 by clearing token and redirecting to auth
         if (response.status === 401) {
           if (typeof window !== 'undefined') {
@@ -143,7 +146,7 @@ export class ApiClient {
             window.location.href = '/auth';
           }
         }
-        
+
         throw new ApiError(
           error.error || error.message || `HTTP ${response.status}`,
           response.status >= 500 ? 'server_error' : 'client_error',
@@ -158,7 +161,7 @@ export class ApiClient {
       if (error instanceof ApiError) {
         throw error;
       }
-      
+
       // Wrap other errors
       throw new ApiError(
         error.message || 'Unknown error',
@@ -169,7 +172,7 @@ export class ApiClient {
       );
     }
   }
-  
+
   private offlineQueue?: import('./error-handling').OfflineQueue;
 
   async get<T>(endpoint: string, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
@@ -192,12 +195,12 @@ export class ApiClient {
   }
 
   async delete<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
-    return this.request<T>(endpoint, { 
+    return this.request<T>(endpoint, {
       method: 'DELETE',
       body: data ? JSON.stringify(data) : undefined
     }, retryConfig);
   }
-  
+
   /**
    * Sync offline queue when back online
    */
@@ -237,7 +240,7 @@ export const aiChatbotApi = {
     context?: any;
     petId?: string;
   }) => apiClient.post('/ai-chatbot/chat', data),
-  
+
   symptomsChecker: (data: {
     symptoms: string;
     petId?: string;
@@ -246,7 +249,7 @@ export const aiChatbotApi = {
     customerId?: string;
     customerPhone?: string;
   }) => apiClient.post('/ai-chatbot/symptoms-checker', data),
-  
+
   bookingAssist: (data: {
     query: string;
     customerId?: string;
@@ -254,7 +257,7 @@ export const aiChatbotApi = {
     location?: { lat: number; lng: number };
     petId?: string;
   }) => apiClient.post('/ai-chatbot/booking-assist', data),
-  
+
   escalateToAgent: (data: {
     conversationId: string;
     customerId?: string;
@@ -262,8 +265,8 @@ export const aiChatbotApi = {
     reason?: string;
     conversationHistory?: string;
   }) => apiClient.post('/ai-chatbot/escalate-to-agent', data),
-  
-  getConversation: (conversationId: string) => 
+
+  getConversation: (conversationId: string) =>
     apiClient.get(`/ai-chatbot/conversation/${conversationId}`),
 };
 
@@ -280,7 +283,7 @@ export const supportCrmApi = {
     bookingId?: string;
     orderId?: string;
   }) => apiClient.post('/support/tickets', data),
-  
+
   getTickets: (params?: {
     customerId?: string;
     customerPhone?: string;
@@ -288,18 +291,18 @@ export const supportCrmApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '';
     return apiClient.get(`/support/tickets${query ? `?${query}` : ''}`);
   },
-  
+
   getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`),
-  
+
   respondToTicket: (ticketId: string, data: {
     message: string;
     responderId?: string;
     responderType?: 'agent' | 'customer';
   }) => apiClient.post(`/support/tickets/${ticketId}/respond`, data),
-  
+
   updateTicketStatus: (ticketId: string, status: string, resolution?: string) =>
     apiClient.put(`/support/tickets/${ticketId}/status`, { status, resolution }),
 };
@@ -331,7 +334,7 @@ export const bookingsApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '';
     return apiClient.get(`/customer/${params?.customerId || 'bookings'}/bookings${query ? `?${query}` : ''}`);
   },
 
@@ -393,7 +396,7 @@ export const ordersApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '';
     return apiClient.get(`/customer/orders${query ? `?${query}` : ''}`);
   },
   getInvoice: (orderId: string) => apiClient.get(`/customer/orders/${orderId}/invoice`),

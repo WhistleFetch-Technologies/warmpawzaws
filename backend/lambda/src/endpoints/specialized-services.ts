@@ -881,17 +881,42 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           [vendorId]
         );
         products = productsResult.rows || [];
-      } catch {
-        // Fallback to meal_plans table
-        const mealPlans = await select('meal_plans', { vendor_id: vendorId });
-        products = mealPlans.map((mp: any) => ({
-          id: mp.id,
-          name: mp.name,
-          description: mp.description,
-          price: mp.price,
-          category: 'meal_plan',
-          ...mp,
-        }));
+      } catch (error: any) {
+        console.warn('Products table query failed, trying meal_plans:', error.message);
+      }
+      
+      // ✅ FIX: If products table is empty or doesn't have meal products, check meal_plans table
+      if (products.length === 0) {
+        try {
+          const mealPlans = await select('meal_plans', { vendor_id: vendorId });
+          products = mealPlans.map((mp: any) => {
+            // Parse dietary_requirements JSONB if it exists
+            let dietaryReqs = {};
+            try {
+              dietaryReqs = typeof mp.dietary_requirements === 'string' 
+                ? JSON.parse(mp.dietary_requirements) 
+                : (mp.dietary_requirements || {});
+            } catch (e) {
+              console.warn('Failed to parse dietary_requirements:', e);
+            }
+            
+            return {
+              id: mp.id,
+              name: mp.plan_name, 
+              description: mp.description,
+              price: mp.price,
+              category: 'meal_plan',
+              metadata: dietaryReqs,
+              petTypes: dietaryReqs.petTypes || [],
+              dietType: dietaryReqs.dietType,
+              ingredients: dietaryReqs.ingredients || [],
+              nutritionalValue: dietaryReqs.nutritionalValue || {},
+              ...mp,
+            };
+          });
+        } catch (error: any) {
+          console.warn('meal_plans table query failed:', error.message);
+        }
       }
       
       return c.json({ success: true, products, total: products.length });
@@ -938,17 +963,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ success: true, product: product[0] });
       } catch {
         // Fallback to meal_plans table
+        // Note: meal_plans has dietary_requirements JSONB field, not pet_types column
         const mealPlan = await insert('meal_plans', {
           vendor_id: vendorId,
-          name: data.name,
+          plan_name: data.name, // ✅ FIX: meal_plans table has 'plan_name' column, not 'name'
           description: data.description,
           price: data.price,
-          pet_types: data.petTypes || ['Dog', 'Cat'],
           duration_days: data.durationDays || 7,
           meals_per_day: data.mealsPerDay || 2,
+          dietary_requirements: JSON.stringify({
+            petTypes: data.petTypes || ['Dog', 'Cat'],
+            dietType: data.dietType,
+            suitableFor: data.suitableFor || [],
+            ingredients: data.ingredients || [],
+            nutritionalValue: data.nutritionalValue || {},
+            preparationLeadTime: data.preparationLeadTime,
+            storageInstructions: data.storageInstructions,
+            shelfLife: data.shelfLife,
+            packSize: data.packSize,
+          }),
           is_active: true,
         });
-        return c.json({ success: true, product: mealPlan[0] });
+        
+        // Transform response to match expected format
+        const transformedProduct = {
+          ...mealPlan[0],
+          name: mealPlan[0].plan_name,
+          category: 'meal_plan',
+          metadata: mealPlan[0].dietary_requirements,
+        };
+        
+        return c.json({ success: true, product: transformedProduct });
       }
     } catch (error: any) {
       console.error('Error creating meal product:', error);

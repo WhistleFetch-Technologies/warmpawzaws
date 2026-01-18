@@ -46,21 +46,21 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const phone = context.event.queryStringParameters?.phone;
     const requestId = context.requestId;
-    
+
     if (!phone) {
       return this.error('Phone number is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
     // Check if UAT mode is enabled
-    const isUATMode = process.env.UAT_MODE === 'true' || 
-                     process.env.NODE_ENV === 'development' ||
-                     process.env.STAGE === 'dev' ||
-                     (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
+    const isUATMode = process.env.UAT_MODE === 'true' ||
+      process.env.NODE_ENV === 'development' ||
+      process.env.STAGE === 'dev' ||
+      (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
 
     try {
       // Get or create vendor identity
       let identity = await select('vendor_identity', { phone });
-      
+
       if (identity.length === 0) {
         // Create new identity with INIT status
         const newIdentity = await insert('vendor_identity', {
@@ -72,7 +72,7 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       const vendorIdentity = identity[0];
-      
+
       // Get application if exists
       let application = null;
       if (vendorIdentity.application_id) {
@@ -100,7 +100,7 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       }, requestId);
     } catch (error: any) {
       console.error('Error getting onboarding status:', error);
-      
+
       // In UAT mode, return a default response if table doesn't exist
       if (isUATMode && (error.message?.includes('does not exist') || error.message?.includes('relation'))) {
         console.warn('[ONBOARDING] UAT Mode: Table missing, returning default INIT status');
@@ -116,7 +116,7 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
           nextStep: '/onboarding/role-selection',
         }, requestId);
       }
-      
+
       return this.error(
         error.message || 'Failed to get onboarding status',
         500,
@@ -153,14 +153,14 @@ class GetAvailableRolesHandlerEnhanced extends BaseHandlerEnhanced {
     try {
       // Get all active roles
       const roles = await select('roles', { is_active: true });
-      
+
       // Get permissions for each role
       const rolesWithConfig = await Promise.all(
         roles.map(async (role) => {
           const permissions = await select('role_permissions', {
             role_id: role.id,
           });
-          
+
           return {
             id: role.id,
             name: role.name,
@@ -177,14 +177,14 @@ class GetAvailableRolesHandlerEnhanced extends BaseHandlerEnhanced {
     } catch (error: any) {
       console.error('Error getting roles:', error);
       // Graceful degradation: return empty roles array instead of 500
-      if (error.message?.includes('does not exist') || 
-          error.message?.includes('relation') ||
-          error.message?.includes('roles')) {
+      if (error.message?.includes('does not exist') ||
+        error.message?.includes('relation') ||
+        error.message?.includes('roles')) {
         console.warn('[Vendor Onboarding Roles] Table not found, returning empty list');
         return this.success({ roles: [] }, requestId);
       }
       // For other errors, also return gracefully
-      return this.success({ 
+      return this.success({
         roles: [],
         message: `Failed to get roles: ${error.message}`,
       }, requestId);
@@ -384,10 +384,10 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
       if (roles.length === 0) {
         return this.error('Role not found', 404, 'NOT_FOUND', undefined, requestId);
       }
-      
+
       const role = roles[0];
       const roleName = role.name;
-      
+
       // Forms are stored by role name, not UUID
       const formsResult = await query(
         `SELECT * FROM onboarding_forms WHERE role_id = $1`,
@@ -397,8 +397,8 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
       let fields: any[] = [];
 
       if (forms.length > 0) {
-        fields = typeof forms[0].fields === 'string' 
-          ? JSON.parse(forms[0].fields) 
+        fields = typeof forms[0].fields === 'string'
+          ? JSON.parse(forms[0].fields)
           : forms[0].fields || [];
       }
 
@@ -477,6 +477,67 @@ class GetOnboardingFormSchemaHandlerEnhanced extends BaseHandlerEnhanced {
   }
 }
 
+// Helper function to sanitize data for JSONB columns
+// Removes undefined values and ensures only JSON-serializable types
+function sanitizeJsonbData(obj: any): any {
+  if (obj === null) {
+    return null;
+  }
+  
+  if (obj === undefined) {
+    return null; // Convert undefined to null for JSONB
+  }
+
+  // Handle primitive types
+  if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+    return obj;
+  }
+
+  // Handle Date objects - convert to ISO string
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj
+      .map(item => sanitizeJsonbData(item))
+      .filter(item => item !== undefined); // Remove undefined from arrays
+  }
+
+  // Handle objects (but not functions, symbols, or other non-serializable types)
+  if (typeof obj === 'object') {
+    // Skip functions, symbols, and other non-serializable types
+    if (typeof obj !== 'object' || obj.constructor !== Object) {
+      // Handle objects with special constructors (like Date, RegExp, etc.)
+      if (obj instanceof Date) {
+        return obj.toISOString();
+      }
+      // For other non-plain objects, try to convert to string or skip
+      if (typeof obj.toString === 'function' && obj.toString() !== '[object Object]') {
+        return obj.toString();
+      }
+      return null; // Skip non-serializable objects
+    }
+
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // Skip undefined values
+      if (value !== undefined) {
+        const sanitized = sanitizeJsonbData(value);
+        // Only add if sanitized value is not undefined
+        if (sanitized !== undefined) {
+          cleaned[key] = sanitized;
+        }
+      }
+    }
+    return cleaned;
+  }
+
+  // For other types (functions, symbols, etc.), return null or skip
+  return null;
+}
+
 class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
@@ -496,7 +557,34 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
     const { phone, application_payload, uploaded_documents } = validationResult.data;
 
+    // ✅ FIX: Log specializations to debug
+    console.log("------------------------------------->", phone);
+    console.log("application_payload:", application_payload);
+    console.log("application_payload.specializations:", application_payload?.specializations);
+    console.log("uploaded_documents:", uploaded_documents);
     try {
+      // ✅ FIX: Sanitize JSONB data by removing undefined values
+      const sanitizedApplicationPayload = sanitizeJsonbData(application_payload);
+      const sanitizedUploadedDocuments = sanitizeJsonbData(uploaded_documents || []);
+      
+      // ✅ FIX: Validate JSON serializability before database operation
+      try {
+        JSON.stringify(sanitizedApplicationPayload);
+        JSON.stringify(sanitizedUploadedDocuments);
+      } catch (jsonError: any) {
+        console.error('❌ [SUBMIT] JSON serialization error:', jsonError);
+        return this.error(
+          `Invalid JSON data: ${jsonError.message}`,
+          400,
+          'VALIDATION_ERROR',
+          { 
+            jsonError: jsonError.message,
+            sanitizedApplicationPayload: JSON.stringify(sanitizedApplicationPayload, null, 2).substring(0, 500),
+          },
+          requestId
+        );
+      }
+
       // Get vendor identity
       const identities = await select('vendor_identity', { phone });
       if (identities.length === 0) {
@@ -521,15 +609,15 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Check if application exists
       let applicationId = identity.application_id;
-      
+
       if (applicationId) {
         const apps = await select('vendor_onboarding_applications', {
           id: applicationId,
         });
-        
+
         if (apps.length > 0) {
           const app = apps[0];
-          
+
           // Can only edit if DRAFT or CLARIFICATION_REQUIRED
           if (app.status !== 'DRAFT' && app.status !== 'CLARIFICATION_REQUIRED') {
             return this.error(
@@ -546,8 +634,8 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
             'vendor_onboarding_applications',
             { id: applicationId },
             {
-              application_payload,
-              uploaded_documents: uploaded_documents || app.uploaded_documents || [],
+              application_payload: sanitizedApplicationPayload,
+              uploaded_documents: sanitizedUploadedDocuments.length > 0 ? sanitizedUploadedDocuments : (app.uploaded_documents || []),
               form_version: formVersion,
               status: 'SUBMITTED',
               submitted_at: new Date().toISOString(),
@@ -563,15 +651,15 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
           vendor_identity_id: identity.id,
           role_id: identity.selected_role_id,
           vendor_type: identity.vendor_type,
-          application_payload,
-          uploaded_documents: uploaded_documents || [],
+          application_payload: sanitizedApplicationPayload,
+          uploaded_documents: sanitizedUploadedDocuments,
           form_version: formVersion,
           status: 'SUBMITTED',
           submitted_at: new Date().toISOString(),
           is_locked: true,
           locked_at: new Date().toISOString(),
         });
-        
+
         applicationId = newApp[0].id;
 
         // Link application to identity
@@ -612,12 +700,28 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
         nextStep: '/onboarding/pending-review',
       }, requestId);
     } catch (error: any) {
-      console.error('Error submitting application:', error);
+      console.error('❌ [SUBMIT] Error submitting application:', error);
+      console.error('❌ [SUBMIT] Error stack:', error?.stack);
+      console.error('❌ [SUBMIT] Error details:', {
+        message: error?.message,
+        code: error?.code,
+        detail: error?.detail,
+        constraint: error?.constraint,
+        table: error?.table,
+        column: error?.column,
+        dataType: error?.dataType,
+      });
+      
+      const errorMessage = error?.message || error?.detail || error?.error || 'Failed to submit application';
       return this.error(
-        error.message || 'Failed to submit application',
+        errorMessage,
         500,
         'INTERNAL_ERROR',
-        undefined,
+        {
+          error: errorMessage,
+          details: error?.detail,
+          code: error?.code,
+        },
         requestId
       );
     }
@@ -692,7 +796,7 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
       if (action === 'APPROVE') {
         newStatus = 'APPROVED';
         newOnboardingStatus = 'APPROVED';
-        
+
         await update(
           'vendor_onboarding_applications',
           { id: applicationId },
@@ -717,7 +821,7 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
         newStatus = 'CLARIFICATION_REQUIRED';
         newOnboardingStatus = 'CLARIFICATION_REQUIRED';
-        
+
         // Unlock application for editing
         await update(
           'vendor_onboarding_applications',
@@ -745,7 +849,7 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
 
         newStatus = 'REJECTED';
         newOnboardingStatus = 'REJECTED';
-        
+
         await update(
           'vendor_onboarding_applications',
           { id: applicationId },
@@ -995,7 +1099,7 @@ function createApiGatewayEvent(req: any): any {
 
 async function createApiGatewayEventWithBody(c: any): Promise<any> {
   const body = await c.req.json().catch(() => ({}));
-  
+
   // Get headers
   const headers: Record<string, string> = {};
   try {

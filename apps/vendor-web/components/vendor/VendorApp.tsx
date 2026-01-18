@@ -496,14 +496,28 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           try {
             const phone = session.phone || localStorage.getItem('vendorPhone');
             
+            // ✅ FIX: Use specializations from formData if available, otherwise from submissionData
+            // Priority: formData.specializations (from form field) > submissionData.specializations (from SpecializationSelector)
+            const { specializations: formDataSpecializations, ...formDataWithoutSpecializations } = submissionData.formData || {};
+            
+            // Determine which specializations to use (formData takes precedence if it has values)
+            const finalSpecializations = (formDataSpecializations && Array.isArray(formDataSpecializations) && formDataSpecializations.length > 0)
+              ? formDataSpecializations
+              : (submissionData.specializations || []);
+            
+            // Log specializations to debug
+            console.log('🔍 [VendorApp] submissionData.specializations:', submissionData.specializations);
+            console.log('🔍 [VendorApp] formDataSpecializations:', formDataSpecializations);
+            console.log('🔍 [VendorApp] finalSpecializations:', finalSpecializations);
+            
             const payload = {
               phone,
               application_payload: {
-                ...submissionData.formData,
+                ...formDataWithoutSpecializations, // Spread formData WITHOUT specializations field
                 roleId: selectedRole,
                 location: submissionData.coordinates,
                 coordinates: submissionData.coordinates,
-                specializations: submissionData.specializations || [],
+                specializations: finalSpecializations, // Use the appropriate specializations source
                 agreedToTerms: submissionData.agreedToTerms || true,
               },
               uploaded_documents: Object.entries(submissionData.documents || {}).map(([key, doc]: [string, any]) => ({

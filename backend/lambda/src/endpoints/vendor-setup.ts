@@ -100,14 +100,34 @@ class GetAvailableServicesHandler extends BaseHandler {
     if (!vendorId) {
       return this.error('Vendor ID is required', 400);
     }
+    
     const vendors = await select('vendors', { id: vendorId });
     if (vendors.length === 0) {
       return this.error('Vendor not found', 404);
     }
-    const vendor = vendors[0];
-    const roleId = vendor.role_id;
-    const services = await select('services', { role_id: roleId, is_active: true });
-    return this.success({ services });
+    
+    // Get services directly linked to vendor
+    const vendorServices = await select('services', { vendor_id: vendorId, is_active: true });
+    
+    // If no direct services, check vendor_services table
+    if (vendorServices.length === 0) {
+      try {
+        const result = await query(
+          `SELECT s.* FROM vendor_services vs
+           INNER JOIN services s ON vs.service_id = s.id
+           WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND s.is_active = true
+           ORDER BY s.name LIMIT 1`,
+          [vendorId]
+        );
+        if (result.rows.length > 0) {
+          return this.success({ services: result.rows });
+        }
+      } catch (err: any) {
+        console.warn('[GetAvailableServicesHandler] vendor_services query failed:', err.message);
+      }
+    }
+    
+    return this.success({ services: vendorServices });
   }
 }
 

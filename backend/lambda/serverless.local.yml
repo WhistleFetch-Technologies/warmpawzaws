@@ -21,6 +21,9 @@ provider:
     NODE_ENV: local
     AWS_REGION: ap-south-1
     
+    # S3 Configuration
+    S3_BUCKET_NAME: ${env:S3_BUCKET_NAME, 'warmpawz-dev-user-uploads-057442119249'}
+    
     # RDS Configuration (local or remote)
     DB_HOST: ${env:DB_HOST, 'localhost'}
     DB_PORT: ${env:DB_PORT, '5432'}
@@ -67,14 +70,14 @@ custom:
     noPrependStageInUrl: true
     lambdaPort: 3002
     # CORS configuration
-    cors:
-      origin: '*'
-      headers:
-        - Content-Type
-        - Authorization
-        - X-Requested-With
-        - X-Request-Id
-      allowCredentials: false
+    # cors:
+    #   origin: '*'
+    #   headers:
+    #     - Content-Type
+    #     - Authorization
+    #     - X-Requested-With
+    #     - X-Request-Id
+    #   allowCredentials: false
 
 # Package Configuration
 package:
@@ -87,6 +90,7 @@ package:
     - '!esbuild.config.js'
     - 'dist/**'
     - 'node_modules/@warmpawz/**'
+    - 'node_modules/@aws-sdk/**'
     - 'node_modules/zod/**'
     - 'node_modules/hono/**'
     - 'node_modules/jose/**'

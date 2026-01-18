@@ -1,0 +1,103 @@
+"use client";
+
+import { Home, ShoppingCart, Calendar, User } from 'lucide-react';
+import { useCart } from '@/context/CartContext';
+
+interface BottomNavigationProps {
+  currentScreen: string;
+  onNavigate: (screen: string) => void;
+  onProfileClick?: () => void;
+}
+
+export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: BottomNavigationProps) {
+  const { itemCount } = useCart();
+
+  const isActive = (screen: string) => {
+    // Map screen names to navigation tabs - only highlight when exactly on that screen
+    // For service screens (nutritionist, vet, grooming, etc.), no tab should be active
+    if (screen === 'home') {
+      return currentScreen === 'home';
+    }
+    if (screen === 'cart') {
+      return currentScreen === 'cart' || currentScreen === 'checkout';
+    }
+    if (screen === 'bookings') {
+      return currentScreen === 'my-bookings' || currentScreen === 'appointments';
+    }
+    if (screen === 'profile') {
+      return currentScreen === 'customer-profile' || currentScreen === 'user-profile';
+    }
+    // For all other screens (like nutritionist, vet, etc.), no tab should be active
+    return false;
+  };
+
+  const handleNavClick = (screen: string) => {
+    if (screen === 'profile' && onProfileClick) {
+      onProfileClick();
+    } else {
+      onNavigate(screen);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 max-w-[430px] mx-auto">
+      <div className="flex items-center justify-around px-6 py-3">
+        {/* Home Tab */}
+        <button 
+          onClick={() => handleNavClick('home')}
+          className="flex flex-col items-center gap-1"
+        >
+          <Home className={`w-6 h-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+          <span className={`text-xs font-medium ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`}>
+            Home
+          </span>
+        </button>
+
+        {/* Cart Tab */}
+        <button 
+          onClick={() => handleNavClick('cart')}
+          className="flex flex-col items-center gap-1 relative"
+        >
+          <div className="relative">
+            <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+            {itemCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {itemCount}
+              </span>
+            )}
+          </div>
+          <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+            Cart
+          </span>
+        </button>
+
+        {/* Bookings Tab */}
+        <button 
+          onClick={() => handleNavClick('my-bookings')}
+          className="flex flex-col items-center gap-1"
+        >
+          <Calendar className={`w-6 h-6 ${isActive('bookings') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+          <span className={`text-xs ${isActive('bookings') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+            Bookings
+          </span>
+        </button>
+
+        {/* Profile Tab */}
+        <button 
+          onClick={() => handleNavClick('profile')}
+          className="flex flex-col items-center gap-1"
+        >
+          <User className={`w-6 h-6 ${isActive('profile') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+          <span className={`text-xs ${isActive('profile') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+            Profile
+          </span>
+        </button>
+      </div>
+      
+      {/* Home Indicator */}
+      <div className="flex justify-center pb-2">
+        <div className="w-32 h-1 bg-black rounded-full"></div>
+      </div>
+    </div>
+  );
+}

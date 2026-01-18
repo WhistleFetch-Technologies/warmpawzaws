@@ -36,7 +36,6 @@ import { PharmacyCheckout } from './PharmacyCheckout';
 import { PhotographyServicesLanding } from './PhotographyServicesLanding';
 import { BreederServicesLanding } from './BreederServicesLanding';
 import { AmbulanceServicesLanding } from './AmbulanceServicesLanding';
-import { NutritionistServicesLanding } from './NutritionistServicesLanding';
 import { RelocationServicesLanding } from './RelocationServicesLanding';
 import { ResortServicesLanding } from './ResortServicesLanding';
 import { PetHolidayServicesLanding } from './PetHolidayServicesLanding';
@@ -73,7 +72,7 @@ import { AmbulanceSOS } from './AmbulanceSOS';
 import { AdoptionQuestionnaire } from './AdoptionQuestionnaire';
 import { CustomerServicesPage } from './CustomerServicesPage';
 import { CustomerBookingsPage } from './CustomerBookingsPage';
-import { CreateBookingPage } from './CreateBookingPage';
+import { CreateBookingPage } from './booking/CreateBookingPage';
 import { CustomerPetsPage } from './CustomerPetsPage';
 import { OrderTrackingPage } from '../shop/OrderTrackingPage';
 
@@ -94,6 +93,8 @@ import { HomeServiceSelectionEnhanced } from './HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../IntegratedServicesHub';
 import { ProblemGridSelector } from './ProblemGridSelector';
 import { ServicesByProblem } from './ServicesByProblem';
+import { NutritionistServicesLanding } from './nutrition/landingPage/NutritionistServicesLanding';
+import { CustomerScreenWrapper } from './CustomerScreenWrapper';
 
 type ScreenType = 
   | 'home' 
@@ -336,6 +337,25 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/settings') toast.info('Settings coming soon');
   };
 
+  const handleBottomNav = (screen: string) => {
+    if (screen === 'home') {
+      setCurrentScreen('home');
+      setSelectedPetId(null);
+      setSelectedBookingId(null);
+      setVetServiceData(null);
+      setWalkerServiceData(null);
+      setSelectedVendorId(undefined);
+      setSelectedProblem(null);
+      setCurrentServiceType(null);
+    } else if (screen === 'cart') {
+      setCurrentScreen('cart');
+    } else if (screen === 'my-bookings') {
+      setCurrentScreen('my-bookings');
+    } else if (screen === 'profile') {
+      handleProfileClick();
+    }
+  };
+
   const handleBack = () => {
     setCurrentScreen('home');
     setSelectedPetId(null);
@@ -392,7 +412,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
 
   if (currentScreen === 'home') {
     return (
-      <>
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
         <CustomerHome 
           phone={phone}
           refreshKey={refreshKey}
@@ -427,7 +451,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             onNavigate={handleAccountNavigate}
           />
         )}
-      </>
+      </CustomerScreenWrapper>
     );
   }
 
@@ -436,7 +460,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Given the truncation, I'll focus on the modifications and the structure.
   
   // ✅ UPDATED: Customer Profile with navigation
-  if (currentScreen === 'customer-profile') return <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />;
+  if (currentScreen === 'customer-profile') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+      </CustomerScreenWrapper>
+    );
+  }
   if (currentScreen === 'pet-profile' && selectedPetData) return <PetProfile phone={phone} petId={selectedPetData.id} petName={selectedPetData.name} petType={selectedPetData.type} petBreed={selectedPetData.breed} petAge={selectedPetData.age} petGender={selectedPetData.gender} petImage={selectedPetData.image} onBack={handleBack} />;
   if (currentScreen === 'booking-details' && selectedBookingId && selectedPetId) return <PetBookingDetails bookingId={selectedBookingId} petId={selectedPetId} phone={phone} onBack={handleBack} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'pet-quick' && selectedPetId) return <PetQuickView petId={selectedPetId} phone={phone} onBack={handleBack} onViewFullProfile={handleViewFullPetProfile} />;
@@ -658,15 +692,34 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
   
   // Nutritionist & Holiday
-  if (currentScreen === 'nutritionist') return <NutritionistServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
-    if (screen === 'create-booking') {
-      setSelectedVendorId(data?.vendorId);
-      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
-      setCurrentScreen('create-booking');
-    } else {
-      setCurrentScreen('coming-soon');
-    }
-  }} />;
+  if (currentScreen === 'nutritionist') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <NutritionistServicesLanding 
+          phone={phone} 
+          onBack={handleBack} 
+          onNavigate={(screen, data) => {
+            if (screen === 'create-booking') {
+              setPreviousScreen('nutritionist');
+              // Ensure serviceId is set - use 'pet_nutritionist' as fallback if not provided
+              const serviceIdToSet = data?.serviceId || 'pet_nutritionist';
+              setSelectedService(serviceIdToSet);
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+              console.log('[CustomerHomeWrapper] Setting state for create-booking:', { serviceId: serviceIdToSet, vendorId: data?.vendorId });
+              setCurrentScreen('create-booking');
+            } else {
+              setCurrentScreen('coming-soon');
+            }
+          }} 
+        />
+      </CustomerScreenWrapper>
+    );
+  }
   if (currentScreen === 'holiday') return <PetHolidayServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
     if (screen === 'create-booking') {
       setSelectedVendorId(data?.vendorId);
@@ -678,7 +731,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
 
   // Shop & Orders
-  if (currentScreen === 'shop') return <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />;
+  if (currentScreen === 'shop') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />
+      </CustomerScreenWrapper>
+    );
+  }
   if (currentScreen === 'product_detail' && selectedProduct) return (
     <ProductDetailPage 
       product={selectedProduct} 
@@ -699,7 +762,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   );
   if (currentScreen === 'product_reviews' && selectedProduct) return <ProductReviewsView productId={selectedProduct.id || selectedProduct.productId} productName={selectedProduct.name} onBack={() => setCurrentScreen('product_detail')} />;
   if (currentScreen === 'vendor_profile' && selectedVendorId) return <VendorProfileDetail vendorId={selectedVendorId} phone={phone} onBack={() => setCurrentScreen(selectedProduct ? 'product_detail' : 'shop')} onNavigate={(screen, data) => { if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } }} />;
-  if (currentScreen === 'cart') return <ShoppingCartView onBack={() => setCurrentScreen('shop')} onCheckout={() => setCurrentScreen('checkout')} onContinueShopping={() => setCurrentScreen('shop')} />;
+  if (currentScreen === 'cart') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <ShoppingCartView onBack={() => setCurrentScreen('shop')} onCheckout={() => setCurrentScreen('checkout')} onContinueShopping={() => setCurrentScreen('shop')} />
+      </CustomerScreenWrapper>
+    );
+  }
   if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} />;
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
   if (currentScreen === 'order_history') return <OrderHistoryPage onNavigate={handleAccountNavigate} />;
@@ -713,7 +786,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={() => setCurrentScreen('pharmacy_store')} onSuccess={() => setCurrentScreen('home')} />;
 
   // Other Screens
-  if (currentScreen === 'my-bookings') return <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} />;
+  if (currentScreen === 'my-bookings') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} />
+      </CustomerScreenWrapper>
+    );
+  }
   if (currentScreen === 'appointments') return <AppointmentsList customerId={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
   if (currentScreen === 'appointment-details' && selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={() => setCurrentScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-reschedule'); }} onCancel={() => { setCurrentScreen('appointments'); setSelectedAppointmentId(null); }} />;
   if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={() => setCurrentScreen('appointment-details')} onSuccess={() => { setCurrentScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
@@ -776,7 +859,23 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
 
   // ✅ NEW: Create Booking
-  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  if (currentScreen === 'create-booking') {
+    console.log('[CustomerHomeWrapper] Rendering CreateBookingPage with state:', { selectedService, selectedVendorId });
+    return (
+      <CreateBookingPage 
+        phone={phone} 
+        serviceId={selectedService} 
+        vendorId={selectedVendorId} 
+        onBack={() => { 
+          setCurrentScreen(previousScreen || 'nutritionist'); 
+          setPreviousScreen(null);
+          setSelectedService('');
+          setSelectedVendorId(undefined);
+        }} 
+        onSuccess={(bookingId) => handleViewBooking(bookingId)} 
+      />
+    );
+  }
 
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 

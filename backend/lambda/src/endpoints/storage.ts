@@ -62,14 +62,14 @@ export function registerStorageEndpoints(app: Hono) {
 
       console.log('✅ File uploaded successfully:', fileName);
 
-      // Generate presigned URL (valid for 1 year)
+      // Generate presigned URL (valid for 7 days - AWS S3 maximum for SigV4)
       const signedUrl = await getSignedUrl(
         s3Client,
         new GetObjectCommand({
           Bucket: BUCKET_NAME,
           Key: fileName,
         }),
-        { expiresIn: 31536000 } // 1 year in seconds
+        { expiresIn: 604800 } // 7 days in seconds (max allowed for SigV4 presigned URLs)
       );
 
       return c.json({
@@ -126,14 +126,14 @@ export function registerStorageEndpoints(app: Hono) {
               ContentType: file.type,
             }));
 
-            // Generate presigned URL
+            // Generate presigned URL (valid for 7 days - AWS S3 maximum for SigV4)
             const signedUrl = await getSignedUrl(
               s3Client,
               new GetObjectCommand({
                 Bucket: BUCKET_NAME,
                 Key: fileName,
               }),
-              { expiresIn: 31536000 }
+              { expiresIn: 604800 } // 7 days in seconds (max allowed for SigV4 presigned URLs)
             );
 
             uploadResults.push({
@@ -264,14 +264,14 @@ export function registerStorageEndpoints(app: Hono) {
 
       console.log('✅ Media uploaded successfully:', fileName);
 
-      // Generate presigned URL (valid for 1 year)
+      // Generate presigned URL (valid for 7 days - AWS S3 maximum for SigV4)
       const signedUrl = await getSignedUrl(
         s3Client,
         new GetObjectCommand({
           Bucket: BUCKET_NAME,
           Key: fileName,
         }),
-        { expiresIn: 31536000 } // 1 year in seconds
+        { expiresIn: 604800 } // 7 days in seconds (max allowed for SigV4 presigned URLs)
       );
 
       // Also generate public URL
