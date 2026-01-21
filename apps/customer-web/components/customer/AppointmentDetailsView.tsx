@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon } from 'lucide-react';
+import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 
@@ -131,7 +131,7 @@ export function AppointmentDetailsView({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading appointment...</p>
@@ -142,7 +142,7 @@ export function AppointmentDetailsView({
 
   if (!appointment) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center">
           <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <p className="text-gray-900">Appointment not found</p>
@@ -153,33 +153,9 @@ export function AppointmentDetailsView({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-24">
-      {/* Header */}
-      <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-6 sticky top-0 z-10">
-        <button onClick={onBack} className="mb-4 flex items-center gap-2">
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
-        </button>
-        <div>
-          <h1 className="text-2xl text-white mb-1">Appointment Details</h1>
-          <p className="text-sm text-white/80">
-            {appointment.serviceName || 'Service'}
-          </p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className={`px-3 py-1 rounded-full text-xs ${
-              appointment.status === 'completed' ? 'bg-green-500' :
-              appointment.status === 'cancelled' ? 'bg-red-500' :
-              appointment.status === 'in_progress' ? 'bg-blue-500' :
-              'bg-orange-500'
-            }`}>
-              {appointment.status === 'in_progress' ? 'In Progress' :
-               appointment.status === 'confirmed' ? 'Confirmed' :
-               appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
-            </span>
-          </div>
-        </div>
-      </div>
-
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
       <div className="p-4 space-y-4">
         {/* Date & Time */}
         <div className="bg-white rounded-xl p-4 shadow-sm">
@@ -314,6 +290,21 @@ export function AppointmentDetailsView({
         {/* Action Buttons */}
         {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
           <div className="space-y-3">
+            {/* ✅ FIX #3: Add video call button for tele consultations */}
+            {appointment.serviceStyle === 'tele' && (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
+              <Button
+                onClick={() => {
+                  // Navigate to video call - try window location if onNavigate not available
+                  const videoCallUrl = `/video/${appointmentId}`;
+                  window.location.href = videoCallUrl;
+                }}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                <Video className="w-4 h-4 mr-2" />
+                Join Video Call
+              </Button>
+            )}
+            
             {canReschedule() && onReschedule && (
               <Button
                 onClick={() => onReschedule(appointmentId)}
@@ -334,6 +325,22 @@ export function AppointmentDetailsView({
               </Button>
             )}
           </div>
+        )}
+        
+        {/* ✅ FIX #2: Add chat button for tele consultations during confirmed/in_progress */}
+        {appointment.serviceStyle === 'tele' && (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
+          <Button
+            onClick={() => {
+              // Open chat - can navigate to booking details with chat mode
+              // This will need proper navigation handler
+              window.location.href = `/booking/${appointmentId}?chat=true`;
+            }}
+            variant="outline"
+            className="w-full mt-3 border-gray-300 text-gray-700"
+          >
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Chat with Provider
+          </Button>
         )}
 
         {/* Cancellation Info (if cancelled) */}
@@ -475,6 +482,6 @@ export function AppointmentDetailsView({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

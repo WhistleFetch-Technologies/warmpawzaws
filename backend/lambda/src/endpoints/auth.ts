@@ -244,6 +244,25 @@ class VerifyOtpHandler extends BaseHandler {
       return this.error('Invalid or expired OTP', 401);
     }
 
+    // ✅ FIX: Fetch vendor_identity to include roleId in response
+    let vendorIdentity = null;
+    let vendorRole = null;
+    try {
+      const identities = await select('vendor_identity', { phone });
+      if (identities.length > 0) {
+        vendorIdentity = identities[0];
+        // Fetch role info if vendor has a selected role
+        if (vendorIdentity.selected_role_id) {
+          const roles = await select('roles', { id: vendorIdentity.selected_role_id, is_active: true });
+          if (roles.length > 0) {
+            vendorRole = roles[0];
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[AUTH] Could not fetch vendor identity:', e);
+    }
+
     // Create or get Cognito user
     let cognitoUser;
     let tokens: CognitoTokens;
@@ -259,10 +278,19 @@ class VerifyOtpHandler extends BaseHandler {
         verified: true,
         phone,
         warning: 'Cognito integration unavailable',
+        // ✅ Include vendor profile data even without Cognito
+        profile: vendorIdentity ? {
+          id: vendorIdentity.id,
+          onboarding_status: vendorIdentity.onboarding_status,
+          roleId: vendorIdentity.selected_role_id,
+          role_id: vendorIdentity.selected_role_id,
+          vendor_type: vendorIdentity.vendor_type,
+          roleName: vendorRole?.display_name || vendorRole?.name,
+        } : null,
       });
     }
 
-    // Return tokens and user info
+    // Return tokens and user info with vendor profile
     return this.success({
       message: 'OTP verified successfully',
       verified: true,
@@ -273,6 +301,15 @@ class VerifyOtpHandler extends BaseHandler {
       idToken: tokens.idToken,
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
+      // ✅ FIX: Include vendor profile with roleId
+      profile: vendorIdentity ? {
+        id: vendorIdentity.id,
+        onboarding_status: vendorIdentity.onboarding_status,
+        roleId: vendorIdentity.selected_role_id,
+        role_id: vendorIdentity.selected_role_id,
+        vendor_type: vendorIdentity.vendor_type,
+        roleName: vendorRole?.display_name || vendorRole?.name,
+      } : null,
     });
   }
 }

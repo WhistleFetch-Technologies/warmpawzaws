@@ -78,9 +78,4 @@ if [ ! -z "${LAMBDA_VERSION:-}" ]; then
 fi
 echo -e "   ✅ Region: $AWS_REGION"
 echo ""
-echo -e "🧪 Next Steps:"
-echo -e "   1. Run: ./scripts/test-catalog-endpoints.sh"
-echo -e "   2. Test seeding: POST /admin/roles/seed"
-echo -e "   3. Verify all 20 roles are created"
-echo ""
 

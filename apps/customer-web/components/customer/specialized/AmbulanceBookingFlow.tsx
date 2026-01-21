@@ -360,7 +360,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
                           Capacity: {vehicle.capacity}
                         </span>
                         <span className="flex items-center gap-3">
-                          ⭐ {vehicle.rating.toFixed(1)}
+                          ⭐ {Number(vehicle.rating || 0).toFixed(1)}
                         </span>
                         {vehicle.estimated_arrival && (
                           <span className="flex items-center gap-3">

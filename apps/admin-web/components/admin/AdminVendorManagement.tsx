@@ -231,12 +231,12 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
           </div>
         )}
 
-        {/* Enhanced Tabs */}
+        {/* ✅ FIX: Enhanced Tabs with thicker border for better visual hierarchy */}
         <div className="px-6 mb-6">
-          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+          <div className="flex gap-0 border-b border-gray-200 overflow-x-auto -mb-px">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'overview'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -249,7 +249,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
             </button>
             <button
               onClick={() => setActiveTab('applications')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'applications'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -262,7 +262,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
             </button>
             <button
               onClick={() => setActiveTab('active-vendors')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'active-vendors'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -275,7 +275,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
             </button>
             <button
               onClick={() => setActiveTab('insights')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'insights'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -288,7 +288,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
             </button>
             <button
               onClick={() => setActiveTab('deactivation')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'deactivation'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -301,7 +301,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
             </button>
             <button
               onClick={() => setActiveTab('reverification')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'reverification'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -314,7 +314,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
             </button>
             <button
               onClick={() => setActiveTab('compliance')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-[3px] transition-all whitespace-nowrap ${
                 activeTab === 'compliance'
                   ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'

@@ -73,7 +73,7 @@ interface CustomService {
 interface VendorCustomServiceCreationProps {
   vendorId: string;
   vendorData?: any;
-  serviceStyle: 'at_center' | 'both'; // ONLY for center-based services
+  serviceStyle?: 'at_center' | 'at_home' | 'tele' | 'both'; // ✅ UPDATED: Support all service styles
   onClose: () => void;
   onServiceCreated: () => void;
 }
@@ -195,7 +195,9 @@ export function VendorCustomServiceCreation({
   // ✅ CRITICAL: Validation - Only allow for at_center or both
   // ❌ EXPLICITLY BLOCKED: at_home and tele service styles
   useEffect(() => {
-    if (serviceStyle !== 'at_center' && serviceStyle !== 'both') {
+    // ✅ REMOVED: Service style restriction - custom services can be enabled for any service style via role config
+    // Capability check is handled at the component level (useVendorCapabilities)
+    if (false) { // Disabled check - capability-based now
       console.error('❌ Custom service creation NOT allowed for service style:', serviceStyle);
       console.error('   ✅ ALLOWED: at_center, both');
       console.error('   ❌ BLOCKED: at_home, tele');
@@ -336,7 +338,7 @@ export function VendorCustomServiceCreation({
         price: isPackage ? 0 : price,
         categoryName: effectiveCategoryName, // ✅ Use effective category (handles "other" case)
         subCategoryName: categoryName === 'other' ? undefined : (subCategoryName.trim() || undefined), // ✅ Don't send subCategory if "other" was used as category
-        serviceStyle: serviceStyle || 'at_center', // ✅ NEW: Include serviceStyle (required by API, but API can derive from vendor if missing)
+        // serviceStyle is handled by the API based on vendor configuration
         isPackage,
         packageDetails: isPackage ? {
           sessionsPerDay,

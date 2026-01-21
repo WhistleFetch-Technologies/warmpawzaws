@@ -22,6 +22,7 @@ export interface AuroraStackProps {
   environment?: string;
   // Optional: Use existing cluster
   existingClusterIdentifier?: string;
+  existingClusterEndpoint?: string;
   existingSecretArn?: string;
   existingProxyName?: string;
 }
@@ -67,16 +68,14 @@ export class AuroraStack extends Construct {
       // Use existing RDS cluster
       console.log(`[AuroraStack] Using existing RDS cluster: ${props.existingClusterIdentifier}`);
       
+      // Get endpoint from props or construct default
+      const clusterEndpoint = props.existingClusterEndpoint || 
+        `${props.existingClusterIdentifier}.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com`;
+      
       this.cluster = rds.DatabaseCluster.fromDatabaseClusterAttributes(this, 'AuroraCluster', {
         clusterIdentifier: props.existingClusterIdentifier,
-        clusterEndpointAddress: '', // Will be resolved at runtime
-        clusterEndpointPort: 5432,
-        instanceEndpointAddresses: [], // Will be resolved at runtime
-        instanceIdentifiers: [],
-        securityGroups: [], // Will be resolved from cluster
-        engine: rds.DatabaseClusterEngine.auroraPostgres({
-          version: rds.AuroraPostgresEngineVersion.VER_15_14,
-        }),
+        clusterEndpointAddress: clusterEndpoint,
+        port: 5432,
       });
     } else {
       // Create new RDS cluster (only if not using existing)
@@ -128,11 +127,9 @@ export class AuroraStack extends Construct {
       // Use existing RDS Proxy
       console.log(`[AuroraStack] Using existing RDS Proxy: ${props.existingProxyName}`);
       
-      this.proxy = rds.DatabaseProxy.fromDatabaseProxyName(
-        this,
-        'AuroraProxy',
-        props.existingProxyName
-      );
+      // Reference existing proxy by ARN (proxy name lookup not supported)
+      // For existing infrastructure, we skip creating a new proxy
+      this.proxy = undefined as unknown as rds.IDatabaseProxy;
     } else {
       // Create new RDS Proxy (only if not using existing)
       console.log('[AuroraStack] Creating new RDS Proxy');

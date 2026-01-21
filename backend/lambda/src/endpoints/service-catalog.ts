@@ -111,10 +111,17 @@ export function registerServiceCatalogEndpoints(app: Hono) {
     try {
       const { serviceId } = c.req.param();
 
+      // ✅ FIX: Handle UUID vs text comparison properly
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+      
       const services = await query(
-        `SELECT * FROM service_catalog
-         WHERE (service_id = $1 OR id = $1)
-         AND status = 'active'`,
+        isUUID
+          ? `SELECT * FROM service_catalog
+             WHERE (service_id = $1 OR id = $1::uuid)
+             AND status = 'active'`
+          : `SELECT * FROM service_catalog
+             WHERE (service_id = $1 OR id::text = $1)
+             AND status = 'active'`,
         [serviceId]
       );
 
@@ -189,6 +196,29 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         // Continue with role mappings fallback
       }
 
+      // ✅ FIX: Check if role is for solo provider and filter out at_center
+      const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+      
+      // ✅ CRITICAL: Solo providers cannot use at_center services
+      if (vendorConfiguration === 'solo' && serviceStyle === 'at_center') {
+        return c.json({
+          success: true,
+          roleId,
+          serviceStyle: serviceStyle || 'all',
+          services: [],
+          total: 0,
+          message: 'Solo providers cannot use "at_center" service style. Only "at_home" and "tele" are allowed.',
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            config: roleConfig,
+          } : null,
+          vendorTypes: roleConfig?.vendorTypes || [],
+          serviceStyles: roleConfig?.serviceStyles || [],
+        });
+      }
+
       // Use role from DB if available, otherwise use mappings
       const acceptableRoles = role 
         ? [role.name, role.id, ...(roleMappings[role.name] || []), ...(roleMappings[roleId] || [])]
@@ -206,6 +236,12 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       const params: any[] = [uniqueRoles];
       let paramIndex = 2;
+
+      // ✅ FIX: For solo providers, exclude at_center services even if serviceStyle is not specified
+      // But allow 'all' and NULL service styles (they apply to all styles)
+      if (vendorConfiguration === 'solo') {
+        catalogQuery += ` AND (service_style != 'at_center' OR service_style = 'all' OR service_style IS NULL)`;
+      }
 
       if (serviceStyle) {
         catalogQuery += ` AND (service_style = $${paramIndex} OR service_style = 'all' OR service_style IS NULL)`;
@@ -298,10 +334,17 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         }
       }
 
+      // ✅ FIX: Handle UUID vs text comparison properly
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+      
       const services = await query(
-        `SELECT * FROM service_catalog
-         WHERE (service_id = $1 OR id = $1)
-         AND status = 'active'`,
+        isUUID
+          ? `SELECT * FROM service_catalog
+             WHERE (service_id = $1 OR id = $1::uuid)
+             AND status = 'active'`
+          : `SELECT * FROM service_catalog
+             WHERE (service_id = $1 OR id::text = $1)
+             AND status = 'active'`,
         [serviceId]
       );
 
@@ -945,11 +988,24 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       const { serviceId } = c.req.param();
       const body = await c.req.json();
 
-      // Check if service exists
-      const existing = await query(
-        'SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1',
-        [serviceId]
-      );
+      // ✅ FIX: Handle UUID vs text comparison properly
+      // Check if serviceId is a UUID format
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+      
+      let existing;
+      if (isUUID) {
+        // If it's a UUID, cast both columns appropriately
+        existing = await query(
+          'SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1::uuid',
+          [serviceId]
+        );
+      } else {
+        // If it's text (service_id), compare as text
+        existing = await query(
+          'SELECT * FROM service_catalog WHERE service_id = $1 OR id::text = $1',
+          [serviceId]
+        );
+      }
 
       if (existing.rows.length === 0) {
         return c.json({ error: 'Service not found' }, 404);
@@ -1002,10 +1058,21 @@ export function registerServiceCatalogEndpoints(app: Hono) {
     try {
       const { serviceId } = c.req.param();
 
-      const existing = await query(
-        'SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1',
-        [serviceId]
-      );
+      // ✅ FIX: Handle UUID vs text comparison properly
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+      
+      let existing;
+      if (isUUID) {
+        existing = await query(
+          'SELECT * FROM service_catalog WHERE service_id = $1 OR id = $1::uuid',
+          [serviceId]
+        );
+      } else {
+        existing = await query(
+          'SELECT * FROM service_catalog WHERE service_id = $1 OR id::text = $1',
+          [serviceId]
+        );
+      }
 
       if (existing.rows.length === 0) {
         return c.json({ error: 'Service not found' }, 404);

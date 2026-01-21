@@ -37,6 +37,9 @@ import { CenterProfileManager } from './CenterProfileManager'; // ✅ NEW: Cente
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
 import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
+import { PhotographyVendorDashboard } from './photography/PhotographyVendorDashboard';
+import { AmbulanceVendorDashboard } from './ambulance/AmbulanceVendorDashboard';
+import { RelocationVendorDashboard } from './relocation/RelocationVendorDashboard';
 import { VendorGalleryManagement } from './VendorGalleryManagement'; // ✅ FIX: Gallery component
 import { VendorPortfolioManagement } from './VendorPortfolioManagement'; // ✅ FIX: Portfolio component
 import { VendorCCTVAccess } from './VendorCCTVAccess'; // ✅ FIX: CCTV component
@@ -63,6 +66,7 @@ import { VendorCounseling } from './VendorCounseling'; // ✅ NEW: Counseling se
 import { VendorPolicyManagement } from './VendorPolicyManagement'; // ✅ NEW: Policy management
 import { VendorDistancePricing } from './VendorDistancePricing'; // ✅ NEW: Distance pricing
 import { VendorSupportDashboard } from './VendorSupportDashboard'; // ✅ NEW: Support tickets
+import { ServicePromotionsManagement } from './ServicePromotionsManagement'; // ✅ NEW: Service Promotions
 import { ArrowLeft } from 'lucide-react'; // ✅ NEW: For navigation
 
 interface VendorLandingPageProps {
@@ -105,7 +109,8 @@ interface VendorData {
   previousStatus?: string;
   wasApprovedBefore?: boolean;
   reapprovalReason?: string;
-  roleId?: string; // ✅ Add roleId to VendorData
+  roleId?: string; // ✅ Role UUID
+  roleName?: string; // ✅ Role name (e.g., 'veterinary_clinic', 'groomer_center')
   submittedAt?: string; // Application submission timestamp
   createdAt?: string; // Record creation timestamp
   infoRequestMessage?: string; // Clarification/info request message
@@ -178,6 +183,7 @@ export function VendorLandingPage({
   const [showCounseling, setShowCounseling] = useState(false); // ✅ NEW: Counseling services
   const [showPolicyManagement, setShowPolicyManagement] = useState(false); // ✅ NEW: Policy management
   const [showDistancePricing, setShowDistancePricing] = useState(false); // ✅ NEW: Distance pricing
+  const [showServicePromotions, setShowServicePromotions] = useState(false); // ✅ NEW: Service Promotions
   const [showLiveTracking, setShowLiveTracking] = useState(false); // ✅ FIX: Live tracking
   const [showSpecializedServices, setShowSpecializedServices] = useState(false); // ✅ FIX: Specialized services
   
@@ -889,7 +895,7 @@ export function VendorLandingPage({
         return (
           <FacilityManagement
             vendorId={vendorId}
-            
+            vendorData={vendorData}
             onBack={() => setShowFacilityManagement(false)}
           />
         );
@@ -900,7 +906,7 @@ export function VendorLandingPage({
         return (
           <CenterProfileManager
             vendorId={vendorId}
-            
+            vendorData={vendorData}
             onBack={() => setShowCenterProfile(false)}
           />
         );
@@ -1272,6 +1278,17 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Service Promotions Management
+      if (showServicePromotions) {
+        return (
+          <ServicePromotionsManagement
+            vendorId={vendorId}
+            vendorRole={vendorData?.vendorType}
+            onBack={() => setShowServicePromotions(false)}
+          />
+        );
+      }
+      
       // ✅ NEW: Distance Pricing (uses onClose)
       if (showDistancePricing) {
         return (
@@ -1347,7 +1364,37 @@ export function VendorLandingPage({
         );
       }
 
-      // 7. Pet Products Store / Retailer - Redirect to Seller Hub (E-Commerce Dashboard)
+      // 7. Photography Services
+      if (vendorData?.roleId === 'pet_photography' || vendorData?.roleId === 'photography') {
+        console.log('📸 Rendering PhotographyVendorDashboard');
+        return (
+          <PhotographyVendorDashboard
+            vendorId={vendorId}
+          />
+        );
+      }
+
+      // 8. Ambulance Services
+      if (vendorData?.roleId === 'pet_ambulance' || vendorData?.roleId === 'ambulance') {
+        console.log('🚑 Rendering AmbulanceVendorDashboard');
+        return (
+          <AmbulanceVendorDashboard
+            vendorId={vendorId}
+          />
+        );
+      }
+
+      // 9. Pet Relocation Services
+      if (vendorData?.roleId === 'pet_relocation' || vendorData?.roleId === 'relocation') {
+        console.log('🚚 Rendering RelocationVendorDashboard');
+        return (
+          <RelocationVendorDashboard
+            vendorId={vendorId}
+          />
+        );
+      }
+
+      // 10. Pet Products Store / Retailer - Redirect to Seller Hub (E-Commerce Dashboard)
       // Check role by name OR by UUID (pet_products_store UUID = 5056756d-3b05-457a-9725-3f922800b520)
       const vendorRoleId = vendorData?.roleId || (vendorData as any)?.role_id || (vendorData as any)?.selected_role_id;
       const roleName = (vendorData as any)?.roleName || (vendorData as any)?.role_name || '';
@@ -1426,6 +1473,7 @@ export function VendorLandingPage({
           onNavigateToCounseling={() => setShowCounseling(true)}
           onNavigateToDistancePricing={() => setShowDistancePricing(true)}
           onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}
+          onNavigateToServicePromotions={() => setShowServicePromotions(true)}
         />
       );
 

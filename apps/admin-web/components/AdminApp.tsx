@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { UnifiedAdminSidebar } from './admin/layout/UnifiedAdminSidebar';
+import { TaxManagement } from './admin/finance/TaxManagement';
 
 // ============================================================================
 // TYPES
@@ -972,14 +973,8 @@ export function AdminApp() {
         {/* NOTE: All these tabs now have dedicated pages - navigation handled by AdminLayout/UnifiedAdminSidebar */}
         {/* Removed placeholder redirects - they were causing issues when CloudFront served index.html */}
 
-        {/* Other tabs placeholder */}
-        {activeTab === 'taxes' && (
-          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-            <div className="text-5xl mb-4">🚧</div>
-            <h3 className="text-xl font-semibold text-gray-900">Coming Soon</h3>
-            <p className="text-gray-500 mt-0">Tax management is under development</p>
-          </div>
-        )}
+        {/* Tax Management */}
+        {activeTab === 'taxes' && <TaxManagement />}
         </div>
       </main>
 

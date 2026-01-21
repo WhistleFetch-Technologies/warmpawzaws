@@ -34,6 +34,11 @@ export interface LambdaStackProps {
 }
 export declare class LambdaStack extends Construct {
     readonly apiFunction: lambda.Function;
+    readonly notificationProcessor: lambda.Function;
+    readonly emailProcessor: lambda.Function;
+    readonly smsProcessor: lambda.Function;
+    readonly analyticsProcessor: lambda.Function;
+    readonly settlementProcessor: lambda.Function;
     readonly functions: Map<string, lambda.Function>;
     constructor(scope: Construct, id: string, props: LambdaStackProps);
 }

@@ -235,6 +235,92 @@ export function registerSettlementEndpoints(app: Hono) {
         [cutoffDate]
       );
 
+      // Get vendor no-show and cancellation penalties
+      const vendorPenalties = await query(
+        `SELECT 
+           b.vendor_id,
+           b.id as booking_id,
+           b.customer_id,
+           b.total_amount,
+           b.status,
+           b.cancelled_by
+         FROM bookings b
+         WHERE (b.status = 'vendor_no_show' OR (b.status = 'cancelled' AND b.cancelled_by = 'vendor'))
+         AND b.created_at < $1
+         AND b.penalty_processed IS NOT TRUE
+         ORDER BY b.created_at ASC`,
+        [cutoffDate]
+      ).catch(() => ({ rows: [] }));
+
+      // Get cancellation policy for penalty percentages
+      const cancellationPolicy = await query(
+        `SELECT * FROM cancellation_policies 
+         WHERE is_active = true 
+         ORDER BY priority DESC 
+         LIMIT 1`
+      ).catch(() => ({ rows: [] }));
+
+      const vendorPenaltyPercentage = cancellationPolicy.rows[0]?.vendor_cancellation_penalty || 10;
+      const customerCompensationPercentage = cancellationPolicy.rows[0]?.customer_compensation_percentage || 50;
+
+      // Track penalties by vendor
+      const penaltiesByVendor: Record<string, { penaltyAmount: number; compensations: any[] }> = {};
+
+      for (const penalty of vendorPenalties.rows) {
+        const vendorId = penalty.vendor_id;
+        const bookingAmount = parseFloat(penalty.total_amount || '0');
+        const penaltyAmount = (bookingAmount * vendorPenaltyPercentage) / 100;
+        const compensationAmount = (bookingAmount * customerCompensationPercentage) / 100;
+
+        if (!penaltiesByVendor[vendorId]) {
+          penaltiesByVendor[vendorId] = { penaltyAmount: 0, compensations: [] };
+        }
+
+        penaltiesByVendor[vendorId].penaltyAmount += penaltyAmount;
+        penaltiesByVendor[vendorId].compensations.push({
+          bookingId: penalty.booking_id,
+          customerId: penalty.customer_id,
+          compensationAmount,
+          reason: penalty.status === 'vendor_no_show' ? 'Vendor no-show' : 'Vendor cancellation',
+        });
+
+        // Mark penalty as processed
+        await query(
+          `UPDATE bookings SET penalty_processed = true WHERE id = $1`,
+          [penalty.booking_id]
+        ).catch(() => null);
+      }
+
+      // Process customer compensations (credit to wallet)
+      for (const vendorId in penaltiesByVendor) {
+        for (const comp of penaltiesByVendor[vendorId].compensations) {
+          if (comp.compensationAmount > 0 && comp.customerId) {
+            try {
+              // Credit customer wallet
+              await insert('wallet_transactions', {
+                customer_id: comp.customerId,
+                transaction_type: 'credit',
+                amount: comp.compensationAmount,
+                description: `Compensation for ${comp.reason} - Booking #${comp.bookingId?.slice(-6) || 'N/A'}`,
+                reference_type: 'vendor_penalty',
+                reference_id: comp.bookingId,
+                status: 'completed',
+              }).catch(() => null);
+
+              // Update customer wallet balance
+              await query(
+                `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
+                [comp.compensationAmount, comp.customerId]
+              ).catch(() => null);
+
+              console.log(`[SETTLEMENT] Credited ₹${comp.compensationAmount} to customer ${comp.customerId} for ${comp.reason}`);
+            } catch (e) {
+              console.error(`[SETTLEMENT] Failed to credit compensation to customer ${comp.customerId}:`, e);
+            }
+          }
+        }
+      }
+
       // Group by vendor
       const vendorSettlements: Record<string, any> = {};
 
@@ -247,6 +333,7 @@ export function registerSettlementEndpoints(app: Hono) {
             totalAmount: 0,
             commissionAmount: 0,
             netAmount: 0,
+            penaltyDeductions: penaltiesByVendor[vendorId]?.penaltyAmount || 0,
           };
         }
 
@@ -261,6 +348,16 @@ export function registerSettlementEndpoints(app: Hono) {
         vendorSettlements[vendorId].netAmount += netAmount;
       }
 
+      // Apply penalty deductions to net amount
+      for (const vendorId in vendorSettlements) {
+        if (vendorSettlements[vendorId].penaltyDeductions > 0) {
+          console.log(`[SETTLEMENT] Applying ₹${vendorSettlements[vendorId].penaltyDeductions} penalty deduction to vendor ${vendorId}`);
+          vendorSettlements[vendorId].netAmount -= vendorSettlements[vendorId].penaltyDeductions;
+          // Ensure net amount doesn't go negative
+          vendorSettlements[vendorId].netAmount = Math.max(0, vendorSettlements[vendorId].netAmount);
+        }
+      }
+
       // Create settlements
       const settlements = [];
       for (const vendorId in vendorSettlements) {
@@ -271,16 +368,21 @@ export function registerSettlementEndpoints(app: Hono) {
           continue;
         }
 
-        // Create settlement record
+        // Create settlement record with penalty deductions
         const settlementRecord = await insert('settlements', {
           vendor_id: vendorId,
           total_amount: settlement.totalAmount,
           commission_amount: settlement.commissionAmount,
+          penalty_deductions: settlement.penaltyDeductions || 0,
           net_amount: settlement.netAmount,
           settlement_status: rules.autoPayout ? 'processing' : 'pending',
           settlement_period_start: cutoffDate.toISOString().split('T')[0],
           settlement_period_end: new Date().toISOString().split('T')[0],
           payment_ids: settlement.bookingIds,
+          metadata: JSON.stringify({
+            penaltyDeductions: settlement.penaltyDeductions || 0,
+            penaltyReason: settlement.penaltyDeductions > 0 ? 'Vendor cancellation/no-show penalties' : null,
+          }),
         });
 
         // Mark bookings as settled
@@ -705,8 +807,15 @@ export function registerSettlementEndpoints(app: Hono) {
 
       const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
 
+      // ✅ FIX: Return 200 with null bank details instead of 404
+      // 404 implies an error, but "no bank details yet" is a valid state
       if (bankDetails.length === 0) {
-        return c.json({ error: 'Bank details not found' }, 404);
+        return c.json({
+          success: true,
+          bankDetails: null,
+          message: 'No bank details configured yet',
+          requiresSetup: true,
+        });
       }
 
       // Mask account number for security
@@ -725,6 +834,87 @@ export function registerSettlementEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching bank details:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /settlements/policy
+   * Get settlement policy for vendors to see
+   * This is the same policy for ALL vendors
+   */
+  app.get("/settlements/policy", async (c) => {
+    try {
+      // Get payout rules from platform settings
+      const payoutRules = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
+      const rules = payoutRules.length > 0
+        ? (payoutRules[0].setting_value as any)
+        : {
+            holdPeriodDays: 7,
+            minimumPayout: 1000,
+            autoPayout: true,
+            defaultCommission: 10,
+          };
+      
+      // Get settlement schedule
+      const scheduleSettings = await query(`
+        SELECT * FROM platform_settings 
+        WHERE setting_key LIKE 'admin:finance:settlement%' 
+        LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      
+      const schedule = scheduleSettings.rows.length > 0 
+        ? scheduleSettings.rows[0].setting_value 
+        : {
+            scheduleType: 'weekly',
+            settlementPeriodDays: rules.holdPeriodDays,
+            minPayoutAmount: rules.minimumPayout,
+          };
+      
+      return c.json({
+        success: true,
+        policy: {
+          // Hold period - how long earnings are held before settlement
+          holdPeriodDays: rules.holdPeriodDays || 7,
+          
+          // Minimum amount required for payout
+          minimumPayoutAmount: rules.minimumPayout || 1000,
+          
+          // Platform commission percentage (based on tier, but default shown)
+          defaultCommissionRate: rules.defaultCommission || 10,
+          
+          // Whether auto-payout is enabled
+          autoPayoutEnabled: rules.autoPayout !== false,
+          
+          // Settlement schedule
+          settlementSchedule: typeof schedule === 'string' ? JSON.parse(schedule) : schedule,
+          
+          // Bank verification requirement
+          bankVerificationRequired: true,
+          
+          // Razorpay integration info
+          paymentProcessor: 'Razorpay',
+          
+          // Policy description for vendors
+          description: `Earnings are held for ${rules.holdPeriodDays || 7} days before becoming eligible for settlement. ` +
+            `Minimum payout amount is ₹${rules.minimumPayout || 1000}. ` +
+            `Platform commission is deducted based on your tier (default ${rules.defaultCommission || 10}%). ` +
+            `Bank account must be verified via Razorpay to receive payouts.`,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching settlement policy:', error);
+      return c.json({
+        success: true,
+        policy: {
+          holdPeriodDays: 7,
+          minimumPayoutAmount: 1000,
+          defaultCommissionRate: 10,
+          autoPayoutEnabled: true,
+          bankVerificationRequired: true,
+          paymentProcessor: 'Razorpay',
+          description: 'Earnings are held for 7 days before settlement. Minimum payout is ₹1000. Bank verification required.',
+        },
+      });
     }
   });
 

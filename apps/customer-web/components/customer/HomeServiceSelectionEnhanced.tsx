@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Home, Stethoscope, Scissors, GraduationCap, Heart } from 'lucide-react';
+import { ArrowLeft, Home, Stethoscope, Scissors, GraduationCap, Heart, Brain, Moon, TestTube } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -24,10 +24,13 @@ interface HomeServiceSelectionEnhancedProps {
 }
 
 const homeServices = [
-  { id: 'vet', name: 'Vet Consultation', icon: Stethoscope, color: 'bg-blue-100 text-blue-600', desc: 'Home vet visits' },
-  { id: 'grooming', name: 'Grooming', icon: Scissors, color: 'bg-purple-100 text-purple-600', desc: 'At-home grooming' },
-  { id: 'training', name: 'Training', icon: GraduationCap, color: 'bg-green-100 text-green-600', desc: 'Pet training sessions' },
-  { id: 'walking', name: 'Dog Walking', icon: Heart, color: 'bg-pink-100 text-pink-600', desc: 'Professional walkers' },
+  { id: 'vet', name: 'Vet Consultation', icon: Stethoscope, color: 'bg-blue-100 text-blue-600', desc: 'Home vet visits', price: '₹500+' },
+  { id: 'grooming', name: 'Grooming', icon: Scissors, color: 'bg-purple-100 text-purple-600', desc: 'At-home grooming', price: '₹399+' },
+  { id: 'training', name: 'Training', icon: GraduationCap, color: 'bg-green-100 text-green-600', desc: 'Pet training sessions', price: '₹499+' },
+  { id: 'walking', name: 'Dog Walking', icon: Heart, color: 'bg-pink-100 text-pink-600', desc: 'Professional walkers', price: '₹150+' },
+  { id: 'behaviourist', name: 'Behaviourist', icon: Brain, color: 'bg-amber-100 text-amber-600', desc: 'Behavior assessment', price: '₹799+' },
+  { id: 'sitting', name: 'Pet Sitting', icon: Moon, color: 'bg-indigo-100 text-indigo-600', desc: 'In-home pet sitting', price: '₹299+' },
+  { id: 'diagnostics', name: 'Home Sample', icon: TestTube, color: 'bg-teal-100 text-teal-600', desc: 'Lab sample collection', price: '₹199+' },
 ];
 
 export function HomeServiceSelectionEnhanced(props: HomeServiceSelectionEnhancedProps) {
@@ -114,13 +117,14 @@ export function HomeServiceSelectionEnhanced(props: HomeServiceSelectionEnhanced
                   <Card
                     key={service.id}
                     onClick={() => handleServiceSelect(service.id)}
-                    className="p-4 cursor-pointer hover:shadow-lg transition-shadow"
+                    className="p-4 cursor-pointer hover:shadow-lg transition-shadow border-2 border-transparent hover:border-[#FF8C42]"
                   >
-                    <div className={`w-12 h-12 rounded-lg ${service.color} flex items-center justify-center mb-3`}>
+                    <div className={`w-12 h-12 rounded-xl ${service.color} flex items-center justify-center mb-3`}>
                       <Icon className="w-6 h-6" />
                     </div>
-                    <h3 className="font-semibold text-gray-900 mb-1">{service.name}</h3>
-                    <p className="text-xs text-gray-500">{service.desc}</p>
+                    <h3 className="font-semibold text-gray-900 text-sm mb-0.5">{service.name}</h3>
+                    <p className="text-xs text-gray-500 mb-2">{service.desc}</p>
+                    <p className="text-xs font-semibold text-[#FF8C42]">{service.price}</p>
                   </Card>
                 );
               })}

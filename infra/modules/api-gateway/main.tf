@@ -18,10 +18,10 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_origins     = var.cors_allowed_origins
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-    allow_headers     = ["content-type", "authorization", "x-api-key"]
+    allow_methods     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
+    allow_headers     = ["content-type", "authorization", "x-api-key", "x-uat-mode", "x-uat-token", "x-requested-with"]
     expose_headers    = ["content-length", "x-request-id"]
-    max_age           = 300
+    max_age           = 86400
     allow_credentials = true
   }
 
@@ -32,6 +32,47 @@ resource "aws_apigatewayv2_api" "main" {
   
   lifecycle {
     prevent_destroy = true  # Prevent accidental deletion
+  }
+}
+
+# ============================================================================
+# CORS Configuration for Existing API Gateway
+# ============================================================================
+# When using an existing API Gateway, we need to update its CORS configuration
+# using the AWS CLI since data sources are read-only.
+# This runs on every apply to ensure CORS stays correctly configured.
+
+locals {
+  cors_origins_json = jsonencode(var.cors_allowed_origins)
+}
+
+resource "null_resource" "update_existing_api_cors" {
+  count = var.existing_api_gateway_id != null ? 1 : 0
+  
+  # Trigger update when CORS origins change
+  triggers = {
+    cors_origins = local.cors_origins_json
+    api_id       = var.existing_api_gateway_id
+  }
+  
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws apigatewayv2 update-api \
+        --api-id ${var.existing_api_gateway_id} \
+        --region ${var.aws_region} \
+        --cors-configuration '{
+          "AllowOrigins": ${local.cors_origins_json},
+          "AllowMethods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+          "AllowHeaders": ["content-type", "authorization", "x-api-key", "x-uat-mode", "x-uat-token", "x-requested-with"],
+          "ExposeHeaders": ["content-length", "x-request-id"],
+          "AllowCredentials": true,
+          "MaxAge": 86400
+        }'
+    EOT
+    
+    environment = {
+      AWS_DEFAULT_REGION = var.aws_region
+    }
   }
 }
 

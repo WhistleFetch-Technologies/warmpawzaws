@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  ChevronLeft, Camera, Edit2, Save, X, Calendar, Clock, 
+  Camera, Edit2, Save, X, Calendar, Clock, 
   MapPin, User, Upload, Heart, AlertCircle, Check,
   ChevronRight, Package
 } from 'lucide-react';
@@ -236,7 +236,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading pet details...</p>
@@ -247,7 +247,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
   if (!pet) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center px-6">
           <p className="text-gray-600 mb-4">Pet not found</p>
           <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
@@ -259,50 +259,25 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col w-full max-w-[430px] mx-auto">
-      {/* Status Bar */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-white text-sm font-medium">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="white"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="white"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="white"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="white" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="white"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="white"/>
-          </svg>
-        </div>
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Edit Button - Moved to content area */}
+      <div className="px-6 pt-4 pb-2 bg-white flex justify-end">
+        <button 
+          onClick={() => editMode ? setEditMode(false) : setEditMode(true)}
+          className="p-2 hover:bg-gray-100 rounded-full transition-all"
+        >
+          {editMode ? (
+            <X className="w-5 h-5 text-gray-700" />
+          ) : (
+            <Edit2 className="w-5 h-5 text-gray-700" />
+          )}
+        </button>
       </div>
 
-      {/* Header Section with Curved Bottom */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pb-8">
-        <div className="flex items-center justify-between">
-          <button onClick={onBack} className="p-2 -ml-2 hover:bg-white/20 rounded-full transition-all">
-            <ChevronLeft className="w-6 h-6 text-white" />
-          </button>
-          <h1 className="text-white font-semibold">{pet.name}'s Profile</h1>
-          <button 
-            onClick={() => editMode ? setEditMode(false) : setEditMode(true)}
-            className="p-2 -mr-2 hover:bg-white/20 rounded-full transition-all"
-          >
-            {editMode ? (
-              <X className="w-6 h-6 text-white" />
-            ) : (
-              <Edit2 className="w-5 h-5 text-white" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Scrollable Content with Curved Top */}
-      <div className="flex-1 bg-white rounded-t-[32px] -mt-6 overflow-y-auto pb-32">
+      {/* Scrollable Content */}
+      <div className="flex-1 bg-white overflow-y-auto pb-32">
         <div className="px-6 py-6">
           {/* Pet Photo */}
           <div className="flex flex-col items-center mb-8">
@@ -764,6 +739,6 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

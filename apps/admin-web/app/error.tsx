@@ -1,10 +1,7 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
-
-// Prevent static generation - error pages need to be dynamic
-export const dynamic = 'force-dynamic';
+import { ErrorBoundary } from '@/components/admin/shared/ErrorBoundary';
+import { useEffect } from 'react';
 
 export default function Error({
   error,
@@ -13,49 +10,29 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    // Log error to error reporting service
+    console.error('Application error:', error);
+  }, [error]);
+
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      fontFamily: 'system-ui, sans-serif',
-      padding: '2rem',
-      textAlign: 'center'
-    }}>
-      <h1 style={{ fontSize: '4rem', margin: '0 0 1rem', color: '#dc2626' }}>500</h1>
-      <h2 style={{ fontSize: '1.5rem', margin: '0 0 1rem', color: '#666' }}>Something went wrong</h2>
-      <p style={{ margin: '0 0 2rem', color: '#999' }}>
-        {error?.message || 'An unexpected error occurred'}
-      </p>
-      <div style={{ display: 'flex', gap: '1rem' }}>
-        <button
-          onClick={reset}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: '#f97316',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.5rem',
-            fontWeight: '500',
-            cursor: 'pointer'
-          }}
-        >
-          Try Again
-        </button>
-        <Link href="/" style={{
-          padding: '0.75rem 1.5rem',
-          backgroundColor: '#6b7280',
-          color: 'white',
-          textDecoration: 'none',
-          borderRadius: '0.5rem',
-          fontWeight: '500'
-        }}>
-          Go Home
-        </Link>
+    <ErrorBoundary>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Something went wrong
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {error.message || 'An unexpected error occurred'}
+          </p>
+          <button
+            onClick={reset}
+            className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+          >
+            Try Again
+          </button>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }
-

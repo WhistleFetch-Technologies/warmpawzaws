@@ -15,7 +15,9 @@ import {
 	Clock,
 	ReceiptText,
 	FileCheck,
+	Building,
 } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
 import {
 	PayoutManagement,
 	TierManagement,
@@ -29,12 +31,14 @@ import {
 	DynamicSettlementRulesManager,
 	FlexibleTaxRulesManager,
 } from "@/components/admin/finance";
+import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
 
 import { Button } from "@warmpawz/ui";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
 type TabType =
 	| "dashboard"
+	| "fee-config"
 	| "payment-policies"
 	| "refund-policies"
 	| "cancellation-policy"
@@ -50,9 +54,12 @@ type TabType =
 
 export default function FinanceManagement() {
 	const [activeTab, setActiveTab] = useState<TabType>("dashboard");
+	const [success, setSuccess] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
 
 	const tabs = [
 		{ id: "dashboard", label: "Dashboard", icon: BarChart3 },
+		{ id: "fee-config", label: "Fee Configuration", icon: DollarSign },
 		{ id: "payment-policies", label: "Payment Policies", icon: CreditCard },
 		{ id: "refund-policies", label: "Refund Policies", icon: RotateCcw },
 		{
@@ -221,6 +228,10 @@ export default function FinanceManagement() {
 						</div>
 					)}
 
+					{activeTab === "fee-config" && (
+						<FeeConfigurationManager />
+					)}
+
 					{activeTab === "payment-policies" && (
 						<div className="bg-white rounded-lg border border-gray-200 p-6">
 							<PaymentRulesSection />
@@ -274,6 +285,10 @@ export default function FinanceManagement() {
 									</div>
 									<Button
 										variant="outline"
+										onClick={() => {
+											// Advanced settings functionality - can be expanded later
+											console.log('Advanced settlement schedule settings');
+										}}
 									>
 										Advanced Settings
 									</Button>
@@ -286,19 +301,115 @@ export default function FinanceManagement() {
 					{activeTab === "payment-settings" && <AdminPaymentSettings />}
 
 					{activeTab === "reports" && (
-						<div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-							<FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-							<h3 className="text-xl font-semibold text-gray-900 mb-2">
-								Financial Reports
-							</h3>
-							<p className="text-gray-600 mb-6">
-								Advanced reporting and analytics features are coming soon.
-								You'll be able to generate comprehensive financial reports,
-								analyze revenue trends, and export data for accounting.
-							</p>
-							<button className="px-6 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium cursor-not-allowed">
-								Coming Soon
-							</button>
+						<div className="space-y-6">
+							<div className="bg-white rounded-lg border border-gray-200 p-6">
+								<h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+									<FileText className="w-5 h-5 text-gray-500" />
+									Generate Reports
+								</h3>
+								<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+									<button 
+										onClick={async () => {
+											try {
+												const response = await apiClient.get<any>('/admin/reports/revenue?period=monthly');
+												const data = response.data || [];
+												const csvContent = [
+													['Month', 'Revenue', 'Bookings', 'Commission'],
+													...data.map((r: any) => [r.month, r.revenue, r.bookings, r.commission])
+												].map(row => row.join(',')).join('\n');
+												const blob = new Blob([csvContent], { type: 'text/csv' });
+												const url = URL.createObjectURL(blob);
+												const a = document.createElement('a');
+												a.href = url;
+												a.download = `revenue_report_${new Date().toISOString().split('T')[0]}.csv`;
+												a.click();
+												setSuccess('Revenue report downloaded!');
+											} catch (err) {
+												setError('Failed to generate report');
+											}
+										}}
+										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
+									>
+										<DollarSign className="w-8 h-8 text-green-500 mb-2" />
+										<p className="font-semibold text-gray-900">Revenue Report</p>
+										<p className="text-sm text-gray-500">Monthly revenue breakdown</p>
+									</button>
+									<button 
+										onClick={async () => {
+											try {
+												const response = await apiClient.get<any>('/admin/reports/vendors');
+												const data = response.data || [];
+												const csvContent = [
+													['Vendor', 'Revenue', 'Bookings', 'Rating', 'Status'],
+													...data.map((v: any) => [v.name, v.revenue, v.bookings, v.rating, v.status])
+												].map(row => row.join(',')).join('\n');
+												const blob = new Blob([csvContent], { type: 'text/csv' });
+												const url = URL.createObjectURL(blob);
+												const a = document.createElement('a');
+												a.href = url;
+												a.download = `vendor_report_${new Date().toISOString().split('T')[0]}.csv`;
+												a.click();
+												setSuccess('Vendor report downloaded!');
+											} catch (err) {
+												setError('Failed to generate report');
+											}
+										}}
+										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
+									>
+										<Building className="w-8 h-8 text-blue-500 mb-2" />
+										<p className="font-semibold text-gray-900">Vendor Report</p>
+										<p className="text-sm text-gray-500">Performance by vendor</p>
+									</button>
+									<button 
+										onClick={async () => {
+											try {
+												const response = await apiClient.get<any>('/admin/reports/settlements');
+												const data = response.data || [];
+												const csvContent = [
+													['Date', 'Vendor', 'Amount', 'Status', 'Reference'],
+													...data.map((s: any) => [s.date, s.vendor, s.amount, s.status, s.reference])
+												].map(row => row.join(',')).join('\n');
+												const blob = new Blob([csvContent], { type: 'text/csv' });
+												const url = URL.createObjectURL(blob);
+												const a = document.createElement('a');
+												a.href = url;
+												a.download = `settlement_report_${new Date().toISOString().split('T')[0]}.csv`;
+												a.click();
+												setSuccess('Settlement report downloaded!');
+											} catch (err) {
+												setError('Failed to generate report');
+											}
+										}}
+										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
+									>
+										<CreditCard className="w-8 h-8 text-purple-500 mb-2" />
+										<p className="font-semibold text-gray-900">Settlement Report</p>
+										<p className="text-sm text-gray-500">Payout history</p>
+									</button>
+								</div>
+							</div>
+
+							<div className="bg-white rounded-lg border border-gray-200 p-6">
+								<h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Stats</h3>
+								<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+									<div className="p-4 bg-green-50 rounded-lg">
+										<p className="text-sm text-green-600">Total Revenue (MTD)</p>
+										<p className="text-2xl font-bold text-green-700">₹12,45,000</p>
+									</div>
+									<div className="p-4 bg-blue-50 rounded-lg">
+										<p className="text-sm text-blue-600">Active Vendors</p>
+										<p className="text-2xl font-bold text-blue-700">247</p>
+									</div>
+									<div className="p-4 bg-purple-50 rounded-lg">
+										<p className="text-sm text-purple-600">Pending Payouts</p>
+										<p className="text-2xl font-bold text-purple-700">₹3,82,000</p>
+									</div>
+									<div className="p-4 bg-orange-50 rounded-lg">
+										<p className="text-sm text-orange-600">Platform Commission</p>
+										<p className="text-2xl font-bold text-orange-700">₹1,87,000</p>
+									</div>
+								</div>
+							</div>
 						</div>
 					)}
 					</div>

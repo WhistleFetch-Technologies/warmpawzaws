@@ -64,6 +64,13 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   
+  // ✅ FIX: Track roleId separately with fallback loading
+  // IMPORTANT: Prefer roleName over roleId (roleId is UUID, roleName is actual name like 'veterinary_clinic')
+  // ⚠️ CRITICAL: DO NOT use vendorType as fallback - it's 'business'/'solo'/'center' which are NOT role names
+  const [roleId, setRoleId] = useState<string | undefined>(
+    vendorData?.roleName || vendorData?.roleId
+  );
+  
   const [profile, setProfile] = useState<CenterProfile>({
     centerName: vendorData?.businessName || '',
     description: '',
@@ -90,9 +97,21 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
-  // Using apiClient instead of API_BASE
-  const availableAmenities = getAmenitiesForVendorType(vendorData?.roleId);
+  // Using apiClient instead of API_BASE - use local roleId state
+  const availableAmenities = getAmenitiesForVendorType(roleId);
   const MAX_PHOTOS = 10;
+
+  // ✅ FIX: Update roleId when vendorData changes - prefer roleName over roleId
+  // ⚠️ CRITICAL: DO NOT use vendorType as fallback - it's 'business'/'solo'/'center' which are NOT role names
+  useEffect(() => {
+    if (!roleId) {
+      const newRoleId = vendorData?.roleName || vendorData?.roleId;
+      if (newRoleId) {
+        console.log('[CENTER-PROFILE] Setting roleId from vendorData:', newRoleId);
+        setRoleId(newRoleId);
+      }
+    }
+  }, [vendorData?.roleName, vendorData?.roleId]);
 
   useEffect(() => {
     loadCenterProfile();
@@ -102,19 +121,70 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
     try {
       setLoading(true);
       
+      // ✅ FIX: If roleId is not available, fetch it from vendor profile
+      // IMPORTANT: Use roleName (the actual role name like 'veterinary_clinic') not roleId (which is a UUID)
+      let fetchedRoleId: string | undefined = undefined;
+      if (!roleId) {
+        try {
+          console.log('[CENTER-PROFILE] roleId not available, fetching from profile...');
+          const profileData = await apiClient.get('/vendor/profile') as any;
+          
+          // ✅ FIX: Prefer roleName over roleId (roleId is UUID, roleName is actual name like 'veterinary_clinic')
+          // ⚠️ CRITICAL: DO NOT use vendorType/vendor_type - they are 'business'/'solo'/'center' NOT role names
+          if (profileData?.vendor?.roleName) {
+            console.log('[CENTER-PROFILE] Got roleName from profile:', profileData.vendor.roleName);
+            fetchedRoleId = profileData.vendor.roleName;
+            setRoleId(fetchedRoleId);
+          } else if (profileData?.vendor?.roleId) {
+            // Use roleId (UUID) - backend will look it up and map to correct role
+            console.log('[CENTER-PROFILE] Using roleId (UUID):', profileData.vendor.roleId);
+            fetchedRoleId = profileData.vendor.roleId;
+            setRoleId(fetchedRoleId);
+          } else if (profileData?.vendor?.role_id) {
+            // Alternative field name
+            console.log('[CENTER-PROFILE] Using role_id (UUID):', profileData.vendor.role_id);
+            fetchedRoleId = profileData.vendor.role_id;
+            setRoleId(fetchedRoleId);
+          } else {
+            console.warn('[CENTER-PROFILE] No roleName or roleId found in profile');
+          }
+        } catch (e) {
+          console.warn('[CENTER-PROFILE] Failed to fetch vendor profile for roleId:', e);
+        }
+      }
+      
       // ✅ FIX: Load facility data using correct endpoint
       const facilityData = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
 
       if (facilityData && facilityData.success && facilityData.facility) {
         setProfile(prev => ({
           ...prev,
-          description: facilityData.facility.description || '',
+          centerName: facilityData.facility.centerName || prev.centerName,
+          description: facilityData.facility.description || prev.description || '',
           address: facilityData.facility.address || prev.address,
+          city: facilityData.facility.city || prev.city,
+          state: facilityData.facility.state || prev.state,
+          pincode: facilityData.facility.pincode || prev.pincode || '', // ✅ FIX: Load pincode
           amenities: facilityData.facility.amenities || [],
-          customAmenities: facilityData.facility.customAmenities || [],
+          customAmenities: facilityData.facility.customAmenities || [], // ✅ FIX: Load custom amenities
           photos: facilityData.facility.photos || [],
-          specializations: facilityData.facility.specializations || []
+          specializations: facilityData.facility.specializations || [],
+          operatingHours: facilityData.facility.operatingHours || prev.operatingHours
         }));
+        
+        // ✅ FIX: Try to get roleId from facility data if still not available
+        if (!roleId && facilityData.facility.roleId) {
+          console.log('[CENTER-PROFILE] Got roleId from facility data:', facilityData.facility.roleId);
+          setRoleId(facilityData.facility.roleId);
+        }
+        if (!roleId && facilityData.vendor?.roleId) {
+          console.log('[CENTER-PROFILE] Got roleId from facility vendor:', facilityData.vendor.roleId);
+          setRoleId(facilityData.vendor.roleId);
+        }
+        if (!roleId && facilityData.vendor?.role_id) {
+          console.log('[CENTER-PROFILE] Got role_id from facility vendor:', facilityData.vendor.role_id);
+          setRoleId(facilityData.vendor.role_id);
+        }
       }
 
       // ✅ FIX: Load operating hours from facility data (already loaded above)
@@ -756,7 +826,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             <SpecializationSelector
               selected={profile.specializations}
               onChange={(specs) => setProfile(prev => ({ ...prev, specializations: specs }))}
-              roleId={vendorData?.roleId}
+              roleId={roleId}
             />
           </div>
         )}

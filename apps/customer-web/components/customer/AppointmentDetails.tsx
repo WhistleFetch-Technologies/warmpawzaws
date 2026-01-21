@@ -543,6 +543,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           otherUserName={booking.vendorName}
           userType="customer"
           onClose={() => setCommunicationMode(null)}
+          // Note: onNavigate would need to be passed as prop if needed
+          meetingId={booking.meetingId}
         />
       )}
 

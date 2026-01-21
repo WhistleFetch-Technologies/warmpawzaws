@@ -463,7 +463,7 @@ export function EnhancedSearchBar({
                       {typeof result.distance === 'number' && (
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
-                          {result.distance.toFixed(1)} km
+                          {Number(result.distance || 0).toFixed(1)} km
                         </span>
                       )}
                       {typeof result.relevanceScore === 'number' && result.relevanceScore > 80 && (

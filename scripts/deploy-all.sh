@@ -144,10 +144,10 @@ npm install --silent
 STACK_NAME="WarmpawzStack-$ENVIRONMENT"
 
 echo "  Synthesizing CloudFormation..."
-cdk synth $STACK_NAME > /dev/null
+npx cdk synth $STACK_NAME > /dev/null
 
 echo "  Deploying $STACK_NAME..."
-cdk deploy $STACK_NAME --require-approval never --outputs-file cdk-outputs.json
+npx cdk deploy $STACK_NAME --require-approval never --outputs-file cdk-outputs.json
 
 echo -e "  ${GREEN}✓${NC} Infrastructure deployed"
 echo ""

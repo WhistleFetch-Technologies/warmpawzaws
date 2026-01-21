@@ -12,11 +12,15 @@ interface VendorRoleSelectionProps {
 interface Role {
   id: string;
   name: string;
+  display_name: string;
   description: string;
   icon: string;
   features: string[];
   vendorTypes: string[];
   serviceStyles: string[];
+  selectedServiceStyles?: string[];
+  customer_service?: string | null;
+  vendorConfiguration?: 'solo' | 'business' | null;
   pricingControl: {
     canControlPrice: boolean;
     canControlDuration: boolean;
@@ -48,7 +52,22 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
       // Deduplicate by ID
       const uniqueRoles = Array.from(new Map(activeRoles.map((r: Role) => [r.id, r])).values());
       
-      setRoles(uniqueRoles as Role[]);
+      // Sort roles by customer_service, then by vendorConfiguration (solo first), then by name
+      const sortedRoles = (uniqueRoles as Role[]).sort((a: Role, b: Role) => {
+        const serviceA = a.customer_service || '';
+        const serviceB = b.customer_service || '';
+        if (serviceA !== serviceB) {
+          return serviceA.localeCompare(serviceB);
+        }
+        const configA = a.vendorConfiguration || '';
+        const configB = b.vendorConfiguration || '';
+        if (configA !== configB) {
+          return configA === 'solo' ? -1 : 1;
+        }
+        return (a.display_name || a.name).localeCompare(b.display_name || b.name);
+      });
+      
+      setRoles(sortedRoles as Role[]);
     } catch (err) {
       console.error('Error fetching roles:', err);
       setError('Failed to load roles. Please try again.');
@@ -57,6 +76,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         {
           id: 'service-provider',
           name: 'Pet Service Provider',
+          display_name: 'Pet Service Provider',
           description: 'Offer services like grooming, walking, training, boarding, sun-set services etc.',
           icon: 'service',
           features: ['📅 Bookings', '🏠 At Home / Clinic'],
@@ -75,6 +95,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         {
           id: 'veterinarian',
           name: 'Veterinarian',
+          display_name: 'Veterinarian',
           description: 'Create Prescriptions, manage consultations',
           icon: 'healthcare',
           features: ['📋 Prescriptions', '💬 Consultations'],
@@ -93,6 +114,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         {
           id: 'product-seller',
           name: 'Pet Product Seller',
+          display_name: 'Pet Product Seller',
           description: 'Sell products manage inventory, create promotions',
           icon: 'retail',
           features: ['📊 Excel Upload', '📍 20Lm Radius'],
@@ -300,67 +322,163 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
           </div>
         ) : null}
 
-        {/* Role Cards - Compact Grid */}
-        <div className="space-y-2.5 mb-6">
-          {roles.map((role) => {
-            // Derive category from vendorTypes (use first vendor type)
-            const category = role.vendorTypes && role.vendorTypes.length > 0 
-              ? role.vendorTypes[0] 
-              : 'service';
-            const color = getCategoryColor(category);
-            const bgColorClass = getBackgroundColorClass(color);
-            const borderColorClass = getBorderColorClass(color);
-            
-            // Use features array for display badges, fallback to capabilities
-            const displayBadges = role.features && role.features.length > 0 
-              ? role.features 
-              : role.capabilities;
-            
-            return (
-              <button
-                key={role.id}
-                onClick={() => onRoleSelect(role.id)}
-                className="w-full bg-white border-2 border-gray-200 rounded-xl p-3.5 hover:border-[#FF8C42] transition-all text-left group active:scale-[0.98]"
-              >
-                <div className="flex items-start gap-3">
-                  {/* Compact Icon */}
-                  <div className={`w-10 h-10 ${bgColorClass} rounded-lg flex items-center justify-center flex-shrink-0`}>
-                    {getIconSvg(category, color)}
+        {/* Role Cards - Grouped by Customer Service */}
+        <div className="space-y-4 mb-6">
+          {(() => {
+            // Group roles by customer_service
+            const groupedRoles = roles.reduce((acc: Record<string, Role[]>, role: Role) => {
+              const serviceKey = role.customer_service || 'other';
+              if (!acc[serviceKey]) {
+                acc[serviceKey] = [];
+              }
+              acc[serviceKey].push(role);
+              return acc;
+            }, {});
+
+            // Service display names
+            const serviceDisplayNames: Record<string, string> = {
+              'vet': 'Vet Care',
+              'grooming': 'Grooming',
+              'training': 'Training',
+              'shop': 'Shop',
+              'walker': 'Walker',
+              'boarding': 'Boarding',
+              'adoption': 'Adoption',
+              'cafes': 'Pet Cafe',
+              'photography': 'Photography',
+              'insurance': 'Insurance',
+              'breeder': 'Breeder',
+              'ambulance': 'Ambulance',
+              'nutritionist': 'Nutritionist',
+              'relocation': 'Relocation',
+              'resort': 'Resort',
+              'holiday': 'Holiday',
+              'sunset': 'Sunset Care',
+              'sitter': 'Pet Sitter',
+              'other': 'Other Services'
+            };
+
+            return Object.entries(groupedRoles).map(([serviceKey, serviceRoles]) => {
+              const serviceName = serviceDisplayNames[serviceKey] || serviceKey;
+              
+              return (
+                <div key={serviceKey} className="space-y-2.5">
+                  {/* Service Group Header */}
+                  <div className="flex items-center gap-2 px-2">
+                    <h2 className="text-sm font-semibold text-gray-900">{serviceName}</h2>
+                    <div className="flex-1 h-px bg-gray-200"></div>
+                    <span className="text-xs text-gray-500">{serviceRoles.length}</span>
                   </div>
 
-                  {/* Content - Compact */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-gray-900 font-semibold text-sm mb-0.5">{role.name}</h3>
-                    <p className="text-[10px] text-gray-500 mb-2 leading-tight line-clamp-2">
-                      {role.description}
-                    </p>
+                  {/* Roles in this service group */}
+                  {serviceRoles.map((role) => {
+                    // Derive category from customer_service or vendorTypes
+                    const category = role.customer_service || (role.vendorTypes && role.vendorTypes.length > 0 
+                      ? role.vendorTypes[0] 
+                      : 'service');
+                    const color = getCategoryColor(category);
+                    const bgColorClass = getBackgroundColorClass(color);
+                    const borderColorClass = getBorderColorClass(color);
                     
-                    {/* Compact Badges */}
-                    {displayBadges && displayBadges.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {displayBadges.slice(0, 2).map((badge, idx) => (
-                          <span 
-                            key={idx}
-                            className={`text-[10px] px-2 py-0.5 rounded-full border ${borderColorClass}`}
-                          >
-                            {badge}
-                          </span>
-                        ))}
-                        {displayBadges.length > 2 && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600">
-                            +{displayBadges.length - 2}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                    // Use features array for display badges, fallback to capabilities
+                    const displayBadges = role.features && role.features.length > 0 
+                      ? role.features 
+                      : role.capabilities;
+                    
+                    // Get service styles for display
+                    const serviceStyles = role.selectedServiceStyles || role.serviceStyles || [];
+                    const vendorConfig = role.vendorConfiguration;
+                    
+                    return (
+                      <button
+                        key={role.id}
+                        onClick={() => onRoleSelect(role.id)}
+                        className="w-full bg-white border-2 border-gray-200 rounded-xl p-3.5 hover:border-[#FF8C42] transition-all text-left group active:scale-[0.98]"
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Compact Icon */}
+                          <div className={`w-10 h-10 ${bgColorClass} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                            {getIconSvg(category, color)}
+                          </div>
 
-                  {/* Compact Arrow */}
-                  <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#FF8C42] flex-shrink-0 mt-0.5" />
+                          {/* Content - Compact */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <h3 className="text-gray-900 font-semibold text-sm">
+                                {role.display_name || role.name}
+                              </h3>
+                              {vendorConfig && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                  vendorConfig === 'solo'
+                                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                    : 'bg-purple-100 text-purple-700 border border-purple-200'
+                                }`}>
+                                  {vendorConfig === 'solo' ? 'Solo' : 'Business'}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-500 mb-2 leading-tight line-clamp-2">
+                              {role.description}
+                            </p>
+                            
+                            {/* Service Styles Badge */}
+                            {serviceStyles.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-1.5">
+                                {serviceStyles.slice(0, 3).map((style, idx) => {
+                                  const styleLabels: Record<string, string> = {
+                                    'at_center': 'At Center',
+                                    'at_home': 'At Home',
+                                    'tele': 'Tele',
+                                    'delivery': 'Delivery',
+                                    'pickup': 'Pickup'
+                                  };
+                                  return (
+                                    <span 
+                                      key={idx}
+                                      className="text-[9px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600"
+                                    >
+                                      {styleLabels[style] || style}
+                                    </span>
+                                  );
+                                })}
+                                {serviceStyles.length > 3 && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600">
+                                    +{serviceStyles.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            
+                            {/* Compact Badges */}
+                            {displayBadges && displayBadges.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {displayBadges.slice(0, 2).map((badge, idx) => (
+                                  <span 
+                                    key={idx}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${borderColorClass}`}
+                                  >
+                                    {badge}
+                                  </span>
+                                ))}
+                                {displayBadges.length > 2 && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600">
+                                    +{displayBadges.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Compact Arrow */}
+                          <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#FF8C42] flex-shrink-0 mt-0.5" />
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              </button>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
 
         {/* Footer Text - Compact */}

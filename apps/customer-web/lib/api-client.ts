@@ -133,7 +133,35 @@ export class ApiClient {
       }, retryConfig);
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        // Try to parse JSON, but also capture raw text if JSON parsing fails
+        let errorData: any = { error: 'Unknown error' };
+        let rawResponseText: string | null = null;
+        
+        try {
+          const responseText = await response.text();
+          rawResponseText = responseText;
+          
+          if (responseText) {
+            try {
+              errorData = JSON.parse(responseText);
+            } catch (parseError) {
+              // If JSON parsing fails, use the raw text as the error message
+              errorData = { 
+                error: responseText || `HTTP ${response.status}`,
+                message: responseText || `HTTP ${response.status}`,
+                rawResponse: responseText
+              };
+            }
+          }
+        } catch (textError) {
+          // If even text extraction fails, use status-based error
+          errorData = { 
+            error: `HTTP ${response.status}`,
+            message: `HTTP ${response.status}: ${response.statusText || 'Unknown error'}`,
+            status: response.status,
+            statusText: response.statusText
+          };
+        }
         
         // Handle 401 by clearing token and redirecting to auth
         if (response.status === 401) {
@@ -144,12 +172,34 @@ export class ApiClient {
           }
         }
         
-        throw new ApiError(
-          error.error || error.message || `HTTP ${response.status}`,
-          response.status >= 500 ? 'server_error' : 'client_error',
+        // Create ApiError with full error data preserved
+        const errorMessage = errorData.error?.message || errorData.error || errorData.message || `HTTP ${response.status}`;
+        const apiError = new ApiError(
+          errorMessage,
+          errorData.error?.code || (response.status >= 500 ? 'server_error' : 'client_error'),
           response.status,
           [408, 429, 500, 502, 503, 504].includes(response.status)
         );
+        
+        // Attach full error data for detailed error handling
+        (apiError as any).response = errorData;
+        (apiError as any).responseData = errorData;
+        (apiError as any).rawResponse = rawResponseText;
+        (apiError as any).statusCode = response.status;
+        (apiError as any).status = response.status;
+        
+        // Log error details in UAT mode
+        if (UAT_MODE && typeof window !== 'undefined') {
+          console.error('🌐 [UAT] API Error Details:', {
+            url,
+            status: response.status,
+            statusText: response.statusText,
+            errorData,
+            rawResponse: rawResponseText
+          });
+        }
+        
+        throw apiError;
       }
 
       return response.json();
@@ -195,6 +245,17 @@ export class ApiClient {
     return this.request<T>(endpoint, { 
       method: 'DELETE',
       body: data ? JSON.stringify(data) : undefined
+    }, retryConfig);
+  }
+
+  /**
+   * Upload file using FormData
+   * Note: Content-Type is automatically set to multipart/form-data by the browser
+   */
+  async upload<T>(endpoint: string, formData: FormData, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: formData,
     }, retryConfig);
   }
   

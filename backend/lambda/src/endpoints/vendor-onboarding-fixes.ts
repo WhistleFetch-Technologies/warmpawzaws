@@ -194,38 +194,63 @@ export function registerVendorOnboardingFixes(app: Hono) {
   app.get('/vendor/onboarding/form-schema-fixed', async (c) => {
     try {
       const phone = c.req.query('phone');
+      const roleIdParam = c.req.query('roleId');
+      const vendorTypeParam = c.req.query('vendorType');
       
-      if (!phone) {
-        return c.json({ error: 'Phone number is required' }, 400);
+      // Allow either phone or roleId to be provided
+      if (!phone && !roleIdParam) {
+        return c.json({ error: 'Phone number or roleId is required' }, 400);
       }
 
-      // Get vendor identity
-      const identities = await select('vendor_identity', { phone });
-      if (identities.length === 0) {
-        return c.json({ error: 'Vendor identity not found' }, 404);
+      let selectedRoleId = roleIdParam;
+      let vendorType = vendorTypeParam || 'business';
+      let identity: any = null;
+
+      // If phone is provided, try to get vendor identity
+      if (phone) {
+        const identities = await select('vendor_identity', { phone });
+        if (identities.length > 0) {
+          identity = identities[0];
+          // Use identity values if available, fallback to query params
+          selectedRoleId = identity.selected_role_id || roleIdParam;
+          vendorType = identity.vendor_type || vendorTypeParam || 'business';
+        }
       }
 
-      const identity = identities[0];
-
-      if (!identity.selected_role_id || !identity.vendor_type) {
-        return c.json({ error: 'Role and vendor type must be selected first' }, 400);
+      // If still no role ID, return default form schema
+      if (!selectedRoleId) {
+        console.log(`⚠️ [FORM SCHEMA] No role selected, returning DEFAULT FIELDS`);
+        return c.json({
+          success: true,
+          roleId: null,
+          roleName: 'default',
+          fields: DEFAULT_FORM_FIELDS,
+          sections: getSectionsFromFields(DEFAULT_FORM_FIELDS),
+          schema: {
+            fields: DEFAULT_FORM_FIELDS,
+            sections: getSectionsFromFields(DEFAULT_FORM_FIELDS),
+          },
+          message: 'Using default form fields. Select a role for role-specific fields.',
+        });
       }
 
       // Get role information
-      const roles = await select('roles', { id: identity.selected_role_id });
-      if (roles.length === 0) {
-        return c.json({ error: 'Role not found' }, 404);
+      const roles = await select('roles', { id: selectedRoleId });
+      let roleName = 'default';
+      
+      if (roles.length > 0) {
+        roleName = roles[0].name;
+      } else {
+        // roleId might be a role name, not UUID
+        roleName = selectedRoleId;
       }
       
-      const role = roles[0];
-      const roleName = role.name;
-      
-      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (UUID: ${identity.selected_role_id})`);
+      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (UUID: ${selectedRoleId})`);
       
       // Try to get form from onboarding_forms table
       const formsResult = await query(
         `SELECT * FROM onboarding_forms WHERE role_id = $1 OR role_id = $2 ORDER BY created_at DESC LIMIT 1`,
-        [roleName, identity.selected_role_id]
+        [roleName, selectedRoleId]
       );
       
       let fields: any[] = [];
@@ -244,7 +269,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
             `INSERT INTO onboarding_forms (role_id, vendor_type, fields, version, status, created_at, updated_at)
              VALUES ($1, $2, $3, 1, 'published', NOW(), NOW())
              ON CONFLICT (role_id, vendor_type) DO UPDATE SET fields = $3, updated_at = NOW()`,
-            [roleName, identity.vendor_type || 'center', JSON.stringify(DEFAULT_FORM_FIELDS)]
+            [roleName, vendorType || 'center', JSON.stringify(DEFAULT_FORM_FIELDS)]
           );
           console.log(`✅ [FORM SCHEMA] Created default form for role ${roleName}`);
         } catch (insertError) {
@@ -259,7 +284,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
         console.error(`❌ [FORM SCHEMA] No active fields found, returning default fields`);
         return c.json({
           success: true,
-          roleId: identity.selected_role_id,
+          roleId: selectedRoleId,
           roleName: roleName,
           fields: DEFAULT_FORM_FIELDS,
           sections: getSectionsFromFields(DEFAULT_FORM_FIELDS),
@@ -277,7 +302,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
 
       return c.json({
         success: true,
-        roleId: identity.selected_role_id,
+        roleId: selectedRoleId,
         roleName: roleName,
         fields: activeFields,
         sections: sections,

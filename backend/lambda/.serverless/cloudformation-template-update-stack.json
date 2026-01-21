@@ -181,6 +181,19 @@
                 {
                   "Effect": "Allow",
                   "Action": [
+                    "s3:PutObject",
+                    "s3:GetObject",
+                    "s3:DeleteObject",
+                    "s3:ListBucket"
+                  ],
+                  "Resource": [
+                    "arn:aws:s3:::warmpawz-*",
+                    "arn:aws:s3:::warmpawz-*/*"
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
                     "bedrock:InvokeModel",
                     "bedrock:InvokeModelWithResponseStream"
                   ],
@@ -227,7 +240,7 @@
           "S3Bucket": {
             "Ref": "ServerlessDeploymentBucket"
           },
-          "S3Key": "serverless/warmpawz-api/dev/1768402986340-2026-01-14T15:03:06.340Z/warmpawz-api.zip"
+          "S3Key": "serverless/warmpawz-api/dev/1768910012526-2026-01-20T11:53:32.526Z/warmpawz-api.zip"
         },
         "Handler": "dist/handler.handler",
         "Runtime": "nodejs18.x",
@@ -250,7 +263,10 @@
             "RAZORPAY_KEY_ID": "rzp_test_Rnp57suJH3wzUl",
             "RAZORPAY_KEY_SECRET": "rplcWAxtmVfvXI9uydFt7YkH",
             "RAZORPAY_WEBHOOK_SECRET": "placeholder",
-            "UAT_MODE": "false"
+            "UAT_MODE": "false",
+            "S3_UPLOADS_BUCKET": "warmpawz-dev-uploads",
+            "S3_STORAGE_BUCKET": "warmpawz-dev-storage",
+            "S3_ASSETS_BUCKET": "warmpawz-dev-assets"
           }
         },
         "Role": {
@@ -273,55 +289,15 @@
         "ApiLogGroup"
       ]
     },
-    "ApiLambdaVersionbod9s1ktCyCLAMHyvSGbhajMNFkSxdFPFvdfLSy1xc": {
+    "ApiLambdaVersion7AbPTTG1ObymLUgy9iZERw0yumhiw83LB1FWNVCrAOc": {
       "Type": "AWS::Lambda::Version",
       "DeletionPolicy": "Retain",
       "Properties": {
         "FunctionName": {
           "Ref": "ApiLambdaFunction"
         },
-        "CodeSha256": "nRJmqCi/IaF5VwfqmXXWYY6jLypjTa39eJWrS+9+l8s=",
+        "CodeSha256": "tZHLR2MtjTjL3DZH8eRQ+T6ikCK8YdW1AY3LhaVPLaQ=",
         "Description": "Warmpawz API Gateway Handler"
-      }
-    },
-    "HttpApi": {
-      "Type": "AWS::ApiGatewayV2::Api",
-      "Properties": {
-        "Name": "dev-warmpawz-api",
-        "ProtocolType": "HTTP",
-        "CorsConfiguration": {
-          "AllowHeaders": [
-            "Content-Type",
-            "Authorization",
-            "X-Requested-With",
-            "X-Request-Id"
-          ],
-          "AllowMethods": [
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "PATCH",
-            "OPTIONS"
-          ],
-          "AllowOrigins": [
-            "https://admin.warmpawz.com"
-          ],
-          "MaxAge": 86400
-        }
-      }
-    },
-    "HttpApiStage": {
-      "Type": "AWS::ApiGatewayV2::Stage",
-      "Properties": {
-        "ApiId": {
-          "Ref": "HttpApi"
-        },
-        "StageName": "$default",
-        "AutoDeploy": true,
-        "DefaultRouteSettings": {
-          "DetailedMetricsEnabled": false
-        }
       }
     },
     "ApiLambdaPermissionHttpApi": {
@@ -352,9 +328,7 @@
                 "Ref": "AWS::AccountId"
               },
               ":",
-              {
-                "Ref": "HttpApi"
-              },
+              "z0b3obweb6",
               "/*"
             ]
           ]
@@ -364,9 +338,7 @@
     "HttpApiIntegrationApi": {
       "Type": "AWS::ApiGatewayV2::Integration",
       "Properties": {
-        "ApiId": {
-          "Ref": "HttpApi"
-        },
+        "ApiId": "z0b3obweb6",
         "IntegrationType": "AWS_PROXY",
         "IntegrationUri": {
           "Fn::GetAtt": [
@@ -381,9 +353,7 @@
     "HttpApiRouteAnyProxyVar": {
       "Type": "AWS::ApiGatewayV2::Route",
       "Properties": {
-        "ApiId": {
-          "Ref": "HttpApi"
-        },
+        "ApiId": "z0b3obweb6",
         "RouteKey": "ANY /{proxy+}",
         "Target": {
           "Fn::Join": [
@@ -402,9 +372,7 @@
     "HttpApiRouteAny": {
       "Type": "AWS::ApiGatewayV2::Route",
       "Properties": {
-        "ApiId": {
-          "Ref": "HttpApi"
-        },
+        "ApiId": "z0b3obweb6",
         "RouteKey": "ANY /",
         "Target": {
           "Fn::Join": [
@@ -433,44 +401,10 @@
     "ApiLambdaFunctionQualifiedArn": {
       "Description": "Current Lambda function version",
       "Value": {
-        "Ref": "ApiLambdaVersionbod9s1ktCyCLAMHyvSGbhajMNFkSxdFPFvdfLSy1xc"
+        "Ref": "ApiLambdaVersion7AbPTTG1ObymLUgy9iZERw0yumhiw83LB1FWNVCrAOc"
       },
       "Export": {
         "Name": "sls-warmpawz-api-dev-ApiLambdaFunctionQualifiedArn"
-      }
-    },
-    "HttpApiId": {
-      "Description": "Id of the HTTP API",
-      "Value": {
-        "Ref": "HttpApi"
-      },
-      "Export": {
-        "Name": "sls-warmpawz-api-dev-HttpApiId"
-      }
-    },
-    "HttpApiUrl": {
-      "Description": "URL of the HTTP API",
-      "Value": {
-        "Fn::Join": [
-          "",
-          [
-            "https://",
-            {
-              "Ref": "HttpApi"
-            },
-            ".execute-api.",
-            {
-              "Ref": "AWS::Region"
-            },
-            ".",
-            {
-              "Ref": "AWS::URLSuffix"
-            }
-          ]
-        ]
-      },
-      "Export": {
-        "Name": "sls-warmpawz-api-dev-HttpApiUrl"
       }
     }
   }

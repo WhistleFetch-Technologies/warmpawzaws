@@ -287,6 +287,7 @@ export async function select(
 
 /**
  * Execute an INSERT query
+ * ✅ FIX: Properly handle JSONB columns by serializing objects to JSON strings
  */
 export async function insert(
   table: string,
@@ -296,14 +297,58 @@ export async function insert(
   if (dataArray.length === 0) return [];
 
   const keys = Object.keys(dataArray[0]);
-  const placeholders = dataArray.map((_, idx) => {
+  
+  // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
+  const jsonbColumns = new Set([
+    'application_payload',
+    'uploaded_documents', 
+    'metadata',
+    'operating_hours',
+    'config',
+    'settings',
+    'form_data',
+    'additional_info',
+    'pricing',
+    'services_config',
+    'notification_preferences',
+    'search_vector_data'
+  ]);
+  
+  // Also check for columns ending with common JSONB suffixes
+  const isJsonbColumn = (key: string): boolean => {
+    return jsonbColumns.has(key) || 
+           key.endsWith('_config') || 
+           key.endsWith('_metadata') || 
+           key.endsWith('_payload') ||
+           key.endsWith('_data') ||
+           key.endsWith('_settings');
+  };
+  
+  // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
+  const placeholders = dataArray.map((row, idx) => {
     const start = idx * keys.length + 1;
-    return `(${keys.map((_, i) => `$${start + i}`).join(', ')})`;
+    return `(${keys.map((key, i) => {
+      const value = (row as any)[key];
+      // Add ::jsonb cast for JSONB columns that are objects/arrays
+      if (isJsonbColumn(key) && value !== null && value !== undefined && typeof value === 'object') {
+        return `$${start + i}::jsonb`;
+      }
+      return `$${start + i}`;
+    }).join(', ')})`;
   }).join(', ');
 
-  const values = dataArray.flatMap(row => keys.map(key => (row as any)[key]));
+  // ✅ FIX: Serialize JSONB values to JSON strings
+  const values = dataArray.flatMap(row => keys.map(key => {
+    const value = (row as any)[key];
+    // Serialize objects for JSONB columns
+    if (isJsonbColumn(key) && value !== null && value !== undefined && typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return value;
+  }));
+  
   const columns = keys.join(', ');
-  const returning = keys.includes('id') ? ' RETURNING *' : ' RETURNING *';
+  const returning = ' RETURNING *';
 
   const queryText = `INSERT INTO ${table} (${columns}) VALUES ${placeholders}${returning}`;
   const result = await query(queryText, values);

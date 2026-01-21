@@ -1,8 +1,8 @@
 2:I[19107,[],"ClientPageRoot"]
-3:I[57340,["1931","static/chunks/app/page-2d8c9c013226481f.js"],"default",1]
-5:I[49294,["4438","static/chunks/4438-0e8dc65c983aaff8.js","9220","static/chunks/9220-0be12aa100a8fdba.js","3185","static/chunks/app/layout-53087172d2bf7e26.js"],"Providers"]
+3:I[57340,["1931","static/chunks/app/page-34f463bcbf3ea42d.js"],"default",1]
+5:I[49294,["4438","static/chunks/4438-2f97ed4cd5e19b9a.js","9220","static/chunks/9220-0be12aa100a8fdba.js","3185","static/chunks/app/layout-1cc9c2ea8bffc00d.js"],"Providers"]
 6:I[4707,[],""]
-7:I[13490,["7648","static/chunks/7648-1aee0b3c375994ab.js","7601","static/chunks/app/error-abcf4c29ab6eeff0.js"],"default"]
+7:I[88735,["5569","static/chunks/5569-680f2c558cb01437.js","1320","static/chunks/1320-13dcf26dcf2bb768.js","9895","static/chunks/9895-4ef37ef4fa634842.js","7601","static/chunks/app/error-875c6a6a4a45147d.js"],"default"]
 8:I[36423,[],""]
 9:I[85447,["7648","static/chunks/7648-1aee0b3c375994ab.js","9160","static/chunks/app/not-found-c2b2570f3d55d27f.js"],"default"]
 4:Ta6f,
@@ -54,6 +54,6 @@
                   }
                 }
               })();
-            0:["5QORzzP61syzUYbBwqQk2",[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/7cca8e2c5137bd71.css","precedence":"next","crossOrigin":"$undefined"}],["$","link","1",{"rel":"stylesheet","href":"/_next/static/css/739346ec554f8a54.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$4"}}],["$","$L5",null,{"children":["$","$L6",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$7","errorStyles":[],"errorScripts":[],"template":["$","$L8",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L9",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$La",null]]]]
+            0:["TDYeuHXUsC3txkKb7lMae",[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/7cca8e2c5137bd71.css","precedence":"next","crossOrigin":"$undefined"}],["$","link","1",{"rel":"stylesheet","href":"/_next/static/css/278e35b619f7b644.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$4"}}],["$","$L5",null,{"children":["$","$L6",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$7","errorStyles":[],"errorScripts":[],"template":["$","$L8",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L9",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$La",null]]]]
 a:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}],["$","meta","4",{"name":"next-size-adjust"}]]
 1:null

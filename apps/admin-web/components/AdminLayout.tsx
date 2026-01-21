@@ -12,7 +12,7 @@ const menuItems = [
   { id: 'dashboard', icon: '📊', label: 'Dashboard', href: '/' },
   { id: 'analytics', icon: '📈', label: 'Analytics', href: '/analytics' },
   { id: 'vendors', icon: '🏪', label: 'Vendors', href: '/vendors' },
-  { id: 'roles', icon: '👤', label: 'Roles & Capabilities', href: '/roles' },
+  { id: 'roles', icon: '👤', label: 'Roles & User Management', href: '/roles' },
   { id: 'catalog', icon: '📚', label: 'Service Catalog', href: '/catalog' },
   { id: 'settlements', icon: '💰', label: 'Settlements', href: '/settlements' },
   { id: 'reports', icon: '📋', label: 'Reports', href: '/reports' },

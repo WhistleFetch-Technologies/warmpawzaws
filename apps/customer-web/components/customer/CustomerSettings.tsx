@@ -13,9 +13,10 @@ interface NotificationSettings {
 
 interface CustomerSettingsProps {
   customerPhone: string;
+  onBack?: () => void;
 }
 
-export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
+export function CustomerSettings({ customerPhone, onBack }: CustomerSettingsProps) {
   const [notifications, setNotifications] = useState<NotificationSettings>({
     push_enabled: true,
     booking_reminders: true,
@@ -143,16 +144,10 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <a href="/" className="text-2xl">←</a>
-          <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-0 space-y-6">
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Notification Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
@@ -267,7 +262,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
           Log Out
         </button>
       </main>
-    </div>
+    </>
   );
 }
 

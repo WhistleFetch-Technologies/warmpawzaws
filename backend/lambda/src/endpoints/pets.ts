@@ -200,6 +200,7 @@ export function registerPetEndpoints(app: Hono) {
   /**
    * POST /pets
    * Create a new pet
+   * ✅ ENHANCED: Now supports vaccination records, allergies, chronic conditions, behavior notes
    */
   app.post("/pets", async (c) => {
     try {
@@ -216,11 +217,22 @@ export function registerPetEndpoints(app: Hono) {
         color,
         weight,
         photos,
+        photo, // ✅ NEW: Single photo field from EnhancedAddPetModal
         medicalHistory,
         vaccinationStatus,
         spayedNeutered,
         microchipped,
         specialNeeds,
+        // ✅ NEW: Enhanced pet fields from EnhancedAddPetModal
+        dob,
+        microchipId,
+        allergies,
+        chronicConditions,
+        vaccinations,
+        behaviorNotes,
+        feedingSchedule,
+        dietaryRestrictions,
+        emergencyContact,
       } = petData;
 
       if (!customerId || !name || !petType) {
@@ -251,6 +263,38 @@ export function registerPetEndpoints(app: Hono) {
           age_months = parseInt(age, 10);
         }
       }
+      
+      // ✅ NEW: Calculate age from DOB if provided
+      if (dob && !age_years && !age_months) {
+        const birthDate = new Date(dob);
+        const now = new Date();
+        const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + 
+                           (now.getMonth() - birthDate.getMonth());
+        age_years = Math.floor(ageInMonths / 12);
+        age_months = ageInMonths % 12;
+      }
+
+      // ✅ NEW: Build comprehensive medical history JSONB
+      const enhancedMedicalHistory = {
+        ...medicalHistory,
+        dob: dob || null,
+        microchipId: microchipId || microchipped || null,
+        allergies: allergies || [],
+        chronicConditions: chronicConditions || [],
+        vaccinations: vaccinations || [],
+        behaviorNotes: behaviorNotes || null,
+        feedingSchedule: feedingSchedule || null,
+        dietaryRestrictions: dietaryRestrictions || [],
+        spayedNeutered: spayedNeutered || false,
+        specialNeeds: specialNeeds || null,
+        emergencyContact: emergencyContact || null,
+        vaccinationStatus: vaccinationStatus || 'unknown',
+        color: color || null,
+        size: size || null,
+      };
+
+      // Determine profile photo URL (prefer single photo over photos array)
+      const profilePhotoUrl = photo || (photos && photos.length > 0 ? photos[0] : null);
 
       const pet = await insert('pets', {
         customer_id: customerId,
@@ -261,8 +305,8 @@ export function registerPetEndpoints(app: Hono) {
         age_months: age_months,
         gender: gender || null,
         weight_kg: weight ? parseFloat(weight) : null, // Schema uses weight_kg
-        profile_photo_url: photos && photos.length > 0 ? photos[0] : null, // Schema uses profile_photo_url, not photos array
-        medical_history: medicalHistory || {}, // JSONB field
+        profile_photo_url: profilePhotoUrl, // Schema uses profile_photo_url
+        medical_history: enhancedMedicalHistory, // JSONB field with all health data
       });
 
       return c.json({
@@ -279,11 +323,36 @@ export function registerPetEndpoints(app: Hono) {
   /**
    * PUT /pets/:petId
    * Update pet
+   * ✅ ENHANCED: Now supports vaccination records, allergies, chronic conditions, behavior notes
    */
   app.put("/pets/:petId", async (c) => {
     try {
       const { petId } = c.req.param();
       const petData = await c.req.json();
+
+      // Get existing pet to merge medical history
+      const existingPets = await select('pets', { id: petId });
+      const existingMedicalHistory = existingPets.length > 0 ? existingPets[0].medical_history || {} : {};
+
+      // ✅ NEW: Build comprehensive medical history JSONB by merging with existing
+      const enhancedMedicalHistory = {
+        ...existingMedicalHistory,
+        ...(petData.medicalHistory || petData.medical_history || {}),
+        dob: petData.dob ?? existingMedicalHistory.dob ?? null,
+        microchipId: petData.microchipId ?? existingMedicalHistory.microchipId ?? null,
+        allergies: petData.allergies ?? existingMedicalHistory.allergies ?? [],
+        chronicConditions: petData.chronicConditions ?? existingMedicalHistory.chronicConditions ?? [],
+        vaccinations: petData.vaccinations ?? existingMedicalHistory.vaccinations ?? [],
+        behaviorNotes: petData.behaviorNotes ?? existingMedicalHistory.behaviorNotes ?? null,
+        feedingSchedule: petData.feedingSchedule ?? existingMedicalHistory.feedingSchedule ?? null,
+        dietaryRestrictions: petData.dietaryRestrictions ?? existingMedicalHistory.dietaryRestrictions ?? [],
+        spayedNeutered: petData.spayedNeutered ?? existingMedicalHistory.spayedNeutered ?? false,
+        specialNeeds: petData.specialNeeds ?? existingMedicalHistory.specialNeeds ?? null,
+        emergencyContact: petData.emergencyContact ?? existingMedicalHistory.emergencyContact ?? null,
+        vaccinationStatus: petData.vaccinationStatus ?? existingMedicalHistory.vaccinationStatus ?? 'unknown',
+        color: petData.color ?? existingMedicalHistory.color ?? null,
+        size: petData.size ?? existingMedicalHistory.size ?? null,
+      };
 
       // Convert age if provided
       const updateData: any = {
@@ -291,8 +360,8 @@ export function registerPetEndpoints(app: Hono) {
         breed: petData.breed,
         gender: petData.gender,
         weight_kg: petData.weight ? parseFloat(petData.weight) : undefined,
-        profile_photo_url: petData.photos && petData.photos.length > 0 ? petData.photos[0] : undefined,
-        medical_history: petData.medicalHistory || petData.medical_history || {},
+        profile_photo_url: petData.photo || (petData.photos && petData.photos.length > 0 ? petData.photos[0] : undefined),
+        medical_history: enhancedMedicalHistory,
       };
 
       if (petData.age) {
@@ -301,6 +370,16 @@ export function registerPetEndpoints(app: Hono) {
         } else if (petData.ageUnit === 'months' || petData.ageUnit === 'month') {
           updateData.age_months = parseInt(petData.age, 10);
         }
+      }
+      
+      // ✅ NEW: Calculate age from DOB if provided
+      if (petData.dob && !petData.age) {
+        const birthDate = new Date(petData.dob);
+        const now = new Date();
+        const ageInMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + 
+                           (now.getMonth() - birthDate.getMonth());
+        updateData.age_years = Math.floor(ageInMonths / 12);
+        updateData.age_months = ageInMonths % 12;
       }
 
       if (petData.species || petData.petType || petData.type) {

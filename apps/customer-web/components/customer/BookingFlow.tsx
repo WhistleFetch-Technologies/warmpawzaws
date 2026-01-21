@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { X, Camera, Upload, MapPin, Plus } from 'lucide-react';
+import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 // Removed SpecializedServiceRouter - now integrated into unified flow
 
 interface Service {
@@ -160,6 +161,17 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   
+  // ✅ SUBSCRIPTION STATE - Check for active subscription for zero-payment booking
+  const [subscriptionCoverage, setSubscriptionCoverage] = useState<{
+    covered: boolean;
+    subscriptionId: string | null;
+    subscriptionName: string | null;
+    isUnlimited: boolean;
+    remainingCount: number | null;
+    message: string;
+  } | null>(null);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
+  
   // Specialized service specific state
   const [specializedData, setSpecializedData] = useState<any>({});
   
@@ -291,6 +303,17 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       }
       
       if (walletRes.wallet) setWallet(walletRes.wallet);
+      
+      // ✅ Check subscription coverage for zero-payment bookings
+      // Get customer ID first
+      try {
+        const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+        if (customerRes.customer?.id) {
+          await checkSubscriptionCoverage(customerRes.customer.id);
+        }
+      } catch (subErr) {
+        console.log('Subscription check skipped');
+      }
     } catch (err) {
       console.error('Error loading customer data:', err);
     }
@@ -418,6 +441,12 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
 
   const calculateTotal = () => {
     if (!service) return 0;
+    
+    // ✅ If covered by subscription, total is 0
+    if (subscriptionCoverage?.covered) {
+      return 0;
+    }
+    
     let total = service.price;
     if (useWallet && wallet) {
       total = Math.max(0, total - wallet.balance);
@@ -425,58 +454,149 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
     return total;
   };
 
+  // ✅ CHECK SUBSCRIPTION COVERAGE - For unlimited subscription zero-payment bookings
+  const checkSubscriptionCoverage = async (customerId: string) => {
+    if (!service) return;
+    
+    setCheckingSubscription(true);
+    try {
+      const res = await apiClient.post<any>('/subscriptions/check-coverage', {
+        customerId,
+        serviceId,
+        vendorId: service.vendor_id,
+        serviceStyle: service.service_style,
+      });
+      
+      if (res.covered) {
+        setSubscriptionCoverage({
+          covered: true,
+          subscriptionId: res.subscriptionId,
+          subscriptionName: res.subscriptionName,
+          isUnlimited: res.isUnlimited,
+          remainingCount: res.remainingCount,
+          message: res.message,
+        });
+      } else {
+        setSubscriptionCoverage(null);
+      }
+    } catch (err) {
+      console.log('No active subscription or check failed');
+      setSubscriptionCoverage(null);
+    } finally {
+      setCheckingSubscription(false);
+    }
+  };
+
   const handleCreateBooking = async () => {
     if (!service) return;
     
     setProcessing(true);
     try {
-      // Build booking data with specialized service support
+      // ✅ FIX GAP 3.1: Get customer ID first for proper API contract compliance
+      let customerId: string | undefined;
+      try {
+        const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+        customerId = customerRes.customer?.id;
+      } catch (err) {
+        console.warn('Could not fetch customer ID, will use phone number');
+      }
+
+      // Get selected address details for the booking
+      const selectedAddressData = selectedAddress ? addresses.find(a => a.id === selectedAddress) : undefined;
+
+      // ✅ FIX GAP 3.1: Build booking data with camelCase to match backend Zod schema
+      // Backend expects: customerId, vendorId, serviceId, bookingDate, bookingTime, serviceType, etc.
       const bookingData: any = {
-        service_id: serviceId,
-        vendor_id: service.vendor_id,
-        customer_phone: customerPhone,
-        pet_id: selectedPet || undefined,
-        address_id: (service.service_style === 'at_home' || specializedType) ? selectedAddress : undefined,
-        booking_date: selectedDate || new Date().toISOString().split('T')[0],
-        booking_time: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+        // Required fields - camelCase to match CreateBookingRequestSchema
+        customerId: customerId,
+        vendorId: service.vendor_id,
+        serviceId: serviceId,
+        bookingDate: selectedDate || new Date().toISOString().split('T')[0],
+        bookingTime: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+        serviceType: service.service_style || 'at_center',
+        
+        // Optional fields - camelCase
+        petId: selectedPet || undefined,
+        amount: calculateTotal(),
         notes: notes || '',
-        total_amount: calculateTotal(),
-        use_wallet: useWallet,
+        
+        // Address fields for home services
+        ...(selectedAddressData && {
+          address: selectedAddressData.address || selectedAddressData.addressLine1,
+          city: selectedAddressData.city,
+          state: selectedAddressData.state,
+          pincode: selectedAddressData.pincode,
+          latitude: selectedAddressData.latitude,
+          longitude: selectedAddressData.longitude,
+        }),
+        
+        // Wallet usage
+        useWallet: useWallet,
+        
+        // Legacy snake_case for backward compatibility with older endpoints
+        customer_phone: customerPhone,
       };
 
-      // ⚠️ CRITICAL: Add staff_id for home/tele services
+      // ✅ CRITICAL: Add staffId for home/tele services (camelCase)
       // This ensures the correct verified staff member is assigned to the booking
       if ((service.service_style === 'at_home' || service.service_style === 'tele') && selectedStaff) {
-        bookingData.staff_id = selectedStaff;
+        bookingData.staffId = selectedStaff;
         
         // Add commute info if available
         if (commuteInfo) {
-          bookingData.estimated_arrival_time = commuteInfo.arrival;
-          bookingData.commute_time_minutes = commuteInfo.time;
-          bookingData.buffer_time_minutes = commuteInfo.bufferTime;
+          bookingData.estimatedArrivalTime = commuteInfo.arrival;
+          bookingData.commuteTimeMinutes = commuteInfo.time;
+          bookingData.bufferTimeMinutes = commuteInfo.bufferTime;
         }
       }
 
       // Add specialized service-specific data
       if (specializedType) {
-        bookingData.service_type = specializedType;
-        bookingData.specialized_data = JSON.stringify({
+        bookingData.specializedServiceType = specializedType;
+        bookingData.specializedData = JSON.stringify({
           ...specializedData,
           type: specializedType,
         });
       }
 
-      // Create booking
-      const bookingRes = await apiClient.post<any>('/bookings', bookingData);
+      // Create booking - use /bookings/create endpoint for proper Zod validation
+      const bookingRes = await apiClient.post<any>('/bookings/create', bookingData);
 
-      if (!bookingRes.booking_id) {
-        throw new Error('Failed to create booking');
+      // ✅ FIX: Handle both response formats (new camelCase and legacy snake_case)
+      const newBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking_id;
+      if (!newBookingId) {
+        throw new Error(bookingRes.error || 'Failed to create booking');
       }
-
-      const newBookingId = bookingRes.booking_id;
       setBookingId(newBookingId);
 
       const amountToPay = calculateTotal();
+
+      // ✅ Check if covered by subscription - create zero-payment booking
+      if (subscriptionCoverage?.covered && subscriptionCoverage.subscriptionId) {
+        try {
+          const subBookingRes = await apiClient.post<any>('/subscriptions/create-booking', {
+            customerId: bookingData.customer_id || (await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`)).customer?.id,
+            subscriptionId: subscriptionCoverage.subscriptionId,
+            serviceId: serviceId,
+            vendorId: service.vendor_id,
+            staffId: selectedStaff || undefined,
+            bookingDate: selectedDate || new Date().toISOString().split('T')[0],
+            bookingTime: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+            serviceStyle: service.service_style,
+            petId: selectedPet || undefined,
+            address: selectedAddress ? addresses.find(a => a.id === selectedAddress)?.address : undefined,
+            notes: notes || '',
+          });
+          
+          if (subBookingRes.success) {
+            setBookingId(subBookingRes.bookingId);
+            setStep('confirmed');
+            return;
+          }
+        } catch (subErr) {
+          console.error('Subscription booking failed, proceeding with regular payment:', subErr);
+        }
+      }
 
       if (amountToPay === 0) {
         // Fully paid with wallet
@@ -484,34 +604,37 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         return;
       }
 
-      // Create Razorpay order
+      // Create Razorpay order - use camelCase for consistency
       const orderRes = await apiClient.post<any>('/payments/create-order', {
-        booking_id: newBookingId,
+        bookingId: newBookingId,
         amount: amountToPay,
         useWallet: useWallet,
         walletAmount: useWallet && wallet ? Math.min(wallet.balance, service.price) : 0,
       });
 
-      if (!orderRes.order_id) {
-        throw new Error('Failed to create payment order');
+      // ✅ FIX: Handle both response formats
+      const orderId = orderRes.data?.orderId || orderRes.orderId || orderRes.order_id;
+      if (!orderId) {
+        throw new Error(orderRes.error || 'Failed to create payment order');
       }
 
-      // Open Razorpay checkout
+      // Open Razorpay checkout - use the extracted orderId variable
+      const razorpayKey = orderRes.data?.key || orderRes.razorpayKey || orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
       const options = {
-        key: orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        key: razorpayKey,
         amount: amountToPay * 100,
         currency: 'INR',
         name: 'Warmpawz',
         description: `Booking: ${service.name}`,
-        order_id: orderRes.order_id,
+        order_id: orderId,
         handler: async (response: any) => {
           try {
-            // Verify payment
+            // Verify payment - use camelCase for API contract compliance
             await apiClient.post('/payments/verify', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              booking_id: newBookingId,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              bookingId: newBookingId,
             });
             setStep('confirmed');
           } catch (err) {
@@ -569,15 +692,15 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <button onClick={() => step === 'details' ? router.back() : setStep('details')} className="text-2xl">←</button>
+      {/* ✅ STANDARD HEADER - Exact match with CustomerHomeComplete */}
+      <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
+          <button onClick={() => step === 'details' ? router.back() : setStep('details')} className="text-2xl text-white">←</button>
           <div className="flex-1">
-            <h1 className="text-lg font-bold text-gray-900">{service.name}</h1>
-            <p className="text-sm text-gray-500">{service.vendor_name}</p>
+            <h1 className="text-lg font-bold text-white">{service.name}</h1>
+            <p className="text-sm text-white/80">{service.vendor_name}</p>
           </div>
-          <span className="text-lg font-bold text-orange-600">₹{service.price}</span>
+          <span className="text-lg font-bold text-white">₹{service.price}</span>
         </div>
       </header>
 
@@ -982,12 +1105,42 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             <div className="bg-white rounded-2xl p-1 shadow-sm">
               <h2 className="text-xl font-bold mb-4">Payment</h2>
               <div className="space-y-3">
+                {/* ✅ SUBSCRIPTION COVERAGE BADGE */}
+                {subscriptionCoverage?.covered && (
+                  <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl p-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🎉</span>
+                      <div>
+                        <p className="font-bold">Covered by Subscription!</p>
+                        <p className="text-sm text-green-100">{subscriptionCoverage.subscriptionName}</p>
+                        {subscriptionCoverage.remainingCount !== null && (
+                          <p className="text-xs text-green-100 mt-1">
+                            {subscriptionCoverage.remainingCount} visits remaining
+                          </p>
+                        )}
+                        {subscriptionCoverage.isUnlimited && (
+                          <p className="text-xs text-green-100 mt-1">Unlimited visits</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-between">
                   <span className="text-gray-500">Service Fee</span>
-                  <span className="font-medium">₹{service.price}</span>
+                  <span className={`font-medium ${subscriptionCoverage?.covered ? 'line-through text-gray-400' : ''}`}>
+                    ₹{service.price}
+                  </span>
                 </div>
+
+                {subscriptionCoverage?.covered && (
+                  <div className="flex justify-between text-green-600">
+                    <span>Subscription Discount</span>
+                    <span>-₹{service.price}</span>
+                  </div>
+                )}
                 
-                {wallet && wallet.balance > 0 && (
+                {!subscriptionCoverage?.covered && wallet && wallet.balance > 0 && (
                   <button
                     onClick={() => setUseWallet(!useWallet)}
                     className={`w-full flex items-center justify-between p-4 rounded-xl border-2 ${
@@ -1009,7 +1162,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                   </button>
                 )}
 
-                {useWallet && wallet && (
+                {!subscriptionCoverage?.covered && useWallet && wallet && (
                   <div className="flex justify-between text-green-600">
                     <span>Wallet Discount</span>
                     <span>-₹{Math.min(wallet.balance, service.price)}</span>
@@ -1069,23 +1222,22 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
               disabled={processing}
               className="w-full py-4 bg-orange-500 text-white rounded-xl font-bold text-lg disabled:opacity-50"
             >
-              {processing ? 'Processing...' : `Pay ₹${calculateTotal()}`}
+              {processing ? 'Processing...' : subscriptionCoverage?.covered ? 'Confirm Booking (₹0)' : `Pay ₹${calculateTotal()}`}
             </button>
           </div>
         </div>
       )}
       
-      {/* Add Pet Modal */}
-      {showAddPetModal && (
-        <AddPetModalInline 
-          phone={customerPhone}
-          onClose={() => setShowAddPetModal(false)}
-          onSuccess={() => {
-            refreshPets();
-            setShowAddPetModal(false);
-          }}
-        />
-      )}
+      {/* Add Pet Modal - Enhanced with Photo & Vaccinations */}
+      <EnhancedAddPetModal
+        phone={customerPhone}
+        isOpen={showAddPetModal}
+        onClose={() => setShowAddPetModal(false)}
+        onSuccess={() => {
+          refreshPets();
+          setShowAddPetModal(false);
+        }}
+      />
       
       {/* Add Address Modal */}
       {showAddAddressModal && (

@@ -11,13 +11,17 @@ import { z } from 'zod';
 // ============================================================================
 
 export const SubmitVendorApplicationRequestSchema = z.object({
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  // ✅ FIX: More lenient phone validation - accepts 10-15 digits with optional + prefix
+  // Handles: 9876543210, +919876543210, 919876543210, etc.
+  phone: z.string().min(10, 'Phone must be at least 10 digits').max(16, 'Phone too long')
+    .transform(p => p.replace(/\D/g, '')), // Remove non-digits for storage
   application_payload: z.record(z.unknown()), // Dynamic based on role
+  // ✅ FIX: Make documents more flexible - URL can be empty or missing during submission
   uploaded_documents: z.array(z.object({
     type: z.string(),
-    url: z.string().url(),
-    name: z.string(),
-  })).optional(),
+    url: z.string().optional().default(''), // URL is optional during submission
+    name: z.string().optional().default(''),
+  })).optional().default([]),
 });
 
 export const SelectVendorRoleRequestSchema = z.object({

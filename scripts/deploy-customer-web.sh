@@ -35,6 +35,11 @@ cd "$PROJECT_ROOT"
 # Step 1: Build the app
 echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
 cd "apps/${APP_NAME}"
+
+# Clean stale build artifacts to prevent race conditions
+echo -e "${BLUE}🧹 Cleaning stale build artifacts...${NC}"
+rm -rf .next dist node_modules/.cache
+
 npm run build
 
 if [ ! -d "dist" ]; then

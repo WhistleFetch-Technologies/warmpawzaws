@@ -144,6 +144,21 @@ export function AdminRolesPage() {
     }
   };
 
+  const handleDeleteRole = async (roleId: string, roleName: string) => {
+    if (!confirm(`Are you sure you want to delete role "${roleName}"? This action cannot be undone. Existing vendors with this role will need to be reassigned.`)) {
+      return;
+    }
+
+    try {
+      await apiClient.delete(`/admin/roles/${roleId}`);
+      alert('Role deleted successfully');
+      loadData();
+    } catch (err: any) {
+      console.error('Error deleting role:', err);
+      alert(err.message || 'Failed to delete role');
+    }
+  };
+
   const groupCapabilities = () => {
     const groups: Record<string, Capability[]> = {};
     capabilities.forEach(cap => {
@@ -392,17 +407,31 @@ export function AdminRolesPage() {
               
               <div className="flex items-center justify-between pt-3 border-t">
                 <span className="text-xs text-muted-foreground capitalize">{role.category.replace(/_/g, ' ')}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedRole(role);
-                  }}
-                >
-                  Edit →
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedRole(role);
+                    }}
+                  >
+                    Edit →
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteRole(role.id, role.display_name);
+                    }}
+                    title="Delete role"
+                  >
+                    🗑️
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

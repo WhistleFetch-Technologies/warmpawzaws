@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Home as HomeIcon, Star, MapPin, Calendar, Sparkles, ChevronRight, Camera, Moon, Sun } from 'lucide-react';
+import { Home as HomeIcon, Star, MapPin, Calendar, Sparkles, ChevronRight, Camera, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface BoardingServiceRouterProps {
   phone: string;
@@ -41,7 +42,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         activeFacilities: facilityList.length || 35,
         guests: '5K+',
         rating: facilityList.length > 0 
-          ? (facilityList.reduce((acc: number, f: any) => acc + (f.rating || 4.6), 0) / facilityList.length).toFixed(1) 
+          ? Number(facilityList.reduce((acc: number, f: any) => acc + Number(f.rating || 4.6), 0) / facilityList.length).toFixed(1) 
           : '4.6'
       });
     } catch (error) {
@@ -59,7 +60,8 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       
       if (data.available !== false) {
         if (onNavigate) {
-          onNavigate('create-booking', { vendorId: facilityId, serviceType: 'boarding' });
+          // ✅ FIX: Use boarding-specific booking flow instead of generic create-booking
+          onNavigate('boarding-booking', { vendorId: facilityId, serviceType: 'boarding' });
         } else {
           toast.success('Facility is available! Proceeding to booking...');
         }
@@ -70,7 +72,8 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       console.error('Error checking availability:', error);
       // Proceed anyway - optimistic flow
       if (onNavigate) {
-        onNavigate('create-booking', { vendorId: facilityId, serviceType: 'boarding' });
+        // ✅ FIX: Use boarding-specific booking flow instead of generic create-booking
+        onNavigate('boarding-booking', { vendorId: facilityId, serviceType: 'boarding' });
       } else {
         toast.info('Proceeding to booking...');
       }
@@ -79,101 +82,44 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* HEADER with Orange gradient (Boarding service color - home/comfort theme) */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-6 rounded-b-3xl shadow-lg">
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <h1 className="text-white text-xl font-bold">Pet Boarding</h1>
-        </div>
-
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="font-medium text-white">{stats.activeFacilities}+</div>
-               <div className="text-xs text-white/80">Facilities</div>
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Stats Bar - Moved below header */}
+      {stats && (
+        <div className="px-4 pt-4 pb-2 bg-white">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+               <div className="text-lg font-bold text-orange-600">{stats.activeFacilities}+</div>
+               <div className="text-xs text-orange-700">Facilities</div>
             </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="font-medium text-white">{stats.guests}</div>
-               <div className="text-xs text-white/80">Happy Pets</div>
+            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+               <div className="text-lg font-bold text-orange-600">{stats.guests}</div>
+               <div className="text-xs text-orange-700">Happy Pets</div>
             </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 font-medium text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
+            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+               <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
+                 {stats.rating} <Star className="w-3.5 h-3.5 fill-orange-500" />
                </div>
-               <div className="text-xs text-white/80">Rating</div>
+               <div className="text-xs text-orange-700">Rating</div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      {/* Main Content */}
+      <div className="px-4 pt-4 bg-white">
         <div className="space-y-8">
           
-          {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">First Time</div>
-                    <div className="text-2xl font-bold text-slate-900">30% OFF</div>
-                    <div className="text-slate-500 text-xs">First Boarding Stay</div>
-                  </div>
-                  <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
-                    <HomeIcon className="w-5 h-5 text-orange-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹1200</span>
-                    <span className="ml-2 font-bold text-slate-900">₹840</span>
-                  </div>
-                  <Button size="sm" className="bg-orange-600 text-white hover:bg-orange-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('boarding_facility')}>
-                    Book Now
-                  </Button>
-                </div>
-              </Card>
-
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">Extended</div>
-                    <div className="text-2xl font-bold text-slate-900">FREE CCTV</div>
-                    <div className="text-slate-500 text-xs">On 5+ days booking</div>
-                  </div>
-                  <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                    <Camera className="w-5 h-5 text-slate-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-xs text-slate-500">Includes premium care</div>
-                  <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('boarding_facility')}>
-                    Book
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          </div>
+          {/* Promotion Banner */}
+          <PromotionBanner service="boarding" maxPromotions={3} />
 
           {/* Boarding Options */}
           <div>
@@ -243,7 +189,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                           {facility.rating || 4.6}
                         </span>
                         <span>•</span>
-                        <span>{facility.distance ? `${facility.distance.toFixed(1)} km` : 'Nearby'}</span>
+                        <span>{facility.distance ? `${Number(facility.distance).toFixed(1)} km` : 'Nearby'}</span>
                       </div>
                     </div>
                     <div className="text-right">
@@ -257,6 +203,6 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

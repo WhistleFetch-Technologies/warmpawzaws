@@ -113,12 +113,25 @@ export function clearVendorSession(): void {
   localStorage.removeItem('vendorData');
   localStorage.removeItem('vendorUser');
   localStorage.removeItem('vendorApplicationStatus');
+  localStorage.removeItem('vendorRole'); // ✅ FIX: Clear roleId to prevent stale data
   
   // Clear Cognito tokens
   localStorage.removeItem('vendorTokenExpiry');
   localStorage.removeItem('cognitoAccessToken');
   localStorage.removeItem('cognitoIdToken');
   localStorage.removeItem('cognitoRefreshToken');
+  
+  // ✅ FIX: Clear capability cache from sessionStorage
+  try {
+    const keys = Object.keys(sessionStorage);
+    keys.forEach(key => {
+      if (key.startsWith('vendor_capabilities_')) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  } catch (e) {
+    // Ignore errors
+  }
 }
 
 /**

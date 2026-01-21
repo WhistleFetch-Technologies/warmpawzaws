@@ -147,6 +147,156 @@ function hasRoomManagement(capabilities: Record<string, boolean> | undefined | n
          hasCapability(capabilities, 'rooms');
 }
 
+/**
+ * Check if vendor has gallery capability
+ */
+function hasGallery(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'gallery');
+}
+
+/**
+ * Check if vendor has portfolio capability
+ */
+function hasPortfolio(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'portfolio');
+}
+
+/**
+ * Check if vendor has CCTV access capability
+ */
+function hasCctvAccess(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'cctv_access') || 
+         hasCapability(capabilities, 'cctvAccess');
+}
+
+/**
+ * Check if vendor has controlled substances capability
+ */
+function hasControlledSubstances(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'controlled_substances') || 
+         hasCapability(capabilities, 'controlledSubstances');
+}
+
+/**
+ * Check if vendor has progress tracking capability
+ */
+function hasProgressTracking(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'progress_tracking') || 
+         hasCapability(capabilities, 'progressTracking');
+}
+
+/**
+ * Check if vendor has package management capability
+ */
+function hasPackageManagement(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'package_management') || 
+         hasCapability(capabilities, 'packageManagement') ||
+         hasCapability(capabilities, 'packages');
+}
+
+/**
+ * Check if vendor has custom services capability
+ */
+function hasCustomServices(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'custom_services') || 
+         hasCapability(capabilities, 'customServices');
+}
+
+/**
+ * Check if vendor has adoption capability
+ */
+function hasAdoption(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'adoption');
+}
+
+/**
+ * Check if vendor has memorial services capability
+ */
+function hasMemorial(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'memorial') || 
+         hasCapability(capabilities, 'memorial_services');
+}
+
+/**
+ * Check if vendor has expiry management capability
+ */
+function hasExpiryManagement(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'expiry_management') || 
+         hasCapability(capabilities, 'expiryManagement');
+}
+
+/**
+ * Check if vendor has donation capability
+ */
+function hasDonation(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'donation');
+}
+
+/**
+ * Check if vendor has events capability
+ */
+function hasEvents(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'events') || 
+         hasCapability(capabilities, 'event_management');
+}
+
+/**
+ * Check if vendor has patient monitoring capability
+ */
+function hasPatientMonitoring(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'patient_monitoring') || 
+         hasCapability(capabilities, 'patientMonitoring');
+}
+
+/**
+ * Check if vendor has prescription verification capability
+ */
+function hasPrescriptionVerification(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'prescription_verification') || 
+         hasCapability(capabilities, 'prescriptionVerification') ||
+         hasCapability(capabilities, 'rx_verification');
+}
+
+/**
+ * Check if vendor has delivery capability
+ */
+function hasDelivery(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'delivery') || 
+         hasCapability(capabilities, 'delivery_management') ||
+         hasCapability(capabilities, 'order_dispatch');
+}
+
+/**
+ * Check if vendor has diet charts capability
+ */
+function hasDietCharts(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'diet_charts') || 
+         hasCapability(capabilities, 'dietCharts');
+}
+
+/**
+ * Check if vendor has counseling capability
+ */
+function hasCounseling(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'counseling');
+}
+
+/**
+ * Check if vendor has policy management capability
+ */
+function hasPolicyManagement(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'policy_management') || 
+         hasCapability(capabilities, 'policyManagement');
+}
+
+/**
+ * Check if vendor has distance pricing capability
+ */
+function hasDistancePricing(capabilities: Record<string, boolean> | undefined | null): boolean {
+  return hasCapability(capabilities, 'distance_pricing') || 
+         hasCapability(capabilities, 'distancePricing');
+}
+
 const CapabilityHelper = {
   hasCapability,
   getCapabilities,
@@ -162,6 +312,26 @@ const CapabilityHelper = {
   hasGpsTracking,
   hasTableManagement,
   hasRoomManagement,
+  // Additional capability helpers
+  hasGallery,
+  hasPortfolio,
+  hasCctvAccess,
+  hasControlledSubstances,
+  hasProgressTracking,
+  hasPackageManagement,
+  hasCustomServices,
+  hasAdoption,
+  hasMemorial,
+  hasExpiryManagement,
+  hasDonation,
+  hasEvents,
+  hasPatientMonitoring,
+  hasPrescriptionVerification,
+  hasDelivery,
+  hasDietCharts,
+  hasCounseling,
+  hasPolicyManagement,
+  hasDistancePricing,
 };
 
 export default CapabilityHelper;

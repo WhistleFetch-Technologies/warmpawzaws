@@ -501,7 +501,7 @@ export function VendorServiceCatalogView({
     return selectedServices.has(serviceKey);
   };
 
-  const handleAddService = async (service: ServiceCatalogItem) => {
+  const handleAddService = async (service: ServiceCatalogItem, targetServiceStyle?: 'at_home' | 'at_center' | 'tele') => {
     // ✅ FIX: Skip if already added
     if (isServiceAdded(service)) {
       toast.info(`${service.serviceName} is already added`);
@@ -510,6 +510,23 @@ export function VendorServiceCatalogView({
     
     try {
       setAdding(true);
+
+      // ✅ FIX: Determine service style - use targetServiceStyle, then service.serviceStyle, then activeStyle filter, then default
+      // This ensures services are stored in the correct style tab
+      let effectiveServiceStyle: 'at_home' | 'at_center' | 'tele' = 'at_center';
+      
+      if (targetServiceStyle && ['at_home', 'at_center', 'tele'].includes(targetServiceStyle)) {
+        effectiveServiceStyle = targetServiceStyle;
+      } else if (service.serviceStyle && ['at_home', 'at_center', 'tele'].includes(service.serviceStyle)) {
+        effectiveServiceStyle = service.serviceStyle;
+      } else if (activeStyle !== 'all' && ['at_home', 'at_center', 'tele'].includes(activeStyle)) {
+        effectiveServiceStyle = activeStyle;
+      } else if (allowedServiceStyles && allowedServiceStyles.length > 0) {
+        // Use first allowed style as default
+        effectiveServiceStyle = allowedServiceStyles[0] as 'at_home' | 'at_center' | 'tele';
+      }
+      
+      console.log(`📋 [CATALOG] Adding service "${service.serviceName}" with serviceStyle: ${effectiveServiceStyle}`);
 
       // Use catalogId as serviceId for backward compatibility with backend
       const effectiveServiceId = service.catalogId || (service as any).id || (service as any).service_id;
@@ -525,7 +542,7 @@ export function VendorServiceCatalogView({
         serviceGroupId: service.serviceGroupId,
         serviceGroupName: service.serviceGroupName,
         serviceName: service.serviceName,
-        serviceStyle: service.serviceStyle || 'at_center', // Default to at_center if not specified
+        serviceStyle: effectiveServiceStyle, // ✅ FIX: Use determined service style (not defaulting to at_center)
         basePrice: service.basePrice,
         duration: service.duration,
         isPackage: service.isPackage,
@@ -625,9 +642,11 @@ export function VendorServiceCatalogView({
       console.log(`Adding ${servicesToAdd.length} new services, ${alreadyAddedCount.count} already added`);
 
       let successCount = 0;
+      // ✅ FIX: Use activeStyle filter when adding services in bulk
+      const targetStyle = activeStyle !== 'all' ? activeStyle : undefined;
       for (const service of servicesToAdd) {
         try {
-          await handleAddService(service);
+          await handleAddService(service, targetStyle);
           successCount++;
         } catch (e) {
           // Individual errors handled in handleAddService
@@ -876,7 +895,11 @@ export function VendorServiceCatalogView({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        if (!added) handleAddService(service);
+                                        if (!added) {
+                                          // ✅ FIX: Use activeStyle filter when adding service
+                                          const targetStyle = activeStyle !== 'all' ? activeStyle : undefined;
+                                          handleAddService(service, targetStyle);
+                                        }
                                       }}
                                       disabled={added || adding}
                                       size="sm"

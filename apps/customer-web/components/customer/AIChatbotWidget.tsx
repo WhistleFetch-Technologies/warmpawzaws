@@ -36,7 +36,8 @@ export function AIChatbotWidget({
   onClose,
   onNavigate,
 }: AIChatbotWidgetProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  // Widget is always open when rendered - parent controls visibility via conditional rendering
+  const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -207,16 +208,10 @@ export function AIChatbotWidget({
     }
   };
 
+  // If closed internally, call parent's onClose to unmount
   if (!isOpen) {
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 bg-primary-600 text-white rounded-full p-4 shadow-lg hover:bg-primary-700 transition-colors"
-        aria-label="Open AI Assistant"
-      >
-        <Bot className="w-6 h-6" />
-      </button>
-    );
+    onClose?.();
+    return null;
   }
 
   return (

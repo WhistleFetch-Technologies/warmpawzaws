@@ -57,6 +57,31 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
         }
       }
 
+      // ✅ FIX GAP 4.1: Role-based prescription/medical record visibility
+      // Only vet, nutritionist, and diagnostics roles should show prescription/medical records
+      // Groomer, trainer, walker, behaviourist, sitters should NOT show these
+      const ROLES_WITH_MEDICAL_FEATURES = ['vet', 'veterinary', 'nutritionist', 'diagnostics', 'diagnostic', 'lab', 'laboratory'];
+      let showMedicalFeatures = true; // Default to true for backwards compatibility
+      
+      if (booking.vendor_id) {
+        try {
+          const vendorWithRole = await query(
+            `SELECT v.role_id, r.name as role_name 
+             FROM vendors v 
+             LEFT JOIN roles r ON v.role_id = r.id 
+             WHERE v.id = $1`,
+            [booking.vendor_id]
+          );
+          if (vendorWithRole.rows.length > 0) {
+            const roleName = (vendorWithRole.rows[0].role_name || '').toLowerCase();
+            showMedicalFeatures = ROLES_WITH_MEDICAL_FEATURES.some(r => roleName.includes(r));
+          }
+        } catch (roleCheckError) {
+          console.warn('[BOOKING-DETAILS] Could not check vendor role for medical features:', roleCheckError);
+          // Default to showing medical features on error for backwards compatibility
+        }
+      }
+
       // Get related data in parallel
       const [
         prescriptions,
@@ -118,6 +143,11 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           : Promise.resolve([]),
       ]);
 
+      // ✅ FIX GAP 4.1: Filter medical data based on role
+      // For groomer, trainer, walker, behaviourist, sitters: hide prescriptions and medical records
+      const filteredPrescriptions = showMedicalFeatures ? (prescriptions.rows || []) : [];
+      const filteredMedicalRecords = showMedicalFeatures ? (medicalRecords.rows || []) : [];
+
       // Build comprehensive response
       const response = {
         booking: {
@@ -154,20 +184,25 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           full_name: customer[0].full_name || customer[0].name,
           phone: customer[0].phone,
         } : null,
-        prescriptions: prescriptions.rows || [],
-        medicalRecords: medicalRecords.rows || [],
+        // ✅ FIX GAP 4.1: Only include prescriptions/medical records for medical roles
+        prescriptions: filteredPrescriptions,
+        medicalRecords: filteredMedicalRecords,
+        // ✅ Include flag to let frontend know if medical features are available
+        medicalFeaturesEnabled: showMedicalFeatures,
         chat: {
           messages: chatMessages.rows || [],
           messageCount: chatMessages.rows?.length || 0,
           hasUnreadMessages: chatMessages.rows?.some((msg: any) => !msg.is_read) || false,
         },
         summary: {
-          hasPrescription: (prescriptions.rows?.length || 0) > 0,
-          hasMedicalRecords: (medicalRecords.rows?.length || 0) > 0,
+          hasPrescription: filteredPrescriptions.length > 0,
+          hasMedicalRecords: filteredMedicalRecords.length > 0,
           hasChatMessages: (chatMessages.rows?.length || 0) > 0,
-          prescriptionCount: prescriptions.rows?.length || 0,
-          medicalRecordCount: medicalRecords.rows?.length || 0,
+          prescriptionCount: filteredPrescriptions.length,
+          medicalRecordCount: filteredMedicalRecords.length,
           chatMessageCount: chatMessages.rows?.length || 0,
+          // ✅ Let frontend know this service type doesn't support prescriptions
+          medicalFeaturesAvailable: showMedicalFeatures,
         },
       };
 

@@ -47,6 +47,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [upiId, setUpiId] = useState('');
+  const [upiVerified, setUpiVerified] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
 
   useEffect(() => {
     loadBankAccount();
@@ -244,13 +247,12 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                   ? 'border-[#FF8C42] bg-orange-50'
                   : 'border-gray-200 hover:border-gray-300'
               }`}
-              disabled
             >
-              <CreditCard className={`w-6 h-6 mb-2 mx-auto ${paymentMethod === 'upi' ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-              <p className={`font-semibold text-sm ${paymentMethod === 'upi' ? 'text-[#FF8C42]' : 'text-gray-400'}`}>
+              <CreditCard className={`w-6 h-6 mb-2 mx-auto ${paymentMethod === 'upi' ? 'text-[#FF8C42]' : 'text-gray-600'}`} />
+              <p className={`font-semibold text-sm ${paymentMethod === 'upi' ? 'text-[#FF8C42]' : 'text-gray-900'}`}>
                 UPI
               </p>
-              <p className="text-xs text-gray-400 mt-1">Coming Soon</p>
+              {upiVerified && <p className="text-xs text-green-600 mt-1">✓ Verified</p>}
             </button>
             <button
               onClick={() => setPaymentMethod('wallet')}
@@ -259,13 +261,12 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                   ? 'border-[#FF8C42] bg-orange-50'
                   : 'border-gray-200 hover:border-gray-300'
               }`}
-              disabled
             >
-              <Wallet className={`w-6 h-6 mb-2 mx-auto ${paymentMethod === 'wallet' ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-              <p className={`font-semibold text-sm ${paymentMethod === 'wallet' ? 'text-[#FF8C42]' : 'text-gray-400'}`}>
+              <Wallet className={`w-6 h-6 mb-2 mx-auto ${paymentMethod === 'wallet' ? 'text-[#FF8C42]' : 'text-gray-600'}`} />
+              <p className={`font-semibold text-sm ${paymentMethod === 'wallet' ? 'text-[#FF8C42]' : 'text-gray-900'}`}>
                 Wallet
               </p>
-              <p className="text-xs text-gray-400 mt-1">Coming Soon</p>
+              <p className="text-xs text-gray-500 mt-1">₹{walletBalance}</p>
             </button>
           </div>
         </div>
@@ -537,6 +538,128 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* UPI Form */}
+        {paymentMethod === 'upi' && (
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <CreditCard className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-blue-900">UPI Payments</p>
+                  <p className="text-sm text-blue-700 mt-1">
+                    Receive payouts directly to your UPI ID. Instant transfers with no charges.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+              <div>
+                <Label htmlFor="upi_id">UPI ID</Label>
+                <Input
+                  id="upi_id"
+                  placeholder="yourname@upi"
+                  value={upiId}
+                  onChange={(e) => setUpiId(e.target.value)}
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Example: 9876543210@paytm, yourname@okicici</p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={async () => {
+                    if (!upiId || !upiId.includes('@')) {
+                      toast.error('Please enter a valid UPI ID');
+                      return;
+                    }
+                    try {
+                      setVerifying(true);
+                      await apiClient.post(`/vendor/${vendorId}/upi`, { upi_id: upiId });
+                      setUpiVerified(true);
+                      toast.success('UPI ID saved and verification pending');
+                    } catch (error) {
+                      toast.error('Failed to save UPI ID');
+                    } finally {
+                      setVerifying(false);
+                    }
+                  }}
+                  disabled={verifying || !upiId}
+                  className="bg-[#FF8C42] hover:bg-[#FF7029]"
+                >
+                  {verifying ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Verify & Save UPI
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Wallet Form */}
+        {paymentMethod === 'wallet' && (
+          <div className="space-y-6">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <Wallet className="w-5 h-5 text-purple-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-purple-900">WarmPawz Wallet</p>
+                  <p className="text-sm text-purple-700 mt-1">
+                    Your earnings are credited to your WarmPawz wallet. Withdraw anytime to bank or UPI.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="text-center mb-6">
+                <p className="text-sm text-gray-500 mb-1">Current Balance</p>
+                <p className="text-4xl font-bold text-purple-600">₹{walletBalance.toLocaleString()}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPaymentMethod('bank');
+                    toast.info('Select bank account to withdraw');
+                  }}
+                >
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Withdraw to Bank
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPaymentMethod('upi');
+                    toast.info('Set up UPI to withdraw');
+                  }}
+                >
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Withdraw to UPI
+                </Button>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h4 className="font-medium text-gray-900 mb-3">Recent Transactions</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-600">Booking #1234</span>
+                    <span className="text-green-600 font-medium">+₹500</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-gray-600">Withdrawal</span>
+                    <span className="text-red-600 font-medium">-₹2,000</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-gray-600">Booking #1233</span>
+                    <span className="text-green-600 font-medium">+₹750</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

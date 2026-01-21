@@ -79,6 +79,33 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
     }
   };
 
+  const handleExport = () => {
+    if (!earnings) return;
+
+    // Create CSV content
+    const csvContent = [
+      ['Earnings Report', getPeriodLabel()],
+      ['Generated', new Date().toLocaleString()],
+      [''],
+      ['Metric', 'Value'],
+      ['Total Bookings', earnings.totalBookings],
+      ['Total Revenue', `₹${earnings.totalRevenue}`],
+      ['Platform Fees', `₹${earnings.platformFees || 0}`],
+      ['Net Earnings', `₹${earnings.totalEarnings || earnings.totalRevenue}`],
+    ].map(row => row.join(',')).join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `earnings_${activePeriod}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -215,7 +242,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
             <div className="space-y-2">
               <Button
                 className="w-full bg-[#FF8C42] text-white hover:bg-[#FF7029]"
-                onClick={() => alert('Export feature coming soon!')}
+                onClick={handleExport}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Export Report

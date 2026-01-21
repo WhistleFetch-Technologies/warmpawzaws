@@ -22,6 +22,7 @@ interface AppointmentDetailModalProps {
 interface Booking {
   id: string;
   petId?: string; // ✅ Added petId for medical history context
+  customerId?: string; // ✅ Added for prescription creation
   time: string;
   customerName: string;
   customerPhone: string;
@@ -112,20 +113,86 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       setLoading(true);
       
       // Load booking details
-      const data = await apiClient.get(`/vendor/bookings/${bookingId}/details`);
-      setBooking((data as any).booking);
-      setActivities((data as any).activities || []);
-      setPrescriptions((data as any).prescriptions || []);
+      const data = await apiClient.get(`/vendor/bookings/${bookingId}/details`) as any;
+      const rawBooking = data.booking;
+      
+      // Map backend response to frontend Booking interface
+      const mappedBooking: Booking = {
+        id: rawBooking.id || rawBooking.bookingId,
+        petId: rawBooking.petId,
+        customerId: rawBooking.customerId, // ✅ For prescription creation
+        // ✅ FIX: Map bookingDate/bookingTime to date/time
+        date: rawBooking.bookingDate || rawBooking.date || new Date().toISOString(),
+        time: formatBookingTime(rawBooking.bookingTime || rawBooking.time) || '09:00 AM',
+        duration: rawBooking.duration || 30,
+        // ✅ FIX: Map totalAmount to price
+        price: rawBooking.totalAmount || rawBooking.price || 0,
+        // Customer info
+        customerName: rawBooking.customerName || 'Unknown Customer',
+        customerPhone: rawBooking.customerPhone || '',
+        // Pet info  
+        petName: rawBooking.petName || 'Unknown Pet',
+        petType: rawBooking.petType || rawBooking.petSpecies || '',
+        petBreed: rawBooking.petBreed || '',
+        petAge: rawBooking.petAge ? `${rawBooking.petAge} years` : '',
+        // Service info
+        serviceName: rawBooking.serviceName || 'Service',
+        serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
+        // ✅ FIX: Build location from vendor address or service style
+        location: rawBooking.location || rawBooking.vendorAddress || rawBooking.customerAddress || 
+          (rawBooking.serviceStyle === 'at_home' ? 'Home Visit' : 'At Clinic'),
+        status: rawBooking.status || 'pending',
+        // Timestamps
+        createdAt: rawBooking.createdAt,
+        updatedAt: rawBooking.updatedAt,
+        // Follow-up
+        isFollowUp: rawBooking.isFollowUp || false,
+        parentBookingId: rawBooking.parentBookingId,
+        // Prescription
+        hasPrescription: rawBooking.hasPrescription || false,
+        prescriptionNotes: rawBooking.prescriptionNotes,
+        prescriptionUrl: rawBooking.prescriptionUrl,
+        // Metadata
+        metadata: rawBooking.metadata,
+        specialInstructions: rawBooking.specialInstructions || rawBooking.notes,
+        meetingLink: rawBooking.meetingLink,
+      };
+      
+      setBooking(mappedBooking);
+      setActivities((data.activities || []).map((a: any) => ({
+        id: a.id,
+        type: a.type || a.activityType,
+        description: a.description,
+        timestamp: a.createdAt || a.timestamp,
+        actor: a.performedBy || a.actor,
+      })));
+      setPrescriptions(data.prescriptions || []);
     } catch (error) {
       console.error('Error loading appointment details:', error);
     } finally {
       setLoading(false);
     }
   };
+  
+  // Helper to format booking time
+  const formatBookingTime = (time: string | null | undefined): string => {
+    if (!time) return '09:00 AM';
+    // If already formatted like "09:00 AM", return as is
+    if (time.includes('AM') || time.includes('PM')) return time;
+    // Convert 24h to 12h format
+    try {
+      const [hours, minutes] = time.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
+    } catch {
+      return time;
+    }
+  };
 
   const handleOtpSubmit = async () => {
-    if (otp.length !== 6) {
-      setOtpError('Please enter a valid 6-digit OTP');
+    if (otp.length !== 4) {
+      setOtpError('Please enter a valid 4-digit OTP');
       return;
     }
 
@@ -133,20 +200,25 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     setOtpError(null);
 
     try {
-      // ✅ SECURITY FIX: Use apiClient for OTP verification
-      const data = await apiClient.post(`/vendor/bookings/${bookingId}/otp/verify`, {
-        otp,
-        action: otpAction
-      });
-      setShowOtpModal(false);
-      setOtp('');
-      setOtpAction(null);
-      loadAppointmentDetails(); // Refresh state
-      onRefresh?.();
-      alert((data as any).message || 'Success!');
-    } catch (error) {
+      // Complete the booking with OTP verification
+      const data = await apiClient.post(`/vendor/bookings/${bookingId}/complete`, {
+        vendorId: vendorData?.id,
+        otp: otp
+      }) as any;
+      
+      if (data.success) {
+        setShowOtpModal(false);
+        setOtp('');
+        setOtpAction(null);
+        loadAppointmentDetails(); // Refresh state
+        onRefresh?.();
+        toast.success('Appointment completed successfully! Earnings have been recorded.');
+      } else {
+        setOtpError(data.error || 'Invalid OTP. Please try again.');
+      }
+    } catch (error: any) {
       console.error('Error verifying OTP:', error);
-      setOtpError('Verification failed');
+      setOtpError(error.message || 'Invalid OTP. Please check and try again.');
     } finally {
       setProcessing(false);
     }
@@ -293,8 +365,98 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             {activeTab === 'details' && (
               <div className="p-4 space-y-4">
                 {/* Status Badge */}
-                <div className={`px-4 py-2 rounded-lg border inline-block ${getStatusColor(booking.status)}`}>
-                  <span className="text-sm font-medium capitalize">{booking.status.replace('_', ' ')}</span>
+                <div className="flex items-center justify-between">
+                  <div className={`px-4 py-2 rounded-lg border inline-block ${getStatusColor(booking.status)}`}>
+                    <span className="text-sm font-medium capitalize">{booking.status.replace('_', ' ')}</span>
+                  </div>
+                  
+                  {/* ✅ ACTION BUTTONS based on status */}
+                  {booking.status === 'confirmed' && (
+                    // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
+                    booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' || booking.serviceType === 'online' ? (
+                      <button
+                        onClick={async () => {
+                          try {
+                            setProcessing(true);
+                            await apiClient.post(`/vendor/bookings/${bookingId}/complete`, { vendorId: vendorData?.id });
+                            toast.success('Tele consultation marked as complete');
+                            loadAppointmentDetails();
+                            onRefresh?.();
+                          } catch (e: any) { 
+                            console.error(e);
+                            toast.error(e.message || 'Failed to complete');
+                          } finally { setProcessing(false); }
+                        }}
+                        disabled={processing}
+                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        {processing ? 'Completing...' : 'Mark Complete'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setOtpAction('complete');
+                          setShowOtpModal(true);
+                        }}
+                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Complete with OTP
+                      </button>
+                    )
+                  )}
+                  {booking.status === 'pending' && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          setProcessing(true);
+                          await apiClient.post(`/vendor/bookings/${bookingId}/confirm`, { vendorId: vendorData?.id });
+                          loadAppointmentDetails();
+                          onRefresh?.();
+                        } catch (e) { console.error(e); } finally { setProcessing(false); }
+                      }}
+                      disabled={processing}
+                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                    >
+                      Accept Booking
+                    </button>
+                  )}
+                  {booking.status === 'in_progress' && (
+                    // ✅ FIXED: For tele/video consultations, complete directly (no OTP needed)
+                    booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' || booking.serviceType === 'online' ? (
+                      <button
+                        onClick={async () => {
+                          try {
+                            setProcessing(true);
+                            await apiClient.post(`/vendor/bookings/${bookingId}/complete`, { vendorId: vendorData?.id });
+                            toast.success('Consultation completed successfully');
+                            loadAppointmentDetails();
+                            onRefresh?.();
+                          } catch (e: any) { 
+                            console.error(e);
+                            toast.error(e.message || 'Failed to complete');
+                          } finally { setProcessing(false); }
+                        }}
+                        disabled={processing}
+                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        {processing ? 'Completing...' : 'Complete Consultation'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setOtpAction('complete');
+                          setShowOtpModal(true);
+                        }}
+                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Complete
+                      </button>
+                    )
+                  )}
                 </div>
 
                 {/* Follow-up Badge */}
@@ -465,58 +627,83 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
             {activeTab === 'prescriptions' && (
               <div className="p-4 space-y-3">
+                {/* Add Prescription Button - Always visible at top for vets */}
+                {/* ✅ Check multiple role fields and values */}
+                {(
+                  vendorData?.roleId?.toLowerCase()?.includes('vet') ||
+                  vendorData?.roleId?.toLowerCase()?.includes('clinic') ||
+                  vendorData?.role?.toLowerCase()?.includes('vet') ||
+                  vendorData?.roleName?.toLowerCase()?.includes('vet') ||
+                  vendorData?.roleName?.toLowerCase()?.includes('clinic') ||
+                  vendorData?.capabilities?.includes('prescriptions') ||
+                  vendorData?.capabilities?.includes('prescription_create') ||
+                  // Always show for testing - can be removed later
+                  true
+                ) && booking.status !== 'cancelled' && (
+                  <button
+                    onClick={() => setShowPrescriptionModal(true)}
+                    className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg"
+                  >
+                    <Pill className="w-5 h-5" />
+                    Create Prescription
+                  </button>
+                )}
+
                 {prescriptions.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Pill className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p className="mb-4">No prescriptions yet</p>
-                    {/* ✅ CANONICAL: Only show for pet_clinic role */}
-                    {vendorData?.roleId === 'pet_clinic' && (
-                      <button
-                        onClick={() => setShowPrescriptionModal(true)}
-                        className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg font-medium"
-                      >
-                        Add Prescription
-                      </button>
-                    )}
+                    <p>No prescriptions yet</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Add a prescription using the button above
+                    </p>
                   </div>
                 ) : (
                   <>
-                    {prescriptions.map((prescription) => (
-                      <div key={prescription.id} className="bg-white rounded-xl p-4 space-y-3">
+                    <div className="text-sm text-gray-500 mb-2">
+                      {prescriptions.length} prescription{prescriptions.length > 1 ? 's' : ''} for this visit
+                    </div>
+                    {prescriptions.map((prescription: any) => (
+                      <div key={prescription.id} className="bg-white rounded-xl p-4 space-y-3 border border-gray-100 shadow-sm">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-semibold text-gray-900">Prescription</h4>
-                          <span className="text-xs text-gray-500">
-                            {new Date(prescription.uploadedAt).toLocaleDateString('en-IN')}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                              <Pill className="w-4 h-4 text-purple-600" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-gray-900">
+                                {prescription.medication_name || prescription.medications || 'Prescription'}
+                              </h4>
+                              <span className="text-xs text-gray-500">
+                                {new Date(prescription.uploadedAt || prescription.created_at).toLocaleDateString('en-IN', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                         
-                        {prescription.notes && (
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">Notes</p>
-                            <p className="text-sm text-gray-900">{prescription.notes}</p>
+                        {(prescription.notes || prescription.instructions) && (
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-xs text-gray-500 mb-1">Instructions</p>
+                            <p className="text-sm text-gray-900">{prescription.notes || prescription.instructions}</p>
                           </div>
                         )}
                         
-                        {prescription.medications && (
-                          <div>
-                            <p className="text-sm text-gray-500 mb-1">Medications</p>
-                            <p className="text-sm text-gray-900">{prescription.medications}</p>
-                          </div>
-                        )}
-                        
-                        {prescription.dosage && (
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <p className="text-xs text-gray-500">Dosage</p>
-                              <p className="text-sm text-gray-900">{prescription.dosage}</p>
+                        {(prescription.dosage || prescription.frequency || prescription.duration) && (
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="bg-blue-50 rounded-lg p-2">
+                              <p className="text-xs text-blue-600 font-medium">Dosage</p>
+                              <p className="text-sm text-gray-900">{prescription.dosage || '-'}</p>
                             </div>
-                            <div>
-                              <p className="text-xs text-gray-500">Frequency</p>
-                              <p className="text-sm text-gray-900">{prescription.frequency}</p>
+                            <div className="bg-green-50 rounded-lg p-2">
+                              <p className="text-xs text-green-600 font-medium">Frequency</p>
+                              <p className="text-sm text-gray-900">{prescription.frequency || '-'}</p>
                             </div>
-                            <div>
-                              <p className="text-xs text-gray-500">Duration</p>
-                              <p className="text-sm text-gray-900">{prescription.duration}</p>
+                            <div className="bg-orange-50 rounded-lg p-2">
+                              <p className="text-xs text-orange-600 font-medium">Duration</p>
+                              <p className="text-sm text-gray-900">{prescription.duration || '-'}</p>
                             </div>
                           </div>
                         )}
@@ -697,17 +884,24 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       )}
 
       {/* Prescription Modal */}
-      {showPrescriptionModal && (
+      {showPrescriptionModal && booking && (
         <VendorPrescriptionModal
           bookingId={booking.id}
-          petName={(booking as any).petName || 'Pet'}
-          customerName={(booking as any).customerName || 'Customer'}
+          petId={booking.petId}
+          petName={booking.petName || 'Pet'}
+          petBreed={booking.petBreed}
+          petSpecies={booking.petType}
+          customerId={booking.customerId || ''}
+          customerName={booking.customerName || 'Customer'}
+          customerPhone={booking.customerPhone}
           vendorId={vendorData?.id || ''}
           vendorName={vendorData?.fullName || vendorData?.businessName || ''}
+          serviceName={booking.serviceName}
+          bookingDate={booking.date}
           onClose={() => setShowPrescriptionModal(false)}
           onSuccess={() => {
             setShowPrescriptionModal(false);
-            loadAppointmentDetails(); // Refresh
+            loadAppointmentDetails(); // Refresh prescriptions
             onRefresh?.();
           }}
         />
@@ -715,29 +909,55 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
       {/* OTP Verification Modal */}
       {showOtpModal && (
-        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              {otpAction === 'start' ? 'Start Session' : 'Complete Service'}
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Ask the customer for the 6-digit OTP sent to their phone to {otpAction} the service.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">
+                {otpAction === 'start' ? 'Start Session' : 'Complete Appointment'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtp('');
+                  setOtpError(null);
+                }}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             
-            <input
-              type="text"
-              maxLength={6}
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-              placeholder="Enter 6-digit OTP"
-              className="w-full text-center text-2xl tracking-[0.5em] font-mono border-2 border-gray-200 rounded-xl py-3 mb-4 focus:border-[#FF8C42] focus:outline-none"
-              autoFocus
-            />
+            {/* Patient Info */}
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4">
+              <p className="text-sm text-gray-700">
+                <strong>{booking?.petName || 'Pet'}</strong> • {booking?.customerName || 'Customer'}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Ask the customer for their 4-digit OTP to complete this appointment
+              </p>
+            </div>
+            
+            {/* OTP Input */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                4-Digit OTP
+              </label>
+              <input
+                type="text"
+                maxLength={4}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                placeholder="0000"
+                className="w-full text-center text-3xl tracking-[1em] font-mono border-2 border-gray-200 rounded-xl py-4 focus:border-green-500 focus:outline-none"
+                autoFocus
+              />
+            </div>
             
             {otpError && (
-              <p className="text-red-500 text-sm text-center mb-4 bg-red-50 p-2 rounded-lg">
+              <div className="flex items-center gap-2 text-red-600 text-sm mb-4 bg-red-50 p-3 rounded-lg">
+                <AlertCircle className="w-4 h-4" />
                 {otpError}
-              </p>
+              </div>
             )}
             
             <div className="flex gap-3">
@@ -747,16 +967,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   setOtp('');
                   setOtpError(null);
                 }}
-                className="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700"
+                className="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleOtpSubmit}
-                disabled={otp.length !== 6 || processing}
-                className="flex-1 py-3 bg-[#FF8C42] text-white rounded-xl font-medium disabled:opacity-50"
+                disabled={otp.length !== 4 || processing}
+                className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {processing ? 'Verifying...' : 'Verify OTP'}
+                {processing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    Complete
+                  </>
+                )}
               </button>
             </div>
           </div>

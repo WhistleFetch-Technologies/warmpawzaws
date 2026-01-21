@@ -51,6 +51,8 @@ interface CommunicationHubProps {
   onClose: () => void;
   onBookFollowUp?: () => void;
   onContactSupport?: (bookingId: string, reason: string) => void;
+  onNavigate?: (screen: string, data?: any) => void; // ✅ NEW: For video call navigation
+  meetingId?: string; // ✅ NEW: Meeting ID for video calls
 }
 
 // ============================================================================
@@ -102,7 +104,9 @@ export function CommunicationHub({
   userType = 'customer',
   onClose,
   onBookFollowUp,
-  onContactSupport
+  onContactSupport,
+  onNavigate, // ✅ NEW
+  meetingId // ✅ NEW
 }: CommunicationHubProps) {
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -123,22 +127,30 @@ export function CommunicationHub({
   // Check if chat is active
   const chatActive = isChatActive(status) && (isBookingActive(status) || isWithin7Days);
 
-  // Video mode - show placeholder for tele-consultation
+  // ✅ FIX #1: Video mode - Navigate to actual video call instead of placeholder
+  useEffect(() => {
+    if (mode === 'video' && onNavigate) {
+      // Navigate to video call screen
+      onNavigate('video-call', { bookingId, meetingId, vendorName: otherUserName });
+      onClose(); // Close the hub since we're navigating away
+    }
+  }, [mode, bookingId, meetingId, otherUserName, onNavigate, onClose]);
+
   if (mode === 'video') {
+    // Show loading state while navigating
     return (
       <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl w-full max-w-2xl p-8 text-center">
-          <Video className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Video Consultation</h2>
+          <Video className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-pulse" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Starting Video Call...</h2>
           <p className="text-gray-600 mb-6">
-            Video consultation feature is being prepared. 
-            Your provider will connect with you shortly.
+            Please wait while we connect you to {otherUserName}
           </p>
           <button
             onClick={onClose}
             className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition"
           >
-            Close
+            Cancel
           </button>
         </div>
       </div>

@@ -43,6 +43,7 @@ import { registerSearchEndpoints } from '../endpoints/search';
 import { registerRazorpayEndpoints } from '../endpoints/razorpay';
 import { registerWalletEndpoints } from '../endpoints/wallet';
 import { registerSpecializedServicesEndpoints } from '../endpoints/specialized-services';
+import { registerSpecializedServiceFlows } from '../endpoints/specialized-service-flows';
 import { registerAdminGovernanceEndpoints } from '../endpoints/admin-governance';
 import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerServiceDiscoveryEndpoints } from '../endpoints/service-discovery';
@@ -60,6 +61,7 @@ import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
 import { registerVendorServicesEndpoints } from '../endpoints/vendor-services';
+import { registerAdminCustomServicesEndpoints } from '../endpoints/admin-custom-services';
 import { registerVendorPricingEndpoints } from '../endpoints/vendor-pricing';
 import { registerVendorProductsEndpoints } from '../endpoints/vendor-products';
 import { registerVendorOrdersEndpoints } from '../endpoints/vendor-orders';
@@ -75,6 +77,9 @@ import { registerTrainingProgressEndpoints } from '../endpoints/training-progres
 import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
 import { registerWalkerGPSEndpoints } from '../endpoints/walker-gps';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
+import { registerVendorPromotionsEndpoints } from '../endpoints/vendor-promotions';
+import { registerAdsRecommendationEndpoints } from '../endpoints/ads-recommendations';
+import { registerCustomerContentEndpoints } from '../endpoints/customer-content';
 import { registerEventEndpoints } from '../endpoints/events';
 import { registerHealthEndpoints } from '../endpoints/health';
 import { registerDonationEndpoints } from '../endpoints/donations';
@@ -83,6 +88,7 @@ import { registerAddressEndpoints } from '../endpoints/addresses';
 import { registerCustomerPasswordEndpoints } from '../endpoints/customer-password';
 import { registerAdminIntegrationEndpoints } from '../endpoints/admin-integrations';
 import { registerLogisticsEndpoints } from '../endpoints/logistics';
+import { registerLogisticsWebhookEndpoints } from '../endpoints/logistics-webhooks';
 import { registerReturnsEndpoints } from '../endpoints/returns';
 import { registerOrderManagementEndpoints } from '../endpoints/order-management';
 import { registerEnhancedOtpEndpoints } from '../endpoints/otp-enhanced';
@@ -91,6 +97,7 @@ import { registerVendorProfileEndpoints } from '../endpoints/vendor-profile';
 import { registerCustomerProfileEndpoints } from '../endpoints/customer-profile';
 import { registerSystemHealthEndpoints } from '../endpoints/system-health';
 import { registerVendorSettingsEndpoints } from '../endpoints/vendor-settings';
+import { registerVendorPoliciesEndpoints } from '../endpoints/vendor-policies';
 import { registerVendorBookingsEndpoints } from '../endpoints/vendor-bookings';
 import { registerVendorDashboardEnhancedEndpoints } from '../endpoints/vendor-dashboard-enhanced';
 import { registerAppointmentReminderEndpoints } from '../endpoints/appointment-reminders';
@@ -137,7 +144,28 @@ import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-co
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
 import { registerVendorSupportEndpoints } from '../endpoints/vendor-support';
 import { registerPharmacyOrderEndpoints } from '../endpoints/pharmacy-orders';
+import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
+import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
+import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
+import { registerVendorBankAccountEndpoints } from '../endpoints/vendor-bank-accounts';
+import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
 import { registerInstantTeleQueueEndpoints } from '../endpoints/instant-tele-queue';
+import { registerRoomsEndpoints } from '../endpoints/rooms';
+import { registerVendorLiveStatusEndpoints } from '../endpoints/vendor-live-status';
+import { registerDiagnosticsReportEndpoints } from '../endpoints/diagnostics-reports';
+import { registerMealSubscriptionEndpoints } from '../endpoints/meal-subscriptions';
+import { registerDocumentExpiryEndpoints } from '../endpoints/document-expiry';
+import { registerSubscriptionPlansAdminEndpoints } from '../endpoints/subscription-plans-admin';
+// E-commerce enhancements (Phase 2026-01-20)
+import { registerBulkProductUploadEndpoints } from '../endpoints/bulk-product-upload';
+import { registerProductReviewEndpoints } from '../endpoints/product-reviews';
+import { registerRecommendationEndpoints } from '../endpoints/recommendations';
+import { registerWishlistEndpoints } from '../endpoints/wishlist';
+import { registerProductVariationsEndpoints } from '../endpoints/product-variations';
+import { registerSelfManagedLogisticsEndpoints } from '../endpoints/self-managed-logistics';
+import { registerTaxInvoicePdfEndpoints } from '../endpoints/tax-invoice-pdf';
+import { registerReviewsEnhancedEndpoints } from '../endpoints/reviews-enhanced';
+import { registerReturnsEnhancedEndpoints } from '../endpoints/returns-enhanced';
 
 // Create Hono app
 const app = new Hono();
@@ -269,6 +297,7 @@ registerFollowupRescheduleEndpoints(app); // /followup/create, /vendor/reschedul
 registerNotificationEndpoints(app); // /customer/notifications - before /customer/:customerId
 registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
+registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
 registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
 registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
 // Now register parameterized routes
@@ -281,14 +310,21 @@ registerSearchEndpoints(app);
 registerRazorpayEndpoints(app);
 registerWalletEndpoints(app);
 registerSpecializedServicesEndpoints(app);
+registerSpecializedServiceFlows(app);
 registerAdminGovernanceEndpoints(app);
 registerStaffEndpoints(app);
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
+registerRoomsEndpoints(app); // Consultation rooms management (Phase 1.1)
 registerReviewEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerCustomerBookingHistoryEndpoints(app);
 registerPrescriptionEndpoints(app);
 registerPharmacyOrderEndpoints(app);
+registerPharmacyInventoryEndpoints(app);
+registerDeliveryPartnerAutomationEndpoints(app);
+registerMealPlanEndpoints(app);
+registerVendorBankAccountEndpoints(app);
+registerDeliveryTrackingEndpoints(app);
 registerMedicalRecordsEndpoints(app);
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
@@ -296,6 +332,7 @@ registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);
 registerVendorServicesEndpoints(app);
+registerAdminCustomServicesEndpoints(app);
 registerVendorPricingEndpoints(app);
 registerVendorProductsEndpoints(app);
 registerVendorOrdersEndpoints(app);
@@ -310,6 +347,8 @@ registerTrainingProgressEndpoints(app);
 registerPackageBookingEndpoints(app);
 registerWalkerGPSEndpoints(app);
 registerPromotionEndpoints(app);
+registerVendorPromotionsEndpoints(app);
+registerAdsRecommendationEndpoints(app);
 registerEventEndpoints(app);
 registerHealthEndpoints(app);
 registerDonationEndpoints(app);
@@ -318,6 +357,7 @@ registerAddressEndpoints(app);
 registerCustomerPasswordEndpoints(app);
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
+registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
 registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);
@@ -326,6 +366,7 @@ registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
 registerVendorSettingsEndpoints(app);
+registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);
 registerVendorDashboardEnhancedEndpoints(app);
 registerAppointmentReminderEndpoints(app);
@@ -373,6 +414,22 @@ registerVendorDashboardMissingEndpoints(app);
 registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI)
 registerCarePlansEndpoints(app); // Care Plans Generation (Support/CRM > Complete Plan)
 registerVendorSupportEndpoints(app); // Vendor Support Tickets
+registerVendorLiveStatusEndpoints(app); // Vendor/Staff Live Status Eligibility for Customer App Listing
+registerDiagnosticsReportEndpoints(app); // Diagnostics report upload and vet review
+registerMealSubscriptionEndpoints(app); // Nutritionist meal subscriptions
+registerDocumentExpiryEndpoints(app); // Vendor document expiry tracking
+registerSubscriptionPlansAdminEndpoints(app); // Admin subscription plan CRUD
+
+// E-commerce enhancements (Phase 2026-01-20)
+registerBulkProductUploadEndpoints(app); // Bulk product upload via CSV/Excel
+registerProductReviewEndpoints(app); // Product reviews and ratings
+registerRecommendationEndpoints(app); // "Also bought", trending, personalized recommendations
+registerWishlistEndpoints(app); // Customer wishlist management
+registerProductVariationsEndpoints(app); // Product variations (size, color, weight)
+registerSelfManagedLogisticsEndpoints(app); // Self-managed logistics with tracking URL
+registerTaxInvoicePdfEndpoints(app); // GST tax invoice PDF generation
+registerReviewsEnhancedEndpoints(app); // Enhanced booking reviews
+registerReturnsEnhancedEndpoints(app); // Complete return/refund management
 
 // 404 handler
 app.notFound((c) => {

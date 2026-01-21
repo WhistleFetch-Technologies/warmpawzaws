@@ -49,14 +49,23 @@ export function VendorBookingManagementScreen({
     try {
       setLoading(true);
 
-      console.log(`[VendorBookingManagementScreen] Loading bookings for vendor: ${vendorId}`);
+      // Get vendorId from props or localStorage
+      const effectiveVendorId = vendorId || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') : '');
+      
+      if (!effectiveVendorId) {
+        console.warn('[VendorBookingManagementScreen] No vendorId available');
+        setBookings([]);
+        return;
+      }
 
-      // ✅ AWS Lambda: Using vendor bookings endpoint with Cognito auth
+      console.log(`[VendorBookingManagementScreen] Loading bookings for vendor: ${effectiveVendorId}`);
+
+      // ✅ AWS Lambda: Using vendor bookings endpoint with vendorId
       const response = await apiClient.get<{
         success?: boolean;
         bookings?: Booking[];
         error?: string;
-      }>(`/vendor/bookings?status=${filter}`);
+      }>(`/vendor/bookings/${effectiveVendorId}?filter=${filter}`);
 
       if (response.success && response.bookings) {
         setBookings(response.bookings);

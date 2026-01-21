@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw } from 'lucide-react';
+import { Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface GroomingServiceRouterProps {
   phone: string;
@@ -55,7 +56,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         activeGroomers: allGroomers.length,
         sessions: allGroomers.length > 0 ? `${Math.max(allGroomers.length * 25, 100)}+` : '0',
         rating: allGroomers.length > 0 
-          ? (allGroomers.reduce((acc: number, g: any) => acc + (g.rating || 4.5), 0) / allGroomers.length).toFixed(1) 
+          ? Number(allGroomers.reduce((acc: number, g: any) => acc + Number(g.rating || 4.5), 0) / allGroomers.length).toFixed(1) 
           : '-'
       });
     } catch (error) {
@@ -127,49 +128,40 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
-           <button 
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <h1 className="text-2xl font-bold text-white">Pet Grooming</h1>
-        </div>
-
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-                <div className="text-2xl font-bold text-white">{stats.activeGroomers}+</div>
-                <div className="text-xs text-white/80">Pros</div>
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Stats Bar - Moved below header */}
+      {stats && (
+        <div className="px-4 pt-4 pb-2 bg-white">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+             <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+                <div className="text-lg font-bold text-orange-600">{stats.activeGroomers}+</div>
+                <div className="text-xs text-orange-700">Pros</div>
              </div>
-             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-                <div className="text-2xl font-bold text-white">{stats.sessions}+</div>
-                <div className="text-xs text-white/80">Sessions</div>
+             <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+                <div className="text-lg font-bold text-orange-600">{stats.sessions}+</div>
+                <div className="text-xs text-orange-700">Sessions</div>
              </div>
-             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-                <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                  {stats.rating} <Star className="w-4 h-4 fill-white" />
+             <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+                <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
+                  {stats.rating} <Star className="w-3.5 h-3.5 fill-orange-500" />
                 </div>
-                <div className="text-xs text-white/80">Rating</div>
+                <div className="text-xs text-orange-700">Rating</div>
              </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      {/* Main Content */}
+      <div className="px-4 pt-4 bg-white">
         <div className="space-y-8">
           
           {/* YOUR GROOMER Section - As per Master Plan */}
@@ -222,57 +214,15 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           )}
 
-          {/* Spotlight Offers */}
+          {/* PHASE 1.2: Promotion Banners (from Admin Marketing) */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
             </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              {/* Offer 1 */}
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">Limited Time</div>
-                    <div className="text-2xl font-bold text-slate-900">20% OFF</div>
-                    <div className="text-slate-500 text-xs">First Grooming Session</div>
-                  </div>
-                  <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
-                    <Scissors className="w-5 h-5 text-orange-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹1499</span>
-                    <span className="ml-2 font-bold text-slate-900">₹1199</span>
-                  </div>
-                  <Button size="sm" className="bg-orange-600 text-white hover:bg-orange-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('grooming_center')}>
-                    Book
-                  </Button>
-                </div>
-              </Card>
-
-              {/* Offer 2 */}
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">Free Visit</div>
-                    <div className="text-2xl font-bold text-slate-900">₹0 Fees</div>
-                    <div className="text-slate-500 text-xs">Home Visit Charges</div>
-                  </div>
-                  <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
-                    <HomeIcon className="w-5 h-5 text-green-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-xs text-slate-500">Orders above ₹999</div>
-                  <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('grooming_home')}>
-                    Claim
-                  </Button>
-                </div>
-              </Card>
-            </div>
+            <PromotionBanner 
+              service="grooming"
+            />
           </div>
 
           {/* Grooming Needs Grid */}
@@ -390,7 +340,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         {groomer.rating || 4.8}
                       </span>
                       <span>•</span>
-                      <span>{groomer.distance ? `${groomer.distance.toFixed(1)} km` : '2.5 km'}</span>
+                      <span>{groomer.distance ? `${Number(groomer.distance).toFixed(1)} km` : '2.5 km'}</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -403,6 +353,6 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -10,7 +10,8 @@ import { ProductServicesTab } from '@/components/admin/catalog/ProductServicesTa
 import { PricingInventoryTab } from '@/components/admin/catalog/PricingInventoryTab';
 import { BulkOperationsTab } from '@/components/admin/catalog/BulkOperationsTab';
 import { ServiceCatalogTab } from '@/components/admin/catalog/ServiceCatalogTab';
-import { AdminRolesPage } from '@/components/admin/AdminRolesPage';
+import { VendorRolesTab } from '@/components/admin/catalog/VendorRolesTab';
+// AdminRolesPage removed - use /roles page instead
 import { OnboardingDesigner } from '@/components/admin/onboarding/OnboardingDesigner';
 
 // ============================================================================
@@ -520,76 +521,76 @@ export default function ServiceCatalogPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="bg-white rounded-xl border border-gray-300 shadow-sm text-gray-900">
-          <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex gap-3 overflow-x-auto">
+        {/* ✅ FIX: Improved tabs with thicker border and better visual hierarchy */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-gray-900">
+          <div className="border-b border-gray-200 px-4 flex items-center justify-between flex-wrap gap-4">
+            <div className="flex gap-0 overflow-x-auto -mb-px">
               <button
                 onClick={() => setActiveTab('categories')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'categories'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Categories
               </button>
               <button
                 onClick={() => setActiveTab('products')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'products'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Product & Services
               </button>
               <button
                 onClick={() => setActiveTab('pricing')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'pricing'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Pricing & Inventory
               </button>
               <button
                 onClick={() => setActiveTab('bulk')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'bulk'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Bulk Operations
               </button>
               <button
                 onClick={() => setActiveTab('roles')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'roles'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Roles
               </button>
               <button
                 onClick={() => setActiveTab('onboarding')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'onboarding'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Onboarding
               </button>
               <button
                 onClick={() => setActiveTab('servicecatalog')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'servicecatalog'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Service Catalog
@@ -630,13 +631,60 @@ export default function ServiceCatalogPage() {
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                       className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm"
                     />
-                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          const response = await apiClient.get<any>('/admin/catalog/export');
+                          const data = response.categories || response.data || [];
+                          const csvContent = [
+                            ['ID', 'Name', 'Slug', 'Description', 'Parent ID', 'Is Active'],
+                            ...data.map((cat: any) => [cat.id, cat.name, cat.slug, cat.description || '', cat.parent_id || '', cat.is_active])
+                          ].map(row => row.join(',')).join('\n');
+                          const blob = new Blob([csvContent], { type: 'text/csv' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `categories_${new Date().toISOString().split('T')[0]}.csv`;
+                          a.click();
+                          setSuccess('Categories exported successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to export categories');
+                        }
+                      }}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
+                    >
                       Export
                     </button>
-                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          setLoading(true);
+                          await apiClient.post<any>('/admin/catalog/seed', { type: 'vet_only' });
+                          setSuccess('Vet services seeded successfully! Refresh to see changes.');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to seed vet data');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
+                    >
                       Seed Vet Only
                     </button>
-                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          setLoading(true);
+                          await apiClient.post<any>('/admin/catalog/seed', { type: 'all' });
+                          setSuccess('All services seeded successfully! Refresh to see changes.');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to seed all data');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
+                    >
                       Seed All
                     </button>
                   </div>
@@ -651,7 +699,7 @@ export default function ServiceCatalogPage() {
             
             {activeTab === 'roles' && (
               <div className="p-6">
-                <AdminRolesPage />
+                <VendorRolesTab />
               </div>
             )}
             

@@ -88,9 +88,22 @@ class WarmpawzStack extends cdk.Stack {
                 isDefault: true,
             });
         }
-        // Deploy Aurora RDS
+        // Deploy Aurora RDS (use existing if cluster identifier provided)
+        const existingClusterId = this.node.tryGetContext('existingRdsClusterId') ||
+            process.env.EXISTING_RDS_CLUSTER_ID;
+        const existingClusterEndpoint = this.node.tryGetContext('existingRdsClusterEndpoint') ||
+            process.env.EXISTING_RDS_CLUSTER_ENDPOINT;
+        const existingSecretArn = this.node.tryGetContext('existingRdsSecretArn') ||
+            process.env.EXISTING_RDS_SECRET_ARN;
+        const existingProxyName = this.node.tryGetContext('existingRdsProxyName') ||
+            process.env.EXISTING_RDS_PROXY_NAME;
         this.auroraStack = new aurora_stack_1.AuroraStack(this, 'AuroraStack', {
             vpc: this.vpc,
+            environment: environment,
+            existingClusterIdentifier: existingClusterId || 'warmpawz-dev-cluster', // Default from CI/CD
+            existingClusterEndpoint: existingClusterEndpoint || 'warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com',
+            existingSecretArn: existingSecretArn,
+            existingProxyName: existingProxyName || 'warmpawz-aurora-proxy',
         });
         // Deploy Cognito User Pools (3 separate pools for customer, vendor, admin)
         this.cognitoStack = new cognito_stack_1.CognitoStack(this, 'CognitoStack');
@@ -98,9 +111,19 @@ class WarmpawzStack extends cdk.Stack {
         this.securityStack = new security_stack_1.SecurityStack(this, 'SecurityStack', {
             vpc: this.vpc,
         });
-        // Deploy S3 Buckets (needed before IAM stack)
+        // Deploy S3 Buckets (use existing if bucket names provided)
+        const existingAdminFrontend = this.node.tryGetContext('existingAdminFrontendBucket') ||
+            `warmpawz-${environment}-admin-frontend-ap-south-1`;
+        const existingVendorFrontend = this.node.tryGetContext('existingVendorFrontendBucket') ||
+            `warmpawz-${environment}-vendor-frontend-ap-south-1`;
+        const existingCustomerFrontend = this.node.tryGetContext('existingCustomerFrontendBucket') ||
+            `warmpawz-${environment}-customer-frontend-ap-south-1`;
         this.s3Stack = new s3_stack_1.S3Stack(this, 'S3Stack', {
             environment: environment,
+            existingAdminFrontendBucket: existingAdminFrontend,
+            existingVendorFrontendBucket: existingVendorFrontend,
+            existingCustomerFrontendBucket: existingCustomerFrontend,
+            // Other buckets will be created if not provided
         });
         // Deploy IAM Roles and Policies
         this.iamStack = new iam_stack_1.IamStack(this, 'IamStack', {
@@ -233,11 +256,20 @@ class WarmpawzStack extends cdk.Stack {
             description: 'Aurora RDS Cluster Endpoint - For A4 (Backend Engineer)',
             exportName: 'Warmpawz-AuroraEndpoint',
         });
-        new cdk.CfnOutput(this, 'AuroraProxyEndpoint', {
-            value: this.auroraStack.proxy.endpoint,
-            description: 'RDS Proxy Endpoint - For A4 (Backend Engineer)',
-            exportName: 'Warmpawz-AuroraProxyEndpoint',
-        });
+        if (this.auroraStack.proxy) {
+            new cdk.CfnOutput(this, 'AuroraProxyEndpoint', {
+                value: this.auroraStack.proxy.endpoint,
+                description: 'RDS Proxy Endpoint - For A4 (Backend Engineer)',
+                exportName: 'Warmpawz-AuroraProxyEndpoint',
+            });
+        }
+        else {
+            new cdk.CfnOutput(this, 'AuroraClusterEndpoint', {
+                value: this.auroraStack.cluster.clusterEndpoint.hostname,
+                description: 'RDS Cluster Endpoint - For A4 (Backend Engineer)',
+                exportName: 'Warmpawz-AuroraClusterEndpoint',
+            });
+        }
         new cdk.CfnOutput(this, 'AuroraSecretArn', {
             value: this.auroraStack.secret.secretArn,
             description: 'Aurora RDS Secret ARN - For A4 (Backend Engineer)',
@@ -308,11 +340,13 @@ class WarmpawzStack extends cdk.Stack {
             description: 'S3 Uploads Bucket - For A6 (Mobile Engineer)',
             exportName: 'Warmpawz-UploadsBucketName',
         });
-        new cdk.CfnOutput(this, 'CloudFrontDomainName', {
-            value: this.s3Stack.distribution.distributionDomainName,
-            description: 'CloudFront Domain - For A6 (Mobile Engineer)',
-            exportName: 'Warmpawz-CloudFrontDomainName',
-        });
+        if (this.s3Stack.distribution) {
+            new cdk.CfnOutput(this, 'CloudFrontDomainName', {
+                value: this.s3Stack.distribution.distributionDomainName,
+                description: 'CloudFront Domain - For A6 (Mobile Engineer)',
+                exportName: 'Warmpawz-CloudFrontDomainName',
+            });
+        }
         new cdk.CfnOutput(this, 'ApiDomainName', {
             value: this.route53Stack.apiDomainName,
             description: 'API Custom Domain Name',
@@ -333,16 +367,20 @@ class WarmpawzStack extends cdk.Stack {
             description: 'Admin Portal Domain',
             exportName: 'Warmpawz-AdminDomain',
         });
-        new cdk.CfnOutput(this, 'ApkBucketName', {
-            value: this.s3Stack.apkBucket.bucketName,
-            description: 'APK Storage Bucket - For Mobile Apps',
-            exportName: 'Warmpawz-ApkBucketName',
-        });
-        new cdk.CfnOutput(this, 'ApkDistributionDomain', {
-            value: this.s3Stack.apkDistribution.distributionDomainName,
-            description: 'APK CloudFront Distribution Domain',
-            exportName: 'Warmpawz-ApkDistributionDomain',
-        });
+        if (this.s3Stack.apkBucket) {
+            new cdk.CfnOutput(this, 'ApkBucketName', {
+                value: this.s3Stack.apkBucket.bucketName,
+                description: 'APK Storage Bucket - For Mobile Apps',
+                exportName: 'Warmpawz-ApkBucketName',
+            });
+        }
+        if (this.s3Stack.apkDistribution) {
+            new cdk.CfnOutput(this, 'ApkDistributionDomain', {
+                value: this.s3Stack.apkDistribution.distributionDomainName,
+                description: 'APK CloudFront Distribution Domain',
+                exportName: 'Warmpawz-ApkDistributionDomain',
+            });
+        }
         new cdk.CfnOutput(this, 'LambdaExecutionRoleArn', {
             value: this.iamStack.lambdaExecutionRole.roleArn,
             description: 'Lambda Execution Role ARN',

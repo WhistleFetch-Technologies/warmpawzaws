@@ -101,12 +101,20 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       }
 
-      // Get bookings for vendor
+      // Get bookings for vendor with enrichment
       const bookings = await query(
-        `SELECT * FROM bookings 
-         WHERE vendor_id = $1 
-           AND booking_date >= $2
-         ORDER BY booking_date DESC, booking_time DESC`,
+        `SELECT b.*,
+                s.name as service_name,
+                s.category as service_category,
+                c.full_name as customer_name,
+                c.phone as customer_phone
+         FROM bookings b
+         LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN customers c ON b.customer_id = c.id
+         WHERE b.vendor_id = $1 
+           AND b.booking_date >= $2
+           AND b.status != 'cancelled'
+         ORDER BY b.booking_date ASC, b.booking_time ASC`,
         [vendorId, startDate.toISOString().split('T')[0]]
       ).catch(() => ({ rows: [] }));
 
@@ -152,6 +160,27 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         stats.totalReviews = 0;
       }
 
+      // ✅ FIX: Include enriched bookings in response
+      const enrichedBookings = bookings.rows.map((b: any) => ({
+        id: b.id,
+        booking_id: b.id,
+        customer_id: b.customer_id,
+        customer_name: b.customer_name || 'Customer',
+        customer_phone: b.customer_phone,
+        service_id: b.service_id,
+        service_name: b.service_name || 'Service',
+        service_category: b.service_category,
+        booking_date: b.booking_date,
+        booking_time: b.booking_time,
+        status: b.status,
+        payment_status: b.payment_status,
+        total_amount: b.total_amount,
+        otp_code: b.otp_code,
+        otp_verified: b.otp_verified,
+        service_type: b.service_type,
+        notes: b.notes,
+      }));
+
       return c.json({
         success: true,
         vendor: {
@@ -166,6 +195,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           isActive: vendor.is_active,
         },
         stats,
+        bookings: enrichedBookings, // ✅ Include bookings array
         timeframe,
       });
     } catch (error: any) {
@@ -258,6 +288,55 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const earnings = earningsStats.rows[0];
       const rating = ratingStats.rows[0];
 
+      // ✅ FIX: Get bookings for display, sorted by date and time (earliest first)
+      let startDate = new Date();
+      if (timeframe === 'today') {
+        startDate = new Date(today);
+      } else if (timeframe === 'week') {
+        startDate.setDate(startDate.getDate() - 7);
+      } else if (timeframe === 'month') {
+        startDate.setMonth(startDate.getMonth() - 1);
+      }
+
+      const bookingsResult = await query(
+        `SELECT b.*,
+                s.name as service_name,
+                s.category as service_category,
+                c.full_name as customer_name,
+                c.phone as customer_phone
+         FROM bookings b
+         LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN customers c ON b.customer_id = c.id
+         WHERE b.vendor_id = $1 
+           AND b.booking_date >= $2
+           AND b.status NOT IN ('cancelled')
+         ORDER BY b.booking_date ASC, b.booking_time ASC`,
+        [vendorId, startDate.toISOString().split('T')[0]]
+      ).catch(() => ({ rows: [] }));
+
+      // Transform bookings for frontend
+      const enrichedBookings = bookingsResult.rows.map((b: any) => ({
+        id: b.id,
+        booking_id: b.id,
+        customer_id: b.customer_id,
+        customer_name: b.customer_name || 'Customer',
+        customer_phone: b.customer_phone,
+        service_id: b.service_id,
+        service_name: b.service_name || 'Service',
+        service_category: b.service_category,
+        booking_date: b.booking_date,
+        booking_time: b.booking_time,
+        status: b.status,
+        payment_status: b.payment_status,
+        total_amount: b.total_amount,
+        otp_code: b.otp_code,
+        otp_verified: b.otp_verified,
+        service_type: b.service_type,
+        notes: b.notes,
+      }));
+
+      console.log(`📊 [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${vendorId}`);
+
       return c.json({
         success: true,
         stats: {
@@ -269,6 +348,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           rating: parseFloat(rating.rating || '4.8'),
           totalReviews: parseInt(rating.total_reviews || '0', 10),
         },
+        bookings: enrichedBookings, // ✅ Include sorted bookings
+        timeframe,
       });
     } catch (error: any) {
       console.error('Error fetching vendor dashboard:', error);

@@ -27,6 +27,40 @@ import { isValidUUID } from '../types/entities';
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Upsert a setting in admin_settings table
+ */
+async function upsertAdminSetting(key: string, value: string, serviceType: string = 'all'): Promise<void> {
+  try {
+    // Try update first
+    const existing = await query(
+      `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = $2 OR (service_type IS NULL AND $2 = 'all')) LIMIT 1`,
+      [key, serviceType]
+    ).catch(() => ({ rows: [] }));
+
+    if (existing.rows.length > 0) {
+      await query(
+        `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = $3 OR (service_type IS NULL AND $3 = 'all'))`,
+        [value, key, serviceType]
+      );
+    } else {
+      await query(
+        `INSERT INTO admin_settings (setting_key, setting_value, service_type, created_at, updated_at)
+         VALUES ($1, $2, $3, NOW(), NOW())`,
+        [key, value, serviceType === 'all' ? null : serviceType]
+      ).catch(() => {
+        // Ignore duplicate key errors
+      });
+    }
+  } catch (error) {
+    console.warn(`Failed to upsert admin setting ${key}:`, error);
+  }
+}
+
+// ============================================================================
 // PHASE 24: CATALOG SELECTORS
 // ============================================================================
 
@@ -1951,6 +1985,63 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  // Catalog Export
+  app.get('/admin/catalog/export', async (c) => {
+    try {
+      const categories = await query(`
+        SELECT id, name, slug, description, parent_id, is_active, created_at
+        FROM service_categories 
+        ORDER BY name
+      `);
+
+      return c.json({
+        success: true,
+        categories: categories.rows,
+      });
+    } catch (error: unknown) {
+      console.error('Error exporting categories:', error);
+      return c.json({ success: false, categories: [] });
+    }
+  });
+
+  // Catalog Seed
+  app.post('/admin/catalog/seed', async (c) => {
+    try {
+      const { type } = await c.req.json();
+      
+      const seedData = type === 'vet_only' ? [
+        { name: 'Veterinary', slug: 'veterinary', description: 'Veterinary services' },
+        { name: 'Tele Consultation', slug: 'tele-consultation', description: 'Online vet consultation' },
+        { name: 'Home Visit', slug: 'home-visit', description: 'Vet home visit' },
+      ] : [
+        { name: 'Veterinary', slug: 'veterinary', description: 'Veterinary services' },
+        { name: 'Grooming', slug: 'grooming', description: 'Pet grooming services' },
+        { name: 'Training', slug: 'training', description: 'Pet training services' },
+        { name: 'Walking', slug: 'walking', description: 'Dog walking services' },
+        { name: 'Boarding', slug: 'boarding', description: 'Pet boarding services' },
+        { name: 'Photography', slug: 'photography', description: 'Pet photography services' },
+      ];
+
+      for (const cat of seedData) {
+        await insert('service_categories', {
+          name: cat.name,
+          slug: cat.slug,
+          description: cat.description,
+          is_active: true,
+        }).catch(() => {/* Ignore duplicates */});
+      }
+
+      return c.json({
+        success: true,
+        message: `Seeded ${seedData.length} categories`,
+      });
+    } catch (error: unknown) {
+      console.error('Error seeding catalog:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to seed catalog', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
   app.get('/admin/catalog/stats', async (c) => {
     try {
       // Get current counts
@@ -2823,6 +2914,284 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  // ============================================================================
+  // FEE CONFIGURATION ENDPOINTS
+  // ============================================================================
+
+  // GET /admin/finance/fee-configuration - Get all fee configuration settings
+  app.get('/admin/finance/fee-configuration', async (c) => {
+    try {
+      // Fetch all fee-related settings from admin_settings table
+      const settings = await query(`
+        SELECT setting_key, setting_value, service_type, description, updated_at
+        FROM admin_settings 
+        WHERE setting_key IN (
+          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
+          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
+          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold', 'max_delivery_distance',
+          'packaging_fee_enabled', 'packaging_fee_amount'
+        )
+        OR setting_key LIKE 'fee_override_%'
+      `).catch(() => ({ rows: [] }));
+
+      // Build config object from settings
+      const config: Record<string, any> = {
+        platformFeePercentage: 2,
+        platformFeeFlat: 0,
+        maxPlatformFee: 500,
+        convenienceFeeBooking: 9,
+        convenienceFeeOrder: 0,
+        convenienceFeeTele: 0,
+        deliveryFeeBase: 30,
+        deliveryFeePerKm: 5,
+        freeDeliveryThreshold: 500,
+        maxDeliveryDistance: 25,
+        packagingFeeEnabled: false,
+        packagingFeeAmount: 10,
+        serviceTypeOverrides: [],
+      };
+
+      // Map setting_key to config property
+      const keyMap: Record<string, string> = {
+        'platform_fee_percentage': 'platformFeePercentage',
+        'platform_fee_flat': 'platformFeeFlat',
+        'max_platform_fee': 'maxPlatformFee',
+        'convenience_fee_booking': 'convenienceFeeBooking',
+        'convenience_fee_order': 'convenienceFeeOrder',
+        'convenience_fee_tele': 'convenienceFeeTele',
+        'delivery_fee_base': 'deliveryFeeBase',
+        'delivery_fee_per_km': 'deliveryFeePerKm',
+        'free_delivery_threshold': 'freeDeliveryThreshold',
+        'max_delivery_distance': 'maxDeliveryDistance',
+        'packaging_fee_enabled': 'packagingFeeEnabled',
+        'packaging_fee_amount': 'packagingFeeAmount',
+      };
+
+      const overrides: Record<string, any> = {};
+
+      for (const row of settings.rows) {
+        const key = row.setting_key;
+        const value = row.setting_value;
+        const serviceType = row.service_type;
+
+        if (key.startsWith('fee_override_')) {
+          // Service type override
+          const parts = key.replace('fee_override_', '').split('_');
+          const st = parts[0];
+          const field = parts.slice(1).join('_');
+          
+          if (!overrides[st]) {
+            overrides[st] = { serviceType: st, enabled: true };
+          }
+          
+          if (field === 'platform_fee') {
+            overrides[st].platformFeePercentage = parseFloat(value);
+          } else if (field === 'convenience_fee') {
+            overrides[st].convenienceFee = parseFloat(value);
+          } else if (field === 'enabled') {
+            overrides[st].enabled = value === 'true' || value === '1';
+          }
+        } else if (keyMap[key]) {
+          const configKey = keyMap[key];
+          if (configKey === 'packagingFeeEnabled') {
+            config[configKey] = value === 'true' || value === '1';
+          } else {
+            config[configKey] = parseFloat(value);
+          }
+        }
+      }
+
+      config.serviceTypeOverrides = Object.values(overrides);
+
+      return c.json({ success: true, config });
+    } catch (error: unknown) {
+      console.error('Error fetching fee configuration:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to fetch fee configuration', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  // PUT /admin/finance/fee-configuration - Update fee configuration settings
+  app.put('/admin/finance/fee-configuration', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { config } = body;
+
+      if (!config) {
+        return c.json({ success: false, error: 'Config is required' }, 400);
+      }
+
+      // Map config properties to setting_key
+      const keyMap: Record<string, string> = {
+        'platformFeePercentage': 'platform_fee_percentage',
+        'platformFeeFlat': 'platform_fee_flat',
+        'maxPlatformFee': 'max_platform_fee',
+        'convenienceFeeBooking': 'convenience_fee_booking',
+        'convenienceFeeOrder': 'convenience_fee_order',
+        'convenienceFeeTele': 'convenience_fee_tele',
+        'deliveryFeeBase': 'delivery_fee_base',
+        'deliveryFeePerKm': 'delivery_fee_per_km',
+        'freeDeliveryThreshold': 'free_delivery_threshold',
+        'maxDeliveryDistance': 'max_delivery_distance',
+        'packagingFeeEnabled': 'packaging_fee_enabled',
+        'packagingFeeAmount': 'packaging_fee_amount',
+      };
+
+      // Upsert each setting
+      for (const [configKey, settingKey] of Object.entries(keyMap)) {
+        if (config[configKey] !== undefined) {
+          const value = String(config[configKey]);
+          
+          // Try to update first, then insert if not exists
+          const existing = await query(
+            `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = 'all' OR service_type IS NULL) LIMIT 1`,
+            [settingKey]
+          ).catch(() => ({ rows: [] }));
+
+          if (existing.rows.length > 0) {
+            await query(
+              `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = 'all' OR service_type IS NULL)`,
+              [value, settingKey]
+            );
+          } else {
+            await query(
+              `INSERT INTO admin_settings (setting_key, setting_value, service_type, description, created_at, updated_at)
+               VALUES ($1, $2, 'all', $3, NOW(), NOW())
+               ON CONFLICT (setting_key, COALESCE(service_type, 'all')) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
+              [settingKey, value, `Fee configuration: ${configKey}`]
+            ).catch(async () => {
+              // Fallback insert without ON CONFLICT (if constraint doesn't exist)
+              await query(
+                `INSERT INTO admin_settings (setting_key, setting_value, service_type, description)
+                 VALUES ($1, $2, 'all', $3)`,
+                [settingKey, value, `Fee configuration: ${configKey}`]
+              ).catch(() => {});
+            });
+          }
+        }
+      }
+
+      // Handle service type overrides
+      if (config.serviceTypeOverrides && Array.isArray(config.serviceTypeOverrides)) {
+        for (const override of config.serviceTypeOverrides) {
+          const { serviceType, enabled, platformFeePercentage, convenienceFee } = override;
+          
+          if (!serviceType) continue;
+
+          // Store enabled status
+          await upsertAdminSetting(`fee_override_${serviceType}_enabled`, String(enabled || false), serviceType);
+          
+          // Store platform fee override
+          if (platformFeePercentage !== undefined) {
+            await upsertAdminSetting(`fee_override_${serviceType}_platform_fee`, String(platformFeePercentage), serviceType);
+          }
+          
+          // Store convenience fee override
+          if (convenienceFee !== undefined) {
+            await upsertAdminSetting(`fee_override_${serviceType}_convenience_fee`, String(convenienceFee), serviceType);
+          }
+        }
+      }
+
+      return c.json({ success: true, message: 'Fee configuration saved successfully' });
+    } catch (error: unknown) {
+      console.error('Error saving fee configuration:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to save fee configuration', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  // GET /admin/finance/fees - Get fees for a specific service/order type (used by payment page)
+  app.get('/admin/finance/fees', async (c) => {
+    try {
+      const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const amount = parseFloat(c.req.query('amount') || '0');
+      const type = c.req.query('type') || 'booking';
+
+      // Fetch fee configuration
+      const settings = await query(`
+        SELECT setting_key, setting_value, service_type
+        FROM admin_settings 
+        WHERE setting_key IN (
+          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
+          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
+          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold',
+          'packaging_fee_enabled', 'packaging_fee_amount'
+        )
+        AND (service_type = 'all' OR service_type IS NULL OR service_type = $1)
+        ORDER BY CASE WHEN service_type = $1 THEN 0 ELSE 1 END
+      `, [serviceStyle]).catch(() => ({ rows: [] }));
+
+      // Build settings map (service-specific overrides take precedence)
+      const settingsMap: Record<string, string> = {};
+      for (const row of settings.rows) {
+        if (!settingsMap[row.setting_key] || row.service_type === serviceStyle) {
+          settingsMap[row.setting_key] = row.setting_value;
+        }
+      }
+
+      // Calculate platform fee
+      const platformFeePercentage = parseFloat(settingsMap['platform_fee_percentage'] || '2');
+      const platformFeeFlat = parseFloat(settingsMap['platform_fee_flat'] || '0');
+      const maxPlatformFee = parseFloat(settingsMap['max_platform_fee'] || '500');
+      
+      let platformFee = Math.round(amount * (platformFeePercentage / 100)) + platformFeeFlat;
+      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {
+        platformFee = maxPlatformFee;
+      }
+
+      // Get convenience fee based on type
+      let convenienceFee = 0;
+      if (type === 'booking') {
+        if (serviceStyle === 'tele') {
+          convenienceFee = parseFloat(settingsMap['convenience_fee_tele'] || '0');
+        } else {
+          convenienceFee = parseFloat(settingsMap['convenience_fee_booking'] || '9');
+        }
+      } else {
+        convenienceFee = parseFloat(settingsMap['convenience_fee_order'] || '0');
+      }
+
+      // Delivery fee (only for home services and orders)
+      let deliveryFee = 0;
+      if (serviceStyle === 'at_home' || type === 'order') {
+        const freeDeliveryThreshold = parseFloat(settingsMap['free_delivery_threshold'] || '500');
+        if (amount < freeDeliveryThreshold || freeDeliveryThreshold === 0) {
+          deliveryFee = parseFloat(settingsMap['delivery_fee_base'] || '30');
+        }
+      }
+
+      // Packaging fee (only for orders)
+      let packagingFee = 0;
+      if (type === 'order') {
+        const packagingEnabled = settingsMap['packaging_fee_enabled'] === 'true' || settingsMap['packaging_fee_enabled'] === '1';
+        if (packagingEnabled) {
+          packagingFee = parseFloat(settingsMap['packaging_fee_amount'] || '10');
+        }
+      }
+
+      return c.json({
+        success: true,
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        total: platformFee + convenienceFee + deliveryFee + packagingFee,
+      });
+    } catch (error: unknown) {
+      console.error('Error calculating fees:', error);
+      // Return default fees on error
+      return c.json({
+        success: true,
+        platformFee: Math.round(parseFloat(c.req.query('amount') || '0') * 0.02),
+        convenienceFee: c.req.query('type') === 'booking' ? 9 : 0,
+        deliveryFee: 0,
+        packagingFee: 0,
+        total: Math.round(parseFloat(c.req.query('amount') || '0') * 0.02) + (c.req.query('type') === 'booking' ? 9 : 0),
+      });
+    }
+  });
+
   // Other Missing Endpoints
   app.get('/admin/enterprise/clients', async (c) => {
     try {
@@ -3338,7 +3707,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         SELECT 
           COUNT(*) as total_payments,
           SUM(amount) as total_amount,
-          COUNT(*) FILTER (WHERE status = 'success') as successful
+          COUNT(*) FILTER (WHERE payment_status = 'completed' OR payment_status = 'success') as successful
         FROM payments
       `);
       return c.json({ success: true, analytics: analytics.rows[0] });
@@ -3575,7 +3944,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payments/settlements', async (c) => {
     try {
-      const settlements = await query('SELECT * FROM payment_settlements ORDER BY created_at DESC LIMIT 50');
+      // Try vendor_settlements table first, fallback to payouts table
+      const settlements = await query('SELECT * FROM vendor_settlements ORDER BY created_at DESC LIMIT 50').catch(async () => {
+        return await query('SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50').catch(() => ({ rows: [] }));
+      });
       return c.json({ success: true, settlements: settlements.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);

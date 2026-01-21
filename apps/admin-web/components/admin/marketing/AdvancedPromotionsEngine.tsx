@@ -70,6 +70,10 @@ interface Promotion {
 	regions: string[];
 	minOrderValue?: number;
 	createdAt: string;
+	// Phase 0.1: New fields for promotion system
+	is_spotlight?: boolean;
+	published?: boolean;
+	applicable_services?: string[]; // Maps to target_services in DB (applicable_services column)
 	analytics?: {
 		views: number;
 		conversions: number;
@@ -117,6 +121,10 @@ export function AdvancedPromotionsEngine({
 		regions: ["india"],
 		conditions: [],
 		rewards: [],
+		// Phase 0.1: New fields
+		is_spotlight: false,
+		published: false,
+		applicable_services: [],
 	});
 
 	// Stats
@@ -255,6 +263,10 @@ export function AdvancedPromotionsEngine({
 			regions: ["india"],
 			conditions: [],
 			rewards: [],
+			// Phase 0.1: Reset new fields
+			is_spotlight: false,
+			published: false,
+			applicable_services: [],
 		});
 	};
 
@@ -759,6 +771,89 @@ export function AdvancedPromotionsEngine({
 											setFormData({ ...formData, active: checked })
 										}
 									/>
+								</div>
+
+								{/* Phase 0.1: New fields for Spotlight and Published */}
+								<div className="border-t pt-4 mt-4">
+									<h3 className="text-sm font-semibold mb-3">Display Settings</h3>
+									
+									<div className="flex items-center gap-4 p-4 bg-yellow-50 rounded-lg mb-3">
+										<div className="flex-1">
+											<Label>Spotlight Promotion</Label>
+											<p className="text-xs text-gray-500">
+												Show in featured spotlight section on service dashboards
+											</p>
+										</div>
+										<Switch
+											checked={formData.is_spotlight || false}
+											onCheckedChange={(checked) =>
+												setFormData({ ...formData, is_spotlight: checked })
+											}
+										/>
+									</div>
+
+									<div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg mb-3">
+										<div className="flex-1">
+											<Label>Published</Label>
+											<p className="text-xs text-gray-500">
+												Make promotion visible to customers. Unpublished promotions are drafts.
+											</p>
+										</div>
+										<Switch
+											checked={formData.published || false}
+											onCheckedChange={(checked) =>
+												setFormData({ ...formData, published: checked })
+											}
+										/>
+									</div>
+
+									{formData.is_spotlight && (
+										<div className="mb-3">
+											<Label>Priority (for Spotlight ordering)</Label>
+											<p className="text-xs text-gray-500 mb-2">
+												Lower number = higher priority. Spotlight promotions are ordered by priority.
+											</p>
+											<Input
+												type="number"
+												min="1"
+												value={formData.priority || 1}
+												onChange={(e) =>
+													setFormData({
+														...formData,
+														priority: parseInt(e.target.value) || 1,
+													})
+												}
+												className="mt-2"
+											/>
+										</div>
+									)}
+
+									<div className="mb-3">
+										<Label>Target Services</Label>
+										<p className="text-xs text-gray-500 mb-2">
+											Select which service dashboards this promotion appears on
+										</p>
+										<div className="grid grid-cols-3 gap-2 mt-2">
+											{['vet', 'grooming', 'training', 'boarding', 'shop', 'pharmacy', 'walker', 'nutritionist', 'cafe', 'insurance'].map((service) => (
+												<label key={service} className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
+													<input
+														type="checkbox"
+														checked={(formData.applicable_services || []).includes(service)}
+														onChange={(e) => {
+															const current = formData.applicable_services || [];
+															if (e.target.checked) {
+																setFormData({ ...formData, applicable_services: [...current, service] });
+															} else {
+																setFormData({ ...formData, applicable_services: current.filter((s) => s !== service) });
+															}
+														}}
+														className="rounded"
+													/>
+													<span className="text-sm capitalize">{service}</span>
+												</label>
+											))}
+										</div>
+									</div>
 								</div>
 
 								<div className="flex gap-3 pt-4">

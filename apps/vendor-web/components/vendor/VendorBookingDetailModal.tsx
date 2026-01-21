@@ -397,6 +397,7 @@ export function VendorBookingDetailModal({
         <VendorPrescriptionModal
           bookingId={bookingId}
           petName={booking.petName || 'Pet'}
+          customerId={booking.customerId || booking.customer_id || ''}
           customerName={booking.customerName || 'Customer'}
           vendorId={booking.vendorId || ''}
           vendorName={booking.vendorName || 'Vendor'}

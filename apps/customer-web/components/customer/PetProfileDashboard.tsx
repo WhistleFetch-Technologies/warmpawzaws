@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, Calendar, TrendingUp, Clock, Filter, Search, Package } from 'lucide-react';
+import { Calendar, TrendingUp, Clock, Filter, Search, Package } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -122,46 +122,27 @@ export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashbo
     .reduce((sum, b) => sum + b.completedSessions, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-8 sticky top-0 z-20">
-        <div className="flex items-center gap-4 mb-4">
-          <button 
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"
-          >
-            <ChevronLeft className="w-5 h-5 text-white" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-white font-bold">{petData.name}'s Service History</h1>
-            <p className="text-white/90 text-sm">{petData.breed}</p>
-          </div>
-          {petData.photo && (
-            <img 
-              src={petData.photo} 
-              alt={petData.name}
-              className="w-12 h-12 rounded-full border-2 border-white object-cover"
-            />
-          )}
-        </div>
-
-        {/* Stats Cards */}
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Stats Cards - Moved below header */}
+      <div className="px-6 pt-4 pb-4 bg-white">
         <div className="grid grid-cols-4 gap-2 mb-4">
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{bookings.length}</p>
-            <p className="text-xs text-white/90 mt-1">Total</p>
+          <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
+            <p className="text-2xl font-bold text-orange-600">{bookings.length}</p>
+            <p className="text-xs text-orange-700 mt-1">Total</p>
           </div>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{activeBookings.length}</p>
-            <p className="text-xs text-white/90 mt-1">Active</p>
+          <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
+            <p className="text-2xl font-bold text-orange-600">{activeBookings.length}</p>
+            <p className="text-xs text-orange-700 mt-1">Active</p>
           </div>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{completedBookings.length}</p>
-            <p className="text-xs text-white/90 mt-1">Done</p>
+          <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
+            <p className="text-2xl font-bold text-orange-600">{completedBookings.length}</p>
+            <p className="text-xs text-orange-700 mt-1">Done</p>
           </div>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{totalSessions}</p>
-            <p className="text-xs text-white/90 mt-1">Sessions</p>
+          <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
+            <p className="text-2xl font-bold text-orange-600">{totalSessions}</p>
+            <p className="text-xs text-orange-700 mt-1">Sessions</p>
           </div>
         </div>
 
@@ -173,7 +154,7 @@ export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashbo
             placeholder="Search services or vendors..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-white/50"
+            className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-500"
           />
         </div>
       </div>
@@ -368,6 +349,6 @@ export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashbo
           <div className="w-32 h-1 bg-gray-300 rounded-full"></div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -53,10 +53,13 @@ class CreateRazorpayOrderHandler extends BaseHandler {
     const vendor = vendors.length > 0 ? vendors[0] : null;
 
     // ✅ Create Razorpay Order with marketplace mode (automatic transfers)
+    // Note: Razorpay receipt max length is 40 characters
+    // Use shortened format: "bk_" + first 32 chars of UUID (without hyphens) = 35 chars
+    const shortBookingId = bookingId.replace(/-/g, '').substring(0, 32);
     const orderData: any = {
       amount: Math.round(amount * 100), // Convert to paise
       currency: currency,
-      receipt: `booking_${bookingId}`,
+      receipt: `bk_${shortBookingId}`,
       notes: {
         bookingId: bookingId,
         customerId: customerId || booking.customer_id,
@@ -112,83 +115,115 @@ class CreateRazorpayOrderHandler extends BaseHandler {
 
 class VerifyPaymentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const body = this.parseBody(context.event);
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
-
-    this.validateRequired(body, ['razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature']);
-
-    const config = await getRazorpayConfig();
-
-    // ✅ Verify signature
-    const text = `${razorpay_order_id}|${razorpay_payment_id}`;
-    const generatedSignature = createHmac('sha256', config.keySecret)
-      .update(text)
-      .digest('hex');
-
-    if (generatedSignature !== razorpay_signature) {
-      return this.error('Invalid payment signature', 400);
-    }
-
-    // ✅ SQL: Update payment status
-    const payments = await select('payments', { razorpay_order_id });
-    if (payments.length === 0) {
-      return this.error('Payment not found', 404);
-    }
-
-    await update(
-      'payments',
-      { razorpay_order_id },
-      {
-        razorpay_payment_id: razorpay_payment_id,
-        payment_status: 'completed',
-        completed_at: new Date(),
-      }
-    );
-
-    // ✅ SQL: Update booking payment status
-    const payment = payments[0];
-    await update(
-      'bookings',
-      { id: payment.booking_id },
-      { payment_status: 'paid' }
-    );
-
-    // ✅ Trigger automatic settlement if marketplace mode is enabled
     try {
-      const vendors = await select('vendors', { id: payment.vendor_id });
-      const vendor = vendors.length > 0 ? vendors[0] : null;
+      const body = this.parseBody(context.event);
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+
+      // ✅ FIX: Better validation with specific error messages
+      if (!razorpay_order_id) {
+        return this.error('razorpay_order_id is required', 400);
+      }
+      if (!razorpay_payment_id) {
+        return this.error('razorpay_payment_id is required', 400);
+      }
+      if (!razorpay_signature) {
+        return this.error('razorpay_signature is required', 400);
+      }
+
+      const config = await getRazorpayConfig();
       
-      if (vendor?.razorpay_account_id && vendor.bank_verified) {
-        // Queue automatic settlement
-        const { sendToSQS } = await import('../utils/aws-clients');
-        await sendToSQS('settlement-queue', {
-          type: 'auto_settle_booking',
-          bookingId: payment.booking_id,
-          vendorId: payment.vendor_id,
-          paymentId: payment.id,
-        });
+      // ✅ FIX: Validate Razorpay config before proceeding
+      if (!config || !config.keySecret) {
+        console.error('[PAYMENT-VERIFY] Razorpay configuration missing or invalid');
+        return this.error('Payment gateway configuration error. Please contact support.', 500);
       }
-    } catch (error) {
-      console.error('Failed to queue automatic settlement:', error);
-    }
 
-    // ✅ Publish payment processed event
-    try {
-      const { publishPaymentProcessed } = await import('../utils/sns-client');
-      await publishPaymentProcessed({
+      // ✅ Verify signature
+      const text = `${razorpay_order_id}|${razorpay_payment_id}`;
+      const generatedSignature = createHmac('sha256', config.keySecret)
+        .update(text)
+        .digest('hex');
+
+      if (generatedSignature !== razorpay_signature) {
+        console.error('[PAYMENT-VERIFY] Signature mismatch:', {
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          received: razorpay_signature.substring(0, 10) + '...',
+          generated: generatedSignature.substring(0, 10) + '...'
+        });
+        return this.error('Invalid payment signature. Please ensure payment details are correct.', 400);
+      }
+
+      // ✅ SQL: Update payment status
+      const payments = await select('payments', { razorpay_order_id });
+      if (payments.length === 0) {
+        console.error('[PAYMENT-VERIFY] Payment not found for order:', razorpay_order_id);
+        return this.error('Payment record not found. Please contact support with your order ID.', 404);
+      }
+
+      await update(
+        'payments',
+        { razorpay_order_id },
+        {
+          razorpay_payment_id: razorpay_payment_id,
+          payment_status: 'completed',
+          completed_at: new Date(),
+        }
+      );
+
+      // ✅ SQL: Update booking payment status
+      const payment = payments[0];
+      await update(
+        'bookings',
+        { id: payment.booking_id },
+        { payment_status: 'paid' }
+      );
+
+      // ✅ Trigger automatic settlement if marketplace mode is enabled
+      try {
+        const vendors = await select('vendors', { id: payment.vendor_id });
+        const vendor = vendors.length > 0 ? vendors[0] : null;
+        
+        if (vendor?.razorpay_account_id && vendor.bank_verified) {
+          // Queue automatic settlement
+          const { sendToSQS } = await import('../utils/aws-clients');
+          await sendToSQS('settlement-queue', {
+            type: 'auto_settle_booking',
+            bookingId: payment.booking_id,
+            vendorId: payment.vendor_id,
+            paymentId: payment.id,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to queue automatic settlement:', error);
+      }
+
+      // ✅ Publish payment processed event
+      try {
+        const { publishPaymentProcessed } = await import('../utils/sns-client');
+        await publishPaymentProcessed({
+          paymentId: razorpay_payment_id,
+          bookingId: payment.booking_id,
+          amount: payment.amount,
+          status: 'completed',
+        });
+      } catch (error) {
+        console.error('Failed to publish payment processed event:', error);
+      }
+
+      return this.success({
+        message: 'Payment verified successfully',
         paymentId: razorpay_payment_id,
-        bookingId: payment.booking_id,
-        amount: payment.amount,
-        status: 'completed',
+        orderId: razorpay_order_id,
       });
-    } catch (error) {
-      console.error('Failed to publish payment processed event:', error);
+    } catch (error: any) {
+      console.error('[PAYMENT-VERIFY] Verification error:', error);
+      // ✅ FIX: Return more specific error messages
+      if (error.message) {
+        return this.error(`Payment verification failed: ${error.message}`, 500);
+      }
+      return this.error('Payment verification failed. Please try again or contact support.', 500);
     }
-
-    return this.success({
-      message: 'Payment verified successfully',
-      paymentId: razorpay_payment_id,
-    });
   }
 }
 
@@ -513,48 +548,91 @@ export function registerRazorpayEndpoints(app: Hono) {
   const settlementHandler = new MarketplaceSettlementHandler();
   const refundHandler = new ProcessRefundHandler();
 
+  /**
+   * GET /razorpay/offers
+   * Get available Razorpay offers for the given amount
+   * ✅ FIX: Add this endpoint for frontend checkout flow
+   */
+  app.get('/razorpay/offers', async (c) => {
+    try {
+      const amount = parseFloat(c.req.query('amount') || '0');
+      
+      // For now, return empty offers array
+      // In production, this would fetch offers from Razorpay API or database
+      // Razorpay offers API: GET /offers (requires authentication)
+      
+      // Return graceful empty response instead of 404
+      return c.json({
+        success: true,
+        offers: [],
+        message: 'No offers available at this time',
+        amount,
+      });
+    } catch (error: any) {
+      console.error('Error fetching Razorpay offers:', error);
+      // Return empty offers on error, not 500
+      return c.json({
+        success: true,
+        offers: [],
+        message: 'Could not fetch offers',
+      });
+    }
+  });
+
   app.post('/razorpay/create-order', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    console.log('📥 [RAZORPAY-CREATE-ORDER] Raw request body from Hono:', JSON.stringify(requestBody));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await createOrderHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/razorpay/verify-payment', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await verifyHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/razorpay/webhook', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await webhookHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/razorpay/marketplace/settlement', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await settlementHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/razorpay/refund', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result = await refundHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+// ✅ FIX: Accept pre-parsed body since Hono doesn't have req.body
+function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
   return {
     httpMethod: req.method,
     path: req.url,
     headers: req.headers,
-    body: JSON.stringify(req.body || {}),
+    body: parsedBody ? JSON.stringify(parsedBody) : null,
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {

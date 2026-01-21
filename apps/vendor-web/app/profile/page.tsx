@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { ProfessionalProfileManager } from '@/components/vendor/ProfessionalProfileManager';
 
 interface VendorProfile {
   id: string;
@@ -28,6 +29,10 @@ interface VendorProfile {
   operating_hours?: string;
   description?: string;
   logo_url?: string;
+  roleId?: string;
+  role_id?: string;
+  roleName?: string;
+  role_name?: string;
 }
 
 export default function ProfilePage() {
@@ -38,6 +43,7 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [profileType, setProfileType] = useState<'professional' | 'center' | null>(null);
 
   useEffect(() => {
     const storedVendorId = localStorage.getItem('vendorId');
@@ -57,14 +63,29 @@ export default function ProfilePage() {
 
       const response = await apiClient.get<{
         success?: boolean;
-        vendor?: VendorProfile;
+        vendor?: VendorProfile & {
+          profileType?: 'professional' | 'center';
+          vendorConfiguration?: 'solo' | 'business';
+        };
         business_name?: string;
+        profileType?: 'professional' | 'center';
+        vendorConfiguration?: 'solo' | 'business';
       }>(`/vendor/${vendorId}/profile`);
+      
       if (response.success && response.vendor) {
         setProfile(response.vendor);
+        // ✅ NEW: Extract profileType from response
+        const type = response.vendor.profileType || 
+                     (response.vendor.vendorConfiguration === 'solo' ? 'professional' : 'center') ||
+                     response.profileType ||
+                     'center'; // Default to center for backward compatibility
+        setProfileType(type);
       } else if (response.business_name) {
         // Fallback if response structure is different
         setProfile(response as VendorProfile);
+        setProfileType(response.profileType || 
+                      (response.vendorConfiguration === 'solo' ? 'professional' : 'center') ||
+                      'center');
       }
     } catch (err: any) {
       console.error('Error loading profile:', err);
@@ -147,6 +168,19 @@ export default function ProfilePage() {
     );
   }
 
+  // ✅ NEW: Route to Professional Profile for solo vendors
+  if (profileType === 'professional') {
+    // Get vendorData from localStorage to include roleId for specializations
+    const vendorData = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('vendorData') || '{}') : {};
+    const enrichedProfile = {
+      ...profile,
+      roleId: profile?.roleId || profile?.role_id || vendorData?.roleId || vendorData?.role_id,
+      roleName: profile?.roleName || profile?.role_name || vendorData?.roleName || vendorData?.role_name,
+    };
+    return <ProfessionalProfileManager vendorId={vendorId!} profile={enrichedProfile} onBack={() => router.back()} />;
+  }
+
+  // ✅ Default: Center Profile (existing implementation)
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
       {/* Header */}

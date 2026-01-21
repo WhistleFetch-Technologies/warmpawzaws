@@ -1312,6 +1312,264 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * PUT /vendor/:vendorId/cafe/tables/:tableId
+   * Update a specific cafe table
+   */
+  app.put("/vendor/:vendorId/cafe/tables/:tableId", async (c) => {
+    try {
+      const { vendorId, tableId } = c.req.param();
+      const tableData = await c.req.json();
+      
+      const updated = await update('cafe_tables', 
+        { id: tableId, vendor_id: vendorId },
+        {
+          table_number: tableData.number || tableData.table_number,
+          capacity: tableData.capacity,
+          location: tableData.location,
+          is_outdoor: tableData.location === 'outdoor',
+          status: tableData.isAvailable ? 'available' : 'unavailable',
+          is_active: tableData.isAvailable !== false,
+          updated_at: new Date(),
+        }
+      );
+      
+      if (updated.length === 0) {
+        return c.json({ error: 'Table not found' }, 404);
+      }
+      
+      return c.json({ success: true, table: updated[0], message: 'Table updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating cafe table:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/cafe/tables/:tableId
+   * Delete a cafe table
+   */
+  app.delete("/vendor/:vendorId/cafe/tables/:tableId", async (c) => {
+    try {
+      const { vendorId, tableId } = c.req.param();
+      
+      await query(`DELETE FROM cafe_tables WHERE id = $1 AND vendor_id = $2`, [tableId, vendorId]);
+      
+      return c.json({ success: true, message: 'Table deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting cafe table:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/cafe/menu
+   * Add a new cafe menu item
+   */
+  app.post("/vendor/:vendorId/cafe/menu", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const menuData = await c.req.json();
+      
+      const menuItem = await insert('cafe_menu_items', {
+        vendor_id: vendorId,
+        name: menuData.name,
+        description: menuData.description,
+        category: menuData.category || 'food',
+        price: menuData.price || 0,
+        image_url: menuData.imageUrl || menuData.image_url,
+        is_pet_friendly: menuData.isPetFriendly !== false,
+        is_available: menuData.isAvailable !== false,
+      });
+      
+      return c.json({ success: true, menuItem: menuItem[0], message: 'Menu item added successfully' });
+    } catch (error: any) {
+      console.error('Error adding cafe menu item:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/cafe/menu/:itemId
+   * Update a cafe menu item
+   */
+  app.put("/vendor/:vendorId/cafe/menu/:itemId", async (c) => {
+    try {
+      const { vendorId, itemId } = c.req.param();
+      const menuData = await c.req.json();
+      
+      const updated = await update('cafe_menu_items', 
+        { id: itemId, vendor_id: vendorId },
+        {
+          name: menuData.name,
+          description: menuData.description,
+          category: menuData.category,
+          price: menuData.price,
+          image_url: menuData.imageUrl || menuData.image_url,
+          is_available: menuData.isAvailable !== false,
+          updated_at: new Date(),
+        }
+      );
+      
+      if (updated.length === 0) {
+        return c.json({ error: 'Menu item not found' }, 404);
+      }
+      
+      return c.json({ success: true, menuItem: updated[0], message: 'Menu item updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating cafe menu item:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/cafe/menu/:itemId
+   * Delete a cafe menu item
+   */
+  app.delete("/vendor/:vendorId/cafe/menu/:itemId", async (c) => {
+    try {
+      const { vendorId, itemId } = c.req.param();
+      
+      await query(`DELETE FROM cafe_menu_items WHERE id = $1 AND vendor_id = $2`, [itemId, vendorId]);
+      
+      return c.json({ success: true, message: 'Menu item deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting cafe menu item:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/ambulance/vehicles/:vehicleId
+   * Delete an ambulance vehicle
+   */
+  app.delete("/vendor/:vendorId/ambulance/vehicles/:vehicleId", async (c) => {
+    try {
+      const { vendorId, vehicleId } = c.req.param();
+      
+      await query(`DELETE FROM ambulance_vehicles WHERE id = $1 AND vendor_id = $2`, [vehicleId, vendorId]);
+      
+      return c.json({ success: true, message: 'Vehicle deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting ambulance vehicle:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/ambulance/sos-requests
+   * Get SOS requests for an ambulance service
+   */
+  app.get("/vendor/:vendorId/ambulance/sos-requests", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      const requests = await query(`
+        SELECT b.*, p.name as pet_name, p.species as pet_type, c.name as customer_name, c.phone as customer_phone
+        FROM bookings b
+        LEFT JOIN pets p ON b.pet_id = p.id
+        LEFT JOIN customers c ON b.customer_id = c.id
+        WHERE b.vendor_id = $1 
+        AND b.service_type IN ('ambulance', 'pet_ambulance', 'sos')
+        ORDER BY b.created_at DESC
+        LIMIT 50
+      `, [vendorId]).catch(() => ({ rows: [] }));
+      
+      return c.json({ 
+        success: true, 
+        requests: requests.rows.map((r: any) => ({
+          id: r.id,
+          customerName: r.customer_name,
+          customerPhone: r.customer_phone,
+          petName: r.pet_name,
+          petType: r.pet_type,
+          emergency: r.notes || 'Emergency request',
+          pickupLocation: r.address,
+          destinationLocation: r.destination_address,
+          status: r.status,
+          assignedVehicle: r.vehicle_id,
+          createdAt: r.created_at,
+        })),
+        total: requests.rows.length 
+      });
+    } catch (error: any) {
+      console.error('Error fetching SOS requests:', error);
+      return c.json({ success: true, requests: [], total: 0 });
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/ambulance/sos-requests/:requestId
+   * Update SOS request status
+   */
+  app.put("/vendor/:vendorId/ambulance/sos-requests/:requestId", async (c) => {
+    try {
+      const { vendorId, requestId } = c.req.param();
+      const body = await c.req.json();
+      
+      const updateData: any = { updated_at: new Date() };
+      if (body.status) updateData.status = body.status;
+      if (body.assignedVehicle) updateData.vehicle_id = body.assignedVehicle;
+      
+      await update('bookings', { id: requestId, vendor_id: vendorId }, updateData);
+      
+      return c.json({ success: true, message: 'SOS request updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating SOS request:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/resort/rooms/:roomId
+   * Update a resort room
+   */
+  app.put("/vendor/:vendorId/resort/rooms/:roomId", async (c) => {
+    try {
+      const { vendorId, roomId } = c.req.param();
+      const roomData = await c.req.json();
+      
+      const updated = await update('boarding_rooms', 
+        { id: roomId, vendor_id: vendorId },
+        {
+          room_number: roomData.number || roomData.room_number,
+          room_type: roomData.type || roomData.room_type,
+          capacity: roomData.capacity,
+          amenities: roomData.amenities || [],
+          price_per_night: roomData.pricePerNight || roomData.price_per_night,
+          is_available: roomData.isAvailable !== false,
+          updated_at: new Date(),
+        }
+      );
+      
+      if (updated.length === 0) {
+        return c.json({ error: 'Room not found' }, 404);
+      }
+      
+      return c.json({ success: true, room: updated[0], message: 'Room updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating resort room:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/resort/rooms/:roomId
+   * Delete a resort room
+   */
+  app.delete("/vendor/:vendorId/resort/rooms/:roomId", async (c) => {
+    try {
+      const { vendorId, roomId } = c.req.param();
+      
+      await query(`DELETE FROM boarding_rooms WHERE id = $1 AND vendor_id = $2`, [roomId, vendorId]);
+      
+      return c.json({ success: true, message: 'Room deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting resort room:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   // ============================================
   // BREEDER/ADOPTION: PET PROFILES
   // ============================================
@@ -1695,6 +1953,177 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching tour schedule:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ========================================
+  // PHOTOGRAPHY PORTFOLIO ENDPOINTS
+  // ========================================
+
+  /**
+   * GET /vendor/:vendorId/photography/portfolio
+   * Get photographer's portfolio items
+   */
+  app.get("/vendor/:vendorId/photography/portfolio", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Try to get from vendor_portfolio or vendor metadata
+      const portfolio = await query(
+        `SELECT * FROM vendor_portfolio 
+         WHERE vendor_id = $1 AND is_active = true
+         ORDER BY display_order, created_at DESC`,
+        [vendorId]
+      ).catch(async () => {
+        // Fallback to vendor metadata if table doesn't exist
+        const vendors = await select('vendors', { id: vendorId });
+        const metadata = vendors[0]?.metadata || {};
+        return { rows: metadata.portfolio || [] };
+      });
+      
+      return c.json({ 
+        success: true, 
+        portfolio: portfolio.rows || portfolio,
+        count: (portfolio.rows || portfolio).length
+      });
+    } catch (error: any) {
+      console.error('Error fetching portfolio:', error);
+      return c.json({ success: false, error: error.message, portfolio: [] }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/photography/portfolio
+   * Add new portfolio item
+   */
+  app.post("/vendor/:vendorId/photography/portfolio", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const portfolioData = await c.req.json();
+      
+      // Try to insert into vendor_portfolio table
+      try {
+        const created = await insert('vendor_portfolio', {
+          vendor_id: vendorId,
+          title: portfolioData.title,
+          description: portfolioData.description,
+          image_url: portfolioData.imageUrl || portfolioData.image_url,
+          category: portfolioData.category,
+          is_featured: portfolioData.isFeatured || false,
+          display_order: portfolioData.displayOrder || 0,
+          is_active: true,
+        });
+        
+        return c.json({ success: true, portfolio: created[0], message: 'Portfolio item added' });
+      } catch (tableError) {
+        // Fallback to vendor metadata if table doesn't exist
+        console.log('vendor_portfolio table not found, using metadata');
+        const vendors = await select('vendors', { id: vendorId });
+        const metadata = vendors[0]?.metadata || {};
+        const portfolio = metadata.portfolio || [];
+        
+        const newItem = {
+          id: `portfolio-${Date.now()}`,
+          ...portfolioData,
+          createdAt: new Date().toISOString(),
+        };
+        portfolio.push(newItem);
+        
+        await query(
+          `UPDATE vendors SET metadata = $2, updated_at = NOW() WHERE id = $1`,
+          [vendorId, JSON.stringify({ ...metadata, portfolio })]
+        );
+        
+        return c.json({ success: true, portfolio: newItem, message: 'Portfolio item added to metadata' });
+      }
+    } catch (error: any) {
+      console.error('Error adding portfolio:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/photography/portfolio/:portfolioId
+   * Update portfolio item
+   */
+  app.put("/vendor/:vendorId/photography/portfolio/:portfolioId", async (c) => {
+    try {
+      const { vendorId, portfolioId } = c.req.param();
+      const portfolioData = await c.req.json();
+      
+      // Try to update in vendor_portfolio table
+      try {
+        const updated = await update('vendor_portfolio', 
+          { id: portfolioId },
+          {
+            title: portfolioData.title,
+            description: portfolioData.description,
+            image_url: portfolioData.imageUrl || portfolioData.image_url,
+            category: portfolioData.category,
+            is_featured: portfolioData.isFeatured,
+            display_order: portfolioData.displayOrder,
+            updated_at: new Date().toISOString(),
+          }
+        );
+        
+        return c.json({ success: true, portfolio: updated[0], message: 'Portfolio item updated' });
+      } catch (tableError) {
+        // Fallback to vendor metadata
+        console.log('vendor_portfolio table not found, using metadata');
+        const vendors = await select('vendors', { id: vendorId });
+        const metadata = vendors[0]?.metadata || {};
+        const portfolio = metadata.portfolio || [];
+        
+        const index = portfolio.findIndex((p: any) => p.id === portfolioId);
+        if (index >= 0) {
+          portfolio[index] = { ...portfolio[index], ...portfolioData, updatedAt: new Date().toISOString() };
+          
+          await query(
+            `UPDATE vendors SET metadata = $2, updated_at = NOW() WHERE id = $1`,
+            [vendorId, JSON.stringify({ ...metadata, portfolio })]
+          );
+        }
+        
+        return c.json({ success: true, portfolio: portfolio[index], message: 'Portfolio item updated in metadata' });
+      }
+    } catch (error: any) {
+      console.error('Error updating portfolio:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/photography/portfolio/:portfolioId
+   * Delete portfolio item
+   */
+  app.delete("/vendor/:vendorId/photography/portfolio/:portfolioId", async (c) => {
+    try {
+      const { vendorId, portfolioId } = c.req.param();
+      
+      // Try to delete from vendor_portfolio table
+      try {
+        await query(
+          `DELETE FROM vendor_portfolio WHERE id = $1 AND vendor_id = $2`,
+          [portfolioId, vendorId]
+        );
+        
+        return c.json({ success: true, message: 'Portfolio item deleted' });
+      } catch (tableError) {
+        // Fallback to vendor metadata
+        const vendors = await select('vendors', { id: vendorId });
+        const metadata = vendors[0]?.metadata || {};
+        const portfolio = (metadata.portfolio || []).filter((p: any) => p.id !== portfolioId);
+        
+        await query(
+          `UPDATE vendors SET metadata = $2, updated_at = NOW() WHERE id = $1`,
+          [vendorId, JSON.stringify({ ...metadata, portfolio })]
+        );
+        
+        return c.json({ success: true, message: 'Portfolio item deleted from metadata' });
+      }
+    } catch (error: any) {
+      console.error('Error deleting portfolio:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 }

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Bike, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package } from 'lucide-react';
+import { Bike, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
+import { WALKING_NEEDS } from './ProblemGridSection';
 
 interface WalkerServiceProps {
   phone: string;
@@ -100,38 +102,27 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Pet Walking</h1>
-            <p className="text-white/90 text-sm">Professional dog walking services</p>
-          </div>
-        </div>
-        
-        {/* Search Bar */}
-        <div className="mt-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/70" />
-            <input
-              type="text"
-              placeholder="Search walkers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/20 backdrop-blur rounded-lg text-white placeholder-white/70 border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
-            />
-          </div>
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Search Bar - Moved below header */}
+      <div className="px-4 pt-4 pb-4 bg-white">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search walkers..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+          />
         </div>
       </div>
 
       <div className="p-4 space-y-6">
         {/* Active Walk in Progress - GPS Tracking */}
         {activeWalks.filter(w => w.status === 'in_progress').length > 0 && (
-          <Card className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 relative overflow-hidden">
+          <Card className="bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] text-white p-4 relative overflow-hidden">
             <div className="absolute top-2 right-2">
               <span className="flex items-center gap-1 bg-white/20 backdrop-blur px-2 py-1 rounded-full text-xs">
                 <Radio className="w-3 h-3 animate-pulse" />
@@ -152,7 +143,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
               <Button 
                 variant="secondary" 
                 size="sm" 
-                className="bg-white text-green-600 hover:bg-white/90"
+                className="bg-white text-orange-500 hover:bg-white/90"
                 onClick={() => onNavigate?.('walk-live-tracking', { sessionId: activeWalks[0].id })}
               >
                 <Eye className="w-4 h-4 mr-1" />
@@ -196,7 +187,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
         )}
 
         {/* Hero Banner */}
-        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-6">
+        <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Professional Pet Walking</h2>
@@ -205,6 +196,72 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
             <div className="text-5xl">🚶</div>
           </div>
         </Card>
+
+        {/* Promotion Banner - Phase 0.1 Integration */}
+        <PromotionBanner service="walking" maxPromotions={3} />
+
+        {/* Problem Grid - Walk by Need */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-orange-50 rounded-lg">
+                <Footprints className="w-4 h-4 text-orange-500" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900">Walk by Need</h2>
+            </div>
+            <button 
+              onClick={() => onNavigate?.('problem_grid')}
+              className="text-sm text-orange-500 font-medium hover:text-orange-600 transition-colors"
+            >
+              View All
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {WALKING_NEEDS.map((need) => {
+              const isViewAll = need.id === 'view_all';
+              return (
+                <button
+                  key={need.id}
+                  onClick={() => {
+                    if (isViewAll) {
+                      onNavigate?.('problem_grid');
+                    } else {
+                      onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
+                    }
+                  }}
+                  className="group relative flex flex-col items-center"
+                >
+                  <div className={`
+                    w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
+                    ${isViewAll 
+                      ? 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100' 
+                      : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
+                    }
+                  `}>
+                    <div className={`
+                      w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
+                      ${isViewAll ? 'bg-white/50' : 'bg-slate-50 group-hover:bg-orange-50'}
+                    `}>
+                      {typeof need.icon === 'string' ? (
+                        <span className="text-xl">{need.icon}</span>
+                      ) : (
+                        <div className="text-slate-600 group-hover:text-orange-500">
+                          {need.icon}
+                        </div>
+                      )}
+                    </div>
+                    <p className={`
+                      text-[10px] font-medium text-center leading-tight line-clamp-2
+                      ${isViewAll ? 'text-orange-600' : 'text-slate-600 group-hover:text-orange-600'}
+                    `}>
+                      {need.name}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Walk Packages */}
         <div>
@@ -217,12 +274,12 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
             ].map((pkg, idx) => (
               <Card key={idx} className="p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-green-100 to-emerald-100 rounded-xl flex items-center justify-center text-2xl">
+                  <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl">
                     {pkg.icon}
                   </div>
                   <div className="flex-1">
                     <h3 className="font-bold text-gray-900">{pkg.title}</h3>
-                    <p className="text-green-600 font-bold mb-2">{pkg.price}</p>
+                    <p className="text-orange-500 font-bold mb-2">{pkg.price}</p>
                     {pkg.features.map((f, i) => (
                       <div key={i} className="text-sm text-gray-600">• {f}</div>
                     ))}
@@ -241,7 +298,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
 
           {loading ? (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
             </div>
           ) : walkers.length === 0 ? (
             <Card className="p-8 text-center">
@@ -258,11 +315,11 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                   onClick={() => handleWalkerSelect(walker)}
                 >
                   {/* Walker Image */}
-                  <div className="h-48 bg-gradient-to-br from-green-200 to-emerald-200 relative">
+                  <div className="h-48 bg-gradient-to-br from-orange-100 to-amber-100 relative">
                     <div className="absolute inset-0 flex items-center justify-center text-6xl">
-                      <Bike className="w-16 h-16 text-green-600 opacity-30" />
+                      <Bike className="w-16 h-16 text-orange-400 opacity-30" />
                     </div>
-                    <div className="absolute top-3 right-3 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                    <div className="absolute top-3 right-3 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
                       <Star className="w-3 h-3 fill-white" />
                       {walker.rating || 4.5}
                     </div>
@@ -279,7 +336,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                       <div className="flex items-center gap-3 mt-2 text-sm">
                         <span className="text-gray-600">{walker.reviewsCount || walker.reviewCount || 0} reviews</span>
                         {walker.priceRange && (
-                          <span className="text-green-600 font-semibold">{walker.priceRange}</span>
+                          <span className="text-orange-500 font-semibold">{walker.priceRange}</span>
                         )}
                         {walker.experience && (
                           <span className="text-gray-500">• {walker.experience}</span>
@@ -292,7 +349,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                         e.stopPropagation();
                         handleWalkerSelect(walker);
                       }}
-                      className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white h-12 text-base font-semibold shadow-lg"
+                      className="w-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] hover:from-[#FF7A35] hover:to-[#FF5A25] text-white h-12 text-base font-semibold shadow-lg"
                     >
                       <Bike className="w-5 h-5 mr-2" />
                       Book Walker
@@ -327,6 +384,6 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
           </div>
         </Card>
       </div>
-    </div>
+    </>
   );
 }

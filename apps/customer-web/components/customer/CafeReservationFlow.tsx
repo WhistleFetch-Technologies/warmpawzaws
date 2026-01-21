@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, Users, Coffee, MapPin } from 'lucide-react';
+import { Calendar, Clock, Users, Coffee, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -96,7 +96,7 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
         const response = await apiClient.post<any>('/bookings/create', {
           customerId,
           vendorId,
-          serviceId: cafeService?.id || 'cafe-reservation',
+          serviceId: 'cafe-reservation',
           serviceType: 'at_vendor', // Cafe reservations are at vendor
           bookingDate: formData.date,
           bookingTime: formData.time,
@@ -137,18 +137,12 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold">Cafe Reservation</h1>
-          </div>
-        </div>
-
-        <div className="p-4 space-y-4">
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Main Content */}
+      <div className="bg-white px-6 pt-8 min-h-[calc(100vh-180px)]">
+          <div className="space-y-4">
           {cafe && (
             <Card className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
               <div className="flex items-center gap-3">
@@ -234,8 +228,8 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
           >
             {submitting ? 'Confirming...' : 'Confirm Reservation'}
           </Button>
+          </div>
         </div>
-      </div>
-    </div>
+    </>
   );
 }

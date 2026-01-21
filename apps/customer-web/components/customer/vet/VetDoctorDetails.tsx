@@ -148,44 +148,37 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header with gradient */}
-      <div className="bg-gradient-to-br from-orange-500 to-orange-600 pt-4 pb-20 px-4">
-        <div className="max-w-md mx-auto">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 text-white/90 hover:text-white mb-4"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Doctor Card - overlapping header */}
-      <div className="max-w-md mx-auto px-4 -mt-16">
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Doctor Card */}
+      <div className="px-4 pb-24">
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
           {/* Profile Section */}
           <div className="p-6">
             <div className="flex gap-4">
               {/* Avatar */}
-              <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center text-3xl font-bold text-orange-600 flex-shrink-0">
-                {doctor.photo_url ? (
-                  <img src={doctor.photo_url} alt={doctor.name} className="w-full h-full object-cover rounded-xl" />
-                ) : (
-                  doctor.name.charAt(0)
-                )}
-              </div>
+              {doctor.photo_url ? (
+                <img 
+                  src={doctor.photo_url} 
+                  alt={doctor.name} 
+                  className="w-20 h-20 rounded-xl object-cover border-2 border-[#FF8C42] flex-shrink-0"
+                />
+              ) : (
+                <div className="w-20 h-20 bg-[#FF8C42] rounded-xl flex items-center justify-center text-white font-bold text-3xl flex-shrink-0">
+                  {doctor.name.charAt(0)}
+                </div>
+              )}
               
               {/* Info */}
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-bold text-gray-900">{doctor.name}</h1>
                   {doctor.is_verified && (
-                    <CheckCircle2 className="w-5 h-5 text-blue-500" />
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
                   )}
                 </div>
-                <p className="text-orange-600 font-medium">{doctor.specialization}</p>
+                <p className="text-[#FF8C42] font-medium">{doctor.specialization}</p>
                 <p className="text-sm text-gray-500">{doctor.qualification}</p>
                 
                 {/* Stats Row */}
@@ -216,9 +209,9 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
           {/* Clinic Info */}
           {doctor.clinic_name && (
             <div className="px-6 pb-4">
-              <div className="p-4 bg-orange-50 rounded-xl">
+              <div className="p-4 bg-orange-50 rounded-xl border border-orange-100">
                 <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-orange-500 mt-0.5" />
+                  <MapPin className="w-5 h-5 text-[#FF8C42] mt-0.5" />
                   <div>
                     <p className="font-semibold text-gray-900">{doctor.clinic_name}</p>
                     <p className="text-sm text-gray-600">{doctor.clinic_address}</p>
@@ -252,7 +245,7 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <Clock className="w-3.5 h-3.5" />
                         <span>{service.duration} mins</span>
-                        <span className="text-orange-500 text-xs px-2 py-0.5 bg-orange-50 rounded-full">
+                        <span className="text-[#FF8C42] text-xs px-2 py-0.5 bg-orange-50 rounded-full">
                           {getServiceLabel(service.service_style)}
                         </span>
                       </div>
@@ -263,7 +256,7 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                     <Button
                       size="sm"
                       onClick={() => handleBookService(service.id, service.service_style)}
-                      className="mt-1 bg-orange-500 hover:bg-orange-600 text-white"
+                      className="mt-1 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
                     >
                       Book
                     </Button>
@@ -278,16 +271,16 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
         <div className="mt-6 mb-8">
           <div className="grid grid-cols-2 gap-3">
             <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-orange-200">
-              <Phone className="w-5 h-5 text-orange-500" />
+              <Phone className="w-5 h-5 text-[#FF8C42]" />
               <span className="font-medium text-gray-700">Call Clinic</span>
             </button>
             <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-orange-200">
-              <MapPin className="w-5 h-5 text-orange-500" />
+              <MapPin className="w-5 h-5 text-[#FF8C42]" />
               <span className="font-medium text-gray-700">Directions</span>
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

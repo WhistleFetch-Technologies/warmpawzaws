@@ -35,6 +35,8 @@ import { Badge } from '@/components/ui/badge';
 import { useCart } from '@/context/CartContext';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
+import { CartPromotionsBanner } from './shared/CartPromotionsBanner';
+import { CartPromotionResult } from '@/lib/promotions-engine';
 
 interface ShoppingCartViewProps {
   onBack: () => void;
@@ -117,6 +119,7 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
   const [giftWrap, setGiftWrap] = useState(false);
   const [productProtection, setProductProtection] = useState(false);
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
+  const [promotionResult, setPromotionResult] = useState<CartPromotionResult | null>(null);
 
   // Group items by vendor
   const itemsByVendor = cart.reduce((acc, item) => {
@@ -248,20 +251,9 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto relative">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
-        <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="font-bold text-lg flex-1">Shopping Cart</h1>
-          <Badge className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white px-3 py-1">
-            {itemCount} {itemCount === 1 ? 'item' : 'items'}
-          </Badge>
-        </div>
-      </div>
-
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
       <div className="pb-[500px]">
         {/* Trust Badges */}
         <div className="bg-gradient-to-r from-blue-50 to-green-50 px-4 py-3 border-b border-blue-100">
@@ -284,6 +276,26 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
             </div>
           </div>
         </div>
+
+        {/* 🎯 Auto-Applied Promotions Banner (BOGO, Combos, etc.) */}
+        {cart.length > 0 && (
+          <div className="px-4 py-3">
+            <CartPromotionsBanner
+              items={cart.map(item => ({
+                id: item.id,
+                productId: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                vendorId: item.vendorId,
+                category: (item as any).category,
+                categoryId: (item as any).categoryId,
+              }))}
+              vendorId={Object.keys(itemsByVendor)[0]}
+              onPromotionApplied={(result) => setPromotionResult(result)}
+            />
+          </div>
+        )}
 
         {/* Delivery Options */}
         <div className="bg-white px-4 py-4 border-b border-gray-200">
@@ -742,6 +754,6 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

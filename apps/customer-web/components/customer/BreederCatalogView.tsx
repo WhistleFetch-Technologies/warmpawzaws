@@ -57,19 +57,25 @@ export function BreederCatalogView(props: BreederCatalogViewProps) {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold">Breeder Catalog</h1>
+    <div className="min-h-screen bg-[#FF8C42] pb-24">
+      <div className="max-w-md mx-auto min-h-screen">
+        {/* Header with ORANGE solid theme matching BreederServicesLanding */}
+        <div className="px-6 pt-12 pb-6">
+          <div className="flex items-center gap-4 mb-6">
+            <button 
+              onClick={props.onBack}
+              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+            <h1 className="text-2xl font-bold text-white">Breeder Catalog</h1>
           </div>
         </div>
-
-        <div className="p-4 space-y-4">
-          <div className="space-y-3">
+        
+        {/* Main Content - White Card with Top Radius */}
+        <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+          <div className="space-y-4">
+            <div className="space-y-3">
             <Input
               placeholder="Search breeders..."
               value={searchQuery}
@@ -147,6 +153,7 @@ export function BreederCatalogView(props: BreederCatalogViewProps) {
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

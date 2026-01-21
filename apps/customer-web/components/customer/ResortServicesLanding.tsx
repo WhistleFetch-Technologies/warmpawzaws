@@ -34,7 +34,7 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
         activeResorts: resortList.length || 15,
         bookings: '2K+',
         rating: resortList.length > 0 
-          ? (resortList.reduce((acc: number, r: any) => acc + (r.rating || 4.8), 0) / resortList.length).toFixed(1) 
+          ? Number(resortList.reduce((acc: number, r: any) => acc + Number(r.rating || 4.8), 0) / resortList.length).toFixed(1) 
           : '4.8'
       });
     } catch (error) {

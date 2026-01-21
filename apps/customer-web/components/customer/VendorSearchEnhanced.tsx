@@ -311,12 +311,12 @@ export function VendorSearchEnhanced() {
                             <div className="flex items-center gap-3 mt-1">
                               {vendor.rating && (
                                 <span className="text-sm text-gray-600">
-                                  ⭐ {vendor.rating.toFixed(1)}
+                                  ⭐ {Number(vendor.rating || 0).toFixed(1)}
                                 </span>
                               )}
                               {vendor.distance !== undefined && (
                                 <span className="text-sm text-gray-600">
-                                  📍 {vendor.distance.toFixed(1)} km
+                                  📍 {Number(vendor.distance || 0).toFixed(1)} km
                                 </span>
                               )}
                             </div>

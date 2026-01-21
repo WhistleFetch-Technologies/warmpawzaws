@@ -156,21 +156,12 @@ export function PetQuickView({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-8">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-8 sticky top-0 z-20">
-        <div className="flex items-center gap-4 mb-4">
-          <button onClick={onBack} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-            <ChevronLeft className="w-5 h-5 text-white" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-white text-xl font-bold">{pet.name}</h1>
-            <p className="text-white/90 text-sm">{pet.breed}</p>
-          </div>
-        </div>
-
-        {/* Pet Quick Info */}
-        <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 mb-4">
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Pet Quick Info */}
+      <div className="px-6 pt-4">
+        <div className="bg-white rounded-2xl p-4 mb-4 shadow-sm">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 bg-white/30 rounded-xl overflow-hidden">
               {pet.photo ? (
@@ -546,6 +537,6 @@ export function PetQuickView({
           onClose={() => setTrackingSession(null)}
         />
       )}
-    </div>
+    </>
   );
 }

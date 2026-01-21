@@ -53,7 +53,7 @@ export function VendorDashboardScreen({
     totalReviews: 0,
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('week'); // ✅ Default to week to show upcoming bookings
 
   useEffect(() => {
     loadDashboardData();
@@ -153,13 +153,26 @@ export function VendorDashboardScreen({
         // Set today's schedule if available
         // ✅ FIX: Transform bookings to match ScheduleItem interface
         if (data.bookings && Array.isArray(data.bookings)) {
-          const transformedBookings: ScheduleItem[] = data.bookings.slice(0, 5).map((booking: any) => {
+          // ✅ Filter to only show today's or upcoming bookings based on activeTab
+          const today = new Date().toISOString().split('T')[0];
+          const filteredBookings = activeTab === 'today' 
+            ? data.bookings.filter((b: any) => {
+                const bookingDate = b.booking_date?.split('T')[0] || '';
+                return bookingDate === today;
+              })
+            : data.bookings;
+          
+          const transformedBookings: ScheduleItem[] = filteredBookings.slice(0, 5).map((booking: any) => {
             // Extract time from booking_date and booking_time, or use scheduled_time
             let time = 'N/A';
             if (booking.booking_time) {
-              time = booking.booking_time;
+              // Format time nicely (HH:MM:SS -> HH:MM AM/PM)
+              const [hours, minutes] = booking.booking_time.split(':');
+              const hour = parseInt(hours);
+              const ampm = hour >= 12 ? 'PM' : 'AM';
+              const hour12 = hour % 12 || 12;
+              time = `${hour12}:${minutes} ${ampm}`;
             } else if (booking.scheduled_time) {
-              // Parse ISO datetime if needed
               const date = new Date(booking.scheduled_time);
               time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
             } else if (booking.booking_date) {
@@ -177,6 +190,7 @@ export function VendorDashboardScreen({
             };
           });
           setTodaySchedule(transformedBookings);
+          console.log(`✅ [DASHBOARD] Loaded ${transformedBookings.length} appointments for ${activeTab}`);
         }
       } else {
         // Fallback to basic stats
@@ -332,9 +346,11 @@ export function VendorDashboardScreen({
         <div className="px-4 pb-6">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Today's Schedule</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {activeTab === 'today' ? "Today's" : activeTab === 'week' ? 'This Week' : "This Month's"} Schedule
+              </h2>
               <button
-                onClick={() => onNavigate('schedule')}
+                onClick={() => onNavigate('bookings')}
                 className="text-orange-500 text-sm font-medium"
               >
                 See All

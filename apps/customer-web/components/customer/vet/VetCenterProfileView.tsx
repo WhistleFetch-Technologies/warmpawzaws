@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { formatOperatingHours } from '@/lib/format-utils';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -267,7 +268,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                   </div>
                   <div className="flex items-center gap-3 text-sm">
                     <Clock className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-700">{facility.operatingHours || 'Mon-Sat: 9AM-7PM, 24/7 Emergency'}</span>
+                    <span className="text-gray-700">{facility.operatingHours ? formatOperatingHours(facility.operatingHours) : 'Mon-Sat: 9AM-7PM, 24/7 Emergency'}</span>
                   </div>
                 </div>
               </div>

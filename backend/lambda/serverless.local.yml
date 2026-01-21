@@ -43,6 +43,11 @@ provider:
     
     # Feature Flags
     UAT_MODE: ${env:UAT_MODE, 'true'}
+    
+    # S3 Configuration
+    S3_UPLOADS_BUCKET: ${env:S3_UPLOADS_BUCKET, 'warmpawz-dev-uploads'}
+    S3_STORAGE_BUCKET: ${env:S3_STORAGE_BUCKET, 'warmpawz-dev-storage'}
+    S3_ASSETS_BUCKET: ${env:S3_ASSETS_BUCKET, 'warmpawz-dev-assets'}
 
 functions:
   api:

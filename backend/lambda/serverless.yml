@@ -47,6 +47,11 @@ provider:
     
     # Feature Flags
     UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
+    
+    # S3 Configuration
+    S3_UPLOADS_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/uploadsBucket, 'warmpawz-dev-uploads'}
+    S3_STORAGE_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/storageBucket, 'warmpawz-dev-storage'}
+    S3_ASSETS_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/assetsBucket, 'warmpawz-dev-assets'}
   
   # IAM Role Permissions
   iam:
@@ -94,6 +99,17 @@ provider:
             - logs:PutLogEvents
           Resource: '*'
         
+        # S3 Access for file uploads
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+            - s3:ListBucket
+          Resource:
+            - arn:aws:s3:::warmpawz-*
+            - arn:aws:s3:::warmpawz-*/*
+        
         # AWS Bedrock Access (for AI plan generation)
         - Effect: Allow
           Action:
@@ -111,23 +127,10 @@ provider:
       - ${ssm:/warmpawz/${self:provider.stage}/vpc/subnetId2}
   
   # API Gateway Configuration
+  # Using existing API Gateway (z0b3obweb6) that frontend is pointing to
+  # CORS is already configured on the API Gateway, so we don't configure it here
   httpApi:
-    cors:
-      allowedOrigins:
-        - ${ssm:/warmpawz/${self:provider.stage}/cors/allowedOrigin}
-      allowedHeaders:
-        - Content-Type
-        - Authorization
-        - X-Requested-With
-        - X-Request-Id
-      allowedMethods:
-        - GET
-        - POST
-        - PUT
-        - DELETE
-        - PATCH
-        - OPTIONS
-      maxAge: 86400
+    id: z0b3obweb6  # Use existing API Gateway that frontend is pointing to
 
 functions:
   api:

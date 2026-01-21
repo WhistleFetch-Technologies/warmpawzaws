@@ -1,0 +1,1238 @@
+/**
+ * ============================================================================
+ * LOGISTICS WEBHOOKS ENDPOINTS
+ * ============================================================================
+ * 
+ * Handles incoming webhooks from logistics partners:
+ * - Shiprocket status updates
+ * - Delhivery status updates
+ * - Dunzo delivery updates
+ * 
+ * Also handles auto-shipment creation and notifications
+ * 
+ * Date: 2026-01-20
+ * ============================================================================
+ */
+
+import { Hono } from 'hono';
+import { select, insert, update, query } from '../database/rds-connection';
+import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
+
+// Status mappings for different partners
+const SHIPROCKET_STATUS_MAP: Record<string, string> = {
+  'AWB Assigned': 'awb_generated',
+  'Pickup Scheduled': 'pickup_scheduled',
+  'Picked Up': 'picked_up',
+  'In Transit': 'in_transit',
+  'Out For Delivery': 'out_for_delivery',
+  'Delivered': 'delivered',
+  'RTO Initiated': 'rto_initiated',
+  'RTO In Transit': 'rto_in_transit',
+  'RTO Delivered': 'returned',
+  'Cancelled': 'cancelled',
+  'Lost': 'lost',
+  'Damaged': 'damaged',
+};
+
+const DELHIVERY_STATUS_MAP: Record<string, string> = {
+  'Manifested': 'awb_generated',
+  'In Transit': 'in_transit',
+  'Dispatched': 'in_transit',
+  'Pending': 'pending',
+  'Out for Delivery': 'out_for_delivery',
+  'Delivered': 'delivered',
+  'RTO': 'rto_initiated',
+  'Returned': 'returned',
+  'Cancelled': 'cancelled',
+};
+
+export function registerLogisticsWebhookEndpoints(app: Hono) {
+  
+  // ============================================================================
+  // SHIPROCKET WEBHOOK
+  // ============================================================================
+  
+  /**
+   * POST /webhooks/shiprocket
+   * Receives status updates from Shiprocket
+   */
+  app.post("/webhooks/shiprocket", async (c) => {
+    try {
+      const payload = await c.req.json();
+      console.log('[SHIPROCKET WEBHOOK] Received:', JSON.stringify(payload));
+
+      // Shiprocket sends different event types
+      const {
+        awb,
+        order_id,
+        shipment_id,
+        current_status,
+        current_status_id,
+        scans,
+        etd,
+        delivered_date,
+        pickup_date,
+      } = payload;
+
+      if (!awb && !order_id && !shipment_id) {
+        return c.json({ error: 'Missing identifier' }, 400);
+      }
+
+      // Find the shipment in our database
+      let shipment: any = null;
+      
+      if (awb) {
+        const result = await query(
+          'SELECT * FROM shipments WHERE awb_code = $1',
+          [awb]
+        );
+        if (result.rows.length > 0) shipment = result.rows[0];
+      }
+      
+      if (!shipment && order_id) {
+        const result = await query(
+          'SELECT * FROM shipments WHERE order_id = $1::uuid OR order_id::text = $1',
+          [order_id]
+        );
+        if (result.rows.length > 0) shipment = result.rows[0];
+      }
+
+      if (!shipment && shipment_id) {
+        const result = await query(
+          'SELECT * FROM shipments WHERE shipment_id = $1',
+          [shipment_id.toString()]
+        );
+        if (result.rows.length > 0) shipment = result.rows[0];
+      }
+
+      if (!shipment) {
+        console.warn('[SHIPROCKET WEBHOOK] Shipment not found for:', { awb, order_id, shipment_id });
+        return c.json({ success: true, message: 'Shipment not found, ignored' });
+      }
+
+      // Map status
+      const normalizedStatus = SHIPROCKET_STATUS_MAP[current_status] || 'unknown';
+      const previousStatus = shipment.status;
+
+      // Update shipment
+      await update('shipments', { id: shipment.id }, {
+        status: normalizedStatus,
+        current_location: scans?.[0]?.location || null,
+        estimated_delivery: etd || null,
+        delivered_at: delivered_date ? new Date(delivered_date).toISOString() : null,
+        picked_up_at: pickup_date ? new Date(pickup_date).toISOString() : null,
+        updated_at: new Date().toISOString(),
+      });
+
+      // Add tracking event
+      await insert('shipment_tracking_events', {
+        shipment_id: shipment.id,
+        event_type: current_status,
+        event_description: scans?.[0]?.activity || current_status,
+        location: scans?.[0]?.location || null,
+        event_time: scans?.[0]?.date ? new Date(scans[0].date).toISOString() : new Date().toISOString(),
+      }).catch(() => {});
+
+      // Update order status
+      if (shipment.order_id) {
+        await updateOrderStatus(shipment.order_id, normalizedStatus).catch((e) => {
+          console.error('[SHIPROCKET WEBHOOK] Error updating order:', e);
+        });
+      }
+
+      // Send notification to customer
+      await sendShipmentNotification(shipment.order_id, normalizedStatus, previousStatus, {
+        awb,
+        location: scans?.[0]?.location,
+        etd,
+      }).catch((e) => {
+        console.error('[SHIPROCKET WEBHOOK] Error sending notification:', e);
+      });
+
+      return c.json({ 
+        success: true, 
+        message: 'Status updated',
+        shipmentId: shipment.id,
+        status: normalizedStatus,
+      });
+    } catch (error: any) {
+      console.error('[SHIPROCKET WEBHOOK] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // DELHIVERY WEBHOOK
+  // ============================================================================
+  
+  /**
+   * POST /webhooks/delhivery
+   * Receives status updates from Delhivery
+   */
+  app.post("/webhooks/delhivery", async (c) => {
+    try {
+      const payload = await c.req.json();
+      console.log('[DELHIVERY WEBHOOK] Received:', JSON.stringify(payload));
+
+      const {
+        Waybill,
+        OrderID,
+        Status,
+        StatusDateTime,
+        Location,
+        ExpectedDeliveryDate,
+        Scans,
+      } = payload.ShipmentData?.[0] || payload;
+
+      if (!Waybill && !OrderID) {
+        return c.json({ error: 'Missing identifier' }, 400);
+      }
+
+      // Find shipment
+      let shipment: any = null;
+      
+      if (Waybill) {
+        const result = await query(
+          'SELECT * FROM shipments WHERE awb_code = $1',
+          [Waybill]
+        );
+        if (result.rows.length > 0) shipment = result.rows[0];
+      }
+
+      if (!shipment && OrderID) {
+        const result = await query(
+          'SELECT * FROM shipments WHERE order_id = $1::uuid OR order_id::text = $1',
+          [OrderID]
+        );
+        if (result.rows.length > 0) shipment = result.rows[0];
+      }
+
+      if (!shipment) {
+        console.warn('[DELHIVERY WEBHOOK] Shipment not found');
+        return c.json({ success: true, message: 'Shipment not found, ignored' });
+      }
+
+      const normalizedStatus = DELHIVERY_STATUS_MAP[Status?.Status] || 'unknown';
+      const previousStatus = shipment.status;
+
+      // Update shipment
+      await update('shipments', { id: shipment.id }, {
+        status: normalizedStatus,
+        current_location: Location || null,
+        estimated_delivery: ExpectedDeliveryDate || null,
+        updated_at: new Date().toISOString(),
+      });
+
+      // Add tracking event
+      if (Scans && Scans.length > 0) {
+        const latestScan = Scans[0];
+        await insert('shipment_tracking_events', {
+          shipment_id: shipment.id,
+          event_type: latestScan.ScanType,
+          event_description: latestScan.Instructions || Status?.Status,
+          location: latestScan.ScannedLocation,
+          event_time: new Date(latestScan.ScanDateTime).toISOString(),
+        }).catch(() => {});
+      }
+
+      // Update order and notify
+      if (shipment.order_id) {
+        await updateOrderStatus(shipment.order_id, normalizedStatus).catch(() => {});
+        await sendShipmentNotification(shipment.order_id, normalizedStatus, previousStatus, {
+          awb: Waybill,
+          location: Location,
+          etd: ExpectedDeliveryDate,
+        }).catch(() => {});
+      }
+
+      return c.json({ success: true, status: normalizedStatus });
+    } catch (error: any) {
+      console.error('[DELHIVERY WEBHOOK] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // DUNZO WEBHOOK (for pharmacy/meal delivery)
+  // ============================================================================
+  
+  /**
+   * POST /webhooks/dunzo
+   * Receives updates from Dunzo for hyperlocal delivery
+   */
+  app.post("/webhooks/dunzo", async (c) => {
+    try {
+      const payload = await c.req.json();
+      console.log('[DUNZO WEBHOOK] Received:', JSON.stringify(payload));
+
+      const {
+        task_id,
+        state,
+        runner,
+        eta,
+        tracking_url,
+      } = payload;
+
+      if (!task_id) {
+        return c.json({ error: 'Missing task_id' }, 400);
+      }
+
+      // Find delivery tracking by task_id (stored in metadata or external_id)
+      const result = await query(
+        `SELECT * FROM delivery_tracking 
+         WHERE external_task_id = $1 OR metadata->>'dunzo_task_id' = $1`,
+        [task_id]
+      );
+
+      if (result.rows.length === 0) {
+        console.warn('[DUNZO WEBHOOK] Tracking not found for task:', task_id);
+        return c.json({ success: true, message: 'Tracking not found, ignored' });
+      }
+
+      const tracking = result.rows[0];
+      
+      // Map Dunzo states
+      const stateMap: Record<string, string> = {
+        'runner_assigned': 'assigned',
+        'reached_for_pickup': 'at_pickup',
+        'pickup_complete': 'picked_up',
+        'started_for_delivery': 'on_the_way',
+        'reached_for_delivery': 'nearby',
+        'delivered': 'delivered',
+        'cancelled': 'failed',
+      };
+
+      const normalizedStatus = stateMap[state] || tracking.status;
+
+      // Update tracking
+      await update('delivery_tracking', { id: tracking.id }, {
+        status: normalizedStatus,
+        delivery_person_name: runner?.name || tracking.delivery_person_name,
+        delivery_person_phone: runner?.phone_number || tracking.delivery_person_phone,
+        tracking_url: tracking_url,
+        eta_to_delivery_minutes: eta?.minutes,
+        updated_at: new Date().toISOString(),
+      });
+
+      // Update order
+      const orderTable = tracking.pharmacy_order_id ? 'pharmacy_orders' : 'meal_orders';
+      const orderId = tracking.pharmacy_order_id || tracking.meal_order_id;
+      
+      if (orderId) {
+        await update(orderTable, { id: orderId }, {
+          status: normalizedStatus,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      return c.json({ success: true, status: normalizedStatus });
+    } catch (error: any) {
+      console.error('[DUNZO WEBHOOK] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // AUTO-SHIPMENT CREATION (Called after payment success)
+  // ============================================================================
+  
+  /**
+   * POST /logistics/auto-create-shipment
+   * Automatically creates shipment after order payment
+   */
+  app.post("/logistics/auto-create-shipment", async (c) => {
+    try {
+      const { orderId, orderType = 'ecommerce' } = await c.req.json();
+
+      if (!orderId) {
+        return c.json({ error: 'orderId is required' }, 400);
+      }
+
+      // Get order details based on type
+      let order: any = null;
+      let orderItems: any[] = [];
+      let vendorId: string | null = null;
+
+      if (orderType === 'ecommerce') {
+        const orders = await select('orders', { id: orderId });
+        if (orders.length === 0) {
+          return c.json({ error: 'Order not found' }, 404);
+        }
+        order = orders[0];
+        
+        // Get order items
+        const items = await select('order_items', { order_id: orderId });
+        orderItems = items;
+        vendorId = order.vendor_id;
+        
+      } else if (orderType === 'pharmacy') {
+        const orders = await select('pharmacy_orders', { id: orderId });
+        if (orders.length === 0) {
+          return c.json({ error: 'Pharmacy order not found' }, 404);
+        }
+        order = orders[0];
+        vendorId = order.pharmacy_id;
+        
+      } else if (orderType === 'meal') {
+        const orders = await select('meal_orders', { id: orderId });
+        if (orders.length === 0) {
+          return c.json({ error: 'Meal order not found' }, 404);
+        }
+        order = orders[0];
+        vendorId = order.vendor_id;
+      }
+
+      // Get customer details
+      let customer: any = null;
+      if (order.customer_id) {
+        const customers = await select('customers', { id: order.customer_id });
+        if (customers.length > 0) customer = customers[0];
+      }
+
+      // Parse shipping address
+      const shippingAddress = typeof order.shipping_address === 'string' 
+        ? JSON.parse(order.shipping_address) 
+        : order.shipping_address || order.delivery_address;
+
+      // Determine logistics type
+      const logisticsType = order.logistics_type || 'warmpawz'; // warmpawz, vendor, shiprocket, delhivery
+
+      if (orderType === 'pharmacy' || orderType === 'meal') {
+        // For pharmacy/meal - use hyperlocal delivery (Dunzo or internal fleet)
+        return await createHyperlocalDelivery(c, {
+          orderId,
+          orderType,
+          order,
+          vendorId,
+          customer,
+          shippingAddress,
+        });
+      }
+
+      // For e-commerce - use Shiprocket/Delhivery
+      // Select best logistics partner based on rules
+      const partner = await logisticsPartnerService.selectPartner({
+        orderId,
+        pickupLocation: {
+          pincode: order.pickup_pincode || '560001', // Default vendor pincode
+        },
+        deliveryLocation: {
+          pincode: shippingAddress?.pincode || shippingAddress?.zip,
+          city: shippingAddress?.city,
+          state: shippingAddress?.state,
+        },
+        weight: order.total_weight || 1,
+        orderValue: parseFloat(order.total_amount || '0'),
+        codAmount: order.payment_method === 'cod' ? parseFloat(order.total_amount || '0') : 0,
+      });
+
+      if (!partner) {
+        // Fallback to Shiprocket if no partner selected
+        console.warn('[AUTO-SHIPMENT] No partner selected, using Shiprocket as fallback');
+      }
+
+      const partnerType = partner?.partner_type || 'shiprocket';
+
+      // Create shipment based on partner type
+      if (partnerType === 'shiprocket') {
+        return await createShiprocketShipment(c, {
+          orderId,
+          order,
+          orderItems,
+          customer,
+          shippingAddress,
+          partner,
+        });
+      } else if (partnerType === 'delhivery') {
+        return await createDelhiveryShipment(c, {
+          orderId,
+          order,
+          orderItems,
+          customer,
+          shippingAddress,
+          partner,
+        });
+      }
+
+      return c.json({ error: 'Unsupported logistics partner' }, 400);
+    } catch (error: any) {
+      console.error('[AUTO-SHIPMENT] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // SHIPPING RATE CALCULATOR (Real API)
+  // ============================================================================
+  
+  /**
+   * POST /logistics/calculate-rates
+   * Calculate real shipping rates from multiple partners
+   */
+  app.post("/logistics/calculate-rates", async (c) => {
+    try {
+      const {
+        pickupPincode,
+        deliveryPincode,
+        weight,
+        length,
+        breadth,
+        height,
+        codAmount,
+        declaredValue,
+      } = await c.req.json();
+
+      if (!pickupPincode || !deliveryPincode) {
+        return c.json({ error: 'pickupPincode and deliveryPincode are required' }, 400);
+      }
+
+      const rates: any[] = [];
+
+      // Get Shiprocket rates
+      try {
+        const shiprocketRates = await getShiprocketRates({
+          pickupPincode,
+          deliveryPincode,
+          weight: weight || 0.5,
+          length: length || 10,
+          breadth: breadth || 10,
+          height: height || 10,
+          codAmount: codAmount || 0,
+          declaredValue: declaredValue || 500,
+        });
+        rates.push(...shiprocketRates);
+      } catch (e) {
+        console.error('Error getting Shiprocket rates:', e);
+      }
+
+      // Sort by price
+      rates.sort((a, b) => a.totalCharge - b.totalCharge);
+
+      // Calculate estimated delivery dates
+      const today = new Date();
+      rates.forEach((rate) => {
+        rate.estimatedDelivery = new Date(
+          today.getTime() + (rate.estimatedDays || 5) * 24 * 60 * 60 * 1000
+        ).toISOString().split('T')[0];
+      });
+
+      return c.json({
+        success: true,
+        serviceable: rates.length > 0,
+        rates,
+        cheapest: rates[0] || null,
+        fastest: rates.reduce((a, b) => (a.estimatedDays < b.estimatedDays ? a : b), rates[0]) || null,
+      });
+    } catch (error: any) {
+      console.error('[RATE CALCULATOR] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // PINCODE SERVICEABILITY CHECK
+  // ============================================================================
+  
+  /**
+   * GET /logistics/serviceability/:pincode
+   * Check if delivery is available to a pincode
+   */
+  app.get("/logistics/serviceability/:pincode", async (c) => {
+    try {
+      const { pincode } = c.req.param();
+      const pickupPincode = c.req.query('pickup') || '560001';
+
+      // Check Shiprocket serviceability
+      const settings = await select('platform_settings', { setting_key: 'platform:integrations:shiprocket' });
+      const config = settings.length > 0 ? (settings[0].setting_value as any) : null;
+
+      if (!config?.email || !config?.password) {
+        // Return optimistic response if Shiprocket not configured
+        return c.json({
+          success: true,
+          serviceable: true,
+          partners: ['local'],
+          estimatedDays: 5,
+        });
+      }
+
+      const token = await getShiprocketToken();
+      
+      const response = await fetch(
+        `https://apiv2.shiprocket.in/v1/external/courier/serviceability/?pickup_postcode=${pickupPincode}&delivery_postcode=${pincode}&weight=0.5&cod=0`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        return c.json({
+          success: true,
+          serviceable: true,
+          partners: ['local'],
+          note: 'Serviceability check failed, assuming serviceable',
+        });
+      }
+
+      const data: any = await response.json();
+      const couriers = data.data?.available_courier_companies || [];
+
+      return c.json({
+        success: true,
+        serviceable: couriers.length > 0,
+        partners: couriers.map((c: any) => c.courier_name),
+        estimatedDays: couriers[0]?.estimated_delivery_days || 5,
+        codAvailable: couriers.some((c: any) => c.cod === 1),
+      });
+    } catch (error: any) {
+      console.error('[SERVICEABILITY] Error:', error);
+      // Return optimistic response on error
+      return c.json({
+        success: true,
+        serviceable: true,
+        partners: ['local'],
+        error: error.message,
+      });
+    }
+  });
+
+  // ============================================================================
+  // VENDOR LOGISTICS ENDPOINTS
+  // ============================================================================
+  
+  /**
+   * GET /vendor/:vendorId/logistics/orders
+   * Get orders pending shipment for vendor
+   */
+  app.get("/vendor/:vendorId/logistics/orders", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const status = c.req.query('status') || 'pending';
+
+      const result = await query(
+        `SELECT o.*, 
+                s.awb_code, s.status as shipment_status, s.courier_name,
+                c.name as customer_name, c.phone as customer_phone
+         FROM orders o
+         LEFT JOIN shipments s ON o.id = s.order_id
+         LEFT JOIN customers c ON o.customer_id = c.id
+         WHERE o.vendor_id = $1 
+         AND o.order_status = $2
+         ORDER BY o.created_at DESC
+         LIMIT 50`,
+        [vendorId, status]
+      );
+
+      return c.json({
+        success: true,
+        orders: result.rows,
+      });
+    } catch (error: any) {
+      console.error('[VENDOR LOGISTICS] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/logistics/ship/:orderId
+   * Vendor initiates shipment for an order
+   */
+  app.post("/vendor/:vendorId/logistics/ship/:orderId", async (c) => {
+    try {
+      const { vendorId, orderId } = c.req.param();
+      const { courier, trackingNumber, estimatedDays } = await c.req.json();
+
+      // Verify vendor owns this order
+      const orders = await query(
+        'SELECT * FROM orders WHERE id = $1 AND vendor_id = $2',
+        [orderId, vendorId]
+      );
+
+      if (orders.rows.length === 0) {
+        return c.json({ error: 'Order not found or not owned by vendor' }, 404);
+      }
+
+      const order = orders.rows[0];
+
+      if (trackingNumber) {
+        // Vendor providing their own tracking
+        await insert('shipments', {
+          order_id: orderId,
+          logistics_partner: 'vendor',
+          courier_name: courier || 'Vendor Shipping',
+          awb_code: trackingNumber,
+          status: 'shipped',
+          shipped_at: new Date().toISOString(),
+          estimated_delivery: estimatedDays 
+            ? new Date(Date.now() + estimatedDays * 24 * 60 * 60 * 1000).toISOString()
+            : null,
+        });
+
+        await update('orders', { id: orderId }, {
+          order_status: 'shipped',
+          shipped_at: new Date().toISOString(),
+          tracking_number: trackingNumber,
+          delivery_partner: courier,
+        });
+
+        return c.json({
+          success: true,
+          message: 'Shipment created with vendor tracking',
+          awb: trackingNumber,
+        });
+      }
+
+      // Use platform logistics (Shiprocket)
+      const customer = order.customer_id 
+        ? (await select('customers', { id: order.customer_id }))[0]
+        : null;
+
+      const shippingAddress = typeof order.shipping_address === 'string'
+        ? JSON.parse(order.shipping_address)
+        : order.shipping_address;
+
+      const orderItems = await select('order_items', { order_id: orderId });
+
+      const result = await createShiprocketShipmentInternal({
+        orderId,
+        order,
+        orderItems,
+        customer,
+        shippingAddress,
+      });
+
+      return c.json(result);
+    } catch (error: any) {
+      console.error('[VENDOR SHIP] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // CUSTOMER TRACKING ENDPOINT
+  // ============================================================================
+  
+  /**
+   * GET /customer/tracking/:orderId
+   * Customer views their order tracking
+   */
+  app.get("/customer/tracking/:orderId", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const phone = c.req.query('phone');
+
+      // Find order (check multiple tables)
+      let order: any = null;
+      let orderType = 'ecommerce';
+      
+      // Check e-commerce orders
+      // Use COALESCE to handle both UUID and order_number lookups safely
+      let result = await query(
+        `SELECT * FROM orders 
+         WHERE (id::text = $1 OR order_number = $1)`,
+        [orderId]
+      ).catch(() => ({ rows: [] }));
+      
+      if (result.rows.length > 0) {
+        order = result.rows[0];
+      } else {
+        // Check pharmacy orders
+        result = await query(
+          `SELECT * FROM pharmacy_orders 
+           WHERE (id::text = $1 OR order_number = $1)`,
+          [orderId]
+        ).catch(() => ({ rows: [] }));
+        if (result.rows.length > 0) {
+          order = result.rows[0];
+          orderType = 'pharmacy';
+        } else {
+          // Check meal orders
+          result = await query(
+            `SELECT * FROM meal_orders 
+             WHERE (id::text = $1 OR order_number = $1)`,
+            [orderId]
+          ).catch(() => ({ rows: [] }));
+          if (result.rows.length > 0) {
+            order = result.rows[0];
+            orderType = 'meal';
+          }
+        }
+      }
+
+      if (!order) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+
+      // Security: verify phone if provided
+      if (phone && order.customer_phone !== phone) {
+        return c.json({ error: 'Unauthorized' }, 403);
+      }
+
+      // Get tracking info based on order type
+      if (orderType === 'ecommerce') {
+        // Get shipment tracking
+        const shipments = await query(
+          `SELECT s.*, 
+                  COALESCE(
+                    json_agg(
+                      json_build_object(
+                        'event', ste.event_type,
+                        'description', ste.event_description,
+                        'location', ste.location,
+                        'time', ste.event_time
+                      ) ORDER BY ste.event_time DESC
+                    ) FILTER (WHERE ste.id IS NOT NULL),
+                    '[]'
+                  ) as events
+           FROM shipments s
+           LEFT JOIN shipment_tracking_events ste ON s.id = ste.shipment_id
+           WHERE s.order_id = $1
+           GROUP BY s.id
+           ORDER BY s.created_at DESC
+           LIMIT 1`,
+          [order.id]
+        );
+
+        const shipment = shipments.rows[0];
+
+        return c.json({
+          success: true,
+          orderType,
+          order: {
+            id: order.id,
+            orderNumber: order.order_number,
+            status: order.order_status,
+            total: order.total_amount,
+            createdAt: order.created_at,
+          },
+          tracking: shipment ? {
+            awb: shipment.awb_code,
+            courier: shipment.courier_name,
+            status: shipment.status,
+            currentLocation: shipment.current_location,
+            estimatedDelivery: shipment.estimated_delivery,
+            trackingUrl: shipment.tracking_url,
+            shippedAt: shipment.shipped_at,
+            deliveredAt: shipment.delivered_at,
+            events: shipment.events,
+          } : null,
+        });
+      } else {
+        // Pharmacy/Meal - Get delivery tracking
+        const column = orderType === 'pharmacy' ? 'pharmacy_order_id' : 'meal_order_id';
+        
+        const tracking = await query(
+          `SELECT dt.*,
+                  COALESCE(
+                    json_agg(
+                      json_build_object(
+                        'lat', dlh.lat,
+                        'lng', dlh.lng,
+                        'time', dlh.recorded_at
+                      ) ORDER BY dlh.recorded_at DESC
+                    ) FILTER (WHERE dlh.id IS NOT NULL),
+                    '[]'
+                  ) as location_history
+           FROM delivery_tracking dt
+           LEFT JOIN delivery_location_history dlh ON dt.id = dlh.tracking_id
+           WHERE dt.${column} = $1
+           GROUP BY dt.id
+           ORDER BY dt.created_at DESC
+           LIMIT 1`,
+          [order.id]
+        );
+
+        const deliveryTracking = tracking.rows[0];
+
+        return c.json({
+          success: true,
+          orderType,
+          order: {
+            id: order.id,
+            orderNumber: order.order_number,
+            status: order.status,
+            total: order.total_amount,
+            createdAt: order.created_at,
+          },
+          tracking: deliveryTracking ? {
+            status: deliveryTracking.status,
+            deliveryPerson: {
+              name: deliveryTracking.delivery_person_name,
+              phone: deliveryTracking.delivery_person_phone,
+              photo: deliveryTracking.delivery_person_photo,
+              vehicleNumber: deliveryTracking.vehicle_number,
+            },
+            currentLocation: deliveryTracking.current_lat ? {
+              lat: parseFloat(deliveryTracking.current_lat),
+              lng: parseFloat(deliveryTracking.current_lng),
+            } : null,
+            eta: deliveryTracking.eta_to_delivery_minutes,
+            distanceRemaining: deliveryTracking.distance_remaining_km,
+            assignedAt: deliveryTracking.assigned_at,
+            pickedUpAt: deliveryTracking.picked_up_at,
+            deliveredAt: deliveryTracking.delivered_at,
+            trackingUrl: deliveryTracking.tracking_url,
+            locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
+          } : null,
+        });
+      }
+    } catch (error: any) {
+      console.error('[CUSTOMER TRACKING] Error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+let shiprocketToken: string | null = null;
+let tokenExpiry: number = 0;
+
+async function getShiprocketToken(): Promise<string> {
+  if (shiprocketToken && Date.now() < tokenExpiry) {
+    return shiprocketToken;
+  }
+
+  const settings = await select('platform_settings', { setting_key: 'platform:integrations:shiprocket' });
+  const config = settings.length > 0 ? (settings[0].setting_value as any) : null;
+
+  if (!config?.email || !config?.password) {
+    throw new Error('Shiprocket credentials not configured');
+  }
+
+  const response = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: config.email, password: config.password }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Shiprocket authentication failed');
+  }
+
+  const data: any = await response.json();
+  shiprocketToken = data.token;
+  tokenExpiry = Date.now() + (10 * 24 * 60 * 60 * 1000); // 10 days
+
+  return shiprocketToken!;
+}
+
+async function getShiprocketRates(params: {
+  pickupPincode: string;
+  deliveryPincode: string;
+  weight: number;
+  length: number;
+  breadth: number;
+  height: number;
+  codAmount: number;
+  declaredValue: number;
+}): Promise<any[]> {
+  const token = await getShiprocketToken();
+  
+  const response = await fetch(
+    `https://apiv2.shiprocket.in/v1/external/courier/serviceability/?pickup_postcode=${params.pickupPincode}&delivery_postcode=${params.deliveryPincode}&weight=${params.weight}&length=${params.length}&breadth=${params.breadth}&height=${params.height}&cod=${params.codAmount > 0 ? 1 : 0}&declared_value=${params.declaredValue}`,
+    {
+      headers: { 'Authorization': `Bearer ${token}` },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to get Shiprocket rates');
+  }
+
+  const data: any = await response.json();
+  const couriers = data.data?.available_courier_companies || [];
+
+  return couriers.map((courier: any) => ({
+    partner: 'shiprocket',
+    courierId: courier.courier_company_id,
+    courierName: courier.courier_name,
+    totalCharge: courier.freight_charge + (courier.cod_charges || 0),
+    freightCharge: courier.freight_charge,
+    codCharges: courier.cod_charges || 0,
+    estimatedDays: courier.estimated_delivery_days,
+    rating: courier.rating,
+    isCod: courier.cod === 1,
+  }));
+}
+
+async function createShiprocketShipment(c: any, params: {
+  orderId: string;
+  order: any;
+  orderItems: any[];
+  customer: any;
+  shippingAddress: any;
+  partner: any;
+}) {
+  const result = await createShiprocketShipmentInternal(params);
+  return c.json(result, result.success ? 200 : 500);
+}
+
+async function createShiprocketShipmentInternal(params: {
+  orderId: string;
+  order: any;
+  orderItems: any[];
+  customer: any;
+  shippingAddress: any;
+  partner?: any;
+}) {
+  const { orderId, order, orderItems, customer, shippingAddress } = params;
+
+  try {
+    const token = await getShiprocketToken();
+
+    const shiprocketPayload = {
+      order_id: orderId,
+      order_date: new Date().toISOString().split('T')[0],
+      pickup_location: 'Primary',
+      billing_customer_name: shippingAddress?.name || customer?.name || 'Customer',
+      billing_address: shippingAddress?.street || shippingAddress?.line1 || shippingAddress?.address || 'Address',
+      billing_city: shippingAddress?.city || 'City',
+      billing_pincode: shippingAddress?.pincode || shippingAddress?.zip || '000000',
+      billing_state: shippingAddress?.state || 'State',
+      billing_country: 'India',
+      billing_email: customer?.email || 'customer@warmpawz.com',
+      billing_phone: customer?.phone || shippingAddress?.phone || '0000000000',
+      shipping_is_billing: true,
+      order_items: orderItems.map((item: any) => ({
+        name: item.product_name || item.name,
+        sku: item.sku || item.product_id,
+        units: item.quantity,
+        selling_price: item.unit_price || item.price,
+      })),
+      payment_method: order.payment_method === 'cod' ? 'COD' : 'Prepaid',
+      sub_total: parseFloat(order.total_amount || '0'),
+      length: 10,
+      breadth: 10,
+      height: 10,
+      weight: order.total_weight || 0.5,
+    };
+
+    const response = await fetch('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(shiprocketPayload),
+    });
+
+    const result: any = await response.json();
+
+    if (!response.ok || !result.order_id) {
+      console.error('[SHIPROCKET] Create order failed:', result);
+      throw new Error(result.message || 'Failed to create Shiprocket order');
+    }
+
+    // Store shipment
+    await insert('shipments', {
+      order_id: orderId,
+      logistics_partner: 'shiprocket',
+      logistics_partner_id: params.partner?.id || null,
+      shipment_id: result.shipment_id?.toString(),
+      awb_code: result.awb_code || null,
+      courier_name: result.courier_name || null,
+      status: result.awb_code ? 'awb_generated' : 'created',
+      tracking_url: result.shipment_id 
+        ? `https://www.shiprocket.in/shipment-tracking/${result.shipment_id}`
+        : null,
+    });
+
+    // Update order
+    await update('orders', { id: orderId }, {
+      order_status: 'processing',
+      tracking_number: result.awb_code,
+      delivery_partner: result.courier_name || 'Shiprocket',
+    });
+
+    return {
+      success: true,
+      shiprocketOrderId: result.order_id,
+      shipmentId: result.shipment_id,
+      awb: result.awb_code,
+      courier: result.courier_name,
+    };
+  } catch (error: any) {
+    console.error('[SHIPROCKET CREATE] Error:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+async function createDelhiveryShipment(c: any, params: any) {
+  // Delhivery integration - similar structure
+  // For now, return placeholder
+  return c.json({
+    success: false,
+    error: 'Delhivery integration not yet implemented',
+  }, 501);
+}
+
+async function createHyperlocalDelivery(c: any, params: {
+  orderId: string;
+  orderType: string;
+  order: any;
+  vendorId: string | null;
+  customer: any;
+  shippingAddress: any;
+}) {
+  const { orderId, orderType, order, vendorId, customer, shippingAddress } = params;
+
+  try {
+    // Check if Dunzo is configured
+    const settings = await select('platform_settings', { setting_key: 'platform:integrations:dunzo' });
+    const dunzoConfig = settings.length > 0 ? (settings[0].setting_value as any) : null;
+
+    const orderTable = orderType === 'pharmacy' ? 'pharmacy_orders' : 'meal_orders';
+    const orderIdField = orderType === 'pharmacy' ? 'pharmacy_order_id' : 'meal_order_id';
+
+    // Check if order already has tracking
+    const existingTracking = await query(
+      `SELECT * FROM delivery_tracking WHERE ${orderIdField} = $1`,
+      [orderId]
+    );
+
+    if (existingTracking.rows.length > 0) {
+      return c.json({
+        success: true,
+        message: 'Delivery already assigned',
+        trackingId: existingTracking.rows[0].id,
+      });
+    }
+
+    if (dunzoConfig?.enabled && dunzoConfig?.apiKey) {
+      // Create Dunzo task
+      // For now, create internal tracking and mark for Dunzo pickup
+      const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+      const tracking = await insert('delivery_tracking', {
+        [orderIdField]: orderId,
+        logistics_partner_id: null, // Will be assigned when Dunzo picks up
+        status: 'pending_pickup',
+        delivery_otp: deliveryOtp,
+        metadata: { usesDunzo: true },
+      });
+
+      // Update order
+      await update(orderTable, { id: orderId }, {
+        status: 'ready_for_pickup',
+        logistics_type: 'dunzo',
+      });
+
+      return c.json({
+        success: true,
+        trackingId: tracking[0]?.id,
+        deliveryOtp,
+        message: 'Queued for Dunzo pickup',
+      });
+    }
+
+    // Use internal fleet or vendor delivery
+    const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    const tracking = await insert('delivery_tracking', {
+      [orderIdField]: orderId,
+      logistics_partner_id: null,
+      status: 'pending_assignment',
+      delivery_otp: deliveryOtp,
+    });
+
+    await update(orderTable, { id: orderId }, {
+      status: 'ready_for_pickup',
+      logistics_type: 'warmpawz',
+    });
+
+    return c.json({
+      success: true,
+      trackingId: tracking[0]?.id,
+      deliveryOtp,
+      message: 'Ready for delivery assignment',
+    });
+  } catch (error: any) {
+    console.error('[HYPERLOCAL DELIVERY] Error:', error);
+    return c.json({ error: error.message }, 500);
+  }
+}
+
+async function updateOrderStatus(orderId: string, status: string) {
+  // Map shipment status to order status
+  const orderStatusMap: Record<string, string> = {
+    'awb_generated': 'processing',
+    'pickup_scheduled': 'processing',
+    'picked_up': 'shipped',
+    'in_transit': 'shipped',
+    'out_for_delivery': 'out_for_delivery',
+    'delivered': 'delivered',
+    'rto_initiated': 'return_initiated',
+    'returned': 'returned',
+    'cancelled': 'cancelled',
+  };
+
+  const orderStatus = orderStatusMap[status] || 'processing';
+
+  await update('orders', { id: orderId }, {
+    order_status: orderStatus,
+    delivered_at: status === 'delivered' ? new Date().toISOString() : undefined,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function sendShipmentNotification(
+  orderId: string,
+  status: string,
+  previousStatus: string,
+  details: { awb?: string; location?: string; etd?: string }
+) {
+  if (status === previousStatus) return;
+
+  // Get order and customer
+  const orders = await select('orders', { id: orderId });
+  if (orders.length === 0) return;
+
+  const order = orders[0];
+  let customer: any = null;
+  
+  if (order.customer_id) {
+    const customers = await select('customers', { id: order.customer_id });
+    if (customers.length > 0) customer = customers[0];
+  }
+
+  if (!customer?.phone) return;
+
+  // Notification messages
+  const messages: Record<string, string> = {
+    'picked_up': `Your order #${order.order_number} has been picked up and is on its way!`,
+    'in_transit': `Your order #${order.order_number} is in transit${details.location ? ` - Currently at ${details.location}` : ''}.`,
+    'out_for_delivery': `Your order #${order.order_number} is out for delivery! It will arrive soon.`,
+    'delivered': `Your order #${order.order_number} has been delivered. Thank you for shopping with WarmPawz!`,
+    'rto_initiated': `Your order #${order.order_number} is being returned to the seller.`,
+  };
+
+  const message = messages[status];
+  if (!message) return;
+
+  // Create notification
+  await insert('notifications', {
+    customer_id: order.customer_id,
+    type: 'shipment_update',
+    title: status === 'delivered' ? '📦 Order Delivered!' : '🚚 Shipment Update',
+    message,
+    data: {
+      orderId,
+      orderNumber: order.order_number,
+      status,
+      awb: details.awb,
+      trackingUrl: `https://warmpawz.com/track/${orderId}`,
+    },
+    is_read: false,
+  }).catch((e) => {
+    console.error('Error creating notification:', e);
+  });
+
+  // TODO: Send SMS/WhatsApp notification
+  // await sendSMSNotification(customer.phone, message);
+}

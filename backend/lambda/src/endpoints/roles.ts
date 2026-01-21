@@ -82,7 +82,10 @@ class GetRolesHandler extends BaseHandler {
         // Extract config fields from JSONB config column
         const config = role.config || {};
         const vendorTypes = config.vendorTypes || config.vendor_types || [];
-        const serviceStyles = config.serviceStyles || config.service_styles || [];
+        const serviceStylesConfig = config.serviceStyles || {};
+        const selectedServiceStyles = serviceStylesConfig.selected || serviceStylesConfig || [];
+        const vendorConfiguration = config.vendorConfiguration || null;
+        const customerService = (role as any).customer_service || config.customer_service || null;
         const pricingControl = config.pricingControl || config.pricing_control || {
           canControlPrice: false,
           canControlDuration: false,
@@ -112,8 +115,11 @@ class GetRolesHandler extends BaseHandler {
         // Parse serviceStyles to match reference (At Center, At Home, Tele Consultation)
         // Backend stores: at_clinic, at_center, at_home, video_consultation, tele, online, delivery, pickup
         // Frontend displays: At Center, At Home, Tele Consultation, Video Consultation, Online, Delivery, Pickup
-        const normalizedServiceStyles = Array.isArray(serviceStyles)
-          ? serviceStyles.map((ss: string) => {
+        // Use selectedServiceStyles (from config.serviceStyles.selected) or fallback to serviceStylesConfig
+        const serviceStylesToNormalize = Array.isArray(selectedServiceStyles) ? selectedServiceStyles : 
+          (Array.isArray(serviceStylesConfig) ? serviceStylesConfig : []);
+        const normalizedServiceStyles = Array.isArray(serviceStylesToNormalize)
+          ? serviceStylesToNormalize.map((ss: string) => {
               const mapping: Record<string, string> = {
                 'at_center': 'At Center',
                 'at_clinic': 'At Center',
@@ -141,8 +147,27 @@ class GetRolesHandler extends BaseHandler {
           description: role.description || '',
           category,
           icon,
+          customer_service: customerService,
+          vendorConfiguration: vendorConfiguration,
           vendorTypes: normalizedVendorTypes,
           serviceStyles: normalizedServiceStyles,
+          selectedServiceStyles: Array.isArray(selectedServiceStyles) 
+            ? selectedServiceStyles.map((ss: string) => {
+                const mapping: Record<string, string> = {
+                  'at_center': 'At Center',
+                  'at_clinic': 'At Center',
+                  'at_home': 'At Home',
+                  'home_visit': 'At Home',
+                  'tele': 'Tele Consultation',
+                  'video_consultation': 'Video Consultation',
+                  'online': 'Online',
+                  'delivery': 'Delivery',
+                  'pickup': 'Pickup',
+                  'outdoor': 'Outdoor',
+                };
+                return mapping[ss] || ss;
+              })
+            : [],
           pricingControl: {
             canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
             canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
@@ -152,6 +177,8 @@ class GetRolesHandler extends BaseHandler {
           isSystem: role.is_system_role || false,
           userCount: 0, // TODO: Count users with this role
           createdAt: role.created_at || new Date().toISOString(),
+          // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
+          config: role.config || {},
         };
     });
 
@@ -244,6 +271,8 @@ class GetRoleByIdHandler extends BaseHandler {
       capabilities,
       isActive: role.is_active !== false,
       isSystem: role.is_system_role || false,
+      // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
+      config: role.config || {},
     });
   }
 }
@@ -265,7 +294,10 @@ class CreateRoleHandler extends BaseHandler {
       pricingControl,
       icon,
       isActive,
-      is_active
+      is_active,
+      vendorConfiguration,
+      customer_service,
+      capabilityRules
     } = body;
 
     // Validation - support both naming conventions
@@ -283,17 +315,38 @@ class CreateRoleHandler extends BaseHandler {
     }
 
     try {
-      // Build config object
-      const roleConfig: any = config || {
-        category: category || 'general',
-        icon: icon || null,
-        vendorTypes: vendorTypes || [],
-        serviceStyles: serviceStyles || [],
-        pricingControl: pricingControl || {
+      // Build config object - merge provided config with explicit fields
+      const baseConfig: any = config || {};
+      const roleConfig: any = {
+        category: category || baseConfig.category || 'general',
+        icon: icon || baseConfig.icon || null,
+        vendorTypes: vendorTypes || baseConfig.vendorTypes || [],
+        serviceStyles: serviceStyles || baseConfig.serviceStyles || [],
+        pricingControl: pricingControl || baseConfig.pricingControl || {
           canControlPrice: false,
           canControlDuration: false,
         },
       };
+
+      // Add vendorConfiguration if provided
+      if (vendorConfiguration !== undefined) {
+        roleConfig.vendorConfiguration = vendorConfiguration;
+      }
+
+      // Add customer_service if provided
+      if (customer_service !== undefined) {
+        roleConfig.customer_service = customer_service;
+      }
+
+      // Add capabilityRules if provided
+      if (capabilityRules !== undefined) {
+        roleConfig.capabilityRules = capabilityRules;
+      }
+
+      // Merge any additional fields from provided config object
+      if (config && typeof config === 'object') {
+        Object.assign(roleConfig, config);
+      }
 
       // Insert role
       const roleData: any = {
@@ -361,7 +414,10 @@ class UpdateRoleHandler extends BaseHandler {
       serviceStyles,
       pricingControl,
       category,
-      icon
+      icon,
+      vendorConfiguration,
+      customer_service,
+      capabilityRules
     } = body;
 
     if (!roleId) {
@@ -390,6 +446,21 @@ class UpdateRoleHandler extends BaseHandler {
           canControlDuration: false,
         }),
       };
+
+      // Save vendorConfiguration to config if provided
+      if (vendorConfiguration !== undefined) {
+        updatedConfig.vendorConfiguration = vendorConfiguration;
+      }
+
+      // Save customer_service to config if provided
+      if (customer_service !== undefined) {
+        updatedConfig.customer_service = customer_service;
+      }
+
+      // Save capabilityRules to config if provided
+      if (capabilityRules !== undefined) {
+        updatedConfig.capabilityRules = capabilityRules;
+      }
 
       // If config object provided directly, merge it
       if (config && typeof config === 'object') {

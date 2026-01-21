@@ -308,6 +308,23 @@ class CreateBookingHandler extends BaseHandler {
 
       // ✅ TEMPORAL FIX: Publish event with timestamps
       try {
+        // ✅ Trigger webhooks
+        try {
+          const { triggerWebhook } = await import('./webhooks');
+          await triggerWebhook('booking.created', {
+            bookingId: booking.id,
+            customerId: booking.customer_id,
+            vendorId: booking.vendor_id,
+            serviceId: booking.service_id,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+            status: booking.booking_status,
+            amount: booking.total_amount,
+          });
+        } catch (error) {
+          console.error('Failed to trigger webhooks:', error);
+        }
+
         const { publishBookingCreated } = await import('../utils/sns-client');
         await publishBookingCreated({
           bookingId: booking.id,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
@@ -18,6 +18,7 @@ interface BookingDetailModalProps {
   phone: string;
   onClose: () => void;
   onReorderMedicine?: (medications: any[]) => void;
+  onNavigate?: (screen: string, data?: any) => void; // ✅ FIX: Add navigation handler for video calls
 }
 
 interface Prescription {
@@ -36,7 +37,7 @@ interface Prescription {
   }>;
 }
 
-export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine }: BookingDetailModalProps) {
+export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine, onNavigate }: BookingDetailModalProps) {
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copiedOtp, setCopiedOtp] = useState(false);
@@ -47,6 +48,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   const [showRateModal, setShowRateModal] = useState(false);
   const [prescription, setPrescription] = useState<Prescription | null>(null);
   const [loadingPrescription, setLoadingPrescription] = useState(false);
+  const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
+  const [loadingMedicalRecords, setLoadingMedicalRecords] = useState(false);
+  const [hasTracking, setHasTracking] = useState(false);
 
   useEffect(() => {
     loadBookingDetails();
@@ -58,11 +62,52 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       console.log('🔍 [BOOKING-DETAIL] Loading booking:', bookingId);
       // AWS Serverless compatible - use apiClient
       const result = await apiClient.get(`/customer/bookings/${bookingId}`) as any;
-      console.log('✅ [BOOKING-DETAIL] Booking loaded:', result.booking);
-      setBooking(result.booking);
+      // ✅ FIX: Handle both response formats (result.booking or result.data.booking)
+      const rawBooking = result.booking || result.data?.booking || result;
+      console.log('✅ [BOOKING-DETAIL] Raw booking loaded:', rawBooking);
+      
+      // ✅ FIX: Transform enriched booking data to flat fields the UI expects
+      const bookingData = {
+        ...rawBooking,
+        // Service fields
+        serviceName: rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service',
+        serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
+        serviceStyle: rawBooking.serviceStyle || rawBooking.service_type || 'at_center',
+        duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
+        price: parseFloat(rawBooking.amount || rawBooking.total_amount || rawBooking.base_price || 0),
+        // Vendor fields
+        vendorName: rawBooking.vendorName || rawBooking.vendor?.businessName || rawBooking.vendor_name || 'Vendor',
+        vendorPhone: rawBooking.vendorPhone || rawBooking.vendor?.phone || rawBooking.vendor_phone,
+        vendorEmail: rawBooking.vendorEmail || rawBooking.vendor?.email || rawBooking.vendor_email,
+        vendorAddress: rawBooking.vendorAddress || rawBooking.vendor?.address || rawBooking.vendor_address,
+        vendorCity: rawBooking.vendorCity || rawBooking.vendor?.city || rawBooking.vendor_city,
+        // Customer fields
+        customerName: rawBooking.customerName || rawBooking.customer?.name || rawBooking.customer_name,
+        customerPhone: rawBooking.customerPhone || rawBooking.customer?.phone || rawBooking.customer_phone,
+        // Pet fields
+        petName: rawBooking.petName || rawBooking.pet?.name || 'Pet',
+        petBreed: rawBooking.petBreed || rawBooking.pet?.breed,
+        petType: rawBooking.petType || rawBooking.pet?.species,
+        petAge: rawBooking.petAge || rawBooking.pet?.age,
+        petPhoto: rawBooking.petPhoto || rawBooking.pet?.photo_url,
+        // OTP fields
+        completionOTP: rawBooking.completionOTP || rawBooking.otp_code,
+        otpVerified: rawBooking.otpVerified || rawBooking.otp_verified,
+      };
+      console.log('✅ [BOOKING-DETAIL] Transformed booking:', bookingData);
+      setBooking(bookingData);
       
       // Always try to load prescription (will show "No prescription" if not found)
       loadPrescription(bookingId);
+      
+      // Load medical records linked to this booking
+      loadMedicalRecords(bookingId);
+      
+      // Check if tracking is available for home services
+      if (result.booking && (result.booking.serviceStyle === 'at_home' || result.booking.serviceType === 'at_home') && 
+          (result.booking.status === 'in_progress' || result.booking.status === 'active')) {
+        checkTrackingStatus(bookingId);
+      }
     } catch (error) {
       console.error('❌ [BOOKING-DETAIL] Error loading booking:', error);
     } finally {
@@ -89,8 +134,61 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     }
   };
 
+  const loadMedicalRecords = async (bookingId: string) => {
+    try {
+      setLoadingMedicalRecords(true);
+      try {
+        const result = await apiClient.get(`/customer/bookings/${bookingId}/medical-records`) as any;
+        setMedicalRecords(result.medicalRecords || result.records || []);
+      } catch {
+        setMedicalRecords([]);
+        console.log('ℹ️  [MEDICAL-RECORDS] No medical records found');
+      }
+    } catch (error) {
+      setMedicalRecords([]);
+      console.error('❌ [MEDICAL-RECORDS] Error:', error);
+    } finally {
+      setLoadingMedicalRecords(false);
+    }
+  };
+
+  const checkTrackingStatus = async (bookingId: string) => {
+    try {
+      const result = await apiClient.get(`/bookings/${bookingId}/tracking/status`) as any;
+      if (result.tracking && result.tracking.active) {
+        setHasTracking(true);
+      } else {
+        setHasTracking(false);
+      }
+    } catch (error) {
+      console.debug('Tracking not available:', error);
+      setHasTracking(false);
+    }
+  };
+
+  // Poll for tracking status if booking is in progress
+  useEffect(() => {
+    if (booking && (booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home') && 
+        (booking.status === 'in_progress' || booking.status === 'active')) {
+      checkTrackingStatus(bookingId);
+      const interval = setInterval(() => {
+        checkTrackingStatus(bookingId);
+      }, 15000); // Poll every 15 seconds
+      return () => clearInterval(interval);
+    }
+  }, [booking, bookingId]);
+
+  // ✅ FIX #2: Enable chat for tele consultations during confirmed/in_progress, not just after completion
   const canChat = () => {
-    if (!booking || booking.status !== 'completed' || !booking.otpVerifiedAt) return false;
+    if (!booking) return false;
+    
+    // For tele consultations, allow chat during confirmed/in_progress status
+    if (booking.serviceStyle === 'tele' && (booking.status === 'confirmed' || booking.status === 'in_progress')) {
+      return true;
+    }
+    
+    // For other services, only allow chat after completion (within 7 days)
+    if (booking.status !== 'completed' || !booking.otpVerifiedAt) return false;
     const completedAt = new Date(booking.otpVerifiedAt);
     const now = new Date();
     const daysDiff = Math.floor((now.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24));
@@ -421,6 +519,25 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                       </p>
                     )}
                   </div>
+                  {/* ✅ NEW: Call & Chat buttons */}
+                  <div className="flex gap-2">
+                    {booking.vendorPhone && (
+                      <button
+                        onClick={() => window.open(`tel:${booking.vendorPhone}`, '_self')}
+                        className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center hover:bg-green-200 transition-colors"
+                        title="Call Vendor"
+                      >
+                        <PhoneCall className="w-5 h-5 text-green-600" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setCommunicationMode('chat')}
+                      className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center hover:bg-blue-200 transition-colors"
+                      title="Chat"
+                    >
+                      <MessageCircle className="w-5 h-5 text-blue-600" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -561,6 +678,18 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
+              {/* Live Tracking Button - For home services in progress */}
+              {hasTracking && booking.serviceStyle === 'at_home' && (
+                <Button
+                  onClick={() => setShowLiveTracking(true)}
+                  className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
+                >
+                  <Navigation className="w-5 h-5" />
+                  Live Tracking Active
+                  <span className="ml-auto bg-green-700 px-2 py-0.5 rounded-full text-xs">Live</span>
+                </Button>
+              )}
+
               {/* Prescription Button - Always visible */}
               <Button
                 onClick={() => setShowPrescription(true)}
@@ -571,6 +700,23 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 {prescription ? 'View Prescription' : 'Prescription'}
                 {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
               </Button>
+
+              {/* Medical Records Button - Show if records exist */}
+              {medicalRecords.length > 0 && (
+                <Button
+                  onClick={() => {
+                    // Navigate to medical records view or show modal
+                    toast.info(`${medicalRecords.length} medical record(s) available`);
+                  }}
+                  className="w-full bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  <FileText className="w-5 h-5" />
+                  Medical Records
+                  <span className="ml-auto bg-purple-700 px-2 py-0.5 rounded-full text-xs">
+                    {medicalRecords.length} {medicalRecords.length === 1 ? 'record' : 'records'}
+                  </span>
+                </Button>
+              )}
 
               {/* Chat Button - Only for completed bookings within 7 days */}
               {canChat() && (
@@ -597,19 +743,6 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Live Tracking Button */}
-              {booking.status === 'in_progress' && (booking.serviceType === 'walker' || booking.serviceStyle === 'at_home') && (
-                <Button
-                  onClick={() => setShowLiveTracking(true)}
-                  className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E] text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-md"
-                >
-                  <MapPin className="w-5 h-5" />
-                  Track Live Location
-                  <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs animate-pulse">
-                    LIVE
-                  </span>
-                </Button>
-              )}
 
               {/* Follow-up Button - Only for completed bookings within 7 days */}
               {canFollowUp() && (
@@ -669,6 +802,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           userType="customer"
           onClose={() => setCommunicationMode(null)}
           onBookFollowUp={() => setShowFollowUp(true)}
+          onNavigate={onNavigate} // ✅ FIX: Pass navigation handler for video calls
+          meetingId={booking.meetingId} // ✅ FIX: Pass meeting ID if available
         />
       )}
 

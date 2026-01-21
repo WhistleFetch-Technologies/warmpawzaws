@@ -225,6 +225,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         if (profile.id) {
           localStorage.setItem('vendorId', profile.id);
         }
+        // ✅ FIX: Store roleId immediately to prevent race condition with useVendorCapabilities
+        if (profile.roleId || profile.role_id) {
+          const roleId = profile.roleId || profile.role_id;
+          localStorage.setItem('vendorRole', roleId);
+          console.log('🔐 [VendorAuth] Stored vendorRole:', roleId);
+        }
       }
       
       // Double-check storage immediately

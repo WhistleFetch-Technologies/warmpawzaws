@@ -1,5 +1,5 @@
 {
- "Description": "Warmpawz Platform AWS Infrastructure - PROD Environment",
+ "Description": "Warmpawz Platform Infrastructure - PROD",
  "Resources": {
   "AuroraStackAuroraSecret2E11B886": {
    "Type": "AWS::SecretsManager::Secret",
@@ -16,314 +16,6 @@
    "DeletionPolicy": "Delete",
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraSecret/Resource"
-   }
-  },
-  "AuroraStackAuroraSecretAttachment5041D1AD": {
-   "Type": "AWS::SecretsManager::SecretTargetAttachment",
-   "Properties": {
-    "SecretId": {
-     "Ref": "AuroraStackAuroraSecret2E11B886"
-    },
-    "TargetId": {
-     "Ref": "AuroraStackAuroraCluster0A30E50A"
-    },
-    "TargetType": "AWS::RDS::DBCluster"
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraSecret/Attachment/Resource"
-   }
-  },
-  "AuroraStackAuroraSecurityGroup28BA76D3": {
-   "Type": "AWS::EC2::SecurityGroup",
-   "Properties": {
-    "GroupDescription": "Security group for Aurora RDS cluster",
-    "SecurityGroupIngress": [
-     {
-      "CidrIp": "172.31.0.0/16",
-      "Description": "Allow PostgreSQL from VPC",
-      "FromPort": 5432,
-      "IpProtocol": "tcp",
-      "ToPort": 5432
-     }
-    ],
-    "VpcId": "vpc-0aea1d1063c79f1c0"
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraSecurityGroup/Resource"
-   }
-  },
-  "AuroraStackAuroraSecurityGroupfromWarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3IndirectPort15ED9DC4": {
-   "Type": "AWS::EC2::SecurityGroupIngress",
-   "Properties": {
-    "Description": "Allow connections to the database Cluster from the Proxy",
-    "FromPort": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraCluster0A30E50A",
-      "Endpoint.Port"
-     ]
-    },
-    "GroupId": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraSecurityGroup28BA76D3",
-      "GroupId"
-     ]
-    },
-    "IpProtocol": "tcp",
-    "SourceSecurityGroupId": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraSecurityGroup28BA76D3",
-      "GroupId"
-     ]
-    },
-    "ToPort": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraCluster0A30E50A",
-      "Endpoint.Port"
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraSecurityGroup/from WarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3:{IndirectPort}"
-   }
-  },
-  "AuroraStackAuroraSecurityGrouptoWarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3IndirectPort2F95BA6B": {
-   "Type": "AWS::EC2::SecurityGroupEgress",
-   "Properties": {
-    "Description": "Allow connections to the database Cluster from the Proxy",
-    "DestinationSecurityGroupId": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraSecurityGroup28BA76D3",
-      "GroupId"
-     ]
-    },
-    "FromPort": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraCluster0A30E50A",
-      "Endpoint.Port"
-     ]
-    },
-    "GroupId": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraSecurityGroup28BA76D3",
-      "GroupId"
-     ]
-    },
-    "IpProtocol": "tcp",
-    "ToPort": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraCluster0A30E50A",
-      "Endpoint.Port"
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraSecurityGroup/to WarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3:{IndirectPort}"
-   }
-  },
-  "AuroraStackAuroraClusterSubnetsD6C77014": {
-   "Type": "AWS::RDS::DBSubnetGroup",
-   "Properties": {
-    "DBSubnetGroupDescription": "Subnets for AuroraCluster database",
-    "SubnetIds": [
-     "subnet-0523027c38775a9e5",
-     "subnet-0702b52e47b12fd09",
-     "subnet-017d54f5a53c80988"
-    ]
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraCluster/Subnets/Default"
-   }
-  },
-  "AuroraStackAuroraCluster0A30E50A": {
-   "Type": "AWS::RDS::DBCluster",
-   "Properties": {
-    "BackupRetentionPeriod": 7,
-    "CopyTagsToSnapshot": true,
-    "DBClusterParameterGroupName": "default.aurora-postgresql15",
-    "DBSubnetGroupName": {
-     "Ref": "AuroraStackAuroraClusterSubnetsD6C77014"
-    },
-    "DatabaseName": "warmpawz",
-    "DeletionProtection": true,
-    "EnableHttpEndpoint": false,
-    "Engine": "aurora-postgresql",
-    "EngineVersion": "15.14",
-    "MasterUserPassword": {
-     "Fn::Join": [
-      "",
-      [
-       "{{resolve:secretsmanager:",
-       {
-        "Ref": "AuroraStackAuroraSecret2E11B886"
-       },
-       ":SecretString:password::}}"
-      ]
-     ]
-    },
-    "MasterUsername": {
-     "Fn::Join": [
-      "",
-      [
-       "{{resolve:secretsmanager:",
-       {
-        "Ref": "AuroraStackAuroraSecret2E11B886"
-       },
-       ":SecretString:username::}}"
-      ]
-     ]
-    },
-    "Port": 5432,
-    "PreferredBackupWindow": "03:00-04:00",
-    "ServerlessV2ScalingConfiguration": {
-     "MaxCapacity": 16,
-     "MinCapacity": 0.5
-    },
-    "StorageEncrypted": true,
-    "VpcSecurityGroupIds": [
-     {
-      "Fn::GetAtt": [
-       "AuroraStackAuroraSecurityGroup28BA76D3",
-       "GroupId"
-      ]
-     }
-    ]
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraCluster/Resource"
-   }
-  },
-  "AuroraStackAuroraClusterwriter15FEB042": {
-   "Type": "AWS::RDS::DBInstance",
-   "Properties": {
-    "DBClusterIdentifier": {
-     "Ref": "AuroraStackAuroraCluster0A30E50A"
-    },
-    "DBInstanceClass": "db.serverless",
-    "Engine": "aurora-postgresql",
-    "PromotionTier": 0,
-    "PubliclyAccessible": true
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraCluster/writer/Resource"
-   }
-  },
-  "AuroraStackAuroraProxyIAMRoleD0FA893E": {
-   "Type": "AWS::IAM::Role",
-   "Properties": {
-    "AssumeRolePolicyDocument": {
-     "Statement": [
-      {
-       "Action": "sts:AssumeRole",
-       "Effect": "Allow",
-       "Principal": {
-        "Service": "rds.amazonaws.com"
-       }
-      }
-     ],
-     "Version": "2012-10-17"
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraProxy/IAMRole/Resource"
-   }
-  },
-  "AuroraStackAuroraProxyIAMRoleDefaultPolicy5CBE0CF0": {
-   "Type": "AWS::IAM::Policy",
-   "Properties": {
-    "PolicyDocument": {
-     "Statement": [
-      {
-       "Action": [
-        "secretsmanager:DescribeSecret",
-        "secretsmanager:GetSecretValue"
-       ],
-       "Effect": "Allow",
-       "Resource": {
-        "Ref": "AuroraStackAuroraSecret2E11B886"
-       }
-      }
-     ],
-     "Version": "2012-10-17"
-    },
-    "PolicyName": "AuroraStackAuroraProxyIAMRoleDefaultPolicy5CBE0CF0",
-    "Roles": [
-     {
-      "Ref": "AuroraStackAuroraProxyIAMRoleD0FA893E"
-     }
-    ]
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraProxy/IAMRole/DefaultPolicy/Resource"
-   }
-  },
-  "AuroraStackAuroraProxyEB6DC6B7": {
-   "Type": "AWS::RDS::DBProxy",
-   "Properties": {
-    "Auth": [
-     {
-      "AuthScheme": "SECRETS",
-      "IAMAuth": "DISABLED",
-      "SecretArn": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      }
-     }
-    ],
-    "DBProxyName": "warmpawz-aurora-proxy",
-    "EngineFamily": "POSTGRESQL",
-    "RequireTLS": true,
-    "RoleArn": {
-     "Fn::GetAtt": [
-      "AuroraStackAuroraProxyIAMRoleD0FA893E",
-      "Arn"
-     ]
-    },
-    "VpcSecurityGroupIds": [
-     {
-      "Fn::GetAtt": [
-       "AuroraStackAuroraSecurityGroup28BA76D3",
-       "GroupId"
-      ]
-     }
-    ],
-    "VpcSubnetIds": [
-     "subnet-0523027c38775a9e5",
-     "subnet-0702b52e47b12fd09",
-     "subnet-017d54f5a53c80988"
-    ]
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraProxy/Resource"
-   }
-  },
-  "AuroraStackAuroraProxyProxyTargetGroupD03E5434": {
-   "Type": "AWS::RDS::DBProxyTargetGroup",
-   "Properties": {
-    "ConnectionPoolConfigurationInfo": {
-     "MaxConnectionsPercent": 100,
-     "MaxIdleConnectionsPercent": 50
-    },
-    "DBClusterIdentifiers": [
-     {
-      "Ref": "AuroraStackAuroraCluster0A30E50A"
-     }
-    ],
-    "DBProxyName": {
-     "Ref": "AuroraStackAuroraProxyEB6DC6B7"
-    },
-    "TargetGroupName": "default"
-   },
-   "DependsOn": [
-    "AuroraStackAuroraCluster0A30E50A",
-    "AuroraStackAuroraClusterwriter15FEB042"
-   ],
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraProxy/ProxyTargetGroup"
    }
   },
   "CognitoStackCustomerUserPoolsmsRole2E079065": {
@@ -841,25 +533,40 @@
       "IpProtocol": "-1"
      }
     ],
-    "SecurityGroupIngress": [
-     {
-      "CidrIp": "172.31.0.0/16",
-      "Description": "Allow Lambda to connect to RDS Proxy",
-      "FromPort": 5432,
-      "IpProtocol": "tcp",
-      "ToPort": 5432
-     }
-    ],
-    "VpcId": "vpc-0aea1d1063c79f1c0"
+    "VpcId": "vpc-06f3085b6a63d0d86"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SecurityStack/LambdaSecurityGroup/Resource"
    }
   },
+  "SecurityStackLambdaSecurityGroupfromWarmpawzStackprodSecurityStackApiSecurityGroup0B2DC595ALLPORTS23CFFB16": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Allow API to communicate with Lambda",
+    "FromPort": 0,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "SecurityStackLambdaSecurityGroupE5CA1F78",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "SecurityStackApiSecurityGroup6ADCE8A7",
+      "GroupId"
+     ]
+    },
+    "ToPort": 65535
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/SecurityStack/LambdaSecurityGroup/from WarmpawzStackprodSecurityStackApiSecurityGroup0B2DC595:ALL PORTS"
+   }
+  },
   "SecurityStackApiSecurityGroup6ADCE8A7": {
    "Type": "AWS::EC2::SecurityGroup",
    "Properties": {
-    "GroupDescription": "Security group for API Gateway VPC endpoint",
+    "GroupDescription": "Security group for API Gateway",
     "SecurityGroupEgress": [
      {
       "CidrIp": "0.0.0.0/0",
@@ -867,23 +574,7 @@
       "IpProtocol": "-1"
      }
     ],
-    "SecurityGroupIngress": [
-     {
-      "CidrIp": "0.0.0.0/0",
-      "Description": "Allow HTTPS from internet",
-      "FromPort": 443,
-      "IpProtocol": "tcp",
-      "ToPort": 443
-     },
-     {
-      "CidrIp": "0.0.0.0/0",
-      "Description": "Allow HTTP from internet",
-      "FromPort": 80,
-      "IpProtocol": "tcp",
-      "ToPort": 80
-     }
-    ],
-    "VpcId": "vpc-0aea1d1063c79f1c0"
+    "VpcId": "vpc-06f3085b6a63d0d86"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SecurityStack/ApiSecurityGroup/Resource"
@@ -1140,172 +831,6 @@
    "DeletionPolicy": "Retain",
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/S3Stack/LogsBucket/Resource"
-   }
-  },
-  "S3StackApkBucket1AED656F": {
-   "Type": "AWS::S3::Bucket",
-   "Properties": {
-    "BucketEncryption": {
-     "ServerSideEncryptionConfiguration": [
-      {
-       "ServerSideEncryptionByDefault": {
-        "SSEAlgorithm": "AES256"
-       }
-      }
-     ]
-    },
-    "CorsConfiguration": {
-     "CorsRules": [
-      {
-       "AllowedHeaders": [
-        "*"
-       ],
-       "AllowedMethods": [
-        "GET",
-        "HEAD"
-       ],
-       "AllowedOrigins": [
-        "*"
-       ],
-       "MaxAge": 3600
-      }
-     ]
-    },
-    "LifecycleConfiguration": {
-     "Rules": [
-      {
-       "Id": "ArchiveOldApks",
-       "Status": "Enabled",
-       "Transitions": [
-        {
-         "StorageClass": "GLACIER",
-         "TransitionInDays": 90
-        }
-       ]
-      }
-     ]
-    },
-    "PublicAccessBlockConfiguration": {
-     "BlockPublicAcls": true,
-     "BlockPublicPolicy": true,
-     "IgnorePublicAcls": true,
-     "RestrictPublicBuckets": true
-    },
-    "VersioningConfiguration": {
-     "Status": "Enabled"
-    }
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/S3Stack/ApkBucket/Resource"
-   }
-  },
-  "S3StackApkBucketPolicy0D134C92": {
-   "Type": "AWS::S3::BucketPolicy",
-   "Properties": {
-    "Bucket": {
-     "Ref": "S3StackApkBucket1AED656F"
-    },
-    "PolicyDocument": {
-     "Statement": [
-      {
-       "Action": "s3:GetObject",
-       "Effect": "Allow",
-       "Principal": {
-        "CanonicalUser": {
-         "Fn::GetAtt": [
-          "S3StackApkDistributionOrigin1S3Origin955A0888",
-          "S3CanonicalUserId"
-         ]
-        }
-       },
-       "Resource": {
-        "Fn::Join": [
-         "",
-         [
-          {
-           "Fn::GetAtt": [
-            "S3StackApkBucket1AED656F",
-            "Arn"
-           ]
-          },
-          "/*"
-         ]
-        ]
-       }
-      }
-     ],
-     "Version": "2012-10-17"
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/S3Stack/ApkBucket/Policy/Resource"
-   }
-  },
-  "S3StackApkDistributionOrigin1S3Origin955A0888": {
-   "Type": "AWS::CloudFront::CloudFrontOriginAccessIdentity",
-   "Properties": {
-    "CloudFrontOriginAccessIdentityConfig": {
-     "Comment": "Identity for WarmpawzStackprodS3StackApkDistributionOrigin1CDD7CAA4"
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/S3Stack/ApkDistribution/Origin1/S3Origin/Resource"
-   }
-  },
-  "S3StackApkDistribution984CD1FF": {
-   "Type": "AWS::CloudFront::Distribution",
-   "Properties": {
-    "DistributionConfig": {
-     "Comment": "Warmpawz APK Distribution CDN",
-     "DefaultCacheBehavior": {
-      "AllowedMethods": [
-       "GET",
-       "HEAD"
-      ],
-      "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
-      "CachedMethods": [
-       "GET",
-       "HEAD"
-      ],
-      "Compress": true,
-      "OriginRequestPolicyId": "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf",
-      "TargetOriginId": "WarmpawzStackprodS3StackApkDistributionOrigin1CDD7CAA4",
-      "ViewerProtocolPolicy": "redirect-to-https"
-     },
-     "DefaultRootObject": "index.html",
-     "Enabled": true,
-     "HttpVersion": "http2",
-     "IPV6Enabled": true,
-     "Origins": [
-      {
-       "DomainName": {
-        "Fn::GetAtt": [
-         "S3StackApkBucket1AED656F",
-         "RegionalDomainName"
-        ]
-       },
-       "Id": "WarmpawzStackprodS3StackApkDistributionOrigin1CDD7CAA4",
-       "S3OriginConfig": {
-        "OriginAccessIdentity": {
-         "Fn::Join": [
-          "",
-          [
-           "origin-access-identity/cloudfront/",
-           {
-            "Ref": "S3StackApkDistributionOrigin1S3Origin955A0888"
-           }
-          ]
-         ]
-        }
-       }
-      }
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/S3Stack/ApkDistribution/Resource"
    }
   },
   "IamStackLambdaExecutionRole9AF0381A": {
@@ -1723,8 +1248,11 @@
       },
       {
        "Action": [
+        "sqs:ChangeMessageVisibility",
+        "sqs:DeleteMessage",
         "sqs:GetQueueAttributes",
         "sqs:GetQueueUrl",
+        "sqs:ReceiveMessage",
         "sqs:SendMessage"
        ],
        "Effect": "Allow",
@@ -1835,20 +1363,6 @@
           [
            {
             "Fn::GetAtt": [
-             "DynamoDbStackAnalyticsTable19FB8467",
-             "Arn"
-            ]
-           },
-           "/index/*"
-          ]
-         ]
-        },
-        {
-         "Fn::Join": [
-          "",
-          [
-           {
-            "Fn::GetAtt": [
              "DynamoDbStackChatMessagesTable8D237DC2",
              "Arn"
             ]
@@ -1873,35 +1387,32 @@
     "aws:cdk:path": "WarmpawzStack-prod/IamStack/LambdaExecutionRole/DefaultPolicy/Resource"
    }
   },
-  "SqsStackNotificationDLQ0AA77695": {
+  "SqsStackNotificationDlq7CBA8A0B": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
     "MessageRetentionPeriod": 1209600,
-    "QueueName": "warmpawz-notification-dlq",
-    "SqsManagedSseEnabled": true
+    "QueueName": "warmpawz-prod-notification-dlq"
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationDLQ/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationDlq/Resource"
    }
   },
   "SqsStackNotificationQueueCDC9E5EE": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
-    "MessageRetentionPeriod": 604800,
-    "QueueName": "warmpawz-notification-queue",
+    "QueueName": "warmpawz-prod-notification",
     "RedrivePolicy": {
      "deadLetterTargetArn": {
       "Fn::GetAtt": [
-       "SqsStackNotificationDLQ0AA77695",
+       "SqsStackNotificationDlq7CBA8A0B",
        "Arn"
       ]
      },
      "maxReceiveCount": 3
     },
-    "SqsManagedSseEnabled": true,
-    "VisibilityTimeout": 30
+    "VisibilityTimeout": 300
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
@@ -1914,66 +1425,6 @@
    "Properties": {
     "PolicyDocument": {
      "Statement": [
-      {
-       "Action": "sqs:SendMessage",
-       "Condition": {
-        "ArnEquals": {
-         "aws:SourceArn": {
-          "Ref": "SnsStackBookingCreatedTopicB7C02FB2"
-         }
-        }
-       },
-       "Effect": "Allow",
-       "Principal": {
-        "Service": "sns.amazonaws.com"
-       },
-       "Resource": {
-        "Fn::GetAtt": [
-         "SqsStackNotificationQueueCDC9E5EE",
-         "Arn"
-        ]
-       }
-      },
-      {
-       "Action": "sqs:SendMessage",
-       "Condition": {
-        "ArnEquals": {
-         "aws:SourceArn": {
-          "Ref": "SnsStackPaymentProcessedTopicABCFD806"
-         }
-        }
-       },
-       "Effect": "Allow",
-       "Principal": {
-        "Service": "sns.amazonaws.com"
-       },
-       "Resource": {
-        "Fn::GetAtt": [
-         "SqsStackNotificationQueueCDC9E5EE",
-         "Arn"
-        ]
-       }
-      },
-      {
-       "Action": "sqs:SendMessage",
-       "Condition": {
-        "ArnEquals": {
-         "aws:SourceArn": {
-          "Ref": "SnsStackVendorApprovedTopicA3E62696"
-         }
-        }
-       },
-       "Effect": "Allow",
-       "Principal": {
-        "Service": "sns.amazonaws.com"
-       },
-       "Resource": {
-        "Fn::GetAtt": [
-         "SqsStackNotificationQueueCDC9E5EE",
-         "Arn"
-        ]
-       }
-      },
       {
        "Action": "sqs:SendMessage",
        "Condition": {
@@ -2004,7 +1455,7 @@
         "ArnEquals": {
          "aws:SourceArn": {
           "Fn::GetAtt": [
-           "EventBridgeStackNotificationEventRuleC1ECE6FA",
+           "EventBridgeStackBookingEventsRule93C5BC86",
            "Arn"
           ]
          }
@@ -2034,72 +1485,6 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationQueue/Policy/Resource"
    }
   },
-  "SqsStackNotificationQueueWarmpawzStackprodSnsStackBookingCreatedTopic5DF5E4B41E47C154": {
-   "Type": "AWS::SNS::Subscription",
-   "Properties": {
-    "Endpoint": {
-     "Fn::GetAtt": [
-      "SqsStackNotificationQueueCDC9E5EE",
-      "Arn"
-     ]
-    },
-    "Protocol": "sqs",
-    "RawMessageDelivery": false,
-    "TopicArn": {
-     "Ref": "SnsStackBookingCreatedTopicB7C02FB2"
-    }
-   },
-   "DependsOn": [
-    "SqsStackNotificationQueuePolicy16225D01"
-   ],
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackBookingCreatedTopic5DF5E4B4/Resource"
-   }
-  },
-  "SqsStackNotificationQueueWarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0991F704E": {
-   "Type": "AWS::SNS::Subscription",
-   "Properties": {
-    "Endpoint": {
-     "Fn::GetAtt": [
-      "SqsStackNotificationQueueCDC9E5EE",
-      "Arn"
-     ]
-    },
-    "Protocol": "sqs",
-    "RawMessageDelivery": false,
-    "TopicArn": {
-     "Ref": "SnsStackPaymentProcessedTopicABCFD806"
-    }
-   },
-   "DependsOn": [
-    "SqsStackNotificationQueuePolicy16225D01"
-   ],
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0/Resource"
-   }
-  },
-  "SqsStackNotificationQueueWarmpawzStackprodSnsStackVendorApprovedTopic44999AA58FADCB55": {
-   "Type": "AWS::SNS::Subscription",
-   "Properties": {
-    "Endpoint": {
-     "Fn::GetAtt": [
-      "SqsStackNotificationQueueCDC9E5EE",
-      "Arn"
-     ]
-    },
-    "Protocol": "sqs",
-    "RawMessageDelivery": false,
-    "TopicArn": {
-     "Ref": "SnsStackVendorApprovedTopicA3E62696"
-    }
-   },
-   "DependsOn": [
-    "SqsStackNotificationQueuePolicy16225D01"
-   ],
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackVendorApprovedTopic44999AA5/Resource"
-   }
-  },
   "SqsStackNotificationQueueWarmpawzStackprodSnsStackNotificationTopic1BBFC9EB1B975C40": {
    "Type": "AWS::SNS::Subscription",
    "Properties": {
@@ -2110,7 +1495,6 @@
      ]
     },
     "Protocol": "sqs",
-    "RawMessageDelivery": false,
     "TopicArn": {
      "Ref": "SnsStackNotificationTopic8FDAC809"
     }
@@ -2122,35 +1506,32 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackNotificationTopic1BBFC9EB/Resource"
    }
   },
-  "SqsStackEmailDLQ5B7065DD": {
+  "SqsStackEmailDlqBA1F6228": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
     "MessageRetentionPeriod": 1209600,
-    "QueueName": "warmpawz-email-dlq",
-    "SqsManagedSseEnabled": true
+    "QueueName": "warmpawz-prod-email-dlq"
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/EmailDLQ/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/EmailDlq/Resource"
    }
   },
   "SqsStackEmailQueue23349431": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
-    "MessageRetentionPeriod": 604800,
-    "QueueName": "warmpawz-email-queue",
+    "QueueName": "warmpawz-prod-email",
     "RedrivePolicy": {
      "deadLetterTargetArn": {
       "Fn::GetAtt": [
-       "SqsStackEmailDLQ5B7065DD",
+       "SqsStackEmailDlqBA1F6228",
        "Arn"
       ]
      },
      "maxReceiveCount": 3
     },
-    "SqsManagedSseEnabled": true,
-    "VisibilityTimeout": 60
+    "VisibilityTimeout": 300
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
@@ -2158,35 +1539,32 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/EmailQueue/Resource"
    }
   },
-  "SqsStackSmsDLQ770F1E2D": {
+  "SqsStackSmsDlq94FF5A7E": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
     "MessageRetentionPeriod": 1209600,
-    "QueueName": "warmpawz-sms-dlq",
-    "SqsManagedSseEnabled": true
+    "QueueName": "warmpawz-prod-sms-dlq"
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SmsDLQ/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SmsDlq/Resource"
    }
   },
   "SqsStackSmsQueue7579FE7A": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
-    "MessageRetentionPeriod": 604800,
-    "QueueName": "warmpawz-sms-queue",
+    "QueueName": "warmpawz-prod-sms",
     "RedrivePolicy": {
      "deadLetterTargetArn": {
       "Fn::GetAtt": [
-       "SqsStackSmsDLQ770F1E2D",
+       "SqsStackSmsDlq94FF5A7E",
        "Arn"
       ]
      },
      "maxReceiveCount": 3
     },
-    "SqsManagedSseEnabled": true,
-    "VisibilityTimeout": 30
+    "VisibilityTimeout": 300
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
@@ -2194,35 +1572,32 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SmsQueue/Resource"
    }
   },
-  "SqsStackAnalyticsDLQ692D26DF": {
+  "SqsStackAnalyticsDlq403F1DA3": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
     "MessageRetentionPeriod": 1209600,
-    "QueueName": "warmpawz-analytics-dlq",
-    "SqsManagedSseEnabled": true
+    "QueueName": "warmpawz-prod-analytics-dlq"
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/AnalyticsDLQ/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/AnalyticsDlq/Resource"
    }
   },
   "SqsStackAnalyticsQueueEC085EA1": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
-    "MessageRetentionPeriod": 604800,
-    "QueueName": "warmpawz-analytics-queue",
+    "QueueName": "warmpawz-prod-analytics",
     "RedrivePolicy": {
      "deadLetterTargetArn": {
       "Fn::GetAtt": [
-       "SqsStackAnalyticsDLQ692D26DF",
+       "SqsStackAnalyticsDlq403F1DA3",
        "Arn"
       ]
      },
      "maxReceiveCount": 3
     },
-    "SqsManagedSseEnabled": true,
-    "VisibilityTimeout": 60
+    "VisibilityTimeout": 300
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
@@ -2235,26 +1610,6 @@
    "Properties": {
     "PolicyDocument": {
      "Statement": [
-      {
-       "Action": "sqs:SendMessage",
-       "Condition": {
-        "ArnEquals": {
-         "aws:SourceArn": {
-          "Ref": "SnsStackPaymentProcessedTopicABCFD806"
-         }
-        }
-       },
-       "Effect": "Allow",
-       "Principal": {
-        "Service": "sns.amazonaws.com"
-       },
-       "Resource": {
-        "Fn::GetAtt": [
-         "SqsStackAnalyticsQueueEC085EA1",
-         "Arn"
-        ]
-       }
-      },
       {
        "Action": "sqs:SendMessage",
        "Condition": {
@@ -2285,7 +1640,7 @@
         "ArnEquals": {
          "aws:SourceArn": {
           "Fn::GetAtt": [
-           "EventBridgeStackAnalyticsEventRuleA69E042D",
+           "EventBridgeStackAnalyticsEventsRule03DD35F1",
            "Arn"
           ]
          }
@@ -2315,28 +1670,6 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/AnalyticsQueue/Policy/Resource"
    }
   },
-  "SqsStackAnalyticsQueueWarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0FDC50DAC": {
-   "Type": "AWS::SNS::Subscription",
-   "Properties": {
-    "Endpoint": {
-     "Fn::GetAtt": [
-      "SqsStackAnalyticsQueueEC085EA1",
-      "Arn"
-     ]
-    },
-    "Protocol": "sqs",
-    "RawMessageDelivery": false,
-    "TopicArn": {
-     "Ref": "SnsStackPaymentProcessedTopicABCFD806"
-    }
-   },
-   "DependsOn": [
-    "SqsStackAnalyticsQueuePolicy0EEAC6F9"
-   ],
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/AnalyticsQueue/WarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0/Resource"
-   }
-  },
   "SqsStackAnalyticsQueueWarmpawzStackprodSnsStackAnalyticsTopic8E9D889502279D24": {
    "Type": "AWS::SNS::Subscription",
    "Properties": {
@@ -2347,7 +1680,6 @@
      ]
     },
     "Protocol": "sqs",
-    "RawMessageDelivery": false,
     "TopicArn": {
      "Ref": "SnsStackAnalyticsTopic7094CF54"
     }
@@ -2359,34 +1691,31 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/AnalyticsQueue/WarmpawzStackprodSnsStackAnalyticsTopic8E9D8895/Resource"
    }
   },
-  "SqsStackSettlementDLQ36EB3BDC": {
+  "SqsStackSettlementDlqA2FA73B1": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
     "MessageRetentionPeriod": 1209600,
-    "QueueName": "warmpawz-settlement-dlq",
-    "SqsManagedSseEnabled": true
+    "QueueName": "warmpawz-prod-settlement-dlq"
    },
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SettlementDLQ/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SettlementDlq/Resource"
    }
   },
   "SqsStackSettlementQueueE715B1BA": {
    "Type": "AWS::SQS::Queue",
    "Properties": {
-    "MessageRetentionPeriod": 1209600,
-    "QueueName": "warmpawz-settlement-queue",
+    "QueueName": "warmpawz-prod-settlement",
     "RedrivePolicy": {
      "deadLetterTargetArn": {
       "Fn::GetAtt": [
-       "SqsStackSettlementDLQ36EB3BDC",
+       "SqsStackSettlementDlqA2FA73B1",
        "Arn"
       ]
      },
      "maxReceiveCount": 3
     },
-    "SqsManagedSseEnabled": true,
     "VisibilityTimeout": 300
    },
    "UpdateReplacePolicy": "Delete",
@@ -2395,11 +1724,56 @@
     "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SettlementQueue/Resource"
    }
   },
+  "SqsStackSettlementQueuePolicy2A7419B3": {
+   "Type": "AWS::SQS::QueuePolicy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:SendMessage"
+       ],
+       "Condition": {
+        "ArnEquals": {
+         "aws:SourceArn": {
+          "Fn::GetAtt": [
+           "EventBridgeStackSettlementEventsRule8BCD8996",
+           "Arn"
+          ]
+         }
+        }
+       },
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "events.amazonaws.com"
+       },
+       "Resource": {
+        "Fn::GetAtt": [
+         "SqsStackSettlementQueueE715B1BA",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Queues": [
+     {
+      "Ref": "SqsStackSettlementQueueE715B1BA"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/SqsStack/SettlementQueue/Policy/Resource"
+   }
+  },
   "SnsStackBookingCreatedTopicB7C02FB2": {
    "Type": "AWS::SNS::Topic",
    "Properties": {
-    "DisplayName": "Warmpawz Booking Created Events",
-    "TopicName": "warmpawz-booking-created"
+    "DisplayName": "Booking Created Notifications",
+    "TopicName": "warmpawz-prod-booking-created"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SnsStack/BookingCreatedTopic/Resource"
@@ -2437,8 +1811,8 @@
   "SnsStackPaymentProcessedTopicABCFD806": {
    "Type": "AWS::SNS::Topic",
    "Properties": {
-    "DisplayName": "Warmpawz Payment Processed Events",
-    "TopicName": "warmpawz-payment-processed"
+    "DisplayName": "Payment Processed Notifications",
+    "TopicName": "warmpawz-prod-payment-processed"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SnsStack/PaymentProcessedTopic/Resource"
@@ -2476,47 +1850,18 @@
   "SnsStackVendorApprovedTopicA3E62696": {
    "Type": "AWS::SNS::Topic",
    "Properties": {
-    "DisplayName": "Warmpawz Vendor Approved Events",
-    "TopicName": "warmpawz-vendor-approved"
+    "DisplayName": "Vendor Approved Notifications",
+    "TopicName": "warmpawz-prod-vendor-approved"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SnsStack/VendorApprovedTopic/Resource"
    }
   },
-  "SnsStackVendorApprovedTopicPolicyDC917707": {
-   "Type": "AWS::SNS::TopicPolicy",
-   "Properties": {
-    "PolicyDocument": {
-     "Statement": [
-      {
-       "Action": "sns:Publish",
-       "Effect": "Allow",
-       "Principal": {
-        "Service": "events.amazonaws.com"
-       },
-       "Resource": {
-        "Ref": "SnsStackVendorApprovedTopicA3E62696"
-       },
-       "Sid": "0"
-      }
-     ],
-     "Version": "2012-10-17"
-    },
-    "Topics": [
-     {
-      "Ref": "SnsStackVendorApprovedTopicA3E62696"
-     }
-    ]
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/SnsStack/VendorApprovedTopic/Policy/Resource"
-   }
-  },
   "SnsStackNotificationTopic8FDAC809": {
    "Type": "AWS::SNS::Topic",
    "Properties": {
-    "DisplayName": "Warmpawz Notification Events",
-    "TopicName": "warmpawz-notification"
+    "DisplayName": "General Notifications",
+    "TopicName": "warmpawz-prod-notifications"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SnsStack/NotificationTopic/Resource"
@@ -2525,8 +1870,8 @@
   "SnsStackAnalyticsTopic7094CF54": {
    "Type": "AWS::SNS::Topic",
    "Properties": {
-    "DisplayName": "Warmpawz Analytics Events",
-    "TopicName": "warmpawz-analytics"
+    "DisplayName": "Analytics Events",
+    "TopicName": "warmpawz-prod-analytics"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SnsStack/AnalyticsTopic/Resource"
@@ -2537,32 +1882,29 @@
    "Properties": {
     "AttributeDefinitions": [
      {
-      "AttributeName": "id",
+      "AttributeName": "pk",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "timestamp",
-      "AttributeType": "N"
+      "AttributeName": "sk",
+      "AttributeType": "S"
      }
     ],
     "BillingMode": "PAY_PER_REQUEST",
     "KeySchema": [
      {
-      "AttributeName": "id",
+      "AttributeName": "pk",
       "KeyType": "HASH"
      },
      {
-      "AttributeName": "timestamp",
+      "AttributeName": "sk",
       "KeyType": "RANGE"
      }
     ],
     "PointInTimeRecoverySpecification": {
      "PointInTimeRecoveryEnabled": true
     },
-    "SSESpecification": {
-     "SSEEnabled": true
-    },
-    "TableName": "warmpawz-logs",
+    "TableName": "warmpawz-prod-logs",
     "TimeToLiveSpecification": {
      "AttributeName": "ttl",
      "Enabled": true
@@ -2579,54 +1921,29 @@
    "Properties": {
     "AttributeDefinitions": [
      {
-      "AttributeName": "event_type",
+      "AttributeName": "pk",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "timestamp",
-      "AttributeType": "N"
-     },
-     {
-      "AttributeName": "user_id",
+      "AttributeName": "sk",
       "AttributeType": "S"
      }
     ],
     "BillingMode": "PAY_PER_REQUEST",
-    "GlobalSecondaryIndexes": [
-     {
-      "IndexName": "user-timestamp-index",
-      "KeySchema": [
-       {
-        "AttributeName": "user_id",
-        "KeyType": "HASH"
-       },
-       {
-        "AttributeName": "timestamp",
-        "KeyType": "RANGE"
-       }
-      ],
-      "Projection": {
-       "ProjectionType": "ALL"
-      }
-     }
-    ],
     "KeySchema": [
      {
-      "AttributeName": "event_type",
+      "AttributeName": "pk",
       "KeyType": "HASH"
      },
      {
-      "AttributeName": "timestamp",
+      "AttributeName": "sk",
       "KeyType": "RANGE"
      }
     ],
     "PointInTimeRecoverySpecification": {
      "PointInTimeRecoveryEnabled": true
     },
-    "SSESpecification": {
-     "SSEEnabled": true
-    },
-    "TableName": "warmpawz-analytics"
+    "TableName": "warmpawz-prod-analytics"
    },
    "UpdateReplacePolicy": "Retain",
    "DeletionPolicy": "Retain",
@@ -2639,36 +1956,29 @@
    "Properties": {
     "AttributeDefinitions": [
      {
-      "AttributeName": "report_id",
+      "AttributeName": "pk",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "generated_at",
-      "AttributeType": "N"
+      "AttributeName": "sk",
+      "AttributeType": "S"
      }
     ],
     "BillingMode": "PAY_PER_REQUEST",
     "KeySchema": [
      {
-      "AttributeName": "report_id",
+      "AttributeName": "pk",
       "KeyType": "HASH"
      },
      {
-      "AttributeName": "generated_at",
+      "AttributeName": "sk",
       "KeyType": "RANGE"
      }
     ],
     "PointInTimeRecoverySpecification": {
      "PointInTimeRecoveryEnabled": true
     },
-    "SSESpecification": {
-     "SSEEnabled": true
-    },
-    "TableName": "warmpawz-reports",
-    "TimeToLiveSpecification": {
-     "AttributeName": "ttl",
-     "Enabled": true
-    }
+    "TableName": "warmpawz-prod-reports"
    },
    "UpdateReplacePolicy": "Retain",
    "DeletionPolicy": "Retain",
@@ -2681,33 +1991,33 @@
    "Properties": {
     "AttributeDefinitions": [
      {
-      "AttributeName": "channel_id",
+      "AttributeName": "conversationId",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "message_id",
+      "AttributeName": "messageId",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "user_id",
+      "AttributeName": "userId",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "timestamp",
-      "AttributeType": "N"
+      "AttributeName": "createdAt",
+      "AttributeType": "S"
      }
     ],
     "BillingMode": "PAY_PER_REQUEST",
     "GlobalSecondaryIndexes": [
      {
-      "IndexName": "user-timestamp-index",
+      "IndexName": "userMessages",
       "KeySchema": [
        {
-        "AttributeName": "user_id",
+        "AttributeName": "userId",
         "KeyType": "HASH"
        },
        {
-        "AttributeName": "timestamp",
+        "AttributeName": "createdAt",
         "KeyType": "RANGE"
        }
       ],
@@ -2718,21 +2028,18 @@
     ],
     "KeySchema": [
      {
-      "AttributeName": "channel_id",
+      "AttributeName": "conversationId",
       "KeyType": "HASH"
      },
      {
-      "AttributeName": "message_id",
+      "AttributeName": "messageId",
       "KeyType": "RANGE"
      }
     ],
     "PointInTimeRecoverySpecification": {
      "PointInTimeRecoveryEnabled": true
     },
-    "SSESpecification": {
-     "SSEEnabled": true
-    },
-    "TableName": "warmpawz-chat-messages",
+    "TableName": "warmpawz-prod-chat-messages",
     "TimeToLiveSpecification": {
      "AttributeName": "ttl",
      "Enabled": true
@@ -2749,36 +2056,29 @@
    "Properties": {
     "AttributeDefinitions": [
      {
-      "AttributeName": "conversation_id",
+      "AttributeName": "userId",
       "AttributeType": "S"
      },
      {
-      "AttributeName": "timestamp",
-      "AttributeType": "N"
+      "AttributeName": "conversationId",
+      "AttributeType": "S"
      }
     ],
     "BillingMode": "PAY_PER_REQUEST",
     "KeySchema": [
      {
-      "AttributeName": "conversation_id",
+      "AttributeName": "userId",
       "KeyType": "HASH"
      },
      {
-      "AttributeName": "timestamp",
+      "AttributeName": "conversationId",
       "KeyType": "RANGE"
      }
     ],
     "PointInTimeRecoverySpecification": {
      "PointInTimeRecoveryEnabled": true
     },
-    "SSESpecification": {
-     "SSEEnabled": true
-    },
-    "TableName": "warmpawz-ai-conversations",
-    "TimeToLiveSpecification": {
-     "AttributeName": "ttl",
-     "Enabled": true
-    }
+    "TableName": "warmpawz-prod-ai-conversations"
    },
    "UpdateReplacePolicy": "Retain",
    "DeletionPolicy": "Retain",
@@ -2801,8 +2101,8 @@
      ],
      "Version": "2012-10-17"
     },
-    "Description": "Role for AWS Chime SDK operations",
-    "RoleName": "warmpawz-chime-role-prod"
+    "Description": "Role for Chime SDK operations",
+    "RoleName": "warmpawz-prod-chime-role"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/ChimeStack/ChimeRole/Resource"
@@ -2815,25 +2115,21 @@
      "Statement": [
       {
        "Action": [
-        "chime:CreateAppInstance",
-        "chime:CreateAppInstanceUser",
+        "chime:BatchCreateAttendee",
         "chime:CreateAttendee",
-        "chime:CreateChannel",
-        "chime:CreateChannelMembership",
         "chime:CreateMeeting",
+        "chime:CreateMeetingWithAttendees",
+        "chime:DeleteAttendee",
         "chime:DeleteMeeting",
-        "chime:DescribeAppInstance",
-        "chime:DescribeAppInstanceUser",
-        "chime:DescribeChannel",
         "chime:GetAttendee",
         "chime:GetMeeting",
-        "chime:ListAppInstanceUsers",
-        "chime:ListAppInstances",
         "chime:ListAttendees",
-        "chime:ListChannelMemberships",
-        "chime:ListChannelMessages",
-        "chime:ListChannels",
-        "chime:SendChannelMessage"
+        "chime:ListMeetings",
+        "chime:StartMeetingTranscription",
+        "chime:StopMeetingTranscription",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
        ],
        "Effect": "Allow",
        "Resource": "*"
@@ -2852,61 +2148,75 @@
     "aws:cdk:path": "WarmpawzStack-prod/ChimeStack/ChimeRole/DefaultPolicy/Resource"
    }
   },
-  "EventBridgeStackWarmpawzEventBus2B15753F": {
+  "EventBridgeStackEventBus3D6B21B5": {
    "Type": "AWS::Events::EventBus",
    "Properties": {
-    "Name": "warmpawz-events-prod"
+    "Description": "Warmpawz platform event bus",
+    "Name": "warmpawz-prod-events"
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/WarmpawzEventBus/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/EventBus/Resource"
    }
   },
-  "EventBridgeStackBookingEventRuleF50BB7D3": {
+  "EventBridgeStackBookingEventsRule93C5BC86": {
    "Type": "AWS::Events::Rule",
    "Properties": {
+    "Description": "Route booking events to notification queue",
     "EventBusName": {
-     "Ref": "EventBridgeStackWarmpawzEventBus2B15753F"
+     "Ref": "EventBridgeStackEventBus3D6B21B5"
     },
     "EventPattern": {
      "source": [
       "warmpawz.booking"
      ],
      "detail-type": [
-      "Booking Created",
-      "Booking Updated",
-      "Booking Cancelled"
+      "BookingCreated",
+      "BookingConfirmed",
+      "BookingCancelled"
      ]
     },
+    "Name": "warmpawz-prod-booking-events",
     "State": "ENABLED",
     "Targets": [
      {
       "Arn": {
-       "Ref": "SnsStackBookingCreatedTopicB7C02FB2"
+       "Fn::GetAtt": [
+        "SqsStackNotificationQueueCDC9E5EE",
+        "Arn"
+       ]
       },
       "Id": "Target0"
+     },
+     {
+      "Arn": {
+       "Ref": "SnsStackBookingCreatedTopicB7C02FB2"
+      },
+      "Id": "Target1"
      }
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/BookingEventRule/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/BookingEventsRule/Resource"
    }
   },
-  "EventBridgeStackPaymentEventRule01796980": {
+  "EventBridgeStackPaymentEventsRule02D724DD": {
    "Type": "AWS::Events::Rule",
    "Properties": {
+    "Description": "Route payment events to processing queue",
     "EventBusName": {
-     "Ref": "EventBridgeStackWarmpawzEventBus2B15753F"
+     "Ref": "EventBridgeStackEventBus3D6B21B5"
     },
     "EventPattern": {
      "source": [
       "warmpawz.payment"
      ],
      "detail-type": [
-      "Payment Processed",
-      "Payment Failed",
-      "Refund Processed"
+      "PaymentReceived",
+      "PaymentFailed",
+      "RefundProcessed"
      ]
     },
+    "Name": "warmpawz-prod-payment-events",
     "State": "ENABLED",
     "Targets": [
      {
@@ -2918,50 +2228,27 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/PaymentEventRule/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/PaymentEventsRule/Resource"
    }
   },
-  "EventBridgeStackVendorEventRule483F9704": {
+  "EventBridgeStackAnalyticsEventsRule03DD35F1": {
    "Type": "AWS::Events::Rule",
    "Properties": {
+    "Description": "Route analytics events to analytics queue",
     "EventBusName": {
-     "Ref": "EventBridgeStackWarmpawzEventBus2B15753F"
+     "Ref": "EventBridgeStackEventBus3D6B21B5"
     },
     "EventPattern": {
      "source": [
-      "warmpawz.vendor"
+      "warmpawz"
      ],
      "detail-type": [
-      "Vendor Approved",
-      "Vendor Rejected",
-      "Vendor Updated"
+      {
+       "prefix": "Analytics"
+      }
      ]
     },
-    "State": "ENABLED",
-    "Targets": [
-     {
-      "Arn": {
-       "Ref": "SnsStackVendorApprovedTopicA3E62696"
-      },
-      "Id": "Target0"
-     }
-    ]
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/VendorEventRule/Resource"
-   }
-  },
-  "EventBridgeStackAnalyticsEventRuleA69E042D": {
-   "Type": "AWS::Events::Rule",
-   "Properties": {
-    "EventBusName": {
-     "Ref": "EventBridgeStackWarmpawzEventBus2B15753F"
-    },
-    "EventPattern": {
-     "source": [
-      "warmpawz.analytics"
-     ]
-    },
+    "Name": "warmpawz-prod-analytics-events",
     "State": "ENABLED",
     "Targets": [
      {
@@ -2976,26 +2263,32 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/AnalyticsEventRule/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/AnalyticsEventsRule/Resource"
    }
   },
-  "EventBridgeStackNotificationEventRuleC1ECE6FA": {
+  "EventBridgeStackSettlementEventsRule8BCD8996": {
    "Type": "AWS::Events::Rule",
    "Properties": {
+    "Description": "Route settlement events to settlement queue",
     "EventBusName": {
-     "Ref": "EventBridgeStackWarmpawzEventBus2B15753F"
+     "Ref": "EventBridgeStackEventBus3D6B21B5"
     },
     "EventPattern": {
      "source": [
-      "warmpawz.notification"
+      "warmpawz.settlement"
+     ],
+     "detail-type": [
+      "SettlementDue",
+      "SettlementProcessed"
      ]
     },
+    "Name": "warmpawz-prod-settlement-events",
     "State": "ENABLED",
     "Targets": [
      {
       "Arn": {
        "Fn::GetAtt": [
-        "SqsStackNotificationQueueCDC9E5EE",
+        "SqsStackSettlementQueueE715B1BA",
         "Arn"
        ]
       },
@@ -3004,7 +2297,7 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/NotificationEventRule/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/EventBridgeStack/SettlementEventsRule/Resource"
    }
   },
   "LambdaStackSharedLayerEA8C1C60": {
@@ -3014,7 +2307,7 @@
      "nodejs20.x"
     ],
     "Content": {
-     "S3Bucket": "cdk-hnb659fds-assets-023394150666-ap-south-1",
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
      "S3Key": "223ce4cf4e24f43707807303d4cd53d7af6e0fe57f63d399cd413e7e51b22906.zip"
     },
     "Description": "Shared utilities and database clients"
@@ -3030,19 +2323,14 @@
    "Type": "AWS::Lambda::Function",
    "Properties": {
     "Code": {
-     "S3Bucket": "cdk-hnb659fds-assets-023394150666-ap-south-1",
-     "S3Key": "8b0d525ba1ca684b0b026387fa700f8edfb7074523c5f4aa0329a71ff431a231.zip"
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007.zip"
     },
     "Description": "Main Warmpawz API Lambda function - handles all API requests",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
-      "AURORA_PROXY_ENDPOINT": {
-       "Fn::GetAtt": [
-        "AuroraStackAuroraProxyEB6DC6B7",
-        "Endpoint"
-       ]
-      },
+      "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
       "AURORA_SECRET_ARN": {
        "Ref": "AuroraStackAuroraSecret2E11B886"
       },
@@ -3140,6 +2428,96 @@
      ]
     },
     "Runtime": "nodejs20.x",
+    "Timeout": 60,
+    "VpcConfig": {
+     "SecurityGroupIds": [
+      {
+       "Fn::GetAtt": [
+        "SecurityStackLambdaSecurityGroupE5CA1F78",
+        "GroupId"
+       ]
+      }
+     ],
+     "SubnetIds": [
+      "subnet-0b352e91231e46e42",
+      "subnet-04d6066e0fbebe114",
+      "subnet-042a90000fd723fa6"
+     ]
+    }
+   },
+   "DependsOn": [
+    "IamStackLambdaExecutionRoleDefaultPolicy1B284C67",
+    "IamStackLambdaExecutionRole9AF0381A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/ApiFunction/Resource",
+    "aws:asset:path": "asset.13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "LambdaStackApiFunctionLogRetentionE102AA8B": {
+   "Type": "Custom::LogRetention",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+      "Arn"
+     ]
+    },
+    "LogGroupName": {
+     "Fn::Join": [
+      "",
+      [
+       "/aws/lambda/",
+       {
+        "Ref": "LambdaStackApiFunctionC985920A"
+       }
+      ]
+     ]
+    },
+    "RetentionInDays": 90
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/ApiFunction/LogRetention/Resource"
+   }
+  },
+  "LambdaStackNotificationProcessor4FA391DF": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007.zip"
+    },
+    "Description": "Processes notifications from notification queue",
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "production",
+      "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+      "AURORA_SECRET_ARN": {
+       "Ref": "AuroraStackAuroraSecret2E11B886"
+      },
+      "AURORA_DATABASE": "warmpawz",
+      "NOTIFICATION_QUEUE_URL": {
+       "Ref": "SqsStackNotificationQueueCDC9E5EE"
+      }
+     }
+    },
+    "FunctionName": "warmpawz-notification-processor-prod",
+    "Handler": "dist/src/jobs/notification-processor.handler",
+    "Layers": [
+     {
+      "Ref": "LambdaStackSharedLayerEA8C1C60"
+     }
+    ],
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "IamStackLambdaExecutionRole9AF0381A",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
     "Timeout": 30,
     "VpcConfig": {
      "SecurityGroupIds": [
@@ -3151,9 +2529,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0523027c38775a9e5",
-      "subnet-0702b52e47b12fd09",
-      "subnet-017d54f5a53c80988"
+      "subnet-0b352e91231e46e42",
+      "subnet-04d6066e0fbebe114",
+      "subnet-042a90000fd723fa6"
      ]
     }
    },
@@ -3162,8 +2540,578 @@
     "IamStackLambdaExecutionRole9AF0381A"
    ],
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/ApiFunction/Resource",
-    "aws:asset:path": "asset.8b0d525ba1ca684b0b026387fa700f8edfb7074523c5f4aa0329a71ff431a231",
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/NotificationProcessor/Resource",
+    "aws:asset:path": "asset.13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "LambdaStackNotificationProcessorLogRetention94F824F8": {
+   "Type": "Custom::LogRetention",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+      "Arn"
+     ]
+    },
+    "LogGroupName": {
+     "Fn::Join": [
+      "",
+      [
+       "/aws/lambda/",
+       {
+        "Ref": "LambdaStackNotificationProcessor4FA391DF"
+       }
+      ]
+     ]
+    },
+    "RetentionInDays": 90
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/NotificationProcessor/LogRetention/Resource"
+   }
+  },
+  "LambdaStackNotificationProcessorSqsEventSourceWarmpawzStackprodSqsStackNotificationQueue9619981BE87C7DE0": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 10,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "SqsStackNotificationQueueCDC9E5EE",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "LambdaStackNotificationProcessor4FA391DF"
+    },
+    "MaximumBatchingWindowInSeconds": 5
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/NotificationProcessor/SqsEventSource:WarmpawzStackprodSqsStackNotificationQueue9619981B/Resource"
+   }
+  },
+  "LambdaStackEmailProcessor5979C279": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007.zip"
+    },
+    "Description": "Processes emails from email queue",
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "production",
+      "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+      "AURORA_SECRET_ARN": {
+       "Ref": "AuroraStackAuroraSecret2E11B886"
+      },
+      "AURORA_DATABASE": "warmpawz",
+      "SES_FROM_EMAIL": "noreply@warmpawz.com"
+     }
+    },
+    "FunctionName": "warmpawz-email-processor-prod",
+    "Handler": "dist/src/jobs/email-processor.handler",
+    "Layers": [
+     {
+      "Ref": "LambdaStackSharedLayerEA8C1C60"
+     }
+    ],
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "IamStackLambdaExecutionRole9AF0381A",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 60,
+    "VpcConfig": {
+     "SecurityGroupIds": [
+      {
+       "Fn::GetAtt": [
+        "SecurityStackLambdaSecurityGroupE5CA1F78",
+        "GroupId"
+       ]
+      }
+     ],
+     "SubnetIds": [
+      "subnet-0b352e91231e46e42",
+      "subnet-04d6066e0fbebe114",
+      "subnet-042a90000fd723fa6"
+     ]
+    }
+   },
+   "DependsOn": [
+    "IamStackLambdaExecutionRoleDefaultPolicy1B284C67",
+    "IamStackLambdaExecutionRole9AF0381A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/EmailProcessor/Resource",
+    "aws:asset:path": "asset.13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "LambdaStackEmailProcessorLogRetentionB4FEA767": {
+   "Type": "Custom::LogRetention",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+      "Arn"
+     ]
+    },
+    "LogGroupName": {
+     "Fn::Join": [
+      "",
+      [
+       "/aws/lambda/",
+       {
+        "Ref": "LambdaStackEmailProcessor5979C279"
+       }
+      ]
+     ]
+    },
+    "RetentionInDays": 90
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/EmailProcessor/LogRetention/Resource"
+   }
+  },
+  "LambdaStackEmailProcessorSqsEventSourceWarmpawzStackprodSqsStackEmailQueue3D7C0A3C59369DB1": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 10,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "SqsStackEmailQueue23349431",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "LambdaStackEmailProcessor5979C279"
+    },
+    "MaximumBatchingWindowInSeconds": 5
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/EmailProcessor/SqsEventSource:WarmpawzStackprodSqsStackEmailQueue3D7C0A3C/Resource"
+   }
+  },
+  "LambdaStackSmsProcessorBC3A0026": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007.zip"
+    },
+    "Description": "Processes SMS from SMS queue",
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "production",
+      "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+      "AURORA_SECRET_ARN": {
+       "Ref": "AuroraStackAuroraSecret2E11B886"
+      },
+      "AURORA_DATABASE": "warmpawz",
+      "SMS_QUEUE_URL": {
+       "Ref": "SqsStackSmsQueue7579FE7A"
+      }
+     }
+    },
+    "FunctionName": "warmpawz-sms-processor-prod",
+    "Handler": "dist/src/jobs/sms-processor.handler",
+    "Layers": [
+     {
+      "Ref": "LambdaStackSharedLayerEA8C1C60"
+     }
+    ],
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "IamStackLambdaExecutionRole9AF0381A",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 30,
+    "VpcConfig": {
+     "SecurityGroupIds": [
+      {
+       "Fn::GetAtt": [
+        "SecurityStackLambdaSecurityGroupE5CA1F78",
+        "GroupId"
+       ]
+      }
+     ],
+     "SubnetIds": [
+      "subnet-0b352e91231e46e42",
+      "subnet-04d6066e0fbebe114",
+      "subnet-042a90000fd723fa6"
+     ]
+    }
+   },
+   "DependsOn": [
+    "IamStackLambdaExecutionRoleDefaultPolicy1B284C67",
+    "IamStackLambdaExecutionRole9AF0381A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SmsProcessor/Resource",
+    "aws:asset:path": "asset.13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "LambdaStackSmsProcessorLogRetention34E87CE3": {
+   "Type": "Custom::LogRetention",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+      "Arn"
+     ]
+    },
+    "LogGroupName": {
+     "Fn::Join": [
+      "",
+      [
+       "/aws/lambda/",
+       {
+        "Ref": "LambdaStackSmsProcessorBC3A0026"
+       }
+      ]
+     ]
+    },
+    "RetentionInDays": 90
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SmsProcessor/LogRetention/Resource"
+   }
+  },
+  "LambdaStackSmsProcessorSqsEventSourceWarmpawzStackprodSqsStackSmsQueue44472F88A6107AAB": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 10,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "SqsStackSmsQueue7579FE7A",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "LambdaStackSmsProcessorBC3A0026"
+    },
+    "MaximumBatchingWindowInSeconds": 5
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SmsProcessor/SqsEventSource:WarmpawzStackprodSqsStackSmsQueue44472F88/Resource"
+   }
+  },
+  "LambdaStackAnalyticsProcessorBAD9ACE6": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007.zip"
+    },
+    "Description": "Processes analytics events from analytics queue",
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "production",
+      "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+      "AURORA_SECRET_ARN": {
+       "Ref": "AuroraStackAuroraSecret2E11B886"
+      },
+      "AURORA_DATABASE": "warmpawz",
+      "ANALYTICS_QUEUE_URL": {
+       "Ref": "SqsStackAnalyticsQueueEC085EA1"
+      }
+     }
+    },
+    "FunctionName": "warmpawz-analytics-processor-prod",
+    "Handler": "dist/src/jobs/analytics-processor.handler",
+    "Layers": [
+     {
+      "Ref": "LambdaStackSharedLayerEA8C1C60"
+     }
+    ],
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "IamStackLambdaExecutionRole9AF0381A",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 30,
+    "VpcConfig": {
+     "SecurityGroupIds": [
+      {
+       "Fn::GetAtt": [
+        "SecurityStackLambdaSecurityGroupE5CA1F78",
+        "GroupId"
+       ]
+      }
+     ],
+     "SubnetIds": [
+      "subnet-0b352e91231e46e42",
+      "subnet-04d6066e0fbebe114",
+      "subnet-042a90000fd723fa6"
+     ]
+    }
+   },
+   "DependsOn": [
+    "IamStackLambdaExecutionRoleDefaultPolicy1B284C67",
+    "IamStackLambdaExecutionRole9AF0381A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/AnalyticsProcessor/Resource",
+    "aws:asset:path": "asset.13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "LambdaStackAnalyticsProcessorLogRetention8F08963A": {
+   "Type": "Custom::LogRetention",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+      "Arn"
+     ]
+    },
+    "LogGroupName": {
+     "Fn::Join": [
+      "",
+      [
+       "/aws/lambda/",
+       {
+        "Ref": "LambdaStackAnalyticsProcessorBAD9ACE6"
+       }
+      ]
+     ]
+    },
+    "RetentionInDays": 90
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/AnalyticsProcessor/LogRetention/Resource"
+   }
+  },
+  "LambdaStackAnalyticsProcessorSqsEventSourceWarmpawzStackprodSqsStackAnalyticsQueueA2D4CC96281F6160": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 10,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "SqsStackAnalyticsQueueEC085EA1",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "LambdaStackAnalyticsProcessorBAD9ACE6"
+    },
+    "MaximumBatchingWindowInSeconds": 5
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/AnalyticsProcessor/SqsEventSource:WarmpawzStackprodSqsStackAnalyticsQueueA2D4CC96/Resource"
+   }
+  },
+  "LambdaStackSettlementProcessor29EF0345": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007.zip"
+    },
+    "Description": "Processes settlements from settlement queue",
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "production",
+      "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
+      "AURORA_SECRET_ARN": {
+       "Ref": "AuroraStackAuroraSecret2E11B886"
+      },
+      "AURORA_DATABASE": "warmpawz",
+      "SETTLEMENT_QUEUE_URL": {
+       "Ref": "SqsStackSettlementQueueE715B1BA"
+      },
+      "RAZORPAY_KEY_ID": "",
+      "RAZORPAY_KEY_SECRET": ""
+     }
+    },
+    "FunctionName": "warmpawz-settlement-processor-prod",
+    "Handler": "dist/src/jobs/settlement-processor.handler",
+    "Layers": [
+     {
+      "Ref": "LambdaStackSharedLayerEA8C1C60"
+     }
+    ],
+    "MemorySize": 512,
+    "Role": {
+     "Fn::GetAtt": [
+      "IamStackLambdaExecutionRole9AF0381A",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 60,
+    "VpcConfig": {
+     "SecurityGroupIds": [
+      {
+       "Fn::GetAtt": [
+        "SecurityStackLambdaSecurityGroupE5CA1F78",
+        "GroupId"
+       ]
+      }
+     ],
+     "SubnetIds": [
+      "subnet-0b352e91231e46e42",
+      "subnet-04d6066e0fbebe114",
+      "subnet-042a90000fd723fa6"
+     ]
+    }
+   },
+   "DependsOn": [
+    "IamStackLambdaExecutionRoleDefaultPolicy1B284C67",
+    "IamStackLambdaExecutionRole9AF0381A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SettlementProcessor/Resource",
+    "aws:asset:path": "asset.13a501f0647dc4678334626025fd0d70f9b239274d6f1cf9635d974b45b82007",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "LambdaStackSettlementProcessorLogRetention68C4BC23": {
+   "Type": "Custom::LogRetention",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+      "Arn"
+     ]
+    },
+    "LogGroupName": {
+     "Fn::Join": [
+      "",
+      [
+       "/aws/lambda/",
+       {
+        "Ref": "LambdaStackSettlementProcessor29EF0345"
+       }
+      ]
+     ]
+    },
+    "RetentionInDays": 90
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SettlementProcessor/LogRetention/Resource"
+   }
+  },
+  "LambdaStackSettlementProcessorSqsEventSourceWarmpawzStackprodSqsStackSettlementQueue76F3059F75C1A01E": {
+   "Type": "AWS::Lambda::EventSourceMapping",
+   "Properties": {
+    "BatchSize": 5,
+    "EventSourceArn": {
+     "Fn::GetAtt": [
+      "SqsStackSettlementQueueE715B1BA",
+      "Arn"
+     ]
+    },
+    "FunctionName": {
+     "Ref": "LambdaStackSettlementProcessor29EF0345"
+    },
+    "MaximumBatchingWindowInSeconds": 10
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SettlementProcessor/SqsEventSource:WarmpawzStackprodSqsStackSettlementQueue76F3059F/Resource"
+   }
+  },
+  "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource"
+   }
+  },
+  "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:DeleteRetentionPolicy",
+        "logs:PutRetentionPolicy"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+    "Roles": [
+     {
+      "Ref": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Handler": "index.handler",
+    "Runtime": "nodejs22.x",
+    "Timeout": 900,
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
+     "S3Key": "2819175352ad1ce0dae768e83fc328fb70fb5f10b4a8ff0ccbcb791f02b0716d.zip"
+    },
+    "Role": {
+     "Fn::GetAtt": [
+      "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+      "Arn"
+     ]
+    }
+   },
+   "DependsOn": [
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/Resource",
+    "aws:asset:path": "asset.2819175352ad1ce0dae768e83fc328fb70fb5f10b4a8ff0ccbcb791f02b0716d",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -3171,30 +3119,6 @@
   "ApiGatewayStackWarmpawzApiE5093081": {
    "Type": "AWS::ApiGatewayV2::Api",
    "Properties": {
-    "CorsConfiguration": {
-     "AllowHeaders": [
-      "Content-Type",
-      "Authorization",
-      "X-Amz-Date",
-      "X-Api-Key",
-      "X-Amz-Security-Token",
-      "X-Client-Info",
-      "X-User-Role"
-     ],
-     "AllowMethods": [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE",
-      "PATCH",
-      "OPTIONS"
-     ],
-     "AllowOrigins": [
-      "https://warmpawz.com",
-      "https://www.warmpawz.com"
-     ],
-     "MaxAge": 86400
-    },
     "Description": "Warmpawz Platform API Gateway",
     "Name": "warmpawz-api-prod",
     "ProtocolType": "HTTP"
@@ -3216,7 +3140,7 @@
     "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DefaultStage/Resource"
    }
   },
-  "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82": {
+  "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55": {
    "Type": "AWS::ApiGatewayV2::Integration",
    "Properties": {
     "ApiId": {
@@ -3232,267 +3156,7 @@
     "PayloadFormatVersion": "2.0"
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration/Resource"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationPermissionDF3406CE": {
-   "Type": "AWS::Lambda::Permission",
-   "Properties": {
-    "Action": "lambda:InvokeFunction",
-    "FunctionName": {
-     "Fn::GetAtt": [
-      "LambdaStackApiFunctionC985920A",
-      "Arn"
-     ]
-    },
-    "Principal": "apigateway.amazonaws.com",
-    "SourceArn": {
-     "Fn::Join": [
-      "",
-      [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-       },
-       "/*/*/{proxy+}"
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration-Permission"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiGETproxy396DCE6A": {
-   "Type": "AWS::ApiGatewayV2::Route",
-   "Properties": {
-    "ApiId": {
-     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-    },
-    "AuthorizationType": "NONE",
-    "RouteKey": "GET /{proxy+}",
-    "Target": {
-     "Fn::Join": [
-      "",
-      [
-       "integrations/",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
-       }
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/Resource"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiPOSTproxyLambdaIntegrationPermissionDE15A5C5": {
-   "Type": "AWS::Lambda::Permission",
-   "Properties": {
-    "Action": "lambda:InvokeFunction",
-    "FunctionName": {
-     "Fn::GetAtt": [
-      "LambdaStackApiFunctionC985920A",
-      "Arn"
-     ]
-    },
-    "Principal": "apigateway.amazonaws.com",
-    "SourceArn": {
-     "Fn::Join": [
-      "",
-      [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-       },
-       "/*/*/{proxy+}"
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/LambdaIntegration-Permission"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiPOSTproxy06172A45": {
-   "Type": "AWS::ApiGatewayV2::Route",
-   "Properties": {
-    "ApiId": {
-     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-    },
-    "AuthorizationType": "NONE",
-    "RouteKey": "POST /{proxy+}",
-    "Target": {
-     "Fn::Join": [
-      "",
-      [
-       "integrations/",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
-       }
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/Resource"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiPUTproxyLambdaIntegrationPermission73351BDF": {
-   "Type": "AWS::Lambda::Permission",
-   "Properties": {
-    "Action": "lambda:InvokeFunction",
-    "FunctionName": {
-     "Fn::GetAtt": [
-      "LambdaStackApiFunctionC985920A",
-      "Arn"
-     ]
-    },
-    "Principal": "apigateway.amazonaws.com",
-    "SourceArn": {
-     "Fn::Join": [
-      "",
-      [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-       },
-       "/*/*/{proxy+}"
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/LambdaIntegration-Permission"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiPUTproxy360030AF": {
-   "Type": "AWS::ApiGatewayV2::Route",
-   "Properties": {
-    "ApiId": {
-     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-    },
-    "AuthorizationType": "NONE",
-    "RouteKey": "PUT /{proxy+}",
-    "Target": {
-     "Fn::Join": [
-      "",
-      [
-       "integrations/",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
-       }
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/Resource"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiPATCHproxyLambdaIntegrationPermission7092659E": {
-   "Type": "AWS::Lambda::Permission",
-   "Properties": {
-    "Action": "lambda:InvokeFunction",
-    "FunctionName": {
-     "Fn::GetAtt": [
-      "LambdaStackApiFunctionC985920A",
-      "Arn"
-     ]
-    },
-    "Principal": "apigateway.amazonaws.com",
-    "SourceArn": {
-     "Fn::Join": [
-      "",
-      [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-       },
-       "/*/*/{proxy+}"
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/LambdaIntegration-Permission"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiPATCHproxyD95F022B": {
-   "Type": "AWS::ApiGatewayV2::Route",
-   "Properties": {
-    "ApiId": {
-     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-    },
-    "AuthorizationType": "NONE",
-    "RouteKey": "PATCH /{proxy+}",
-    "Target": {
-     "Fn::Join": [
-      "",
-      [
-       "integrations/",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
-       }
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/Resource"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiDELETEproxyLambdaIntegrationPermission5B585495": {
-   "Type": "AWS::Lambda::Permission",
-   "Properties": {
-    "Action": "lambda:InvokeFunction",
-    "FunctionName": {
-     "Fn::GetAtt": [
-      "LambdaStackApiFunctionC985920A",
-      "Arn"
-     ]
-    },
-    "Principal": "apigateway.amazonaws.com",
-    "SourceArn": {
-     "Fn::Join": [
-      "",
-      [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-       },
-       "/*/*/{proxy+}"
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/LambdaIntegration-Permission"
-   }
-  },
-  "ApiGatewayStackWarmpawzApiDELETEproxy2E4466F8": {
-   "Type": "AWS::ApiGatewayV2::Route",
-   "Properties": {
-    "ApiId": {
-     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
-    },
-    "AuthorizationType": "NONE",
-    "RouteKey": "DELETE /{proxy+}",
-    "Target": {
-     "Fn::Join": [
-      "",
-      [
-       "integrations/",
-       {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
-       }
-      ]
-     ]
-    }
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--health/LambdaIntegration/Resource"
    }
   },
   "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationPermission201253E0": {
@@ -3510,7 +3174,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3537,7 +3201,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3562,7 +3226,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3592,7 +3256,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3651,7 +3315,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3681,7 +3345,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3706,7 +3370,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3736,7 +3400,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3761,7 +3425,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3791,7 +3455,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3816,7 +3480,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3846,7 +3510,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3854,6 +3518,116 @@
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONSadminproxyLambdaIntegrationPermissionFE5BD212": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/admin/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONSadminproxy6E0C4F68": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "JWT",
+    "AuthorizerId": {
+     "Ref": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
+    },
+    "RouteKey": "OPTIONS /admin/{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADadminproxyLambdaIntegrationPermissionFBC5494C": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/admin/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADadminproxy244A680C": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "JWT",
+    "AuthorizerId": {
+     "Ref": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
+    },
+    "RouteKey": "HEAD /admin/{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/Resource"
    }
   },
   "ApiGatewayStackWarmpawzApiGETcustomerproxyLambdaIntegrationPermissionEB6613E8": {
@@ -3871,7 +3645,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3901,7 +3675,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -3960,7 +3734,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -3990,7 +3764,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4015,7 +3789,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4045,7 +3819,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4070,7 +3844,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4100,7 +3874,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4125,7 +3899,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4155,7 +3929,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4163,6 +3937,116 @@
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONScustomerproxyLambdaIntegrationPermission0027F9E0": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/customer/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--customer--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONScustomerproxy123186EC": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "JWT",
+    "AuthorizerId": {
+     "Ref": "ApiGatewayStackWarmpawzApiCustomerAuthorizer05E66D97"
+    },
+    "RouteKey": "OPTIONS /customer/{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--customer--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADcustomerproxyLambdaIntegrationPermission68845B2A": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/customer/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--customer--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADcustomerproxy23C6E8BD": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "JWT",
+    "AuthorizerId": {
+     "Ref": "ApiGatewayStackWarmpawzApiCustomerAuthorizer05E66D97"
+    },
+    "RouteKey": "HEAD /customer/{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--customer--{proxy+}/Resource"
    }
   },
   "ApiGatewayStackWarmpawzApiGETvendorproxyLambdaIntegrationPermissionCCEC33B3": {
@@ -4180,7 +4064,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4210,7 +4094,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4269,7 +4153,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4299,7 +4183,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4324,7 +4208,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4354,7 +4238,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4379,7 +4263,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4409,7 +4293,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4434,7 +4318,7 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:ap-south-1:023394150666:",
+       "arn:aws:execute-api:ap-south-1:057442119249:",
        {
         "Ref": "ApiGatewayStackWarmpawzApiE5093081"
        },
@@ -4464,7 +4348,7 @@
       [
        "integrations/",
        {
-        "Ref": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
        }
       ]
      ]
@@ -4474,6 +4358,584 @@
     "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/Resource"
    }
   },
+  "ApiGatewayStackWarmpawzApiOPTIONSvendorproxyLambdaIntegrationPermissionDB82DC4D": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/vendor/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--vendor--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONSvendorproxy7502AC2D": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "JWT",
+    "AuthorizerId": {
+     "Ref": "ApiGatewayStackWarmpawzApiVendorAuthorizerEB3B03F9"
+    },
+    "RouteKey": "OPTIONS /vendor/{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--vendor--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADvendorproxyLambdaIntegrationPermission757EED09": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/vendor/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--vendor--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADvendorproxyCE9E3AE5": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "JWT",
+    "AuthorizerId": {
+     "Ref": "ApiGatewayStackWarmpawzApiVendorAuthorizerEB3B03F9"
+    },
+    "RouteKey": "HEAD /vendor/{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--vendor--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationPermissionDF3406CE": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiGETproxy396DCE6A": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "GET /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiPOSTproxyLambdaIntegrationPermissionDE15A5C5": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiPOSTproxy06172A45": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "POST /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiPUTproxyLambdaIntegrationPermission73351BDF": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiPUTproxy360030AF": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "PUT /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiPATCHproxyLambdaIntegrationPermission7092659E": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiPATCHproxyD95F022B": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "PATCH /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiDELETEproxyLambdaIntegrationPermission5B585495": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiDELETEproxy2E4466F8": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "DELETE /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONSproxyLambdaIntegrationPermissionC1D40475": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONSproxyD1926DE1": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "OPTIONS /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADproxyLambdaIntegrationPermission193724CA": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/{proxy+}"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--{proxy+}/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiHEADproxy002B8ADA": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "HEAD /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--{proxy+}/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiGETLambdaIntegrationPermission2A8F1617": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiGET43DC70A1": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "GET /",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--/Resource"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONSLambdaIntegrationPermission959913BA": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "LambdaStackApiFunctionC985920A",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:ap-south-1:057442119249:",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+       },
+       "/*/*/"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--/LambdaIntegration-Permission"
+   }
+  },
+  "ApiGatewayStackWarmpawzApiOPTIONS882BF093": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ApiGatewayStackWarmpawzApiE5093081"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "OPTIONS /",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationB3ADBF55"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--/Resource"
+   }
+  },
   "ApiGatewayStackApiDomainD311C659": {
    "Type": "AWS::ApiGatewayV2::DomainName",
    "Properties": {
@@ -4481,7 +4943,7 @@
     "DomainNameConfigurations": [
      {
       "CertificateArn": {
-       "Ref": "Route53StackApiCertificate65C687FE"
+       "Ref": "Route53StackCertificate13F8DF7E"
       },
       "EndpointType": "REGIONAL"
      }
@@ -4509,145 +4971,30 @@
     "aws:cdk:path": "WarmpawzStack-prod/ApiGatewayStack/ApiMapping/Resource"
    }
   },
-  "Route53StackApiCertificate65C687FE": {
+  "Route53StackCertificate13F8DF7E": {
    "Type": "AWS::CertificateManager::Certificate",
    "Properties": {
-    "DomainName": "api.warmpawz.com",
+    "DomainName": "warmpawz.com",
     "DomainValidationOptions": [
      {
-      "DomainName": "api.warmpawz.com",
-      "HostedZoneId": "Z05490792J3QDVPVIG5UA"
-     },
-     {
-      "DomainName": "*.warmpawz.com",
-      "HostedZoneId": "Z05490792J3QDVPVIG5UA"
+      "DomainName": "warmpawz.com",
+      "HostedZoneId": "Z07857473SRNOUZ0V7594"
      }
     ],
     "SubjectAlternativeNames": [
+     "*.warmpawz.com",
      "*.warmpawz.com"
     ],
     "Tags": [
      {
       "Key": "Name",
-      "Value": "WarmpawzStack-prod/Route53Stack/ApiCertificate"
+      "Value": "WarmpawzStack-prod/Route53Stack/Certificate"
      }
     ],
     "ValidationMethod": "DNS"
    },
    "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/Route53Stack/ApiCertificate/Resource"
-   }
-  },
-  "Route53StackCustomerAppARecord68AD059E": {
-   "Type": "AWS::Route53::RecordSet",
-   "Properties": {
-    "AliasTarget": {
-     "DNSName": {
-      "Fn::GetAtt": [
-       "S3StackAssetsDistribution3582A8BC",
-       "DomainName"
-      ]
-     },
-     "HostedZoneId": {
-      "Fn::FindInMap": [
-       "AWSCloudFrontPartitionHostedZoneIdMap",
-       {
-        "Ref": "AWS::Partition"
-       },
-       "zoneId"
-      ]
-     }
-    },
-    "HostedZoneId": "Z05490792J3QDVPVIG5UA",
-    "Name": "customer.warmpawz.com.",
-    "Type": "A"
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/Route53Stack/CustomerAppARecord/Resource"
-   }
-  },
-  "Route53StackVendorAppARecord0572B69C": {
-   "Type": "AWS::Route53::RecordSet",
-   "Properties": {
-    "AliasTarget": {
-     "DNSName": {
-      "Fn::GetAtt": [
-       "S3StackAssetsDistribution3582A8BC",
-       "DomainName"
-      ]
-     },
-     "HostedZoneId": {
-      "Fn::FindInMap": [
-       "AWSCloudFrontPartitionHostedZoneIdMap",
-       {
-        "Ref": "AWS::Partition"
-       },
-       "zoneId"
-      ]
-     }
-    },
-    "HostedZoneId": "Z05490792J3QDVPVIG5UA",
-    "Name": "vendor.warmpawz.com.",
-    "Type": "A"
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/Route53Stack/VendorAppARecord/Resource"
-   }
-  },
-  "Route53StackAdminARecordBEABFE99": {
-   "Type": "AWS::Route53::RecordSet",
-   "Properties": {
-    "AliasTarget": {
-     "DNSName": {
-      "Fn::GetAtt": [
-       "S3StackAssetsDistribution3582A8BC",
-       "DomainName"
-      ]
-     },
-     "HostedZoneId": {
-      "Fn::FindInMap": [
-       "AWSCloudFrontPartitionHostedZoneIdMap",
-       {
-        "Ref": "AWS::Partition"
-       },
-       "zoneId"
-      ]
-     }
-    },
-    "HostedZoneId": "Z05490792J3QDVPVIG5UA",
-    "Name": "admin.warmpawz.com.",
-    "Type": "A"
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/Route53Stack/AdminARecord/Resource"
-   }
-  },
-  "Route53StackApkARecord99A5183D": {
-   "Type": "AWS::Route53::RecordSet",
-   "Properties": {
-    "AliasTarget": {
-     "DNSName": {
-      "Fn::GetAtt": [
-       "S3StackApkDistribution984CD1FF",
-       "DomainName"
-      ]
-     },
-     "HostedZoneId": {
-      "Fn::FindInMap": [
-       "AWSCloudFrontPartitionHostedZoneIdMap",
-       {
-        "Ref": "AWS::Partition"
-       },
-       "zoneId"
-      ]
-     }
-    },
-    "HostedZoneId": "Z05490792J3QDVPVIG5UA",
-    "Name": "apk.warmpawz.com.",
-    "Type": "A"
-   },
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/Route53Stack/ApkARecord/Resource"
+    "aws:cdk:path": "WarmpawzStack-prod/Route53Stack/Certificate/Resource"
    }
   },
   "Route53StackApiARecord8172ED39": {
@@ -4667,7 +5014,7 @@
       ]
      }
     },
-    "HostedZoneId": "Z05490792J3QDVPVIG5UA",
+    "HostedZoneId": "Z07857473SRNOUZ0V7594",
     "Name": "api.warmpawz.com.",
     "Type": "A"
    },
@@ -4692,7 +5039,7 @@
       ]
      }
     },
-    "HostedZoneId": "Z05490792J3QDVPVIG5UA",
+    "HostedZoneId": "Z07857473SRNOUZ0V7594",
     "Name": "api.warmpawz.com.",
     "Type": "AAAA"
    },
@@ -4703,7 +5050,7 @@
   "CDKMetadata": {
    "Type": "AWS::CDK::Metadata",
    "Properties": {
-    "Analytics": "v2:deflate64:H4sIAAAAAAAA/31T0XLbIBD8lr4TmtjtB8h20nqmbVw77WvmhC4KiQQqdyR1Gf69A8i2kkz7wu0ux93qQDM5m8/l+Tt4pjPVPJ51upZhx6AexRbJeqdQwDPdBkLlkKkHAy06GXaZi+WdGVEJN+Ba5IoZ1H2PZpLweicKVLNcxzvN+0/O+mHM/o+wNq1Dojf6ZZajcA3JsAKGGgiXnSdGJ3a+NsjHgqvFG+GQmcnaEINRKA51Ns7+3pe917B8Va4UhYZehq3tMCXkuLGdVjm/oCiUbY1mK8MPQrextkubR3wAy06Pw3upREFzGRZePZbZj6iEU7MXvJAFEEahOuubO2cNy7DSxE7XnrU14trpVptKKSRaN2hYc660TAeu0oF/ZUzLREG/SIbvHn2eQQF5PZmb0CjIkAw7X5NyeshO0s1O+Y0dtEpqAXk9FZvQKJq9gd42tQw3UJdbyCAKfELDJMNliguf388Rb/14Yz6ldtDXDcjwBfbofqKj0dQLfuWNOrid4g26XhOVUcxvgQiZZJWCgEG3wPgM+6eZDJ+Zh2rQ6VAKie4Y2mykgCRtreeC1oaxdXBo9Iqe8irP99bpP+UxT9jK9qDNN+hziwmrBv0VhkGbdjQzsigUOtZ3WgHj8b9fnrT8Pk40CpdcfJzLUG1RWddkZxntkEUFAIXFmHauPQ+eRR5O+uLRwLG7sQ3KB3r/NPsgLy7k+bsH0vrMecO6R7kt8S9GLdimwAQAAA=="
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/31TUXPbIAz+LX2nrE22H+Cm7Za7bu2cbq89GSsejQ0eEu1lHP99BySxu932gr5PIOmTgIVcLJfy4gxe6Vy1u/NeNzJsGNRO1EjWO4UCXukpECqHTAMY6NDJsMlcrLamoChcS/IaGBogXPWeGN0VEAplO6PZyvCN0D1Y26egEz6CVa/R8HyreKLQMMhQ2x7TZrYPttdqn2hBUaBaZEnead5/dNaPB2X/caxN55AoClrKcOXVrrRzQMVMld7wQlJ3Uaje+nbrrGEZrjWx041nbY24d7rTplIKidYtGtacM61SwG0K+NeJeZoo6CfJ8NWjzwMoIK+TuBmNggzJsPENKafHrCR1PuePdtQqeQvI65RsRqNo9wYG2zYyPEJTriCDKPAFDZMMN8leeUpbJ1z7w3X5dLSHoWlBhjvYo/uOjg6i3vBbb9RR7QnnhJv8DD/DOGrTncr85X1AN2iiMrPlExAhk6ySEb3tSN7ZrkZOY7ZGwKg7YHyF/ctChk/MYzXqlCaZRDcMXe6hgOSqreeC1oaxc3DU+wedzlWef1inf6HLqSd2bQfQ5gsMucSMVaOe9TSxKBQ61lutgPH0C1eTLz+tiUbhkooPSxmqGpV1bVaW0QZZVABQWIwiDyn1eSh7+vqrrbn3PHqOwtgW5TO9e1m8l5eX8uLsmbQ+d96wHlDWxf4GjIxfa08EAAA="
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/CDKMetadata/Default"
@@ -4711,56 +5058,18 @@
   }
  },
  "Outputs": {
-  "ChimeStackChimeAppInstanceArn4FBD7509": {
-   "Description": "AWS Chime App Instance ARN (to be created manually or via script)",
-   "Value": {
-    "Fn::Join": [
-     "",
-     [
-      "arn:aws:chime:",
-      {
-       "Ref": "AWS::Region"
-      },
-      ":",
-      {
-       "Ref": "AWS::AccountId"
-      },
-      ":app-instance/warmpawz-prod"
-     ]
-    ]
-   }
-  },
-  "ChimeStackChimeRoleArn34D55819": {
-   "Description": "IAM Role ARN for Chime SDK operations",
-   "Value": {
-    "Fn::GetAtt": [
-     "ChimeStackChimeRole4A0C6A8C",
-     "Arn"
-    ]
-   }
-  },
   "AuroraEndpoint": {
    "Description": "Aurora RDS Cluster Endpoint - For A4 (Backend Engineer)",
-   "Value": {
-    "Fn::GetAtt": [
-     "AuroraStackAuroraCluster0A30E50A",
-     "Endpoint.Address"
-    ]
-   },
+   "Value": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
    "Export": {
     "Name": "Warmpawz-AuroraEndpoint"
    }
   },
-  "AuroraProxyEndpoint": {
-   "Description": "RDS Proxy Endpoint - For A4 (Backend Engineer)",
-   "Value": {
-    "Fn::GetAtt": [
-     "AuroraStackAuroraProxyEB6DC6B7",
-     "Endpoint"
-    ]
-   },
+  "AuroraClusterEndpoint": {
+   "Description": "RDS Cluster Endpoint - For A4 (Backend Engineer)",
+   "Value": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
    "Export": {
-    "Name": "Warmpawz-AuroraProxyEndpoint"
+    "Name": "Warmpawz-AuroraClusterEndpoint"
    }
   },
   "AuroraSecretArn": {
@@ -4942,27 +5251,6 @@
     "Name": "Warmpawz-AdminDomain"
    }
   },
-  "ApkBucketName": {
-   "Description": "APK Storage Bucket - For Mobile Apps",
-   "Value": {
-    "Ref": "S3StackApkBucket1AED656F"
-   },
-   "Export": {
-    "Name": "Warmpawz-ApkBucketName"
-   }
-  },
-  "ApkDistributionDomain": {
-   "Description": "APK CloudFront Distribution Domain",
-   "Value": {
-    "Fn::GetAtt": [
-     "S3StackApkDistribution984CD1FF",
-     "DomainName"
-    ]
-   },
-   "Export": {
-    "Name": "Warmpawz-ApkDistributionDomain"
-   }
-  },
   "LambdaExecutionRoleArn": {
    "Description": "Lambda Execution Role ARN",
    "Value": {
@@ -5035,20 +5323,10 @@
   "EventBusName": {
    "Description": "EventBridge Event Bus Name",
    "Value": {
-    "Ref": "EventBridgeStackWarmpawzEventBus2B15753F"
+    "Ref": "EventBridgeStackEventBus3D6B21B5"
    },
    "Export": {
     "Name": "Warmpawz-prod-EventBusName"
-   }
-  }
- },
- "Mappings": {
-  "AWSCloudFrontPartitionHostedZoneIdMap": {
-   "aws": {
-    "zoneId": "Z2FDTNDATAQYW2"
-   },
-   "aws-cn": {
-    "zoneId": "Z3RFFRIM2A3IF5"
    }
   }
  },

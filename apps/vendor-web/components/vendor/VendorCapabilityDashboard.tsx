@@ -2142,22 +2142,40 @@ function CentreBookingSection({ vendorId }: { vendorId: string }) {
 function HomeServicesSection({ vendorId }: { vendorId: string }) {
   const router = useRouter();
   const [count, setCount] = useState<number>(0);
+  const [todayCount, setTodayCount] = useState<number>(0);
+  const [radius, setRadius] = useState<number | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadBookingCount();
+    loadData();
   }, [vendorId]);
 
-  const loadBookingCount = async () => {
+  const loadData = async () => {
     try {
+      // Load bookings
       const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings?status=all`).catch(() => ({ bookings: [] }));
       const bookings = bookingsRes.bookings || [];
       const filteredBookings = bookings.filter((b: any) => 
         b.service_style === 'home_services' || b.service_style === 'home' || b.service_style === 'at_home' || b.service_type === 'home'
       );
       setCount(filteredBookings.length);
+      
+      // Count today's bookings
+      const today = new Date().toISOString().split('T')[0];
+      const todayBookings = filteredBookings.filter((b: any) => 
+        (b.booking_date || b.scheduledDate || '').startsWith(today)
+      );
+      setTodayCount(todayBookings.length);
+      
+      // Load home service settings
+      const settingsRes = await apiClient.get<any>(`/vendor/${vendorId}/home-service-settings`).catch(() => ({ settings: null }));
+      if (settingsRes.settings) {
+        setRadius(settingsRes.settings.serviceRadius);
+        setIsOnline(settingsRes.settings.isOnline);
+      }
     } catch (err) {
-      console.error('Error loading home services count:', err);
+      console.error('Error loading home services data:', err);
     } finally {
       setLoading(false);
     }
@@ -2167,18 +2185,46 @@ function HomeServicesSection({ vendorId }: { vendorId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{count}</p>
-          <p className="text-sm text-gray-500">Home service bookings</p>
+      {/* Online Status */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          <span className={`text-sm font-medium ${isOnline ? 'text-green-700' : 'text-gray-600'}`}>
+            {isOnline ? 'Online - Receiving Bookings' : 'Offline'}
+          </span>
+        </div>
+        {radius && (
+          <span className="text-xs text-gray-500">{radius} km radius</span>
+        )}
+      </div>
+      
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="text-center p-3 bg-green-50 rounded-lg">
+          <p className="text-2xl font-bold text-green-700">{todayCount}</p>
+          <p className="text-xs text-green-600">Today's Visits</p>
+        </div>
+        <div className="text-center p-3 bg-blue-50 rounded-lg">
+          <p className="text-2xl font-bold text-blue-700">{count}</p>
+          <p className="text-xs text-blue-600">Total Bookings</p>
         </div>
       </div>
-      <button 
-        onClick={() => router.push('/bookings/home')}
-        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
-      >
-        View Home Services
-      </button>
+      
+      {/* Actions */}
+      <div className="space-y-2">
+        <button 
+          onClick={() => router.push('/bookings/home')}
+          className="w-full py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition"
+        >
+          View Home Bookings
+        </button>
+        <button 
+          onClick={() => router.push('/schedule/radius')}
+          className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition"
+        >
+          ⚙️ Configure Location & Radius
+        </button>
+      </div>
     </div>
   );
 }

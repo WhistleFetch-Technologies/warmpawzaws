@@ -240,7 +240,7 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
           completedAppointments: parseInt(s.completed_appointments || '0', 10),
           averageRating: parseFloat(s.average_rating || '0').toFixed(1),
           totalReviews: parseInt(s.total_reviews || '0', 10),
-          photoUrl: s.photo_url,
+          photoUrl: s.photo,
         })),
         total: staff.rows.length,
       });

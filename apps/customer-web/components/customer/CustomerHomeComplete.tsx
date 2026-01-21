@@ -5,7 +5,8 @@ import {
   Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock, 
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users, 
   GraduationCap, Coffee, Bike, Shield, Sparkles, TrendingUp,
-  Phone, Video, Building, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree
+  Phone, Video, Building2, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree, Pill,
+  Navigation, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
@@ -16,6 +17,14 @@ import { EnhancedSearchBar } from './EnhancedSearchBar';
 import { ProblemGridNavigation } from './ProblemGridNavigation';
 import { ServicesByProblem } from './ServicesByProblem';
 import { TrendingProblems } from './TrendingProblems';
+import { WalletIcon } from './WalletIcon';
+import { EnhancedAddPetModal } from './EnhancedAddPetModal';
+import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
+import { Dog, Cat, UtensilsCrossed, Package as PackageIcon, Shirt, Watch, Bed, Store } from 'lucide-react';
+import { LiveTrackingWidget } from './tracking/LiveTrackingWidget';
+import { RatingReviewPopup } from './RatingReviewPopup';
+import { VendorOnTheWayPopup } from './VendorOnTheWayPopup';
+import { UnifiedAppointmentTracker } from './booking/UnifiedAppointmentTracker'; // ✅ NEW: Appointment tracker widget
 
 interface Pet {
   id: string;
@@ -49,6 +58,7 @@ interface CustomerHomeCompleteProps {
   onViewBooking?: (bookingId: string, petId?: string) => void;
   onOpenMenu?: () => void;
   onOpenCategoryMapper?: () => void;
+  hideHeaderFooter?: boolean; // ✅ NEW: Option to hide header/footer when using standardized layout
 }
 
 export function CustomerHomeComplete({ 
@@ -60,7 +70,8 @@ export function CustomerHomeComplete({
   onViewBooking,
   onOpenMenu,
   onOpenCategoryMapper,
-  refreshKey = 0
+  refreshKey = 0,
+  hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
   const [userData, setUserData] = useState<UserData>({
     name: 'User',
@@ -86,6 +97,40 @@ export function CustomerHomeComplete({
   const [vetServicesData, setVetServicesData] = useState<any[]>([]);
   const [hotDeals, setHotDeals] = useState<any[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
+  const [activeBookings, setActiveBookings] = useState<any[]>([]); // For "Attention" section
+  
+  // ✅ Live Tracking & Review State
+  const [showTrackingWidget, setShowTrackingWidget] = useState<string | null>(null); // bookingId to track
+  const [trackingBooking, setTrackingBooking] = useState<any | null>(null);
+  
+  // ✅ NEW: Vendor On The Way popup state
+  const [vendorOnTheWay, setVendorOnTheWay] = useState<{
+    bookingId: string;
+    vendorName: string;
+    vendorPhoto?: string;
+    vendorPhone?: string;
+    serviceName: string;
+    petName?: string;
+    eta: number;
+    distance?: number;
+  } | null>(null);
+  const [pendingReview, setPendingReview] = useState<{
+    isOpen: boolean;
+    bookingId: string;
+    vendorId: string;
+    vendorName: string;
+    serviceName: string;
+    serviceStyle: 'at_home' | 'at_center' | 'tele';
+    staffId?: string;
+    staffName?: string;
+  } | null>(null);
+  const [customerId, setCustomerId] = useState<string>('');
+  
+  // Dynamic content from CMS
+  const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
+  const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
+  const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
+  const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
   
   // Define quickServices constant (moved before useEffect)
   const quickServices = [
@@ -119,7 +164,40 @@ export function CustomerHomeComplete({
   useEffect(() => {
     loadUserData();
     loadServicesFromAPI();
+    loadDynamicContent();
   }, [phone, refreshKey]); // Add refreshKey to dependencies
+
+  // Load dynamic content (banners, articles, announcements)
+  const loadDynamicContent = async () => {
+    try {
+      // Fetch all content in parallel
+      const [bannersResp, articlesResp, announcementsResp, adoptionResp] = await Promise.all([
+        apiClient.get<any>('/customer/banners?position=home_top&limit=5').catch(() => null),
+        apiClient.get<any>('/customer/articles?limit=3&featured=true').catch(() => null),
+        apiClient.get<any>('/customer/announcements?limit=3').catch(() => null),
+        apiClient.get<any>('/customer/adoption-stats').catch(() => null),
+      ]);
+
+      if (bannersResp?.banners && bannersResp.banners.length > 0) {
+        setDynamicBanners(bannersResp.banners);
+      }
+
+      if (articlesResp?.articles && articlesResp.articles.length > 0) {
+        setDynamicArticles(articlesResp.articles);
+      }
+
+      if (announcementsResp?.announcements && announcementsResp.announcements.length > 0) {
+        setDynamicAnnouncements(announcementsResp.announcements);
+      }
+
+      if (adoptionResp?.stats) {
+        setAdoptionStats(adoptionResp.stats);
+      }
+    } catch (error) {
+      console.error('Error loading dynamic content:', error);
+      // Fallback to defaults already set in state
+    }
+  };
 
   // Load real services from API
   const loadServicesFromAPI = async () => {
@@ -135,9 +213,8 @@ export function CustomerHomeComplete({
           title: s.serviceName || s.name || 'Grooming Service',
           price: `₹${s.price || s.basePrice || 999}`,
           rating: s.rating || 4.8,
-          icon: s.serviceStyle === 'at_home' ? '🏠' : s.serviceStyle === 'at_center' ? '✂️' : '💆',
+          serviceStyle: s.serviceStyle || 'at_center',
           description: s.description || 'Professional grooming service',
-          serviceStyle: s.serviceStyle,
           vendorId: s.vendorId
         }));
         if (mappedGrooming.length > 0) setGroomingServices(mappedGrooming);
@@ -151,7 +228,7 @@ export function CustomerHomeComplete({
           id: s.id || s.vendorServiceId,
           title: s.serviceName || s.name || 'Vet Service',
           price: `₹${s.price || s.basePrice || 499}`,
-          icon: s.serviceStyle === 'at_home' ? '🏠' : s.serviceStyle === 'tele' ? '📱' : '🏥',
+          serviceStyle: s.serviceStyle || 'clinic',
           description: s.description || 'Veterinary service',
           type: s.serviceStyle === 'at_home' ? 'visit' : s.serviceStyle === 'tele' ? 'video' : 'clinic',
           vendorId: s.vendorId
@@ -168,7 +245,7 @@ export function CustomerHomeComplete({
           price: `₹${p.salePrice || p.price || 999}`,
           originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
           discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
-          image: p.emoji || '🛒',
+          iconType: 'product',
           rating: p.rating || 4.5
         }));
         setHotDeals(mappedDeals);
@@ -298,6 +375,84 @@ export function CustomerHomeComplete({
     return () => clearInterval(interval);
   }, []);
 
+  // Load active bookings with tracking for "Attention" section
+  useEffect(() => {
+    if (phone) {
+      loadActiveBookings();
+      checkPendingReviews(); // ✅ Check for pending reviews on load
+      const interval = setInterval(() => {
+        loadActiveBookings();
+      }, 30000); // Poll every 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [phone, refreshKey]);
+
+  const loadActiveBookings = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/bookings?phone=${encodeURIComponent(phone)}&status=in_progress`);
+      const bookings = response.bookings || response.data || [];
+      
+      // Filter bookings that have tracking enabled (home services)
+      const bookingsWithTracking = bookings.filter((booking: any) => 
+        booking.serviceStyle === 'at_home' && 
+        (booking.status === 'in_progress' || booking.status === 'active' || booking.status === 'on_way') &&
+        (booking.trackingEnabled || booking.tracking_enabled)
+      );
+      
+      setActiveBookings(bookingsWithTracking);
+      
+      // ✅ Auto-show popup if vendor is on the way
+      const onWayBooking = bookingsWithTracking.find((b: any) => 
+        b.status === 'on_way' || b.tracking_status === 'on_way' || b.trackingStatus === 'on_way' || b.vendorStatus === 'traveling'
+      );
+      if (onWayBooking && !vendorOnTheWay) {
+        // Show the "Vendor On The Way" popup
+        setVendorOnTheWay({
+          bookingId: onWayBooking.id || onWayBooking.bookingId,
+          vendorName: onWayBooking.vendorName || onWayBooking.staffName || 'Provider',
+          vendorPhoto: onWayBooking.vendorPhoto || onWayBooking.staffPhoto,
+          vendorPhone: onWayBooking.vendorPhone || onWayBooking.staffPhone,
+          serviceName: onWayBooking.serviceName || onWayBooking.service_name || 'Service',
+          petName: onWayBooking.petName || onWayBooking.pet_name,
+          eta: onWayBooking.eta_minutes || onWayBooking.eta || 15,
+          distance: onWayBooking.distance_km || onWayBooking.distance,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading active bookings:', error);
+      setActiveBookings([]);
+    }
+  };
+  
+  // ✅ Check for pending reviews on completed bookings
+  const checkPendingReviews = async () => {
+    try {
+      // Get customer ID first
+      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`);
+      const custId = customerRes.customer?.id;
+      if (custId) {
+        setCustomerId(custId);
+        
+        // Check for pending review
+        const reviewRes = await apiClient.get<any>(`/reviews/pending/${custId}`);
+        if (reviewRes.hasPending && reviewRes.booking) {
+          setPendingReview({
+            isOpen: true,
+            bookingId: reviewRes.booking.bookingId,
+            vendorId: reviewRes.booking.vendorId,
+            vendorName: reviewRes.booking.vendorName || 'Service Provider',
+            serviceName: reviewRes.booking.serviceName || 'Service',
+            serviceStyle: reviewRes.booking.serviceStyle || 'at_center',
+            staffId: reviewRes.booking.staffId,
+            staffName: reviewRes.booking.staffName,
+          });
+        }
+      }
+    } catch (error) {
+      console.log('No pending reviews');
+    }
+  };
+
   const loadUserData = async () => {
     try {
       setLoading(true);
@@ -413,45 +568,71 @@ export function CustomerHomeComplete({
     );
   }
 
-  const banners = [
+  // Use dynamic banners if available, otherwise use defaults
+  const defaultBanners = [
     {
+      id: 'default-1',
       title: "Get 50% OFF",
       subtitle: "First Grooming Session",
-      bg: "linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%)",
-      emoji: "✂️"
+      gradientFrom: "#FF8C42",
+      gradientTo: "#FF6B35",
+      Icon: Scissors,
+      ctaText: "Claim Now",
+      ctaLink: "grooming"
     },
     {
+      id: 'default-2',
       title: "Free Health Checkup",
       subtitle: "Book Vet Appointment Today",
-      bg: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-      emoji: "🏥"
+      gradientFrom: "#4CAF50",
+      gradientTo: "#2E7D32",
+      Icon: Stethoscope,
+      ctaText: "Book Now",
+      ctaLink: "vet"
     },
     {
+      id: 'default-3',
       title: "Premium Pet Food",
       subtitle: "20% OFF on First Order",
-      bg: "linear-gradient(135deg, #FF6B9D 0%, #C44569 100%)",
-      emoji: "🍖"
+      gradientFrom: "#FF6B9D",
+      gradientTo: "#C44569",
+      Icon: Bone,
+      ctaText: "Shop Now",
+      ctaLink: "shop"
     }
   ];
+  
+  const banners = dynamicBanners.length > 0 
+    ? dynamicBanners.map((b: any) => ({
+        id: b.id,
+        title: b.title,
+        subtitle: b.subtitle,
+        gradientFrom: b.gradientFrom || "#FF8C42",
+        gradientTo: b.gradientTo || "#FF6B35",
+        Icon: Scissors, // Default icon - could map based on ctaLink
+        ctaText: b.ctaText || "Learn More",
+        ctaLink: b.ctaLink || ""
+      }))
+    : defaultBanners;
 
 
   // Fallback defaults if API returns no data
   const defaultGroomingServices = [
-    { title: 'At Home Grooming', price: '₹999', rating: 4.8, icon: '🏠', description: 'Professional grooming at your doorstep' },
-    { title: 'Salon Appointment', price: '₹799', rating: 4.9, icon: '✂️', description: 'Premium salon experience' },
-    { title: 'Spa Package', price: '₹1499', rating: 5.0, icon: '💆', description: 'Complete spa & wellness' },
+    { title: 'At Home Grooming', price: '₹999', rating: 4.8, Icon: HomeIcon, description: 'Professional grooming at your doorstep' },
+    { title: 'Salon Appointment', price: '₹799', rating: 4.9, Icon: Scissors, description: 'Premium salon experience' },
+    { title: 'Spa Package', price: '₹1499', rating: 5.0, Icon: Sparkles, description: 'Complete spa & wellness' },
   ];
 
   const defaultVetServices = [
-    { title: 'Vet at Home', price: '₹599', icon: '🏠', description: 'Doctor visits you', type: 'visit' },
-    { title: 'Tele Consulting', price: '₹299', icon: '📱', description: 'Video consultation', type: 'video' },
-    { title: 'Clinic Appointment', price: '₹399', icon: '🏥', description: 'Visit nearby clinic', type: 'clinic' },
+    { title: 'Vet at Home', price: '₹599', Icon: HomeIcon, description: 'Doctor visits you', type: 'visit' },
+    { title: 'Tele Consulting', price: '₹299', Icon: Phone, description: 'Video consultation', type: 'video' },
+    { title: 'Clinic Appointment', price: '₹399', Icon: Building2, description: 'Visit nearby clinic', type: 'clinic' },
   ];
 
   const defaultHotDeals = [
-    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', image: '🍖', rating: 4.7 },
-    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', image: '🎒', rating: 4.5 },
-    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', image: '📍', rating: 4.9 },
+    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', Icon: Bone, rating: 4.7 },
+    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', Icon: PackageIcon, rating: 4.5 },
+    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', Icon: MapPin, rating: 4.9 },
   ];
 
   // Use API data or fallback to defaults
@@ -459,146 +640,147 @@ export function CustomerHomeComplete({
   const displayVetServices = vetServicesData.length > 0 ? vetServicesData : defaultVetServices;
   const displayHotDeals = hotDeals.length > 0 ? hotDeals : defaultHotDeals;
 
-  const articles = [
+  // Use dynamic articles if available, otherwise use defaults
+  const defaultArticles = [
     {
+      id: 'default-1',
       title: '10 Tips for Puppy Training',
       category: 'Training',
       readTime: '5 min',
-      image: '🐕'
+      Icon: Dog
     },
     {
+      id: 'default-2',
       title: 'Best Foods for Senior Dogs',
       category: 'Nutrition',
       readTime: '7 min',
-      image: '🍲'
+      Icon: UtensilsCrossed
     },
     {
+      id: 'default-3',
       title: 'Understanding Pet Insurance',
       category: 'Insurance',
       readTime: '6 min',
-      image: '🛡️'
+      Icon: Shield
     },
   ];
+  
+  const articles = dynamicArticles.length > 0 
+    ? dynamicArticles.map((a: any) => ({
+        id: a.id,
+        title: a.title,
+        category: a.category || 'Tips',
+        readTime: a.readTime || '5 min',
+        Icon: a.category === 'Nutrition' ? UtensilsCrossed 
+          : a.category === 'Insurance' ? Shield 
+          : a.category === 'Health' ? Heart
+          : Dog
+      }))
+    : defaultArticles;
 
   const adoptionOptions = [
     {
       title: 'Adopt from NGOs',
       description: 'Give a home to rescued pets',
-      icon: '❤️',
-      count: '50+ pets'
+      Icon: Heart,
+      count: `${adoptionStats.adoptablePets}+ pets`
     },
     {
       title: 'Certified Breeders',
       description: 'Ethical & verified breeders',
-      icon: '🏆',
-      count: '30+ breeders'
+      Icon: Star,
+      count: `${adoptionStats.certifiedBreeders}+ breeders`
     },
     {
       title: 'Pet Rehoming',
       description: 'Find loving owners',
-      icon: '🏡',
-      count: '20+ listings'
+      Icon: HomeIcon,
+      count: `${adoptionStats.rehomingListings}+ listings`
     },
   ];
 
-  return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      {/* Status Bar */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-white text-sm font-medium">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="white"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="white"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="white"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="white" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="white"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="white"/>
-          </svg>
-        </div>
-      </div>
+  const containerClassName = hideHeaderFooter 
+    ? 'min-h-screen bg-gray-50' 
+    : 'min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto';
 
-      {/* Header Section */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pb-6">
-        <div className="flex items-center justify-between mb-6">
+  return (
+    <div className={containerClassName}>
+      {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
+      {!hideHeaderFooter && (
+        <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-4 pt-4 pb-4">
+        {/* Top Row - User Info & Actions */}
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => onProfileClick && onProfileClick()}
-              className="w-12 h-12 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/50 transition-all shadow-lg"
+              className="w-11 h-11 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-md"
             >
               {userProfilePhoto ? (
                 <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white">
-                  {userData.name.charAt(0)}
+                <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-base font-bold">
+                  {userData.name.charAt(0).toUpperCase()}
                 </div>
               )}
             </button>
-            <div>
-              <h1 className="text-white">Hi, {userData.name}! 👋</h1>
-              <p className="text-white/90 text-sm">Explore WarmPawz Services</p>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <h1 className="text-white text-lg font-bold tracking-tight">Hi, {userData.name}!</h1>
+                <span className="text-base" role="img" aria-label="wave">👋</span>
+              </div>
+              <p className="text-white/65 text-xs font-normal tracking-wide">Explore WarmPawz Services</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Wallet Icon - Gold coin style with balance */}
+            <WalletIcon
+              customerPhone={phone}
+              onClick={() => onNavigate && onNavigate('wallet')}
+              size="sm"
+              showBalance={true}
+            />
             <button 
               onClick={() => onNavigate && onNavigate('cart')}
-              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm relative"
+              className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
             >
-              <ShoppingCart className="w-5 h-5 text-white" />
+              <ShoppingCart className="w-[18px] h-[18px] text-white" />
               {itemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-[18px] h-[18px] flex items-center justify-center font-bold shadow-sm">
                   {itemCount}
                 </span>
               )}
             </button>
-            <button className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-              <Heart className="w-5 h-5 text-white" />
+            <button className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors">
+              <Heart className="w-[18px] h-[18px] text-white" />
             </button>
           </div>
         </div>
 
-        {/* Pet Selector - Only show if user has pets */}
+        {/* Pet Selector - Compact horizontal layout */}
         {userData.pets.length > 0 ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-white/90 text-sm font-medium">Your Pets</p>
-              <button
-                onClick={handleAddPet}
-                className="text-white/90 text-xs flex items-center gap-1 hover:text-white transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
+          <div className="flex items-center gap-3">
+            <span className="text-white/90 text-[11px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
+            <div className="flex gap-2.5 overflow-x-auto scrollbar-hide flex-1">
               {userData.pets.map((pet) => (
                 <div key={pet.id} className="relative flex-shrink-0">
                   <button
                     onClick={() => setSelectedPet(pet)}
-                    className={`w-16 h-20 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
-                      selectedPet?.id === pet.id
-                        ? 'bg-white shadow-lg'
-                        : 'bg-white/20 backdrop-blur-sm'
-                    }`}
+                    className="flex flex-col items-center gap-1"
                   >
                     <div 
-                      className={`w-10 h-10 rounded-full overflow-hidden flex items-center justify-center text-2xl ${
-                        selectedPet?.id === pet.id ? 'bg-[#FF8C42]/10' : 'bg-white/20'
+                      className={`w-11 h-11 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${
+                        selectedPet?.id === pet.id
+                          ? 'ring-2 ring-white bg-white shadow-md scale-105'
+                          : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
                       }`}
                     >
                       {pet.photo || pet.image ? (
                         <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
                       ) : (
-                        <span>{pet.type === 'Dog' ? '🐕' : pet.type === 'Cat' ? '🐈' : '🐾'}</span>
+                        pet.type === 'Dog' ? <Dog className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : pet.type === 'Cat' ? <Cat className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} /> : <Heart className={`w-5 h-5 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
                       )}
                     </div>
-                    <span className={`text-xs font-medium ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`}>
+                    <span className={`text-[10px] font-semibold max-w-[44px] truncate ${selectedPet?.id === pet.id ? 'text-white' : 'text-white/80'}`}>
                       {pet.name}
                     </span>
                   </button>
@@ -607,10 +789,10 @@ export function CustomerHomeComplete({
                   {selectedPet?.id === pet.id && (
                     <button
                       onClick={() => onPetClick && onPetClick(pet.id)}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
+                      className="absolute -top-0.5 -right-0.5 w-[18px] h-[18px] bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
                       title="View/Edit Pet Profile"
                     >
-                      <ChevronRight className="w-3 h-3 text-white" />
+                      <ChevronRight className="w-2.5 h-2.5 text-white" />
                     </button>
                   )}
                 </div>
@@ -619,42 +801,79 @@ export function CustomerHomeComplete({
               {/* Add Pet Button */}
               <button
                 onClick={handleAddPet}
-                className="flex-shrink-0 w-16 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center gap-1 border-2 border-white/30 border-dashed"
+                className="flex-shrink-0 flex flex-col items-center gap-1"
               >
-                <Plus className="w-6 h-6 text-white" />
-                <span className="text-xs text-white font-medium">Add</span>
+                <div className="w-11 h-11 bg-white/15 backdrop-blur-sm rounded-full flex items-center justify-center border-[1.5px] border-white/50 border-dashed hover:bg-white/25 transition-colors">
+                  <Plus className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-[10px] text-white/80 font-semibold">Add</span>
               </button>
             </div>
           </div>
         ) : (
-          /* No Pets State - Show Add Pet CTA */
-          <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 border-2 border-white/30 border-dashed">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-white/20 rounded-full mx-auto mb-3 flex items-center justify-center">
-                <Heart className="w-8 h-8 text-white" />
+          <button
+            onClick={handleAddPet}
+            className="w-full bg-white/15 backdrop-blur-sm rounded-xl py-2.5 px-3 border border-white/35 border-dashed flex items-center gap-2.5 hover:bg-white/25 transition-colors"
+          >
+            <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center">
+              <Heart className="w-4 h-4 text-white" />
+            </div>
+            <div className="text-left flex-1">
+              <p className="text-white text-sm font-semibold tracking-tight">Add Your Pet</p>
+              <p className="text-white/60 text-[11px] font-normal">Unlock personalized services</p>
+            </div>
+            <Plus className="w-4 h-4 text-white/80" />
+          </button>
+        )}
+        </div>
+      )}
+
+      {/* Main Scrollable Content */}
+      <div className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[24px] -mt-3 pt-4'} ${hideHeaderFooter ? 'pb-4' : 'pb-24'}`}>
+        {/* ✅ Attention Section - Active Bookings with Tracking */}
+        {activeBookings.length > 0 && (
+          <div className="px-6 mb-4">
+            <div className="bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-200 rounded-2xl p-4 mb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-gray-900">Active Service</h3>
+                  <p className="text-sm text-gray-600">Provider is on the way</p>
+                </div>
               </div>
-              <h3 className="text-white font-semibold mb-1">No Pets Yet</h3>
-              <p className="text-white/80 text-xs mb-3">
-                {userData.journeyType === 'end-of-life' 
-                  ? 'Ready for a new companion? Add your pet profile to get started'
-                  : 'Add your pet profile to unlock personalized services'}
-              </p>
-              <button
-                onClick={handleAddPet}
-                className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 mx-auto"
-              >
-                <Plus className="w-4 h-4" />
-                Add Your First Pet
-              </button>
+              
+              {activeBookings.map((booking: any) => (
+                <div key={booking.id} className="bg-white rounded-xl p-4 mb-2 last:mb-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900">{booking.serviceName || 'Service'}</h4>
+                      <p className="text-xs text-gray-500">{booking.vendorName || 'Provider'}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => onViewBooking?.(booking.id)}
+                      className="bg-orange-500 hover:bg-orange-600 text-white"
+                    >
+                      <Navigation className="w-4 h-4 mr-1" />
+                      Track
+                    </Button>
+                  </div>
+                  {booking.estimatedArrival && (
+                    <div className="flex items-center gap-2 text-sm text-orange-600">
+                      <Clock className="w-4 h-4" />
+                      <span>ETA: {booking.estimatedArrival}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Main Scrollable Content */}
-      <div className="bg-white rounded-t-[32px] -mt-6 pt-6 pb-24">
         {/* ✅ Enhanced Search Bar */}
-        <div className="px-6 mb-4">
+        <div className="px-4 mb-3">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={phone}
@@ -701,22 +920,27 @@ export function CustomerHomeComplete({
           />
         </div>
 
-        {/* ✅ Trending Problems Section */}
-        <div className="px-6 mb-4">
+        {/* ✅ Trending Problems Section - Compact */}
+        <div className="px-4 mb-3">
           <TrendingProblems
             onProblemSelect={(problemId, title) => {
               // Navigate to services by problem
               onNavigate?.('services_by_problem', { problemId, problemTitle: title });
             }}
-            limit={5}
+            limit={3}
           />
         </div>
 
-        {/* ✅ Problem Grid Navigation */}
-        <div className="px-6 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-gray-900">What's Your Pet's Need?</h2>
-            <span className="text-xs text-gray-500">Problem-based search</span>
+        {/* ✅ Problem Grid Navigation - Compact Slider */}
+        <div className="mb-4">
+          <div className="px-4 flex items-center justify-between mb-2">
+            <h2 className="text-gray-900 text-sm font-semibold">What's Your Pet's Need?</h2>
+            <button 
+              onClick={() => onNavigate?.('problem_grid')}
+              className="text-[11px] text-[#FF8C42] font-medium"
+            >
+              View All
+            </button>
           </div>
           <ProblemGridNavigation
             onProblemSelect={(problemId, problem) => {
@@ -728,37 +952,43 @@ export function CustomerHomeComplete({
               });
             }}
             showTrending={true}
+            compact={true}
           />
         </div>
 
         {/* Hero Banner Carousel */}
-        <div className="px-6 mb-6">
-          <div className="relative h-40 rounded-3xl overflow-hidden shadow-lg">
+        <div className="px-4 mb-4">
+          <div className="relative h-28 rounded-2xl overflow-hidden shadow-md">
             {banners.map((banner, index) => (
               <div
-                key={index}
+                key={banner.id || index}
                 className={`absolute inset-0 transition-opacity duration-500 ${
                   currentBanner === index ? 'opacity-100' : 'opacity-0'
                 }`}
-                style={{ background: banner.bg }}
+                style={{ background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)` }}
               >
-                <div className="h-full flex items-center justify-between px-6">
+                <div className="h-full flex items-center justify-between px-4">
                   <div>
-                    <h2 className="text-white mb-1">{banner.title}</h2>
-                    <p className="text-white/90 text-sm mb-3">{banner.subtitle}</p>
-                    <button className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium">
-                      Claim Now
+                    <h2 className="text-white text-base font-bold mb-0.5">{banner.title}</h2>
+                    <p className="text-white/90 text-xs mb-2">{banner.subtitle}</p>
+                    <button 
+                      className="bg-white text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-medium"
+                      onClick={() => banner.ctaLink && onNavigate?.(banner.ctaLink)}
+                    >
+                      {banner.ctaText || 'Claim Now'}
                     </button>
                   </div>
-                  <div className="text-4xl">{banner.emoji}</div>
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                    <banner.Icon className="w-7 h-7 text-white" />
+                  </div>
                 </div>
               </div>
             ))}
             {/* Banner Indicators */}
             <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
-              {banners.map((_, index) => (
+              {banners.map((banner, index) => (
                 <div
-                  key={index}
+                  key={banner.id || index}
                   className={`h-1.5 rounded-full transition-all ${
                     currentBanner === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
                   }`}
@@ -768,23 +998,63 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Quick Services Grid */}
-        <div className="px-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-black font-semibold">All Services</h2>
-            <span className="text-xs text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).length} services</span>
+        {/* Shop Categories - Horizontal Slider */}
+        <div className="mb-4">
+          <div className="flex items-center gap-3 px-4 mb-2">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4 text-[#FF8C42]" />
+              <h2 className="text-gray-900 text-sm font-semibold">Shop</h2>
+            </div>
+            <div className="flex-1 h-px bg-gray-100"></div>
+            <button 
+              onClick={() => onNavigate?.('shop')}
+              className="text-xs text-[#FF8C42] font-medium"
+            >
+              View All
+            </button>
           </div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
+            {[
+              { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
+              { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-500" /> },
+              { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-500" /> },
+              { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-500" /> },
+              { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-500" /> },
+              { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-500" /> },
+              { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
+              { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
+            ].map((category) => (
+              <button
+                key={category.id}
+                onClick={() => onNavigate?.('shop', { category: category.id })}
+                className="flex-shrink-0 flex flex-col items-center gap-1 group"
+              >
+                <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all">
+                  {category.icon}
+                </div>
+                <span className="text-[10px] text-gray-700 font-medium">{category.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Services Grid - Compact */}
+        <div className="px-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-black text-sm font-semibold">All Services</h2>
+            <span className="text-[10px] text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).length} services</span>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
             {(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).map((service, index) => (
               <button
                 key={index}
                 onClick={() => onNavigate?.(service.screen)}
-                className="flex flex-col items-center gap-2 group"
+                className="flex flex-col items-center gap-1 group"
               >
-                <div className={`w-14 h-14 ${service.color} rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm`}>
-                  <service.icon className="w-6 h-6" />
+                <div className={`w-11 h-11 ${service.color} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm`}>
+                  <service.icon className="w-5 h-5" />
                 </div>
-                <span className="text-xs text-gray-700 text-center leading-tight">{service.label}</span>
+                <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-1">{service.label}</span>
               </button>
             ))}
           </div>
@@ -802,37 +1072,40 @@ export function CustomerHomeComplete({
             </button>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {displayGroomingServices.map((service, index) => (
-              <div 
-                key={index} 
-                className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => onNavigate?.('grooming')}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">
-                    {service.icon}
+            {displayGroomingServices.map((service: any, index) => {
+              const ServiceIcon = service.Icon || getServiceStyleIcon(service.serviceStyle);
+              return (
+                <div 
+                  key={index} 
+                  className="flex-shrink-0 w-64 bg-gradient-to-br from-orange-50 to-pink-50 rounded-3xl p-5 border border-orange-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => onNavigate?.('grooming')}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                      <ServiceIcon className="w-6 h-6 text-orange-500" />
+                    </div>
+                    <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
+                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                      <span className="text-xs font-medium">{service.rating}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs font-medium">{service.rating}</span>
+                  <h3 className="text-black font-semibold mb-1">{service.title}</h3>
+                  <p className="text-xs text-gray-600 mb-3">{service.description}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#FF8C42] font-medium">{service.price}</span>
+                    <button 
+                      className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium hover:bg-[#FF7A2E] transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate?.('grooming');
+                      }}
+                    >
+                      Book Now
+                    </button>
                   </div>
                 </div>
-                <h3 className="text-black font-semibold mb-1">{service.title}</h3>
-                <p className="text-xs text-gray-600 mb-3">{service.description}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#FF8C42] font-medium">{service.price}</span>
-                  <button 
-                    className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium hover:bg-[#FF7A2E] transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onNavigate?.('grooming');
-                    }}
-                  >
-                    Book Now
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -855,7 +1128,9 @@ export function CustomerHomeComplete({
               onClick={() => onNavigate?.('vet')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
-              <div className="text-3xl mb-2">📱</div>
+              <div className="w-10 h-10 mx-auto mb-2 bg-blue-100 rounded-xl flex items-center justify-center">
+                <Video className="w-5 h-5 text-blue-600" />
+              </div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Tele Consult</h3>
               <p className="text-blue-600 font-medium text-sm">₹299</p>
             </button>
@@ -863,7 +1138,9 @@ export function CustomerHomeComplete({
               onClick={() => onNavigate?.('vet')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
-              <div className="text-3xl mb-2">🏠</div>
+              <div className="w-10 h-10 mx-auto mb-2 bg-green-100 rounded-xl flex items-center justify-center">
+                <HomeIcon className="w-5 h-5 text-green-600" />
+              </div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
               <p className="text-blue-600 font-medium text-sm">₹599</p>
             </button>
@@ -871,7 +1148,9 @@ export function CustomerHomeComplete({
               onClick={() => onNavigate?.('vet')}
               className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
             >
-              <div className="text-3xl mb-2">🏥</div>
+              <div className="w-10 h-10 mx-auto mb-2 bg-purple-100 rounded-xl flex items-center justify-center">
+                <Building2 className="w-5 h-5 text-purple-600" />
+              </div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Clinic Visit</h3>
               <p className="text-blue-600 font-medium text-sm">₹399</p>
             </button>
@@ -883,17 +1162,19 @@ export function CustomerHomeComplete({
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-pink-600" />
-              <h2 className="text-black font-semibold">Hot Deals 🔥</h2>
+              <h2 className="text-black font-semibold">Hot Deals</h2>
             </div>
             <button className="text-xs text-pink-600 font-medium flex items-center gap-1">
               Shop All <ChevronRight className="w-4 h-4" />
             </button>
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
-            {displayHotDeals.map((deal, index) => (
-              <div key={index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="h-32 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center text-5xl relative">
-                  {deal.image}
+            {displayHotDeals.map((deal: any, index) => {
+              const DealIcon = deal.Icon || PackageIcon;
+              return (
+                <div key={index} className="flex-shrink-0 w-40 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                  <div className="h-32 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center relative">
+                    <DealIcon className="w-12 h-12 text-pink-500" />
                   {deal.discount && (
                     <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
                       {deal.discount}
@@ -915,7 +1196,8 @@ export function CustomerHomeComplete({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -1009,58 +1291,68 @@ export function CustomerHomeComplete({
             <button className="text-xs text-[#FF8C42] font-medium">See All</button>
           </div>
           <div className="px-6 space-y-3">
-            {/* AI Assistant Feature */}
-            <div className="bg-gradient-to-r from-orange-50 to-pink-50 rounded-2xl p-4 border border-orange-100 flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg">
-                <Bot className="w-8 h-8" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full font-medium">NEW</span>
-                  <span className="text-xs text-gray-500">Just launched</span>
-                </div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-1">AI Pet Assistant</h3>
-                <p className="text-xs text-gray-600">Get instant answers about pet care</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-            </div>
+            {/* Render dynamic announcements if available */}
+            {((dynamicAnnouncements.length > 0 ? dynamicAnnouncements : [
+              { id: 'ai', title: 'AI Pet Assistant', subtitle: 'Get instant answers about pet care', badgeText: 'NEW', badgeColor: 'green', icon: '🤖', announcementType: 'feature' },
+              { id: 'sos', title: 'Emergency Ambulance', subtitle: 'Instant location-based dispatch', badgeText: 'SOS', badgeColor: 'red', icon: '📞', ctaText: 'SOS ALERT', ctaLink: 'ambulance', announcementType: 'emergency' },
+              { id: 'premium', title: 'WarmPawz Plus', subtitle: 'Unlimited services at best prices', badgeText: 'PREMIUM', badgeColor: 'purple', icon: '⭐', announcementType: 'premium' },
+            ])).map((announcement: any) => {
+              const isEmergency = announcement.announcementType === 'emergency';
+              const isPremium = announcement.announcementType === 'premium';
+              const bgGradient = isEmergency 
+                ? 'from-red-50 to-orange-50 border-red-100' 
+                : isPremium 
+                ? 'from-purple-50 to-indigo-50 border-purple-100'
+                : 'from-orange-50 to-pink-50 border-orange-100';
+              const iconGradient = isEmergency 
+                ? 'from-red-500 to-orange-500' 
+                : isPremium 
+                ? 'from-purple-500 to-indigo-500'
+                : 'from-[#FF8C42] to-[#FF6B35]';
+              const badgeColor = announcement.badgeColor === 'red' ? 'bg-red-500' 
+                : announcement.badgeColor === 'purple' ? 'bg-purple-500' 
+                : announcement.badgeColor === 'blue' ? 'bg-blue-500' 
+                : 'bg-green-500';
+              const IconComponent = isEmergency ? Phone : isPremium ? Star : Bot;
 
-            {/* 24/7 Emergency */}
-            <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-2xl p-4 border border-red-100 flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg animate-pulse">
-                <Phone className="w-8 h-8" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full font-bold animate-pulse">SOS</span>
-                  <span className="text-xs text-gray-500">Immediate Help</span>
+              return (
+                <div 
+                  key={announcement.id} 
+                  className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4`}
+                  onClick={() => !isEmergency && announcement.ctaLink && onNavigate?.(announcement.ctaLink)}
+                >
+                  <div className={`w-16 h-16 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg ${isEmergency ? 'animate-pulse' : ''}`}>
+                    {announcement.icon ? (
+                      <span className="text-2xl">{announcement.icon}</span>
+                    ) : (
+                      <IconComponent className="w-8 h-8" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs ${badgeColor} text-white px-2 py-0.5 rounded-full font-medium ${isEmergency ? 'font-bold animate-pulse' : ''}`}>
+                        {announcement.badgeText || 'NEW'}
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-800 mb-1">{announcement.title}</h3>
+                    <p className="text-xs text-gray-600">{announcement.subtitle}</p>
+                  </div>
+                  {isEmergency && announcement.ctaText ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate?.(announcement.ctaLink || 'ambulance');
+                      }} 
+                      className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
+                    >
+                      {announcement.ctaText}
+                    </button>
+                  ) : (
+                    <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  )}
                 </div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-1">Emergency Ambulance</h3>
-                <p className="text-xs text-gray-600">Instant location-based dispatch</p>
-              </div>
-              <button
-                onClick={() => onNavigate?.('ambulance')} 
-                className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse"
-              >
-                SOS ALERT
-              </button>
-            </div>
-
-            {/* Premium Membership */}
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl p-4 border border-purple-100 flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg">
-                <Star className="w-8 h-8 fill-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded-full font-medium">PREMIUM</span>
-                  <span className="text-xs text-gray-500">Save 40%</span>
-                </div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-1">WarmPawz Plus</h3>
-                <p className="text-xs text-gray-600">Unlimited services at best prices</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-            </div>
+              );
+            })}
           </div>
         </div>
 
@@ -1077,8 +1369,8 @@ export function CustomerHomeComplete({
             {adoptionOptions.map((option, index) => (
               <div key={index} className="bg-gradient-to-r from-red-50 to-pink-50 rounded-2xl p-4 border border-red-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm">
-                    {option.icon}
+                  <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                    <option.Icon className="w-6 h-6 text-red-500" />
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold text-gray-800">{option.title}</h3>
@@ -1105,13 +1397,15 @@ export function CustomerHomeComplete({
           </div>
           <div className="flex gap-4 overflow-x-auto scrollbar-hide px-6">
             {[
-              { name: 'Royal Canin', discount: '25% OFF', icon: '👑' },
-              { name: 'Pedigree', discount: '30% OFF', icon: '🍖' },
-              { name: 'Drools', discount: '20% OFF', icon: '🦴' },
-              { name: 'Whiskas', discount: '15% OFF', icon: '🐱' },
+              { name: 'Royal Canin', discount: '25% OFF', Icon: Star },
+              { name: 'Pedigree', discount: '30% OFF', Icon: Bone },
+              { name: 'Drools', discount: '20% OFF', Icon: Bone },
+              { name: 'Whiskas', discount: '15% OFF', Icon: Cat },
             ].map((vendor, index) => (
               <div key={index} className="flex-shrink-0 w-32 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl p-4 border border-yellow-100 text-center">
-                <div className="text-4xl mb-2">{vendor.icon}</div>
+                <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 rounded-xl flex items-center justify-center">
+                  <vendor.Icon className="w-6 h-6 text-yellow-600" />
+                </div>
                 <h3 className="text-sm font-semibold text-gray-800 mb-1">{vendor.name}</h3>
                 <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full font-bold">
                   {vendor.discount}
@@ -1135,8 +1429,8 @@ export function CustomerHomeComplete({
           <div className="px-6 space-y-3">
             {articles.map((article, index) => (
               <div key={index} className="bg-white rounded-2xl border border-gray-200 p-4 flex items-start gap-4 shadow-sm">
-                <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center text-3xl flex-shrink-0">
-                  {article.image}
+                <div className="w-16 h-16 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <article.Icon className="w-8 h-8 text-teal-600" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
@@ -1274,8 +1568,9 @@ export function CustomerHomeComplete({
         </div>
       </div>
 
-      {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto">
+      {/* Fixed Bottom Navigation - Only show if not using standardized layout */}
+      {!hideHeaderFooter && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto">
         <div className="flex items-center justify-around">
           <button className="flex flex-col items-center gap-1">
             <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
@@ -1314,26 +1609,27 @@ export function CustomerHomeComplete({
         <div className="flex justify-center mt-2">
           <div className="w-32 h-1 bg-black rounded-full"></div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* AI Assistant Floating Action Button */}
-      <button
-        onClick={() => setShowAIChat(true)}
-        className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
-        style={{ right: 'max(1.5rem, calc((100vw - 430px) / 2 + 1.5rem))' }}
-      >
-        <Bot className="w-8 h-8 text-white" />
-        <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-          <Sparkles className="w-3 h-3 text-white" />
-        </div>
-      </button>
+      {!hideHeaderFooter && (
+        <button
+          onClick={() => setShowAIChat(true)}
+          className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
+        >
+          <Bot className="w-8 h-8 text-white" />
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+            <Sparkles className="w-3 h-3 text-white" />
+          </div>
+        </button>
+      )}
 
       {/* ✅ NEW: Category Mapper Button (Development Tool) */}
-      {onOpenCategoryMapper && (
+      {onOpenCategoryMapper && !hideHeaderFooter && (
         <button
           onClick={onOpenCategoryMapper}
           className="fixed bottom-24 left-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto"
-          style={{ left: 'max(1.5rem, calc((100vw - 430px) / 2 + 1.5rem))' }}
           title="Open Category Mapper"
         >
           <Settings className="w-7 h-7 text-white" />
@@ -1352,98 +1648,106 @@ export function CustomerHomeComplete({
         />
       )}
 
-      {/* Add Pet Modal */}
-      {showAddPetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Add New Pet</h2>
-              <button 
-                onClick={() => setShowAddPetModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Pet Name *</label>
-                <input
-                  type="text"
-                  value={newPetData.name}
-                  onChange={(e) => setNewPetData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Enter pet name"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent"
-                />
-              </div>
+      {/* Add Pet Modal - Enhanced with Photo & Vaccinations */}
+      <EnhancedAddPetModal
+        phone={phone}
+        isOpen={showAddPetModal}
+        onClose={() => setShowAddPetModal(false)}
+        onSuccess={() => {
+          loadUserData();
+          setShowAddPetModal(false);
+        }}
+      />
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Pet Type</label>
-                <select
-                  value={newPetData.type}
-                  onChange={(e) => setNewPetData(prev => ({ ...prev, type: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
-                >
-                  <option value="Dog">🐕 Dog</option>
-                  <option value="Cat">🐱 Cat</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1.5">Platform supports Dogs and Cats only</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Breed</label>
-                <input
-                  type="text"
-                  value={newPetData.breed}
-                  onChange={(e) => setNewPetData(prev => ({ ...prev, breed: e.target.value }))}
-                  placeholder="e.g., Labrador, Persian"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Age (years)</label>
-                  <input
-                    type="number"
-                    value={newPetData.age}
-                    onChange={(e) => setNewPetData(prev => ({ ...prev, age: e.target.value }))}
-                    placeholder="e.g., 3"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-                  <select
-                    value={newPetData.gender}
-                    onChange={(e) => setNewPetData(prev => ({ ...prev, gender: e.target.value }))}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42]"
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowAddPetModal(false)}
-                className="flex-1 px-4 py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSavePet}
-                disabled={savingPet || !newPetData.name.trim()}
-                className="flex-1 px-4 py-3 bg-[#FF8C42] text-white rounded-xl hover:bg-[#FF7A2E] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {savingPet ? 'Saving...' : 'Add Pet'}
-              </button>
-            </div>
-          </div>
+      {/* ✅ Live Tracking Widget - Shows when vendor is on the way */}
+      {showTrackingWidget && trackingBooking && (
+        <div className="fixed bottom-20 left-4 right-4 z-50 max-w-md mx-auto">
+          <LiveTrackingWidget
+            bookingId={showTrackingWidget}
+            onClose={() => {
+              setShowTrackingWidget(null);
+              setTrackingBooking(null);
+            }}
+            onCallProvider={() => {
+              // Call vendor phone
+              if (trackingBooking.vendorPhone) {
+                window.location.href = `tel:${trackingBooking.vendorPhone}`;
+              }
+            }}
+            onChatProvider={() => {
+              onNavigate?.('booking-detail', { bookingId: showTrackingWidget });
+            }}
+            minimizable={true}
+          />
         </div>
+      )}
+
+      {/* ✅ FIX #6: Unified Appointment Tracker Widget - Shows upcoming appointments and active bookings */}
+      <UnifiedAppointmentTracker
+        customerPhone={phone}
+        onJoinCall={(bookingId, meetingId) => {
+          if (onNavigate) {
+            onNavigate('video-call', { bookingId, meetingId });
+          } else {
+            window.location.href = `/video/${bookingId}`;
+          }
+        }}
+        onOpenChat={(bookingId) => {
+          if (onViewBooking) {
+            onViewBooking(bookingId);
+          } else if (onNavigate) {
+            onNavigate('booking-details', { bookingId, chat: true });
+          }
+        }}
+        onCallProvider={(phone) => {
+          window.open(`tel:${phone}`, '_self');
+        }}
+        onNavigate={onNavigate}
+        className={hideHeaderFooter ? 'bottom-6' : 'bottom-24'} // Adjust position based on footer
+      />
+
+      {/* ✅ NEW: Vendor On The Way Popup */}
+      {vendorOnTheWay && (
+        <VendorOnTheWayPopup
+          booking={vendorOnTheWay}
+          onTrack={(bookingId) => {
+            // Close popup and open live tracking
+            setVendorOnTheWay(null);
+            setShowTrackingWidget(bookingId);
+            const booking = activeBookings.find((b: any) => 
+              b.id === bookingId || b.bookingId === bookingId
+            );
+            if (booking) {
+              setTrackingBooking(booking);
+            }
+          }}
+          onCall={(phone) => {
+            window.open(`tel:${phone}`, '_self');
+          }}
+          onDismiss={() => setVendorOnTheWay(null)}
+        />
+      )}
+
+      {/* ✅ Rating/Review Popup - Shows after booking completion */}
+      {pendingReview && (
+        <RatingReviewPopup
+          isOpen={pendingReview.isOpen}
+          onClose={() => setPendingReview(null)}
+          bookingId={pendingReview.bookingId}
+          vendorId={pendingReview.vendorId}
+          vendorName={pendingReview.vendorName}
+          serviceName={pendingReview.serviceName}
+          serviceStyle={pendingReview.serviceStyle}
+          staffId={pendingReview.staffId}
+          staffName={pendingReview.staffName}
+          customerPhone={phone}
+          customerId={customerId}
+          onSubmit={() => {
+            setPendingReview(null);
+            // Optionally refresh data
+            loadActiveBookings();
+          }}
+        />
       )}
     </div>
   );

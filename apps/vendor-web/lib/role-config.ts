@@ -68,21 +68,21 @@ export const SERVICE_STYLES: Record<string, ServiceStyleConfig> = {
   at_center: {
     id: 'at_center',
     label: 'At Clinic',
-    icon: '🏥',
+    icon: 'building2', // lucide icon name
     color: 'blue',
     description: 'Services provided at your facility',
   },
   at_home: {
     id: 'at_home',
     label: 'Home Visit',
-    icon: '🏠',
+    icon: 'home', // lucide icon name
     color: 'green',
     description: 'Services provided at customer location',
   },
   tele: {
     id: 'tele',
     label: 'Video Consultation',
-    icon: '📱',
+    icon: 'video', // lucide icon name
     color: 'purple',
     description: 'Online video consultations',
   },
@@ -114,26 +114,26 @@ export function normalizeServiceStyle(style: string): 'at_center' | 'at_home' | 
 // ============================================================================
 
 const COMMON_SECTIONS: DashboardSection[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊', priority: 0 },
-  { id: 'bookings', label: 'Bookings', icon: '📅', priority: 1 },
-  { id: 'services', label: 'Services', icon: '🛠️', priority: 2 },
-  { id: 'schedule', label: 'Schedule', icon: '🗓️', priority: 3 },
-  { id: 'earnings', label: 'Earnings', icon: '💰', priority: 10 },
-  { id: 'settings', label: 'Settings', icon: '⚙️', priority: 20 },
+  { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', priority: 0 },
+  { id: 'bookings', label: 'Bookings', icon: 'calendar', priority: 1 },
+  { id: 'services', label: 'Services', icon: 'briefcase', priority: 2 },
+  { id: 'schedule', label: 'Schedule', icon: 'calendar-clock', priority: 3 },
+  { id: 'earnings', label: 'Earnings', icon: 'trending-up', priority: 10 },
+  { id: 'settings', label: 'Settings', icon: 'settings', priority: 20 },
 ];
 
 const HEALTHCARE_SECTIONS: DashboardSection[] = [
-  { id: 'prescriptions', label: 'Prescriptions', icon: '💊', priority: 4, requiresCapability: 'prescriptions' },
-  { id: 'medical_records', label: 'Medical Records', icon: '📋', priority: 5, requiresCapability: 'medical_records' },
-  { id: 'patient_monitoring', label: 'Patient Monitoring', icon: '❤️', priority: 6, requiresCapability: 'patient_monitoring' },
+  { id: 'prescriptions', label: 'Prescriptions', icon: 'pill', priority: 4, requiresCapability: 'prescriptions' },
+  { id: 'medical_records', label: 'Medical Records', icon: 'file-text', priority: 5, requiresCapability: 'medical_records' },
+  { id: 'patient_monitoring', label: 'Patient Monitoring', icon: 'heart', priority: 6, requiresCapability: 'patient_monitoring' },
 ];
 
 const STAFF_SECTIONS: DashboardSection[] = [
-  { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_management' },
+  { id: 'staff', label: 'Staff Management', icon: 'users', priority: 7, requiresCapability: 'staff_management' },
 ];
 
 const FACILITY_SECTIONS: DashboardSection[] = [
-  { id: 'facility', label: 'Facility', icon: '🏢', priority: 8, requiresCapability: 'facility_management' },
+  { id: 'facility', label: 'Facility', icon: 'building', priority: 8, requiresCapability: 'facility_management' },
 ];
 
 // ============================================================================

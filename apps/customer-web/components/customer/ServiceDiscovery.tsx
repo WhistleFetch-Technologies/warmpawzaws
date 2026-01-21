@@ -183,7 +183,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
                         {vendor.rating > 0 && (
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="font-medium">{vendor.rating.toFixed(1)}</span>
+                            <span className="font-medium">{Number(vendor.rating || 0).toFixed(1)}</span>
                             <span className="text-gray-400">({vendor.totalReviews})</span>
                           </div>
                         )}

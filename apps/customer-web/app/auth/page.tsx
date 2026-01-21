@@ -110,6 +110,41 @@ export default function AuthPage() {
         console.log('🔧 [UAT Mode] OTP verified successfully (static)');
         localStorage.setItem('customerPhone', phone);
         localStorage.setItem('authToken', 'uat-token-customer-' + Date.now());
+        
+        // ✅ FIX: Set sessionStorage flags BEFORE navigation to prevent hard refresh detection
+        sessionStorage.setItem('_warmpawz_has_session', 'true');
+        sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
+        console.log('✅ [Auth] UAT Mode - sessionStorage flags set before navigation');
+        
+        // Try to fetch profile to set onboarding state (non-blocking)
+        try {
+          const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+          if (profileResponse?.profile) {
+            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
+            localStorage.setItem('customerId', profileResponse.profile.id);
+            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+            
+            const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
+            const profileCompleted = profileResponse.profile.profile_completed;
+            
+            // Check for pets
+            try {
+              const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
+              if (petsResponse?.pets?.length > 0) {
+                localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
+                localStorage.setItem('customerOnboardingComplete', 'true');
+              }
+            } catch {}
+            
+            if (onboardingStatus === 'COMPLETED' || profileCompleted) {
+              localStorage.setItem('customerOnboardingComplete', 'true');
+            }
+          }
+        } catch {
+          // New customer - will go through onboarding
+          localStorage.setItem('customerOnboardingComplete', 'false');
+        }
+        
         router.push('/');
         return;
       }

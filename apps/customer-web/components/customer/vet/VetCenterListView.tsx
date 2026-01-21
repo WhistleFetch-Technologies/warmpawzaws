@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Clock, Phone, Search } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { formatOperatingHours } from '@/lib/format-utils';
 
 interface VetCenterListViewProps {
   phone: string;
@@ -121,7 +122,7 @@ export function VetCenterListView({ phone, onBack, onNavigate }: VetCenterListVi
                   {center.operatingHours && (
                     <div className="flex items-center gap-3 mt-0 text-gray-600">
                       <Clock className="w-3 h-3" />
-                      <span className="text-xs">{center.operatingHours}</span>
+                      <span className="text-xs">{formatOperatingHours(center.operatingHours)}</span>
                     </div>
                   )}
                 </div>

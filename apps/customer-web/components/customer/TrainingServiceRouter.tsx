@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock } from 'lucide-react';
+import { GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { TRAINING_GOALS } from './ProblemGridSection';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -104,7 +105,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         activeTrainers: allTrainers.length,
         sessions: allTrainers.length > 0 ? `${Math.max(allTrainers.length * 40, 100)}+` : '0',
         rating: allTrainers.length > 0 
-          ? (allTrainers.reduce((acc: number, t: any) => acc + (t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
+          ? Number(allTrainers.reduce((acc: number, t: any) => acc + Number(t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
           : '-'
       });
     } catch (error) {
@@ -139,49 +140,40 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
-           <button 
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <h1 className="text-2xl font-bold text-white">Pet Training</h1>
-        </div>
-
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeTrainers}+</div>
-               <div className="text-xs text-white/80">Trainers</div>
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Stats Bar - Moved below header */}
+      {stats && (
+        <div className="px-4 pt-4 pb-2 bg-white">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+               <div className="text-lg font-bold text-orange-600">{stats.activeTrainers}+</div>
+               <div className="text-xs text-orange-700">Trainers</div>
             </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.sessions}</div>
-               <div className="text-xs text-white/80">Sessions</div>
+            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+               <div className="text-lg font-bold text-orange-600">{stats.sessions}</div>
+               <div className="text-xs text-orange-700">Sessions</div>
             </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
+            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
+               <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
+                 {stats.rating} <Star className="w-3.5 h-3.5 fill-orange-500" />
                </div>
-               <div className="text-xs text-white/80">Rating</div>
+               <div className="text-xs text-orange-700">Rating</div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      {/* Main Content */}
+      <div className="px-4 pt-4 bg-white">
         <div className="space-y-8">
           
           {/* FREE TRIAL ENTRY POINT - As per Master Plan */}
@@ -224,13 +216,13 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Package className="w-5 h-5 text-purple-600" />
+                  <Package className="w-5 h-5 text-orange-500" />
                   <h2 className="text-lg font-bold text-slate-900">Your Training</h2>
                 </div>
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="text-purple-600"
+                  className="text-orange-500"
                   onClick={() => onNavigate?.('training-progress', { packageId: activePackages[0].id })}
                 >
                   View Progress
@@ -238,14 +230,14 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </Button>
               </div>
               
-              <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50 p-4">
+              <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <Trophy className="w-6 h-6 text-purple-600" />
+                  <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                    <Trophy className="w-6 h-6 text-orange-500" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-purple-900">{activePackages[0].packageName}</h3>
-                    <p className="text-sm text-purple-600">with {activePackages[0].trainerName}</p>
+                    <h3 className="font-semibold text-gray-900">{activePackages[0].packageName}</h3>
+                    <p className="text-sm text-orange-600">with {activePackages[0].trainerName}</p>
                     <p className="text-xs text-gray-500 mt-1">{activePackages[0].petName}</p>
                   </div>
                 </div>
@@ -256,9 +248,9 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     <span className="text-gray-600">Sessions Completed</span>
                     <span className="font-medium">{activePackages[0].completedSessions}/{activePackages[0].totalSessions}</span>
                   </div>
-                  <div className="h-2 bg-purple-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all"
+                      className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all"
                       style={{ width: `${(activePackages[0].completedSessions / activePackages[0].totalSessions) * 100}%` }}
                     />
                   </div>
@@ -281,12 +273,12 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 
                 {/* Next Session */}
                 {activePackages[0].nextSessionDate && (
-                  <div className="flex items-center justify-between pt-3 border-t border-purple-100">
+                  <div className="flex items-center justify-between pt-3 border-t border-orange-100">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Clock className="w-4 h-4" />
                       <span>Next: {new Date(activePackages[0].nextSessionDate).toLocaleDateString()}</span>
                     </div>
-                    <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
                       View Details
                     </Button>
                   </div>
@@ -342,56 +334,8 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </Card>
           )}
 
-          {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">New Puppy</div>
-                    <div className="text-2xl font-bold text-slate-900">25% OFF</div>
-                    <div className="text-slate-500 text-xs">Puppy Training Package</div>
-                  </div>
-                  <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
-                    <GraduationCap className="w-5 h-5 text-orange-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹2999</span>
-                    <span className="ml-2 font-bold text-slate-900">₹2249</span>
-                  </div>
-                  <Button size="sm" className="bg-orange-600 text-white hover:bg-orange-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('training_center')}>
-                    Book Now
-                  </Button>
-                </div>
-              </Card>
-
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">Popular</div>
-                    <div className="text-2xl font-bold text-slate-900">₹4999</div>
-                    <div className="text-slate-500 text-xs">Obedience Package</div>
-                  </div>
-                  <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                    <Heart className="w-5 h-5 text-slate-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-xs text-slate-500">8 Sessions</div>
-                  <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('training_center')}>
-                    Book
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          </div>
+          {/* Promotion Banner - Phase 0.1 Integration */}
+          <PromotionBanner service="training" maxPromotions={3} />
 
           {/* Service Types */}
           <div>
@@ -499,7 +443,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         {trainer.rating || 4.8}
                       </span>
                       <span>•</span>
-                      <span>{trainer.distance ? `${trainer.distance.toFixed(1)} km` : 'Nearby'}</span>
+                      <span>{trainer.distance ? `${Number(trainer.distance).toFixed(1)} km` : 'Nearby'}</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -512,6 +456,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

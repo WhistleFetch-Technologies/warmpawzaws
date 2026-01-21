@@ -311,6 +311,14 @@ export default function ShopPage() {
               />
             </div>
 
+            {/* Wishlist */}
+            <a
+              href="/wishlist"
+              className="relative p-3 hover:bg-slate-100 rounded-xl transition-all"
+            >
+              <Heart className="w-5 h-5 text-slate-600" />
+            </a>
+
             {/* Cart */}
             <button
               onClick={() => setShowCart(true)}
@@ -841,15 +849,55 @@ export default function ShopPage() {
 // ============================================================================
 
 function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAddToCart: () => void; inCart: boolean }) {
+  const [isWishlisted, setIsWishlisted] = React.useState(false);
+
+  React.useEffect(() => {
+    // Check wishlist status
+    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    setIsWishlisted(wishlist.includes(product.id));
+  }, [product.id]);
+
+  const toggleWishlist = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
+    if (isWishlisted) {
+      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist.filter((id: string) => id !== product.id)));
+      setIsWishlisted(false);
+    } else {
+      wishlist.push(product.id);
+      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
+      setIsWishlisted(true);
+    }
+  };
+
+  const handleCardClick = () => {
+    window.location.href = `/shop/${product.id}`;
+  };
+
   const discount = product.original_price && product.original_price > product.price
     ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
     : 0;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-xl transition-all group">
+    <div 
+      className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-xl transition-all group cursor-pointer"
+      onClick={handleCardClick}
+    >
       {/* Image */}
       <div className="aspect-square bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center text-6xl relative">
         {product.emoji || '📦'}
+        
+        {/* Wishlist Button */}
+        <button
+          onClick={toggleWishlist}
+          className={`absolute top-3 right-3 p-2 rounded-full transition-all ${
+            isWishlisted 
+              ? 'bg-red-500 text-white' 
+              : 'bg-white/80 text-slate-400 hover:bg-white hover:text-red-500'
+          }`}
+        >
+          <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-current' : ''}`} />
+        </button>
         
         {/* Discount Badge */}
         {discount > 0 && (
@@ -860,7 +908,7 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
         
         {/* Stock Badge */}
         {product.stock <= 5 && product.stock > 0 && (
-          <div className="absolute top-3 right-3 px-2 py-1 bg-amber-500 text-white text-xs font-bold rounded-lg">
+          <div className="absolute bottom-3 left-3 px-2 py-1 bg-amber-500 text-white text-xs font-bold rounded-lg">
             Only {product.stock} left
           </div>
         )}
@@ -900,7 +948,7 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
 
         {/* Add to Cart */}
         <button
-          onClick={onAddToCart}
+          onClick={(e) => { e.stopPropagation(); onAddToCart(); }}
           disabled={product.stock === 0}
           className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
             product.stock === 0

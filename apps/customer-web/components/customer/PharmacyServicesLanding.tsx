@@ -76,7 +76,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
           activePharmacies: allPharmacies.length || 25,
           orders: '50K+',
           rating: allPharmacies.length > 0 
-            ? (allPharmacies.reduce((acc: number, p: any) => acc + (p.rating || 4.7), 0) / allPharmacies.length).toFixed(1) 
+            ? Number(allPharmacies.reduce((acc: number, p: any) => acc + Number(p.rating || 4.7), 0) / allPharmacies.length).toFixed(1) 
             : '4.7'
         });
       } else {
@@ -359,7 +359,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
                         </div>
                         <div className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-3 h-3" />
-                          <span>{pharmacy.distance ? `${pharmacy.distance.toFixed(1)}km` : 'Nearby'}</span>
+                          <span>{pharmacy.distance ? `${Number(pharmacy.distance).toFixed(1)}km` : 'Nearby'}</span>
                         </div>
                       </div>
                     </div>

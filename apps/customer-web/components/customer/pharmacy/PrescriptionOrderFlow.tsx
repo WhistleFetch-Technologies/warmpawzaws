@@ -183,13 +183,36 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
         setOrder((response as any).order);
         setPharmacies((response as any).pharmacies || []);
 
-        // Simulate pharmacy confirmation (in production, wait for real response)
-        setTimeout(() => {
-          if ((response as any).pharmacies.length > 0) {
-            setConfirmedPharmacy((response as any).pharmacies[0]);
-            setStep('confirmed');
-          }
-        }, 2000);
+        // Start polling for order status to wait for pharmacy acceptance
+        // Don't simulate - wait for real pharmacy response
+        if ((response as any).order?.id) {
+          // Start polling for order acceptance
+          const pollOrderStatus = setInterval(async () => {
+            try {
+              const statusResponse = await apiClient.get(`/pharmacy/orders/${(response as any).order.id}/track`);
+              if (statusResponse && (statusResponse as any).order?.status === 'confirmed') {
+                // Pharmacy accepted - find the accepting pharmacy
+                const acceptingPharmacy = (response as any).pharmacies.find((p: any) => p.id === (statusResponse as any).order?.pharmacy?.id) || (response as any).pharmacies[0];
+                setConfirmedPharmacy(acceptingPharmacy);
+                setStep('confirmed');
+                clearInterval(pollOrderStatus);
+              } else if ((statusResponse as any).order?.status === 'no_pharmacy_available') {
+                // All pharmacies rejected
+                clearInterval(pollOrderStatus);
+                // Show error message (toast would be nice, but not critical for functionality)
+                console.error('No pharmacy accepted your order. Please try again.');
+                setStep('prescription');
+              }
+            } catch (error) {
+              console.error('Error polling order status:', error);
+            }
+          }, 3000); // Poll every 3 seconds
+
+          // Stop polling after 5 minutes (300 seconds) if no response
+          setTimeout(() => {
+            clearInterval(pollOrderStatus);
+          }, 300000);
+        }
       }
     } catch (error) {
       console.error('Error creating order:', error);

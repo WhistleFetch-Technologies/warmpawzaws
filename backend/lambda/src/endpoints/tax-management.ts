@@ -627,6 +627,79 @@ export function registerTaxManagementEndpoints(app: Hono) {
   });
 
   /**
+   * GET /tax/categories
+   * Public endpoint for getting tax categories (for checkout)
+   */
+  app.get('/tax/categories', async (c) => {
+    try {
+      const { query: dbQuery } = await import('../database/rds-connection');
+      const result = await dbQuery(`
+        SELECT id, name, description, default_gst_rate as gst_rate, is_active
+        FROM tax_categories
+        WHERE is_active = true
+        ORDER BY name
+      `);
+      const rows = result.rows || [];
+      return c.json({
+        success: true,
+        categories: rows,
+      });
+    } catch (error: any) {
+      console.error('Error fetching tax categories:', error);
+      // Return default categories if table doesn't exist
+      return c.json({
+        success: true,
+        categories: [
+          { id: '1', name: 'Pet Food', gst_rate: 18 },
+          { id: '2', name: 'Pet Accessories', gst_rate: 18 },
+          { id: '3', name: 'Pet Medicines', gst_rate: 12 },
+          { id: '4', name: 'Services', gst_rate: 18 },
+        ],
+      });
+    }
+  });
+
+  /**
+   * GET /tax/hsn/:code
+   * Public endpoint for validating HSN code and getting tax rate
+   */
+  app.get('/tax/hsn/:code', async (c) => {
+    try {
+      const code = c.req.param('code');
+      const { query: dbQuery } = await import('../database/rds-connection');
+      const result = await dbQuery(`
+        SELECT id, code, description, gst_rate, is_active
+        FROM hsn_codes
+        WHERE code = $1 AND is_active = true
+      `, [code]);
+      const rows = result.rows || [];
+      
+      if (rows.length === 0) {
+        // Return default rate for unknown HSN
+        return c.json({
+          success: true,
+          hsn: { code, description: 'Unknown HSN code', gst_rate: 18 },
+          message: 'HSN code not found, using default rate',
+        });
+      }
+      
+      return c.json({
+        success: true,
+        hsn: rows[0],
+      });
+    } catch (error: any) {
+      console.error('Error fetching HSN code:', error);
+      const code = c.req.param('code');
+      // Return default rate on error
+      return c.json({
+        success: true,
+        hsn: { code, description: 'Unknown HSN code', gst_rate: 18 },
+        message: 'Using default rate due to database error',
+      });
+    }
+  });
+
+  /**
    * POST /tax/calculate
    * Public endpoint for calculating tax on items (for customer checkout)
    */

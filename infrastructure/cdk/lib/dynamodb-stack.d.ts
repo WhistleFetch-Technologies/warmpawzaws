@@ -1,3 +1,7 @@
+/**
+ * AWS CDK STACK - DYNAMODB TABLES
+ * Defines DynamoDB tables for high-throughput data
+ */
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 export interface DynamoDbStackProps {
@@ -11,3 +15,4 @@ export declare class DynamoDbStack extends Construct {
     readonly aiConversationsTable: dynamodb.Table;
     constructor(scope: Construct, id: string, props?: DynamoDbStackProps);
 }
+//# sourceMappingURL=dynamodb-stack.d.ts.map

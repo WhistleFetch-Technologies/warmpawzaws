@@ -10,6 +10,7 @@ const nextConfig = {
   // Do not rely on build-time env injection for API base URLs.
   // This app is deployed as static assets to S3/CloudFront, so runtime config
   // is provided via `/runtime-config.js` (generated during deploy).
+  swcMinify: true,
   webpack: (config, { isServer }) => {
     // Configure webpack to resolve modules from packages/ui/node_modules
     // This ensures Next.js can find dependencies from the linked @warmpawz/ui package

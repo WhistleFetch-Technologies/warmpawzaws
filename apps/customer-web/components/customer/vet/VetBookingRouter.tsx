@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 interface VetBookingRouterProps {
   phone: string;
   doctorId?: string;
+  vendorId?: string; // ✅ FIX: Add vendorId to support clinic/vendor context
   doctor?: any;
   selectedService?: string;
   serviceType?: string;

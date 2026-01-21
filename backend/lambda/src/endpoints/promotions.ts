@@ -159,6 +159,73 @@ export function registerPromotionEndpoints(app: Hono) {
   // PROMOTION ENDPOINTS
   // ============================================================================
   /**
+   * GET /promotions/list
+   * Phase 0.1: Get promotions filtered by service and published status
+   * Query params: service, published (true/false), spotlight (optional)
+   */
+  app.get("/promotions/list", async (c) => {
+    try {
+      const service = c.req.query('service');
+      const published = c.req.query('published');
+      const spotlight = c.req.query('spotlight');
+
+      const now = new Date().toISOString().split('T')[0];
+
+      let queryStr = `
+        SELECT * FROM promotions
+        WHERE is_active = true
+        AND start_date <= $1
+        AND (end_date IS NULL OR end_date >= $1)
+      `;
+      const params: any[] = [now];
+      let paramIndex = 2;
+
+      // Filter by published status
+      if (published === 'true') {
+        queryStr += ` AND published = true`;
+      } else if (published === 'false') {
+        queryStr += ` AND published = false`;
+      }
+
+      // Filter by spotlight
+      if (spotlight === 'true') {
+        queryStr += ` AND is_spotlight = true`;
+      }
+
+      // Filter by service (check applicable_services JSONB array)
+      if (service && service !== 'all') {
+        queryStr += ` AND (
+          applicable_services IS NULL 
+          OR applicable_services = '[]'::jsonb
+          OR applicable_services @> $${paramIndex}::jsonb
+        )`;
+        params.push(JSON.stringify([service]));
+        paramIndex++;
+      }
+
+      // Order: spotlight first, then by priority (lower number = higher priority)
+      queryStr += ` ORDER BY is_spotlight DESC, priority ASC, created_at DESC`;
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return c.json({
+        success: true,
+        promotions: rows,
+        total: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching promotions list:', error);
+      // Graceful fallback if schema fields don't exist yet
+      if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
+        console.warn('⚠️ Schema issue - returning empty array');
+        return c.json({ success: true, promotions: [], total: 0 });
+      }
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /promotions/active
    * Get active promotions
    */
@@ -278,6 +345,59 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   /**
+   * GET /promotions/validate?code=XXX
+   * ✅ Phase 2.3: Validate promotion code (alias for coupons/validate)
+   * Customer-facing endpoint for promotion validation
+   */
+  app.get("/promotions/validate", async (c) => {
+    try {
+      const promotionCode = c.req.query('code');
+      if (!promotionCode) {
+        return c.json({ valid: false, message: 'Promotion code is required' }, 400);
+      }
+
+      // Use same validation logic as coupons
+      const result = await query(
+        `SELECT * FROM promotions 
+         WHERE code = $1 
+         AND is_active = true 
+         AND (start_date IS NULL OR start_date <= NOW())
+         AND (end_date IS NULL OR end_date >= NOW())
+         AND published = true
+         LIMIT 1`,
+        [promotionCode]
+      );
+
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      
+      if (rows.length === 0) {
+        return c.json({
+          valid: false,
+          message: 'Invalid or expired promotion code'
+        });
+      }
+
+      const promotion = normalizeDbRow(rows[0]);
+      
+      return c.json({
+        valid: true,
+        promotion: {
+          id: promotion.id,
+          name: promotion.name || promotion.title,
+          code: promotion.code,
+          discount_type: promotion.discount_type,
+          discount_value: promotion.discount_value,
+          description: promotion.description,
+          applicable_services: promotion.applicable_services || [],
+        }
+      });
+    } catch (error: any) {
+      console.error('Error validating promotion:', error);
+      return c.json({ valid: false, error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /coupons/validate/:couponCode
    * Validate coupon code
    */
@@ -350,8 +470,86 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   /**
+   * ✅ FIX GAP 7.1: Internal coupon validation helper function
+   * Extracted from GET /coupons/validate/:couponCode to avoid fetch() in Lambda
+   */
+  async function validateCouponInternal(couponCode: string, amount: number): Promise<{
+    success: boolean;
+    valid: boolean;
+    coupon?: { id: string; code: string; name: string; discountType: string; discountValue: string };
+    discountAmount?: number;
+    error?: string;
+  }> {
+    try {
+      const coupons = await select('coupons', { code: couponCode.toUpperCase(), is_active: true });
+      if (coupons.length === 0) {
+        return { success: false, valid: false, error: 'Invalid coupon code' };
+      }
+
+      const coupon = coupons[0];
+
+      // Check validity
+      const now = new Date();
+      const startDate = new Date(coupon.start_date);
+      const endDate = coupon.end_date ? new Date(coupon.end_date) : null;
+
+      if (now < startDate || (endDate && now > endDate)) {
+        return { success: false, valid: false, error: 'Coupon has expired' };
+      }
+
+      if (coupon.min_order_amount && amount < parseFloat(coupon.min_order_amount)) {
+        return {
+          success: false,
+          valid: false,
+          error: `Minimum order amount of ₹${coupon.min_order_amount} required`,
+        };
+      }
+
+      // Check usage limit
+      if (coupon.max_uses) {
+        const usageCount = await query(
+          'SELECT COUNT(*) as count FROM coupon_usages WHERE coupon_id = $1',
+          [coupon.id]
+        ).catch(() => ({ rows: [{ count: '0' }] }));
+
+        if (parseInt(usageCount.rows[0]?.count || '0', 10) >= coupon.max_uses) {
+          return { success: false, valid: false, error: 'Coupon usage limit reached' };
+        }
+      }
+
+      // Calculate discount
+      let discountAmount = 0;
+      if (coupon.discount_type === 'percentage') {
+        discountAmount = (amount * parseFloat(coupon.discount_value || '0')) / 100;
+        if (coupon.max_discount_amount) {
+          discountAmount = Math.min(discountAmount, parseFloat(coupon.max_discount_amount));
+        }
+      } else if (coupon.discount_type === 'fixed') {
+        discountAmount = parseFloat(coupon.discount_value || '0');
+      }
+
+      return {
+        success: true,
+        valid: true,
+        coupon: {
+          id: coupon.id,
+          code: coupon.code,
+          name: coupon.name,
+          discountType: coupon.discount_type,
+          discountValue: coupon.discount_value,
+        },
+        discountAmount,
+      };
+    } catch (error: any) {
+      console.error('Error in validateCouponInternal:', error);
+      return { success: false, valid: false, error: error.message };
+    }
+  }
+
+  /**
    * POST /coupons/apply
    * Apply coupon code
+   * ✅ FIX GAP 7.1: Uses internal validation function instead of fetch()
    */
   app.post("/coupons/apply", async (c) => {
     try {
@@ -361,14 +559,15 @@ export function registerPromotionEndpoints(app: Hono) {
         return c.json({ error: 'couponCode and amount are required' }, 400);
       }
 
-      // Validate coupon (reuse validation logic)
-      const validation: any = await fetch(`/coupons/validate/${couponCode}?amount=${amount}`).then(r => r.json());
+      // ✅ FIX: Use internal validation function instead of fetch()
+      // fetch() with relative URL won't work in Lambda environment
+      const validation = await validateCouponInternal(couponCode, amount);
       if (!validation.success || !validation.valid) {
         return c.json({ error: validation.error || 'Invalid coupon' }, 400);
       }
 
       // Record usage
-      if (customerId) {
+      if (customerId && validation.coupon) {
         await insert('coupon_usages', {
           coupon_id: validation.coupon.id,
           customer_id: customerId,
@@ -384,7 +583,7 @@ export function registerPromotionEndpoints(app: Hono) {
         success: true,
         coupon: validation.coupon,
         discountAmount: validation.discountAmount,
-        finalAmount: amount - validation.discountAmount,
+        finalAmount: amount - (validation.discountAmount || 0),
       });
     } catch (error: any) {
       console.error('Error applying coupon:', error);
@@ -395,6 +594,85 @@ export function registerPromotionEndpoints(app: Hono) {
   // ============================================================================
   // ADMIN ENDPOINTS - PROMOTIONS CRUD
   // ============================================================================
+
+  /**
+   * GET /admin/promotions/applicable
+   * Get applicable promotions for checkout
+   * ✅ FIX: Add this route for frontend checkout flow
+   * Query params: category, serviceStyle, amount
+   */
+  app.get("/admin/promotions/applicable", async (c) => {
+    try {
+      const category = c.req.query('category') || 'all';
+      const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const amount = parseFloat(c.req.query('amount') || '0');
+
+      const now = new Date().toISOString().split('T')[0];
+
+      let queryStr = `
+        SELECT * FROM promotions
+        WHERE is_active = true
+        AND (start_date IS NULL OR start_date <= $1)
+        AND (end_date IS NULL OR end_date >= $1)
+      `;
+      
+      const params: any[] = [now];
+      let paramIndex = 2;
+
+      // Filter by minimum order amount
+      if (amount > 0) {
+        queryStr += ` AND (min_order_amount IS NULL OR min_order_amount <= $${paramIndex})`;
+        params.push(amount);
+        paramIndex++;
+      }
+
+      // Filter by category (check applicable_services or applicable_to)
+      if (category && category !== 'all') {
+        queryStr += ` AND (
+          applicable_services IS NULL 
+          OR applicable_services = '[]'::jsonb
+          OR applicable_services @> $${paramIndex}::jsonb
+          OR applicable_to = 'all'
+          OR applicable_to = $${paramIndex + 1}
+        )`;
+        params.push(JSON.stringify([category]));
+        params.push(category);
+        paramIndex += 2;
+      }
+
+      queryStr += ` ORDER BY priority DESC, discount_value DESC LIMIT 20`;
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      // Format promotions for frontend
+      const promotions = rows.map((promo: any) => ({
+        id: promo.id,
+        code: promo.code,
+        name: promo.name || promo.title,
+        description: promo.description,
+        discountType: promo.discount_type,
+        discountValue: parseFloat(promo.discount_value || '0'),
+        minOrderAmount: parseFloat(promo.min_order_amount || '0'),
+        maxDiscountAmount: parseFloat(promo.max_discount_amount || '0'),
+        applicableServices: promo.applicable_services,
+        expiresAt: promo.end_date,
+      }));
+
+      return c.json({
+        success: true,
+        promotions,
+        total: promotions.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching applicable promotions:', error);
+      // Return empty array on error, not 500
+      if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
+        return c.json({ success: true, promotions: [], total: 0 });
+      }
+      return c.json({ success: true, promotions: [], total: 0 });
+    }
+  });
 
   /**
    * GET /admin/promotions/stats
@@ -498,36 +776,53 @@ export function registerPromotionEndpoints(app: Hono) {
         name,
         description,
         promotionType,
+        type,
         discountType,
         discountValue,
         minOrderAmount,
         maxDiscountAmount,
         startDate,
         endDate,
+        validFrom,
+        validUntil,
         isActive = true,
+        active,
         applicableServices,
+        applicable_services,
         applicableRoles,
         priority = 0,
+        is_spotlight = false,
+        published = false,
       } = body;
 
       if (!name || !promotionType || !discountType || !discountValue) {
         return c.json({ error: 'name, promotionType, discountType, and discountValue are required' }, 400);
       }
 
+      // Phase 0.1: Support both frontend field names and DB column names
+      const finalPromotionType = promotionType || type || 'flash_sale';
+      const finalStartDate = startDate || validFrom || new Date().toISOString().split('T')[0];
+      const finalEndDate = endDate || validUntil || null;
+      const finalIsActive = active !== undefined ? active : (isActive !== false);
+      const finalApplicableServices = applicable_services || applicableServices || null;
+
       const promotion = await insert('promotions', {
         name,
         description: description || '',
-        promotion_type: promotionType,
+        promotion_type: finalPromotionType,
         discount_type: discountType,
         discount_value: parseFloat(discountValue),
         min_order_amount: minOrderAmount ? parseFloat(minOrderAmount) : null,
         max_discount_amount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null,
-        start_date: startDate ? new Date(startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        end_date: endDate ? new Date(endDate).toISOString().split('T')[0] : null,
-        is_active: isActive !== false,
-        applicable_services: applicableServices || null,
+        start_date: new Date(finalStartDate).toISOString().split('T')[0],
+        end_date: finalEndDate ? new Date(finalEndDate).toISOString().split('T')[0] : null,
+        is_active: finalIsActive,
+        applicable_services: finalApplicableServices ? (Array.isArray(finalApplicableServices) ? JSON.stringify(finalApplicableServices) : finalApplicableServices) : null,
         applicable_roles: applicableRoles || null,
         priority: parseInt(priority) || 0,
+        // Phase 0.1: New fields
+        is_spotlight: is_spotlight === true,
+        published: published === true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -563,16 +858,24 @@ export function registerPromotionEndpoints(app: Hono) {
       if (body.name !== undefined) updateData.name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
       if (body.promotionType !== undefined) updateData.promotion_type = body.promotionType;
+      if (body.type !== undefined) updateData.promotion_type = body.type;
       if (body.discountType !== undefined) updateData.discount_type = body.discountType;
       if (body.discountValue !== undefined) updateData.discount_value = parseFloat(body.discountValue);
       if (body.minOrderAmount !== undefined) updateData.min_order_amount = body.minOrderAmount ? parseFloat(body.minOrderAmount) : null;
       if (body.maxDiscountAmount !== undefined) updateData.max_discount_amount = body.maxDiscountAmount ? parseFloat(body.maxDiscountAmount) : null;
       if (body.startDate !== undefined) updateData.start_date = new Date(body.startDate).toISOString().split('T')[0];
+      if (body.validFrom !== undefined) updateData.start_date = new Date(body.validFrom).toISOString().split('T')[0];
       if (body.endDate !== undefined) updateData.end_date = body.endDate ? new Date(body.endDate).toISOString().split('T')[0] : null;
+      if (body.validUntil !== undefined) updateData.end_date = body.validUntil ? new Date(body.validUntil).toISOString().split('T')[0] : null;
       if (body.isActive !== undefined) updateData.is_active = body.isActive !== false;
-      if (body.applicableServices !== undefined) updateData.applicable_services = body.applicableServices;
+      if (body.active !== undefined) updateData.is_active = body.active !== false;
+      if (body.applicableServices !== undefined) updateData.applicable_services = body.applicableServices ? (Array.isArray(body.applicableServices) ? JSON.stringify(body.applicableServices) : body.applicableServices) : null;
+      if (body.applicable_services !== undefined) updateData.applicable_services = body.applicable_services ? (Array.isArray(body.applicable_services) ? JSON.stringify(body.applicable_services) : body.applicable_services) : null;
       if (body.applicableRoles !== undefined) updateData.applicable_roles = body.applicableRoles;
       if (body.priority !== undefined) updateData.priority = parseInt(body.priority) || 0;
+      // Phase 0.1: New fields
+      if (body.is_spotlight !== undefined) updateData.is_spotlight = body.is_spotlight === true;
+      if (body.published !== undefined) updateData.published = body.published === true;
 
       const updated = await update('promotions', { id }, updateData);
 

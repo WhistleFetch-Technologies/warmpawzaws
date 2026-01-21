@@ -1,8 +1,18 @@
 'use client';
 
-import { MapPin, Star, Clock, Phone, ChevronRight } from 'lucide-react';
+import { MapPin, Star, Clock, Phone, ChevronRight, Tag, Percent, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+
+// ✅ FIX: Add promotion type for vendor discounts display
+interface VendorPromotion {
+  id: string;
+  name: string;
+  description?: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  code?: string;
+}
 
 interface UniversalVendorCardProps {
   vendor: {
@@ -18,6 +28,10 @@ interface UniversalVendorCardProps {
     description?: string;
     serviceStyle?: string;
     vendorProfileImage?: string;
+    // ✅ NEW: Promotion fields from backend
+    hasActivePromotions?: boolean;
+    promotions?: VendorPromotion[];
+    topPromotion?: VendorPromotion | null;
   };
   icon?: string;
   colorClass?: string;
@@ -61,11 +75,33 @@ export function UniversalVendorCard({
     );
   };
 
+  // ✅ FIX: Format promotion badge text
+  const getPromotionBadge = () => {
+    const promo = vendor.topPromotion;
+    if (!promo) return null;
+    
+    const discountText = promo.discountType === 'percentage' 
+      ? `${promo.discountValue}% OFF`
+      : `₹${promo.discountValue} OFF`;
+    
+    return (
+      <div className="absolute -top-2 -right-2 z-10">
+        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold rounded-full shadow-lg animate-pulse">
+          <Gift className="w-3 h-3" />
+          {discountText}
+        </span>
+      </div>
+    );
+  };
+
   return (
-    <Card className="p-4 hover:shadow-lg transition-shadow">
+    <Card className="p-4 hover:shadow-lg transition-shadow relative overflow-visible">
+      {/* ✅ FIX: Vendor Promotion Badge (applied directly on service) */}
+      {vendor.hasActivePromotions && getPromotionBadge()}
+      
       <div className="flex gap-4">
         {/* Icon/Image */}
-        <div className={`w-20 h-20 bg-gradient-to-br ${colorClass} rounded-xl flex items-center justify-center text-3xl flex-shrink-0`}>
+        <div className={`w-20 h-20 bg-gradient-to-br ${colorClass} rounded-xl flex items-center justify-center text-3xl flex-shrink-0 relative`}>
           {vendor.vendorProfileImage ? (
             <img 
               src={vendor.vendorProfileImage} 
@@ -86,7 +122,7 @@ export function UniversalVendorCard({
           <div className="flex items-center gap-2 mt-1">
             <div className="flex items-center gap-1">
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-medium">{rating.toFixed(1)}</span>
+              <span className="text-sm font-medium">{Number(rating || 0).toFixed(1)}</span>
             </div>
             {reviewCount > 0 && (
               <>

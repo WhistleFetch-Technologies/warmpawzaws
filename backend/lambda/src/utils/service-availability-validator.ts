@@ -155,19 +155,30 @@ async function getRoleConfig(roleId: string): Promise<any | null> {
 
 /**
  * Get service details
+ * ✅ FIX: Frontend sends service.service_id (base service UUID), so check vendor_services.service_id
  */
 async function getService(serviceId: string): Promise<any | null> {
   try {
-    // Try services table first
+    // First: Try vendor_services.id (direct lookup - in case serviceId is vendor service UUID)
+    const vendorServicesById = await select('vendor_services', { id: serviceId });
+    if (vendorServicesById.length > 0) {
+      return vendorServicesById[0];
+    }
+
+    // Second: Try services table (base service)
     const services = await select('services', { id: serviceId });
     if (services.length > 0) {
       return services[0];
     }
 
-    // Try vendor_services table
-    const vendorServices = await select('vendor_services', { id: serviceId });
-    if (vendorServices.length > 0) {
-      return vendorServices[0];
+    // Third: Try vendor_services.service_id (PRIMARY - what frontend sends)
+    // Use raw query to check service_id column
+    const vendorServicesByServiceId = await query(
+      `SELECT * FROM vendor_services WHERE service_id = $1::uuid LIMIT 1`,
+      [serviceId]
+    );
+    if (vendorServicesByServiceId.rows.length > 0) {
+      return vendorServicesByServiceId.rows[0];
     }
 
     return null;

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 interface Booking {
   id: string;
@@ -11,9 +12,12 @@ interface Booking {
   booking_date: string;
   booking_time: string;
   status: string;
+  payment_status: string;
   total_amount: number;
   service_type: string;
   notes?: string;
+  otp_code?: string;
+  otp_verified?: boolean;
 }
 
 interface VendorBookingsPageProps {
@@ -24,7 +28,13 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('today');
+  const [dateFilter, setDateFilter] = useState<string>('upcoming'); // ✅ Default to upcoming to show scheduled bookings
+  
+  // ✅ OTP Completion Modal State
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [otpInput, setOTPInput] = useState('');
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     loadBookings();
@@ -63,12 +73,63 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
 
   const handleStatusUpdate = async (bookingId: string, newStatus: string) => {
     try {
+      // ✅ For completing bookings, show OTP modal
+      if (newStatus === 'completed') {
+        const booking = bookings.find(b => b.id === bookingId);
+        if (booking) {
+          setSelectedBooking(booking);
+          setShowOTPModal(true);
+          return;
+        }
+      }
+      
       await apiClient.put(`/bookings/${bookingId}/status`, { status: newStatus });
+      toast.success('Booking status updated');
       loadBookings();
     } catch (err) {
       console.error('Error updating booking:', err);
-      alert('Failed to update booking status');
+      toast.error('Failed to update booking status');
     }
+  };
+
+  // ✅ Handle OTP verification and complete booking
+  const handleCompleteWithOTP = async () => {
+    if (!selectedBooking || !otpInput.trim()) {
+      toast.error('Please enter the OTP');
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      const result = await apiClient.post(`/vendor/bookings/${selectedBooking.id}/complete`, {
+        otp: otpInput.trim(),
+        vendorId: vendorId,
+      }) as any;
+
+      if (result.success) {
+        toast.success('✅ Appointment completed successfully!');
+        if (selectedBooking.payment_status === 'paid') {
+          toast.success(`💰 ₹${selectedBooking.total_amount} added to your earnings`);
+        }
+        setShowOTPModal(false);
+        setSelectedBooking(null);
+        setOTPInput('');
+        loadBookings();
+      } else {
+        toast.error(result.error || 'Failed to complete booking');
+      }
+    } catch (err: any) {
+      console.error('Error completing booking:', err);
+      toast.error(err.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // ✅ Handle check-in (start session)
+  const handleCheckIn = async (booking: Booking) => {
+    setSelectedBooking(booking);
+    setShowOTPModal(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -159,20 +220,25 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                     {getServiceTypeIcon(booking.service_type)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <h3 className="font-semibold text-gray-900">{booking.customer_name}</h3>
-                      <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(booking.status)}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(booking.status)}`}>
                         {booking.status.replace('_', ' ')}
                       </span>
+                      {booking.payment_status === 'paid' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                          💳 Paid
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-500">{booking.service_name}</p>
-                    <div className="flex items-center gap-3 mt-0 text-sm text-gray-500">
+                    <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
                       <span>⏰ {booking.booking_time}</span>
                       <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
                     </div>
                     {booking.notes && (
-                      <p className="text-sm text-gray-400 mt-0 italic">"{booking.notes}"</p>
+                      <p className="text-sm text-gray-400 mt-1 italic">"{booking.notes}"</p>
                     )}
                   </div>
                 </div>
@@ -204,14 +270,22 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                   {booking.status === 'in_progress' && (
                     <button
                       onClick={() => handleStatusUpdate(booking.id, 'completed')}
-                      className="px-0 py-0 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                      className="px-3 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
                     >
                       ✓ Complete
                     </button>
                   )}
+                  {booking.status === 'confirmed' && booking.payment_status === 'paid' && (
+                    <button
+                      onClick={() => handleCheckIn(booking)}
+                      className="px-3 py-2 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600"
+                    >
+                      🔑 Check-in
+                    </button>
+                  )}
                   <a
                     href={`tel:${booking.customer_phone}`}
-                    className="px-0 py-0 bg-gray-100 text-gray-600 text-sm rounded-lg text-center hover:bg-gray-200"
+                    className="px-3 py-2 bg-gray-100 text-gray-600 text-sm rounded-lg text-center hover:bg-gray-200"
                   >
                     📞 Call
                   </a>
@@ -219,6 +293,79 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ✅ OTP Verification Modal */}
+      {showOTPModal && selectedBooking && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">🔐</span>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">Enter Customer OTP</h3>
+              <p className="text-gray-500 mt-1">
+                Ask the customer for their check-in OTP to complete the appointment
+              </p>
+            </div>
+
+            {/* Booking Details */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-medium text-gray-900">{selectedBooking.customer_name}</p>
+                  <p className="text-sm text-gray-500">{selectedBooking.service_name}</p>
+                </div>
+                <p className="font-bold text-orange-500">₹{selectedBooking.total_amount}</p>
+              </div>
+            </div>
+
+            {/* OTP Input */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Enter 4-digit OTP
+              </label>
+              <input
+                type="text"
+                value={otpInput}
+                onChange={(e) => setOTPInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="Enter OTP"
+                maxLength={4}
+                className="w-full text-center text-3xl font-mono tracking-[0.5em] py-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+                autoFocus
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowOTPModal(false);
+                  setSelectedBooking(null);
+                  setOTPInput('');
+                }}
+                className="flex-1 py-3 px-4 rounded-xl border border-gray-200 font-medium hover:bg-gray-50"
+                disabled={verifying}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCompleteWithOTP}
+                disabled={verifying || otpInput.length !== 4}
+                className="flex-1 py-3 px-4 rounded-xl bg-green-500 text-white font-medium hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {verifying ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Verifying...
+                  </>
+                ) : (
+                  <>✓ Complete Appointment</>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

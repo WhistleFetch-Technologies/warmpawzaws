@@ -150,9 +150,9 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
                                 <h4 className="font-bold text-gray-900 text-sm">{provider.name}</h4>
                                 <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
                                     <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                                    <span>{provider.rating.toFixed(1)}</span>
+                                    <span>{Number(provider.rating || 0).toFixed(1)}</span>
                                     <span>•</span>
-                                    <span>{provider.distance.toFixed(1)} km</span>
+                                    <span>{Number(provider.distance || 0).toFixed(1)} km</span>
                                 </div>
                                 <div className="mt-2 flex justify-between items-center">
                                     <span className="font-bold text-orange-600">₹{provider.price}</span>

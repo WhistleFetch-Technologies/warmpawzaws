@@ -1,79 +1,66 @@
-# Deploy Now - Exact Commands
+# 🚀 Deploy Now - Manual Steps
 
-## Step 1: Backend Deployment (Run in Terminal)
+Since automated deployment isn't showing output, here are the manual steps:
+
+## Step 1: Deploy Backend Lambda
 
 ```bash
 cd backend/lambda
-
-# Deploy to AWS (replace 'dev' with your stage)
-npx serverless deploy --stage dev
-
-# Or if serverless is installed globally:
-serverless deploy --stage dev
+npm install
+npm run build
+# Then deploy using your method:
+# - serverless deploy --stage dev
+# - OR use AWS SAM
+# - OR use your CI/CD pipeline
 ```
 
-**Note:** This requires:
-- AWS credentials configured (`aws configure` or environment variables)
-- SSM parameters set up in AWS Systems Manager
-- Proper IAM permissions
+## Step 2: Deploy Frontend Apps
 
----
-
-## Step 2: Database Migration (Run in Terminal)
-
-### Option A: Using the Interactive Script
+**Vendor Web:**
 ```bash
-./db/migrations/run-migration-rds.sh
-# Enter stage when prompted: dev
-# Enter password when prompted
+cd apps/vendor-web
+npm install
+npm run build
+# Deploy to your hosting (Vercel, CloudFront, etc.)
 ```
 
-### Option B: Manual RDS Connection
+**Customer Web:**
 ```bash
-# Get RDS details from AWS Console or SSM
-DB_HOST=$(aws ssm get-parameter --name /warmpawz/dev/db/host --query Parameter.Value --output text)
-DB_PORT=$(aws ssm get-parameter --name /warmpawz/dev/db/port --query Parameter.Value --output text)
-DB_NAME=$(aws ssm get-parameter --name /warmpawz/dev/db/name --query Parameter.Value --output text)
-DB_USER=$(aws ssm get-parameter --name /warmpawz/dev/db/user --query Parameter.Value --output text)
-DB_PASSWORD=$(aws ssm get-parameter --name /warmpawz/dev/db/password --with-decryption --query Parameter.Value --output text)
-
-# Run migration
-PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-     -f db/migrations/059_create_care_plans_tables.sql
+cd apps/customer-web
+npm install
+npm run build
+# Deploy to your hosting (Vercel, CloudFront, etc.)
 ```
 
-### Option C: Direct RDS Connection
-```bash
-# If you know your RDS endpoint
-psql -h YOUR_RDS_ENDPOINT.rds.amazonaws.com \
-     -U your_db_user \
-     -d your_database \
-     -f db/migrations/059_create_care_plans_tables.sql
-```
+## Quick Deploy Script
 
----
-
-## Current Status
-
-✅ **Backend:** Built successfully (ready to deploy)
-✅ **Migration Script:** Ready
-⏳ **Waiting:** Your AWS credentials and RDS connection
-
----
-
-## Quick Verification
-
-After deployment, verify:
+Try running the deployment script directly in your terminal:
 
 ```bash
-# Test backend endpoint
-curl https://your-api-url/config/ui/dashboard?roleId=veterinarian
-
-# Verify database tables
-psql -h YOUR_RDS_ENDPOINT -U your_user -d your_db -c "SELECT COUNT(*) FROM care_plan_templates;"
-# Should return: 3
+cd /Users/ketan/Documents/warmpawzecodev
+bash scripts/deploy-all.sh dev
 ```
 
----
+Or deploy components individually:
 
-**Run these commands in your terminal to complete deployment!**
+```bash
+# Backend
+cd backend/lambda && npm run build && serverless deploy --stage dev
+
+# Frontend
+cd apps/vendor-web && npm run build && # deploy command
+cd apps/customer-web && npm run build && # deploy command
+```
+
+## What Gets Deployed
+
+✅ **Backend:** Instant Tele Queue endpoints + GPS tracking
+✅ **Frontend:** Dashboard widgets + Tele consultation pages
+✅ **Database:** Already migrated ✅
+
+## Verification
+
+After deployment, test:
+1. API endpoints respond
+2. Vendor dashboard shows Instant Tele widget
+3. Customer can access tele consultation page

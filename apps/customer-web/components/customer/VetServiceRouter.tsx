@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle } from 'lucide-react';
+import { Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useRouter } from 'next/navigation';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -32,6 +33,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // ✅ FIX #13: Track all error states
+  const [vetDataError, setVetDataError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPets();
@@ -130,11 +133,13 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       setStats({
         activeVets: vets.length,
         consultations: vets.length > 0 ? `${Math.max(vets.length * 10, 100)}+` : '0',
-        rating: vets.length > 0 ? (vets.reduce((acc: number, v: any) => acc + v.rating, 0) / vets.length).toFixed(1) : '-'
+        rating: vets.length > 0 ? Number(vets.reduce((acc: number, v: any) => acc + Number(v.rating || 4.5), 0) / vets.length).toFixed(1) : '-'
       });
     } catch (error) {
       console.error('Error loading vet data:', error);
-      // Show zeros on error - no fake data
+      // ✅ FIX #13: Track error state
+      const errorMsg = error instanceof Error ? error.message : 'Failed to load veterinary services';
+      setVetDataError(errorMsg);
       setStats({
         activeVets: 0,
         consultations: '0',
@@ -244,102 +249,74 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
-  // ✅ FIX: Show error state if pets failed to load
-  if (error) {
+  // ✅ FIX #13: Show error state if pets or vet data failed to load
+  if (error || vetDataError) {
     return (
-      <div className="min-h-screen bg-white max-w-md mx-auto">
-        <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-16 relative">
-          <button 
-            onClick={onBack}
-            className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-              <Stethoscope className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Vet Services</h1>
-            </div>
-          </div>
-        </div>
+      <>
+        {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
         <div className="px-6 pt-8">
           <Card className="p-8 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <Button onClick={loadPets} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-              Try Again
-            </Button>
+            <p className="text-gray-600 mb-4">{error || vetDataError}</p>
+            <div className="flex gap-3 justify-center">
+              {error && (
+                <Button onClick={loadPets} variant="outline">Retry Pets</Button>
+              )}
+              {vetDataError && (
+                <Button onClick={loadVetData} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+                  Retry Services
+                </Button>
+              )}
+            </div>
           </Card>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
-      {/* Header with Concave Bottom Curve */}
-      <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-16 relative">
-        <button 
-          onClick={onBack}
-          className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
-        </button>
-        
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-            <Stethoscope className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Vet Services</h1>
-            <p className="text-white/80 text-sm">Complete pet healthcare</p>
-          </div>
-        </div>
-
-        {/* Quick Stats - only show if we have real data */}
-        {stats && stats.activeVets > 0 && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold">{stats.activeVets}+</div>
-              <div className="text-white/80 text-xs">Active Vets</div>
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Quick Stats - Moved below header */}
+      {stats && stats.activeVets > 0 && (
+        <div className="px-4 pt-4 pb-2 bg-white">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
+              <div className="text-lg font-bold text-orange-600">{stats.activeVets}+</div>
+              <div className="text-orange-700 text-xs">Vets</div>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold">{stats.consultations}</div>
-              <div className="text-white/80 text-xs">Consultations</div>
+            <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
+              <div className="text-lg font-bold text-orange-600">{stats.consultations}</div>
+              <div className="text-orange-700 text-xs">Consults</div>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="flex items-center gap-1 text-2xl font-bold">
-                <Star className="w-4 h-4 fill-white" />
+            <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
+              <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
+                <Star className="w-3.5 h-3.5 fill-orange-500" />
                 {stats.rating}
               </div>
-              <div className="text-white/80 text-xs">Avg Rating</div>
+              <div className="text-orange-700 text-xs">Rating</div>
             </div>
           </div>
-        )}
-        
-        {/* Concave curve - curves inward */}
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white" 
-             style={{
-               borderTopLeftRadius: '50% 100%',
-               borderTopRightRadius: '50% 100%',
-             }}
-        />
-      </div>
+        </div>
+      )}
 
-      {/* Main Content on White Background */}
-      <div className="px-6 pb-24">
-        {/* Spotlight Banners */}
+      {/* Main Content */}
+      <div className="px-4 pt-6 pb-24">
+        {/* Phase 0.1: Promotion Banner Component */}
+        <div className="mb-6">
+          <PromotionBanner service="vet" maxPromotions={3} />
+        </div>
+        
+        {/* Legacy Spotlight Banners - Fallback if no promotions */}
+        {false && (
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="w-5 h-5 text-[#FF8C42]" />
@@ -399,6 +376,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
             </Card>
           </div>
         </div>
+        )}
 
         {/* Service Types */}
         <div className="mb-6">
@@ -429,42 +407,22 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   };
                   const serviceStyle = styleMap[service.id] || service.id;
                   
-                  // Navigate to services listing page for this style
+                  // Navigate to dedicated flow for each service type
                   if (service.id === 'clinic') {
+                    // Clinic: list of clinics → clinic profile → services → booking
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    // For tele, navigate to instant tele queue page
-                    if (typeof window !== 'undefined') {
-                      const selectedPetId = pets.length > 0 ? pets[0].id : null;
-                      try {
-                        // Try using Next.js router if available
-                        router.push(`/booking/tele?roleId=veterinarian&category=vet${selectedPetId ? `&petId=${selectedPetId}` : ''}`);
-                      } catch (error) {
-                        // Fallback to window.location or onNavigate
-                        if (selectedPetId) {
-                          window.location.href = `/booking/tele?roleId=veterinarian&category=vet&petId=${selectedPetId}`;
-                        } else {
-                          handleNavigate('vet-services-by-style', { 
-                            serviceStyle: 'tele', 
-                            serviceTypeName: service.name,
-                            category: 'vet'
-                          });
-                        }
-                      }
-                    } else {
-                      handleNavigate('vet-services-by-style', { 
-                        serviceStyle: 'tele', 
-                        serviceTypeName: service.name,
-                        category: 'vet'
-                      });
-                    }
+                    // ✅ NEW: Tele Consultation with Scheduled/Instant options
+                    handleNavigate('vet-tele-consultation');
                   } else if (service.id === 'home') {
-                    // Navigate to service listing by style - shows actual configured services
-                    handleNavigate('vet-services-by-style', { 
-                      serviceStyle, 
-                      serviceTypeName: service.name,
-                      category: 'vet'
-                    });
+                    // ✅ NEW: Home Visit with provider list → profile → booking
+                    handleNavigate('vet-home-visit');
+                  } else if (service.id === 'medicine') {
+                    // ✅ FIX: Medicine should go to pharmacy store, not booking flow
+                    handleNavigate('pharmacy_store');
+                  } else if (service.id === 'lab') {
+                    // Lab diagnostics flow
+                    handleNavigate('lab-diagnostics');
                   } else {
                     handleNavigate('vet-booking', { serviceType: service.id });
                   }
@@ -607,6 +565,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

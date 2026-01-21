@@ -37,19 +37,32 @@ class VendorStatsHandler extends BaseHandler {
       const vendors = await select('vendors', {});
 
     const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
-    const pendingApplications = vendors.filter(v => 
-      v.status === 'pending' || v.status === 'pending_approval'
-    );
+    
+    // ✅ FIX: Get pending applications from vendor_onboarding_applications table (not vendors table)
+    let pendingApplicationsCount = 0;
+    let pendingTodayCount = 0;
+    try {
+      const pendingResult = await query(`
+        SELECT COUNT(*) as total, 
+               SUM(CASE WHEN submitted_at >= CURRENT_DATE THEN 1 ELSE 0 END) as today_count
+        FROM vendor_onboarding_applications 
+        WHERE status IN ('SUBMITTED', 'PENDING', 'UNDER_REVIEW')
+      `);
+      if (pendingResult.rows && pendingResult.rows[0]) {
+        pendingApplicationsCount = parseInt(pendingResult.rows[0].total || '0', 10);
+        pendingTodayCount = parseInt(pendingResult.rows[0].today_count || '0', 10);
+      }
+    } catch (e) {
+      console.warn('Could not fetch pending applications from vendor_onboarding_applications:', e);
+      // Fallback to vendors table if the new table doesn't exist
+      const fallbackPending = vendors.filter(v => 
+        v.status === 'pending' || v.status === 'pending_approval'
+      );
+      pendingApplicationsCount = fallbackPending.length;
+    }
+    
     const deactivatedVendors = vendors.filter(v => !v.is_active);
     const rejectedVendors = vendors.filter(v => v.status === 'rejected');
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const pendingToday = pendingApplications.filter(v => {
-      if (!v.created_at) return false;
-      const submittedDate = new Date(v.created_at);
-      return submittedDate >= today;
-    });
 
     // Distribution by category
     const distributionByCategory: Record<string, number> = {};
@@ -68,8 +81,8 @@ class VendorStatsHandler extends BaseHandler {
           : 0,
       },
       pendingApplications: {
-        count: pendingApplications.length,
-        todayCount: pendingToday.length,
+        count: pendingApplicationsCount,
+        todayCount: pendingTodayCount,
       },
       deactivatedVendors: {
         count: deactivatedVendors.length,
@@ -138,6 +151,18 @@ class ApproveVendorHandler extends BaseHandler {
       console.error('Failed to publish vendor approved event:', error);
     }
 
+    // ✅ Trigger webhooks
+    try {
+      const { triggerWebhook } = await import('./webhooks');
+      await triggerWebhook('vendor.approved', {
+        vendorId,
+        approvedAt: new Date().toISOString(),
+        approvedBy: adminId,
+      });
+    } catch (error) {
+      console.error('Failed to trigger webhooks:', error);
+    }
+
     return this.success({
       message: 'Vendor approved successfully',
       vendorId,
@@ -178,6 +203,19 @@ class RejectVendorHandler extends BaseHandler {
         is_active: false,
       }
     );
+
+    // ✅ Trigger webhooks
+    try {
+      const { triggerWebhook } = await import('./webhooks');
+      await triggerWebhook('vendor.rejected', {
+        vendorId,
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: adminId,
+        reason,
+      });
+    } catch (error) {
+      console.error('Failed to trigger webhooks:', error);
+    }
 
     // ✅ SQL: Add comment
     await insert('vendor_onboarding_comments', {
@@ -364,6 +402,10 @@ export function registerAdminEndpoints(app: Hono) {
   const approveHandler = new ApproveVendorHandler();
   const rejectHandler = new RejectVendorHandler();
   const listHandler = new ListVendorsHandler();
+
+  // Register webhook endpoints
+  const { setupWebhookRoutes } = require('./webhooks');
+  setupWebhookRoutes(app);
 
   app.get('/admin/vendors/stats', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication

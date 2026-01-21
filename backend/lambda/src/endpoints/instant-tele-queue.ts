@@ -199,52 +199,157 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       const category = c.req.query('category');
       const serviceId = c.req.query('serviceId');
 
-      let queryText = `
-        SELECT DISTINCT
-          s.id as staff_id,
-          s.name,
-          s.photo,
-          s.role,
-          s.experience_years,
-          s.qualifications,
-          COALESCE(v.business_name, s.name) as business_name,
-          v.id as vendor_id,
-          sta.last_status_change,
-          sta.available_services,
-          (SELECT AVG(rating) FROM reviews WHERE staff_id = s.id) as avg_rating,
-          (SELECT COUNT(*) FROM reviews WHERE staff_id = s.id) as review_count,
-          (SELECT COUNT(*) FROM tele_queue WHERE staff_id = s.id AND status = 'waiting') as queue_count,
-          (
-            SELECT json_agg(json_build_object(
-              'id', ss.service_id,
-              'name', srv.name,
-              'price', COALESCE(ss.price, srv.base_price),
-              'duration', COALESCE(ss.duration_minutes, srv.duration_minutes)
-            ))
-            FROM staff_services ss
-            INNER JOIN services srv ON ss.service_id = srv.id
-            WHERE ss.staff_id = s.id 
-              AND ss.enabled_by_staff = true 
-              AND ss.is_active = true
-              AND 'tele' = ANY(ss.service_styles)
-          ) as services
-        FROM staff s
-        INNER JOIN staff_tele_availability sta ON sta.staff_id = s.id
-        LEFT JOIN vendors v ON s.vendor_id = v.id
-        WHERE s.is_active = true
-          AND s.mobile_verified = true
-          AND sta.is_available = true
-      `;
+      // Check if required tables and columns exist for robust query building
+      const tableCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'staff_tele_availability') as has_tele_availability,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tele_queue') as has_tele_queue,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'reviews') as has_reviews,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'mobile_verified') as has_mobile_verified,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo') as has_photo,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'qualifications') as has_qualifications,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'experience_years') as has_experience_years,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff_services' AND column_name = 'enabled_by_staff') as has_enabled_by_staff,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff_services' AND column_name = 'service_styles') as has_service_styles,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff_services' AND column_name = 'service_style') as has_service_style,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff_services' AND column_name = 'service_name') as has_service_name
+      `);
+      
+      const {
+        has_tele_availability,
+        has_tele_queue,
+        has_reviews,
+        has_mobile_verified,
+        has_photo,
+        has_qualifications,
+        has_experience_years,
+        has_enabled_by_staff,
+        has_service_styles,
+        has_service_style,
+        has_service_name
+      } = tableCheck.rows[0] || {};
+
+      // Build dynamic column selections based on schema availability
+      const photoColumn = has_photo ? 's.photo' : 'NULL';
+      const qualificationsColumn = has_qualifications ? 's.qualifications' : 'NULL';
+      const experienceColumn = has_experience_years ? 's.experience_years' : 'NULL';
+      const mobileVerifiedCondition = has_mobile_verified ? 'AND s.mobile_verified = true' : '';
+      const queueCountSubquery = has_tele_queue 
+        ? `(SELECT COUNT(*) FROM tele_queue WHERE staff_id = s.id AND status = 'waiting')` 
+        : '0';
+      const avgRatingSubquery = has_reviews
+        ? `(SELECT AVG(rating) FROM reviews WHERE staff_id = s.id)`
+        : 'NULL';
+      const reviewCountSubquery = has_reviews
+        ? `(SELECT COUNT(*) FROM reviews WHERE staff_id = s.id)`
+        : '0';
+      
+      // Build service style filter
+      let serviceStyleFilter: string;
+      if (has_service_styles) {
+        serviceStyleFilter = "'tele' = ANY(ss.service_styles)";
+      } else if (has_service_style) {
+        serviceStyleFilter = "ss.service_style = 'tele'";
+      } else {
+        serviceStyleFilter = "TRUE"; // No filter if column doesn't exist
+      }
+      
+      // Build service name column
+      const serviceNameColumn = has_service_name ? 'ss.service_name' : "'Service'";
+      
+      let queryText: string;
+      
+      if (has_tele_availability) {
+        // Use the full schema with staff_tele_availability
+        queryText = `
+          SELECT 
+            s.id as staff_id,
+            s.name,
+            ${photoColumn} as photo,
+            s.role,
+            ${experienceColumn} as experience_years,
+            ${qualificationsColumn} as qualifications,
+            COALESCE(v.business_name, s.name) as business_name,
+            v.id as vendor_id,
+            sta.last_status_change,
+            sta.available_services,
+            ${avgRatingSubquery} as avg_rating,
+            ${reviewCountSubquery} as review_count,
+            ${queueCountSubquery} as queue_count
+          FROM staff s
+          INNER JOIN staff_tele_availability sta ON sta.staff_id = s.id
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          WHERE s.is_active = true
+            ${mobileVerifiedCondition}
+            AND sta.is_available = true
+        `;
+      } else {
+        // Fallback query without staff_tele_availability - check both staff_services AND vendor_services
+        // This ensures staff from vendors who have published tele services are included
+        queryText = `
+          SELECT 
+            s.id as staff_id,
+            s.name,
+            ${photoColumn} as photo,
+            s.role,
+            ${experienceColumn} as experience_years,
+            ${qualificationsColumn} as qualifications,
+            COALESCE(v.business_name, s.name) as business_name,
+            v.id as vendor_id,
+            NULL as last_status_change,
+            NULL as available_services,
+            ${avgRatingSubquery} as avg_rating,
+            ${reviewCountSubquery} as review_count,
+            ${queueCountSubquery} as queue_count
+          FROM staff s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          WHERE s.is_active = true
+            ${mobileVerifiedCondition}
+            AND (
+              -- Check staff_services for tele style
+              EXISTS (
+                SELECT 1 FROM staff_services sst 
+                WHERE sst.staff_id = s.id 
+                  AND sst.is_active = true
+                  AND ${serviceStyleFilter.replace(/ss\./g, 'sst.')}
+              )
+              OR
+              -- Also check vendor_services for published tele services (linkage fallback)
+              EXISTS (
+                SELECT 1 FROM vendor_services vs
+                WHERE vs.vendor_id = s.vendor_id
+                  AND vs.is_enabled = true
+                  AND vs.publish_status = 'published'
+                  AND vs.service_style = 'tele'
+              )
+            )
+        `;
+      }
 
       const params: any[] = [];
       let paramIndex = 1;
 
       // Filter by role
       if (roleId) {
-        const roleResult = await query('SELECT name FROM roles WHERE id = $1 OR name = $1', [roleId]);
+        // Check if roleId is a UUID or a text identifier
+        const isRoleUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleId);
+        
+        let roleQuery: string;
+        if (isRoleUUID) {
+          roleQuery = 'SELECT name FROM roles WHERE id = $1::uuid';
+        } else {
+          roleQuery = 'SELECT name FROM roles WHERE name ILIKE $1 OR name ILIKE $1 || \'%\'';
+        }
+        
+        const roleResult = await query(roleQuery, [roleId]);
         if (roleResult.rows.length > 0) {
           queryText += ` AND s.role = $${paramIndex}`;
           params.push(roleResult.rows[0].name);
+          paramIndex++;
+        } else {
+          // If role not found, use the roleId directly (might be role name)
+          queryText += ` AND (s.role ILIKE $${paramIndex} OR s.role ILIKE '%' || $${paramIndex} || '%')`;
+          params.push(roleId);
           paramIndex++;
         }
       }
@@ -252,9 +357,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       // Filter by category
       if (category) {
         const categoryRoles: Record<string, string[]> = {
-          'vet': ['Veterinarian', 'veterinarian', 'vet'],
-          'grooming': ['Groomer', 'groomer'],
-          'training': ['Trainer', 'trainer'],
+          'vet': ['Veterinarian', 'veterinarian', 'vet', 'Vet', 'vet_solo', 'vet_clinic'],
+          'grooming': ['Groomer', 'groomer', 'Grooming', 'grooming_solo', 'grooming_salon'],
+          'training': ['Trainer', 'trainer', 'Training', 'training_solo'],
         };
         const roles = categoryRoles[category.toLowerCase()];
         if (roles) {
@@ -264,45 +369,267 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         }
       }
 
-      // Filter by specific service
+      // Filter by specific service (using dynamic service style filter)
       if (serviceId) {
-        queryText += ` AND EXISTS (
-          SELECT 1 FROM staff_services ss 
-          WHERE ss.staff_id = s.id 
-            AND ss.service_id = $${paramIndex}
-            AND ss.enabled_by_staff = true
-            AND 'tele' = ANY(ss.service_styles)
-        )`;
-        params.push(serviceId);
-        paramIndex++;
+        // Check if serviceId is a UUID or a text identifier
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+        
+        if (isUUID) {
+          // Direct UUID comparison
+          queryText += ` AND EXISTS (
+            SELECT 1 FROM staff_services ss 
+            WHERE ss.staff_id = s.id 
+              AND ss.service_id = $${paramIndex}::uuid
+              AND ss.is_active = true
+              AND ${serviceStyleFilter}
+          )`;
+          params.push(serviceId);
+          paramIndex++;
+        } else {
+          // Look up by text identifier - check service_catalog.service_id or services.name
+          queryText += ` AND EXISTS (
+            SELECT 1 FROM staff_services ss 
+            WHERE ss.staff_id = s.id 
+              AND ss.is_active = true
+              AND ${serviceStyleFilter}
+              AND (
+                ss.service_id IN (SELECT sc.id FROM service_catalog sc WHERE sc.service_id = $${paramIndex})
+                OR ss.service_id IN (SELECT srv.id FROM services srv WHERE srv.name ILIKE $${paramIndex} OR srv.name ILIKE '%' || $${paramIndex} || '%')
+              )
+          )`;
+          params.push(serviceId);
+          paramIndex++;
+        }
       }
 
       queryText += ` ORDER BY queue_count ASC, avg_rating DESC NULLS LAST`;
 
       const result = await query(queryText, params);
 
-      const providers = result.rows.map((p: any) => ({
-        staffId: p.staff_id,
-        name: p.name,
-        photo: p.photo,
-        role: p.role,
-        experienceYears: p.experience_years,
-        qualifications: p.qualifications,
-        businessName: p.business_name,
-        vendorId: p.vendor_id,
-        rating: p.avg_rating ? parseFloat(p.avg_rating).toFixed(1) : null,
-        reviewCount: parseInt(p.review_count) || 0,
-        queueCount: parseInt(p.queue_count) || 0,
-        estimatedWaitMinutes: (parseInt(p.queue_count) || 0) * 10, // Rough estimate: 10 min per person
-        services: p.services || [],
-        isAvailable: true,
-        lastOnline: p.last_status_change,
+      // ============================================================
+      // ✅ FIX: ALSO GET SOLO VENDORS (vendors with tele services but no staff)
+      // This is critical for individual practitioners who operate as vendors directly
+      // ============================================================
+      
+      // Build vendor role filter
+      let vendorRoleFilter = '';
+      const vendorParams: any[] = [];
+      let vendorParamIdx = 1;
+      
+      // ✅ FIX: Handle roleId lookup for solo vendors (consistent with staff query)
+      if (roleId) {
+        const isRoleUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleId);
+        let resolvedRoleNames: string[] = [];
+        
+        if (isRoleUUID) {
+          // Look up role name from roles table
+          try {
+            const roleResult = await query('SELECT name FROM roles WHERE id = $1::uuid', [roleId]);
+            if (roleResult.rows.length > 0) {
+              resolvedRoleNames = [roleResult.rows[0].name];
+            }
+          } catch (e) {
+            console.warn('[TELE-PROVIDERS] Error looking up role by UUID:', e);
+          }
+        } else {
+          // Use category mapping or roleId directly
+        const categoryRoleMapping: Record<string, string[]> = {
+          'veterinarian': ['veterinarian', 'vet', 'veterinary', 'veterinary_clinic', 'pet_clinic', 'vet_clinic', 'vet_solo'],
+          'vet': ['veterinarian', 'vet', 'veterinary', 'veterinary_clinic', 'pet_clinic', 'vet_clinic', 'vet_solo'],
+          'groomer': ['groomer', 'grooming', 'pet_grooming', 'groomer_solo', 'groomer_center', 'grooming_salon'],
+          'trainer': ['trainer', 'training', 'pet_training', 'trainer_solo', 'trainer_center'],
+        };
+          resolvedRoleNames = categoryRoleMapping[roleId.toLowerCase()] || [roleId];
+        }
+        
+        if (resolvedRoleNames.length > 0) {
+          // Use case-insensitive matching for role names with parameterized query
+          vendorRoleFilter = ` AND LOWER(r.name) = ANY(SELECT LOWER(unnest($${vendorParamIdx}::text[])))`;
+          vendorParams.push(resolvedRoleNames);
+          vendorParamIdx++;
+        }
+      }
+      
+      if (category) {
+        const categoryRoleMapping: Record<string, string[]> = {
+          'vet': ['veterinarian', 'vet', 'veterinary', 'veterinary_clinic', 'pet_clinic', 'vet_clinic', 'vet_solo'],
+          'grooming': ['groomer', 'grooming', 'pet_grooming', 'groomer_solo', 'groomer_center', 'grooming_salon'],
+          'training': ['trainer', 'training', 'pet_training', 'trainer_solo', 'trainer_center'],
+        };
+        const roles = categoryRoleMapping[category.toLowerCase()];
+        if (roles) {
+          vendorRoleFilter += ` AND LOWER(r.name) = ANY(SELECT LOWER(unnest($${vendorParamIdx}::text[])))`;
+          vendorParams.push(roles);
+          vendorParamIdx++;
+        }
+      }
+      
+      // Get vendor IDs that already have staff in result
+      const vendorIdsWithStaff = new Set(result.rows.map((r: any) => r.vendor_id).filter(Boolean));
+      
+      // ✅ FIX: Add serviceId filter to solo vendor query
+      let soloVendorServiceFilter = '';
+      if (serviceId) {
+        const isServiceUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+        if (isServiceUUID) {
+          soloVendorServiceFilter = ` AND vs.service_id = $${vendorParamIdx}::uuid`;
+          vendorParams.push(serviceId);
+          vendorParamIdx++;
+        } else {
+          // Filter by service_id (text) in service_catalog or service name
+          soloVendorServiceFilter = ` AND (
+            vs.service_id IN (SELECT sc.id FROM service_catalog sc WHERE sc.service_id = $${vendorParamIdx})
+            OR vs.service_id IN (SELECT srv.id FROM services srv WHERE srv.name ILIKE $${vendorParamIdx} OR srv.name ILIKE '%' || $${vendorParamIdx} || '%')
+            OR vs.service_name ILIKE $${vendorParamIdx} OR vs.service_name ILIKE '%' || $${vendorParamIdx} || '%'
+          )`;
+          vendorParams.push(serviceId);
+          vendorParamIdx++;
+        }
+      }
+      
+      // Query for solo vendors with published tele services
+      const soloVendorQuery = `
+        SELECT DISTINCT
+          v.id as vendor_id,
+          v.business_name,
+          v.owner_name,
+          v.phone,
+          v.email,
+          v.city,
+          v.status,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
+          (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count,
+          0 as queue_count
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        WHERE v.status = 'approved'
+          AND v.is_active = true
+          AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id
+              AND vs.is_enabled = true
+              AND vs.publish_status = 'published'
+              AND vs.service_style = 'tele'
+              ${soloVendorServiceFilter}
+          )
+          ${vendorRoleFilter}
+      `;
+      
+      const soloVendorResult = await query(soloVendorQuery, vendorParams).catch((err) => {
+        console.error('Error fetching solo vendors:', err);
+        return { rows: [] };
+      });
+      
+      console.log('[TELE-PROVIDERS] Found', result.rows.length, 'staff providers and', soloVendorResult.rows.length, 'solo vendors');
+
+      // Fetch services for each staff provider
+      const staffProviders = await Promise.all(result.rows.map(async (p: any) => {
+        // Fetch services for this staff member
+        let services: any[] = [];
+        try {
+          const serviceQuery = `
+            SELECT 
+              ss.service_id as id,
+              COALESCE(srv.name, ${has_service_name ? 'ss.service_name' : "'Service'"}) as name,
+              COALESCE(ss.price, srv.price, 0) as price,
+              COALESCE(ss.duration_minutes, srv.duration_minutes, 30) as duration
+            FROM staff_services ss
+            LEFT JOIN services srv ON ss.service_id = srv.id
+            WHERE ss.staff_id = $1 
+              AND ss.is_active = true
+              ${has_enabled_by_staff ? 'AND ss.enabled_by_staff = true' : ''}
+              AND ${serviceStyleFilter}
+          `;
+          const svcResult = await query(serviceQuery, [p.staff_id]);
+          services = svcResult.rows;
+        } catch (e) {
+          // If service query fails, return empty array
+          console.error('Error fetching services for staff:', p.staff_id, e);
+        }
+
+        return {
+          staffId: p.staff_id,
+          name: p.name,
+          photo: p.photo,
+          role: p.role,
+          experienceYears: p.experience_years,
+          qualifications: p.qualifications,
+          businessName: p.business_name,
+          vendorId: p.vendor_id,
+          rating: p.avg_rating ? parseFloat(p.avg_rating).toFixed(1) : null,
+          reviewCount: parseInt(p.review_count) || 0,
+          queueCount: parseInt(p.queue_count) || 0,
+          estimatedWaitMinutes: (parseInt(p.queue_count) || 0) * 10, // Rough estimate: 10 min per person
+          services,
+          isAvailable: true,
+          lastOnline: p.last_status_change,
+          providerType: 'staff',
+        };
       }));
+      
+      // Process solo vendors (vendors without staff)
+      const soloVendorProviders = await Promise.all(
+        soloVendorResult.rows
+          .filter((v: any) => !vendorIdsWithStaff.has(v.vendor_id)) // Exclude vendors already represented by staff
+          .map(async (v: any) => {
+            // Fetch tele services for this vendor
+            let services: any[] = [];
+            try {
+              const vendorServiceQuery = `
+                SELECT 
+                  vs.id,
+                  vs.service_name as name,
+                  vs.price,
+                  vs.duration_minutes as duration
+                FROM vendor_services vs
+                WHERE vs.vendor_id = $1
+                  AND vs.is_enabled = true
+                  AND vs.publish_status = 'published'
+                  AND vs.service_style = 'tele'
+              `;
+              const svcResult = await query(vendorServiceQuery, [v.vendor_id]);
+              services = svcResult.rows;
+            } catch (e) {
+              console.error('Error fetching services for vendor:', v.vendor_id, e);
+            }
+            
+            // For solo vendors, use vendor_id as staffId (with 'vendor_' prefix to distinguish)
+            // This allows the queue system to work with vendors directly
+            return {
+              staffId: `vendor_${v.vendor_id}`, // Prefixed to indicate it's a vendor
+              vendorId: v.vendor_id,
+              name: v.owner_name || v.business_name,
+              photo: null, // Vendors don't have photo in same place as staff
+              role: v.role_display_name || v.role_name || 'Provider',
+              experienceYears: null,
+              qualifications: null,
+              businessName: v.business_name,
+              rating: v.avg_rating ? parseFloat(v.avg_rating).toFixed(1) : null,
+              reviewCount: parseInt(v.review_count) || 0,
+              queueCount: 0,
+              estimatedWaitMinutes: 0,
+              services,
+              isAvailable: true,
+              lastOnline: null,
+              providerType: 'vendor', // Mark as vendor-based provider
+              isSoloProvider: true,
+            };
+          })
+      );
+      
+      // Combine staff and solo vendor providers
+      const providers = [...staffProviders, ...soloVendorProviders];
 
       return c.json({
         success: true,
         providers,
         total: providers.length,
+        debug: {
+          staffCount: staffProviders.length,
+          soloVendorCount: soloVendorProviders.length,
+        }
       });
     } catch (error: any) {
       console.error('Error fetching available providers:', error);
@@ -332,25 +659,133 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
           error: 'customerId, staffId, petId, and serviceId are required' 
         }, 400);
       }
+      
+      // ✅ FIX: Handle solo vendors (staffId starts with 'vendor_')
+      const isSoloVendor = typeof staffId === 'string' && staffId.toLowerCase().startsWith('vendor_');
+      const actualVendorId = isSoloVendor ? staffId.replace(/^vendor_/i, '') : null;
+      const actualStaffId = isSoloVendor ? null : staffId;
+      
+      // Validate extracted vendor ID is a valid UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      
+      if (isSoloVendor) {
+        if (!actualVendorId || !uuidRegex.test(actualVendorId)) {
+          return c.json({ 
+            error: `Invalid vendor ID format. Expected UUID after 'vendor_' prefix`,
+            received: staffId,
+            extracted: actualVendorId
+          }, 400);
+        }
+      } else {
+        // Validate staffId is a valid UUID
+        if (!actualStaffId || !uuidRegex.test(actualStaffId)) {
+          return c.json({ 
+            error: `Invalid staff ID format. Expected UUID`,
+            received: staffId
+          }, 400);
+        }
+      }
+      
+      console.log('[TELE-QUEUE] Join queue request:', {
+        isSoloVendor,
+        originalStaffId: staffId,
+        actualVendorId,
+        actualStaffId,
+        serviceId
+      });
+
+      // Resolve serviceId to UUID if it's a text identifier
+      let resolvedServiceId = serviceId;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+      
+      if (!isUUID) {
+        // Look up service by text identifier - check vendor_services first for solo vendors
+        let serviceResolve;
+        if (isSoloVendor && actualVendorId) {
+          serviceResolve = await query(`
+            SELECT id FROM vendor_services 
+            WHERE vendor_id = $1 AND service_style = 'tele' AND is_enabled = true AND publish_status = 'published'
+            LIMIT 1
+          `, [actualVendorId]);
+        }
+        
+        if (!serviceResolve || serviceResolve.rows.length === 0) {
+          serviceResolve = await query(`
+            SELECT id FROM service_catalog WHERE service_id = $1
+            UNION
+            SELECT id FROM services WHERE name ILIKE $1 OR name ILIKE '%' || $1 || '%'
+            LIMIT 1
+          `, [serviceId]);
+        }
+        
+        if (serviceResolve.rows.length > 0) {
+          resolvedServiceId = serviceResolve.rows[0].id;
+        } else {
+          return c.json({ 
+            error: `Service not found: ${serviceId}` 
+          }, 404);
+        }
+      }
 
       // Verify provider is available
-      const availabilityCheck = await query(`
-        SELECT is_available FROM staff_tele_availability 
-        WHERE staff_id = $1 AND is_available = true
-      `, [staffId]);
+      // ✅ FIX: For solo vendors, check vendor_services instead of staff_tele_availability
+      if (isSoloVendor) {
+        const vendorCheck = await query(`
+          SELECT v.id, v.is_active, v.status
+          FROM vendors v
+          WHERE v.id = $1 AND v.is_active = true AND v.status = 'approved'
+          AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.service_style = 'tele' 
+            AND vs.is_enabled = true AND vs.publish_status = 'published'
+          )
+        `, [actualVendorId]);
+        
+        if (vendorCheck.rows.length === 0) {
+          return c.json({ 
+            error: 'Provider is not currently available for instant consultations',
+            providerOffline: true 
+          }, 400);
+        }
+      } else if (actualStaffId) {
+        // Original staff-based check - use actualStaffId (never use prefixed staffId)
+        const availabilityCheck = await query(`
+          SELECT is_available FROM staff_tele_availability 
+          WHERE staff_id = $1 AND is_available = true
+        `, [actualStaffId]).catch(() => ({ rows: [] }));
 
-      if (availabilityCheck.rows.length === 0) {
-        return c.json({ 
-          error: 'Provider is not currently available for instant consultations',
-          providerOffline: true 
-        }, 400);
+        // If no explicit availability set, check if staff has tele services enabled
+        if (availabilityCheck.rows.length === 0) {
+          const staffServiceCheck = await query(`
+            SELECT 1 FROM staff s
+            LEFT JOIN staff_services ss ON ss.staff_id = s.id
+            LEFT JOIN vendor_services vs ON vs.vendor_id = s.vendor_id
+            WHERE s.id = $1 AND s.is_active = true
+            AND (
+              (ss.is_active = true AND 'tele' = ANY(ss.service_styles))
+              OR (vs.is_enabled = true AND vs.publish_status = 'published' AND vs.service_style = 'tele')
+            )
+          `, [actualStaffId]);
+          
+          if (staffServiceCheck.rows.length === 0) {
+            return c.json({ 
+              error: 'Provider is not currently available for instant consultations',
+              providerOffline: true 
+            }, 400);
+          }
+        }
       }
 
       // Check if customer already has active queue entry for this provider
+      // ✅ FIX: Handle both staff and vendor providers - use actualStaffId (never prefixed staffId)
+      const queueStaffId = isSoloVendor ? null : actualStaffId;
+      const queueVendorId = isSoloVendor ? actualVendorId : null;
       const existingQueue = await query(`
         SELECT id, position, status FROM tele_queue 
-        WHERE customer_id = $1 AND staff_id = $2 AND status = 'waiting'
-      `, [customerId, staffId]);
+        WHERE customer_id = $1 
+          AND (staff_id = $2 OR vendor_id = $3)
+          AND status = 'waiting'
+      `, [customerId, queueStaffId, queueVendorId]);
 
       if (existingQueue.rows.length > 0) {
         return c.json({
@@ -366,11 +801,12 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       }
 
       // Get current queue position
+      // ✅ FIX: Handle both staff and vendor providers
       const queuePositionResult = await query(`
         SELECT COALESCE(MAX(position), 0) + 1 as next_position
         FROM tele_queue
-        WHERE staff_id = $1 AND status = 'waiting'
-      `, [staffId]);
+        WHERE (staff_id = $1 OR vendor_id = $2) AND status = 'waiting'
+      `, [queueStaffId, queueVendorId]);
 
       const position = queuePositionResult.rows[0].next_position;
 
@@ -382,39 +818,97 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Get service details
-      const serviceResult = await query(`
-        SELECT 
-          ss.price, 
-          ss.duration_minutes,
-          s.name as service_name
-        FROM staff_services ss
-        INNER JOIN services s ON ss.service_id = s.id
-        WHERE ss.staff_id = $1 AND ss.service_id = $2
-      `, [staffId, serviceId]);
+      // Get service details - different query for solo vendors vs staff
+      let serviceDetails: any = {};
+      
+      if (isSoloVendor && actualVendorId) {
+        // ✅ FIX: For solo vendors, get service from vendor_services
+        const vendorServiceResult = await query(`
+          SELECT 
+            vs.price, 
+            vs.duration_minutes,
+            vs.service_name
+          FROM vendor_services vs
+          WHERE vs.vendor_id = $1 
+            AND vs.service_style = 'tele'
+            AND vs.is_enabled = true 
+            AND vs.publish_status = 'published'
+          LIMIT 1
+        `, [actualVendorId]);
+        
+        serviceDetails = vendorServiceResult.rows[0] || {};
+      } else if (actualStaffId) {
+        // Original staff-based query - use actualStaffId (never use prefixed staffId)
+        const serviceResult = await query(`
+          SELECT 
+            ss.price, 
+            ss.duration_minutes,
+            s.name as service_name
+          FROM staff_services ss
+          INNER JOIN services s ON ss.service_id = s.id
+          WHERE ss.staff_id = $1 AND ss.service_id = $2::uuid
+        `, [actualStaffId, resolvedServiceId]).catch(() => ({ rows: [] }));
 
-      const serviceDetails = serviceResult.rows[0] || {};
+        serviceDetails = serviceResult.rows[0] || {};
+        
+        // Fallback: Try vendor_services if staff_services didn't have results
+        if (!serviceDetails.service_name) {
+          const staffResult = await select('staff', { id: actualStaffId });
+          if (staffResult.length > 0 && staffResult[0].vendor_id) {
+            const vendorServiceResult = await query(`
+              SELECT 
+                vs.price, 
+                vs.duration_minutes,
+                vs.service_name
+              FROM vendor_services vs
+              WHERE vs.vendor_id = $1 
+                AND vs.service_style = 'tele'
+                AND vs.is_enabled = true 
+                AND vs.publish_status = 'published'
+              LIMIT 1
+            `, [staffResult[0].vendor_id]);
+            serviceDetails = vendorServiceResult.rows[0] || serviceDetails;
+          }
+        }
+      }
 
       // Calculate expiry time
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + QUEUE_TIMEOUT_MINUTES);
 
-      // Create queue entry
+      // ✅ FIX: Store vendor_id for solo vendors, determine actual vendor ID
+      let vendorIdForQueue = actualVendorId;
+      if (!isSoloVendor && actualStaffId) {
+        const staffVendor = await select('staff', { id: actualStaffId });
+        vendorIdForQueue = staffVendor.length > 0 ? staffVendor[0].vendor_id : null;
+      }
+
+      // Create queue entry with resolved service ID
+      // ✅ FIX: Use vendor_id for solo vendors, staff_id for staff providers
       const queueEntry = await query(`
         INSERT INTO tele_queue (
-          customer_id, staff_id, pet_id, service_id,
+          customer_id, staff_id, vendor_id, pet_id, service_id,
           position, status, symptoms, urgency, notes,
           price, service_name, duration_minutes,
           expires_at, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, 'waiting', $6, $7, $8,
-          $9, $10, $11, $12, NOW(), NOW()
+          $1, $2, $3, $4, $5, $6, 'waiting', $7, $8, $9,
+          $10, $11, $12, $13, NOW(), NOW()
         )
         RETURNING *
       `, [
-        customerId, staffId, petId, serviceId,
-        position, symptoms, urgency, notes,
-        serviceDetails.price, serviceDetails.service_name, serviceDetails.duration_minutes,
+        customerId, 
+        isSoloVendor ? null : queueStaffId, // staff_id: null for solo vendors
+        isSoloVendor ? actualVendorId : null, // vendor_id: set for solo vendors
+        petId, 
+        resolvedServiceId,
+        position, 
+        symptoms || null, 
+        urgency, 
+        notes || null,
+        serviceDetails.price || 0, 
+        serviceDetails.service_name || 'Tele-Consultation', 
+        serviceDetails.duration_minutes || 30,
         expiresAt
       ]);
 
@@ -432,10 +926,12 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
           estimatedWaitMinutes: position * 10, // Rough estimate
         },
         service: {
-          name: serviceDetails.service_name,
-          price: serviceDetails.price,
-          durationMinutes: serviceDetails.duration_minutes,
+          name: serviceDetails.service_name || 'Tele-Consultation',
+          price: serviceDetails.price || 0,
+          durationMinutes: serviceDetails.duration_minutes || 30,
         },
+        isSoloVendor,
+        vendorId: vendorIdForQueue,
         message: `You are #${position} in queue. Estimated wait: ${position * 10} minutes.`,
       });
     } catch (error: any) {
@@ -478,20 +974,27 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
     try {
       const { queueId } = c.req.param();
 
+      // ✅ FIX: Handle both staff and vendor providers
       const result = await query(`
         SELECT 
           tq.*,
-          s.name as staff_name,
-          s.photo as staff_photo,
-          s.phone as staff_phone,
+          COALESCE(s.name, v.owner_name, v.business_name) as provider_name,
+          COALESCE(s.photo, s.photo_url, NULL) as provider_photo,
+          COALESCE(s.phone, v.phone) as provider_phone,
+          CASE 
+            WHEN tq.staff_id IS NOT NULL THEN 'staff'
+            WHEN tq.vendor_id IS NOT NULL THEN 'vendor'
+            ELSE 'unknown'
+          END as provider_type,
           (
             SELECT COUNT(*) FROM tele_queue 
-            WHERE staff_id = tq.staff_id 
+            WHERE (staff_id = tq.staff_id OR vendor_id = tq.vendor_id)
               AND status = 'waiting' 
               AND position < tq.position
           ) as ahead_in_queue
         FROM tele_queue tq
-        INNER JOIN staff s ON tq.staff_id = s.id
+        LEFT JOIN staff s ON tq.staff_id = s.id
+        LEFT JOIN vendors v ON tq.vendor_id = v.id
         WHERE tq.id = $1
       `, [queueId]);
 
@@ -524,10 +1027,17 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
             price: queueEntry.price,
             durationMinutes: queueEntry.duration_minutes,
           },
+          provider: {
+            id: queueEntry.staff_id || queueEntry.vendor_id,
+            type: queueEntry.provider_type,
+            name: queueEntry.provider_name,
+            photo: queueEntry.provider_photo,
+          },
+          // Keep staff for backward compatibility
           staff: {
             id: queueEntry.staff_id,
-            name: queueEntry.staff_name,
-            photo: queueEntry.staff_photo,
+            name: queueEntry.provider_name,
+            photo: queueEntry.provider_photo,
           },
           bookingId: queueEntry.booking_id, // Set when accepted
           meetingId: queueEntry.meeting_id, // Set when call starts
@@ -922,6 +1432,71 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         clearInterval(heartbeatInterval);
       });
     });
+  });
+
+  /**
+   * GET /bookings/:bookingId/queue-position
+   * Get queue position for a booking (customer-facing)
+   */
+  app.get("/bookings/:bookingId/queue-position", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+
+      // Get queue entry by booking_id
+      const queueResult = await query(`
+        SELECT 
+          tq.*,
+          s.name as staff_name,
+          COALESCE(s.photo, s.photo_url) as staff_photo,
+          v.business_name as vendor_name,
+          (
+            SELECT COUNT(*) 
+            FROM tele_queue 
+            WHERE staff_id = tq.staff_id 
+              AND status = 'waiting' 
+              AND position < tq.position
+          ) as ahead_in_queue
+        FROM tele_queue tq
+        LEFT JOIN staff s ON tq.staff_id = s.id
+        LEFT JOIN vendors v ON s.vendor_id = v.id
+        WHERE tq.booking_id = $1
+          AND tq.status IN ('waiting', 'in_progress')
+        ORDER BY tq.created_at DESC
+        LIMIT 1
+      `, [bookingId]);
+
+      if (queueResult.rows.length === 0) {
+        return c.json({ 
+          success: false,
+          error: 'No active queue entry found for this booking',
+          queuePosition: null,
+          estimatedWaitTime: null,
+        }, 404);
+      }
+
+      const queueEntry = queueResult.rows[0];
+      const position = parseInt(queueEntry.ahead_in_queue) + 1;
+      const estimatedWaitTime = parseInt(queueEntry.ahead_in_queue) * 10; // Rough estimate: 10 min per person
+
+      return c.json({
+        success: true,
+        queuePosition: position,
+        estimatedWaitTime,
+        totalInQueue: parseInt(queueEntry.ahead_in_queue) + 1,
+        status: queueEntry.status,
+        staffName: queueEntry.staff_name,
+        vendorName: queueEntry.vendor_name,
+        expiresAt: queueEntry.expires_at,
+      });
+    } catch (error: any) {
+      console.error('Error fetching queue position:', error);
+      return c.json({ 
+        success: false,
+        error: error.message,
+        queuePosition: null,
+        estimatedWaitTime: null,
+      }, 500);
+    }
   });
 
   /**

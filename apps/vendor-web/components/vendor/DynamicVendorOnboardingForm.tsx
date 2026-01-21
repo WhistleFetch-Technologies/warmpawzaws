@@ -122,6 +122,55 @@ export function DynamicVendorOnboardingForm({
     }
   }, [initialData]);
 
+  // ✅ NEW: Load saved form data from localStorage on mount (before initialData overrides)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !initialData && !isEditMode) {
+      try {
+        const savedFormKey = `vendorOnboardingForm_${roleId}`;
+        const savedFormData = localStorage.getItem(savedFormKey);
+        if (savedFormData) {
+          const parsed = JSON.parse(savedFormData);
+          console.log('📝 [DYNAMIC FORM] Restoring saved form data from localStorage:', Object.keys(parsed.formData || {}).length, 'fields');
+          
+          if (parsed.formData) {
+            setFormData(prev => ({ ...prev, ...parsed.formData }));
+          }
+          if (parsed.coordinates) {
+            setCoordinates(parsed.coordinates);
+          }
+          if (parsed.selectedSpecializations) {
+            setSelectedSpecializations(parsed.selectedSpecializations);
+          }
+          if (parsed.agreedToTerms) {
+            setAgreedToTerms(parsed.agreedToTerms);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ [DYNAMIC FORM] Error loading saved form data:', error);
+      }
+    }
+  }, [roleId, initialData, isEditMode]);
+
+  // ✅ NEW: Auto-save form data to localStorage on change
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !isEditMode && roleId && Object.keys(formData).length > 0) {
+      try {
+        const savedFormKey = `vendorOnboardingForm_${roleId}`;
+        const dataToSave = {
+          formData,
+          coordinates,
+          selectedSpecializations,
+          agreedToTerms,
+          savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(savedFormKey, JSON.stringify(dataToSave));
+        console.log('💾 [DYNAMIC FORM] Auto-saved form data to localStorage');
+      } catch (error) {
+        console.warn('⚠️ [DYNAMIC FORM] Error saving form data:', error);
+      }
+    }
+  }, [formData, coordinates, selectedSpecializations, agreedToTerms, roleId, isEditMode]);
+
   useEffect(() => {
     console.log('🚀 [INIT] Component mounted, starting initialization...');
     console.log('🚀 [INIT] roleId:', roleId);
@@ -954,6 +1003,17 @@ export function DynamicVendorOnboardingForm({
       console.log('[DYNAMIC FORM] Submitting:', submissionData);
       console.log('[DYNAMIC FORM] Selected specializations:', selectedSpecializations);
       await onSubmit(submissionData);
+      
+      // ✅ Clear saved form data from localStorage after successful submission
+      if (typeof window !== 'undefined') {
+        try {
+          const savedFormKey = `vendorOnboardingForm_${roleId}`;
+          localStorage.removeItem(savedFormKey);
+          console.log('🧹 [DYNAMIC FORM] Cleared saved form data after successful submission');
+        } catch (error) {
+          console.warn('⚠️ [DYNAMIC FORM] Error clearing saved form data:', error);
+        }
+      }
       
     } catch (error) {
       console.error('[DYNAMIC FORM] Submission error:', error);

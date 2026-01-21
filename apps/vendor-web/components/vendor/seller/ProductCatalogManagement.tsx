@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, DollarSign, Tag,
-  Check, AlertCircle, Image as ImageIcon
+  Check, AlertCircle, Image as ImageIcon, MapPin
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -389,6 +389,82 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     status: product?.status || 'draft'
   });
   const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [variants, setVariants] = useState<Array<{ id: string; size?: string; color?: string; price: string; stock: string; sku: string }>>(
+    product?.variants?.map((v: any, idx: number) => ({ id: `${idx}`, size: v.size || '', color: v.color || '', price: String(v.price || formData.price || ''), stock: String(v.stock || ''), sku: v.sku || '' })) || []
+  );
+  const [images, setImages] = useState<string[]>(product?.images || []);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [deliveryRegions, setDeliveryRegions] = useState<string[]>(product?.delivery_regions || []);
+
+  // Variants Management
+  const addVariant = () => {
+    setVariants([...variants, { id: Date.now().toString(), size: '', color: '', price: formData.price || '', stock: '', sku: '' }]);
+  };
+
+  const removeVariant = (id: string) => {
+    setVariants(variants.filter(v => v.id !== id));
+  };
+
+  const updateVariant = (id: string, field: string, value: string) => {
+    setVariants(variants.map(v => v.id === id ? { ...v, [field]: value } : v));
+  };
+
+  // Image Upload
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploadingImages(true);
+      const uploadedUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append('image', file);
+
+        try {
+          const response = await apiClient.post<{ image_url?: string; url?: string }>(
+            `/vendor/${sellerId}/products/images`,
+            formData
+          );
+          const imageUrl = response.image_url || response.url;
+          if (imageUrl) {
+            uploadedUrls.push(imageUrl);
+          } else {
+            uploadedUrls.push(URL.createObjectURL(file));
+          }
+        } catch (error) {
+          console.warn('Image upload failed, using preview:', error);
+          uploadedUrls.push(URL.createObjectURL(file));
+        }
+      }
+
+      setImages([...images, ...uploadedUrls]);
+      setImageFiles([...imageFiles, ...Array.from(files)]);
+    } catch (error: any) {
+      console.error('Error uploading images:', error);
+      alert(error.message || 'Failed to upload images. You can add them later.');
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index));
+    setImageFiles(imageFiles.filter((_, i) => i !== index));
+  };
+
+  // Delivery Regions
+  const addDeliveryRegion = () => {
+    const region = prompt('Enter delivery region (Pin code or City name):');
+    if (region && !deliveryRegions.includes(region)) {
+      setDeliveryRegions([...deliveryRegions, region]);
+    }
+  };
+
+  const removeDeliveryRegion = (region: string) => {
+    setDeliveryRegions(deliveryRegions.filter(r => r !== region));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -400,7 +476,16 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
         price: parseFloat(formData.price),
         original_price: formData.original_price ? parseFloat(formData.original_price) : null,
         stock: parseInt(formData.stock),
-        vendor_id: sellerId
+        vendor_id: sellerId,
+        images: images.length > 0 ? images : [],
+        variants: variants.length > 0 ? variants.map(v => ({
+          size: v.size || null,
+          color: v.color || null,
+          price: parseFloat(v.price) || parseFloat(formData.price),
+          stock: parseInt(v.stock) || 0,
+          sku: v.sku || null,
+        })) : null,
+        delivery_regions: deliveryRegions.length > 0 ? deliveryRegions : null,
       };
 
       if (product) {
@@ -555,6 +640,172 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
               <option value="pending">Submit for Approval</option>
               <option value="active">Active (if auto-approved)</option>
             </select>
+          </div>
+
+          {/* PHASE 1.3 ENHANCEMENT: Image Upload */}
+          <div className="border-t border-slate-200 pt-6 space-y-4">
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-orange-500" />
+              Product Images
+            </h3>
+            <div className="space-y-3">
+              <div className="flex items-center gap-4 flex-wrap">
+                {images.map((image, index) => (
+                  <div key={index} className="relative w-24 h-24 border-2 border-slate-200 rounded-xl overflow-hidden">
+                    <img src={image} alt={`Product ${index + 1}`} className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <label className="w-24 h-24 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-colors">
+                  <Upload className="w-6 h-6 text-slate-400 mb-1" />
+                  <span className="text-xs text-slate-500">Upload</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    disabled={uploadingImages}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              {uploadingImages && (
+                <p className="text-sm text-slate-500">Uploading images...</p>
+              )}
+              {images.length === 0 && (
+                <p className="text-xs text-slate-400">Upload product images (optional, can add later)</p>
+              )}
+            </div>
+          </div>
+
+          {/* PHASE 1.3 ENHANCEMENT: Product Variants */}
+          <div className="border-t border-slate-200 pt-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900">Product Variants (Size, Color)</h3>
+              <button
+                type="button"
+                onClick={addVariant}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Variant
+              </button>
+            </div>
+            {variants.length > 0 ? (
+              <div className="space-y-3">
+                {variants.map((variant) => (
+                  <div key={variant.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-slate-700">Variant #{variants.indexOf(variant) + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeVariant(variant.id)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Size</label>
+                        <input
+                          type="text"
+                          value={variant.size}
+                          onChange={(e) => updateVariant(variant.id, 'size', e.target.value)}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
+                          placeholder="e.g., Small, Medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Color</label>
+                        <input
+                          type="text"
+                          value={variant.color}
+                          onChange={(e) => updateVariant(variant.id, 'color', e.target.value)}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
+                          placeholder="e.g., Red, Blue"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Price (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={variant.price}
+                          onChange={(e) => updateVariant(variant.id, 'price', e.target.value)}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Stock</label>
+                        <input
+                          type="number"
+                          value={variant.stock}
+                          onChange={(e) => updateVariant(variant.id, 'stock', e.target.value)}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-slate-600 mb-1">Variant SKU</label>
+                        <input
+                          type="text"
+                          value={variant.sku}
+                          onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                          className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500/20 focus:border-orange-500"
+                          placeholder="Optional SKU for this variant"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">No variants added. Add variants if your product comes in different sizes or colors.</p>
+            )}
+          </div>
+
+          {/* PHASE 1.3 ENHANCEMENT: Shipping/Delivery Regions */}
+          <div className="border-t border-slate-200 pt-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-slate-700 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Delivery Regions (Pin Codes/Cities)
+              </label>
+              <button
+                type="button"
+                onClick={addDeliveryRegion}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Region
+              </button>
+            </div>
+            {deliveryRegions.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {deliveryRegions.map((region, index) => (
+                  <div key={index} className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                    <span className="text-sm text-blue-700">{region}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeDeliveryRegion(region)}
+                      className="text-blue-500 hover:text-blue-700"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">No regions specified. If left empty, product will be available in all regions where vendor delivers.</p>
+            )}
           </div>
 
           {/* Actions */}

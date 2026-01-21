@@ -143,7 +143,7 @@ export function PreviousProvidersCarousel({
                   <div className="flex items-center gap-1">
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     <span className="font-bold text-gray-900">
-                      {provider.rating.toFixed(1)}
+                      {Number(provider.rating || 0).toFixed(1)}
                     </span>
                   </div>
                   <span className="text-sm text-gray-600">
@@ -163,7 +163,7 @@ export function PreviousProvidersCarousel({
               {provider.distance !== undefined && (
                 <div className="flex items-center gap-1 text-gray-600">
                   <MapPin className="w-4 h-4" />
-                  <span>{provider.distance.toFixed(1)} km</span>
+                  <span>{Number(provider.distance || 0).toFixed(1)} km</span>
                 </div>
               )}
             </div>

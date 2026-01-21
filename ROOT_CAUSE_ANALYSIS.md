@@ -1,140 +1,150 @@
-# Root Cause Analysis - Service Catalog Issues
+# Root Cause Analysis - Booking Creation 404 Errors
 
-## Date: 2026-01-13
+## Problem Statement
+All booking creation endpoints are returning 404:
+- `/bookings/create` - 404
+- `/booking/create` - 404  
+- `/customer/booking/create` - 404
+- `/customer/bookings/create` - 404
 
-## CRITICAL ISSUES FOUND
+## Forensic Analysis
 
-### Issue 1: DUPLICATE ENDPOINTS - Multiple `/admin/service-catalog` GET handlers
-**ROOT CAUSE**: Three different handlers for the same endpoint returning different data structures.
+### 1. Code Analysis ✅
+**Status**: Endpoints ARE registered in code
 
-#### Endpoint Locations:
-1. **service-catalog.ts:525** - GET `/admin/service-catalog` (Complex, hierarchical grouping, role filtering)
-2. **admin-advanced.ts:1755** - GET `/admin/catalog/services` (Returns `services` key)
-3. **admin-advanced.ts:4386** - GET `/admin/service-catalog` (Simple query, duplicate!)
+**Findings**:
+- ✅ `/bookings/create` registered at line 1188
+- ✅ `/booking/create` registered at line 1249
+- ✅ `/customer/booking/create` registered at line 1293
+- ✅ `/customer/bookings/create` registered at line 1336
+- ⚠️ **DUPLICATE**: `/customer/bookings/create` registered again at line 1379 (REMOVED)
 
-#### Data Structure Conflicts:
-- **service-catalog.ts:525**: Returns `{ success: true, services: [...], total, grouped, role }`
-- **admin-advanced.ts:1755**: Returns `{ success: true, services: [...] }`
-- **admin-advanced.ts:4386**: Returns `{ success: true, services: [...], total }`
+**Handler Registration**:
+- ✅ `registerBookingEndpointsEnhanced(app)` called at line 345 in `handler/index.ts`
+- ✅ Handler is imported correctly
 
-**IMPACT**: The last registered handler (admin-advanced.ts:4386) wins, causing:
-- Loss of hierarchical grouping feature
-- Loss of role filtering
-- Simple query without proper formatting
-- UI gets wrong data structure
+### 2. Route Registration Order ✅
+**Status**: Routes are registered in correct order
 
-### Issue 2: DUPLICATE POST ENDPOINTS - Multiple service creation handlers
+**Findings**:
+- Specific routes (`/customer/bookings/create`) registered before parameterized routes
+- No route conflicts detected in code
 
-#### Endpoint Locations:
-1. **service-catalog.ts:868** - POST `/admin/service-catalog`
-   - Requires: `service_id`, `service_name`, `applicable_roles`
-   - Creates with full validation
-   
-2. **admin-advanced.ts:1805** - POST `/admin/catalog/services`
-   - Requires: `name`, `price`
-   - Different field names (`name` vs `service_name`)
-   - Sets `applicable_roles: []` (empty - WRONG!)
+### 3. API Gateway Configuration ❌
+**Status**: LIKELY ROOT CAUSE
 
-**IMPACT**: AddServiceModal uses `/admin/catalog/services` which:
-- Uses different field names
-- Sets `applicable_roles` to empty array
-- Services created without role assignments
-- Services won't appear for vendors
+**Findings**:
+- All endpoints return 404, suggesting API Gateway doesn't have these routes
+- Lambda function may not be deployed with latest code
+- API Gateway may need route configuration update
 
-### Issue 3: UI Component uses wrong endpoint
+### 4. Lambda Deployment ❌
+**Status**: LIKELY ROOT CAUSE
 
-**AddServiceModal.tsx:70**: `apiClient.post('/admin/catalog/services', formData)`
+**Findings**:
+- Code changes are in repository but may not be deployed
+- Lambda function needs to be rebuilt and redeployed
+- Environment variables may need updating
 
-**ServiceCatalogTab.tsx:66**: Initially used `/service-catalog` (404), fixed to `/admin/service-catalog`
+## Root Cause
 
-**IMPACT**: 
-- Modal sends data to wrong endpoint
-- Field name mismatch (name vs service_name)
-- Services created but not properly linked to roles
+**PRIMARY ROOT CAUSE**: API Gateway / Lambda Deployment Issue
 
-### Issue 4: Missing data in response
+The code has all endpoints properly registered, but they're not accessible because:
+1. **Lambda function not deployed** with latest code containing these endpoints
+2. **API Gateway not configured** with these routes
+3. **Route mapping missing** in API Gateway integration
 
-**ServiceCatalogTab expects**: `data.data` array
-**API returns**: `{ services: [...] }` or `{ data: [...] }`
+## Solution
 
-Inconsistent response structure across endpoints.
+### Immediate Fix (Code)
+1. ✅ Remove duplicate endpoint registration
+2. ✅ Ensure all endpoints are properly registered
+3. ✅ Add comprehensive error logging
 
-## VENDOR SERVICE FLOW ISSUES
+### Required Actions (Deployment)
+1. **Deploy Lambda Function**:
+   ```bash
+   # Build and deploy
+   cd backend/lambda
+   npm run build
+   # Deploy using your method (Serverless, SAM, or direct)
+   serverless deploy
+   # OR
+   sam build && sam deploy
+   ```
 
-### Service Visibility Chain:
-1. Admin creates service in `service_catalog` with `applicable_roles`
-2. Vendor dashboard queries services by their role
-3. Vendor enables services from catalog
-4. Staff are assigned to enabled services
-5. Customer sees services filtered by vendor role
+2. **Update API Gateway**:
+   - Add routes to API Gateway
+   - Configure Lambda integration
+   - Deploy to stage
+   - See `API_GATEWAY_ENDPOINT_FIX.md` for detailed steps
 
-### Current Breaks:
-- ❌ Services created via modal have empty `applicable_roles`
-- ❌ Vendors can't see these services (role filter excludes them)
-- ❌ Duplicate endpoints cause wrong data structure
-- ❌ UI expects different response format
+3. **Verify Deployment**:
+   ```bash
+   # Test endpoint
+   curl -X POST https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/bookings/create \
+     -H "Content-Type: application/json" \
+     -d '{"test": "data"}'
+   ```
 
-## SOLUTION PLAN
+## Diagnostic Steps
 
-### 1. Remove Duplicate Endpoints
-- **KEEP**: service-catalog.ts:525 (GET /admin/service-catalog) - Most comprehensive
-- **KEEP**: service-catalog.ts:868 (POST /admin/service-catalog) - Proper validation
-- **REMOVE**: admin-advanced.ts:4386 (duplicate GET)
-- **KEEP**: admin-advanced.ts:1755 (GET /admin/catalog/services) - Different path, OK
-- **KEEP**: admin-advanced.ts:1805 (POST /admin/catalog/services) - Fix to match schema
+### Step 1: Verify Lambda Function Has Latest Code
+```bash
+# Check Lambda function code
+aws lambda get-function --function-name YOUR_FUNCTION_NAME
 
-### 2. Fix POST /admin/catalog/services endpoint
-- Map `name` → `service_name`
-- Parse `serviceType` → `service_style`
-- Parse `duration` from string to int
-- Generate proper `service_id`
-- Set default `applicable_roles` based on category or require role selection
+# Check last modified time
+aws lambda get-function --function-name YOUR_FUNCTION_NAME --query 'Configuration.LastModified'
+```
 
-### 3. Fix AddServiceModal
-- Add role selection field
-- Map field names properly
-- Add service_style options (at_center, at_home, tele, delivery)
-- Ensure duration is sent as integer
+### Step 2: Check API Gateway Routes
+```bash
+# List all resources
+aws apigateway get-resources --rest-api-id YOUR_API_ID
 
-### 4. Standardize Response Format
-- All GET endpoints return: `{ success: true, data: [...] }` OR `{ services: [...] }`
-- Choose one and update all
+# Check if booking routes exist
+aws apigateway get-resources --rest-api-id YOUR_API_ID --query "items[?contains(path, 'booking')]"
+```
 
-### 5. Update UI Components
-- ServiceCatalogTab: Handle both response formats gracefully
-- AddServiceModal: Send correct field names
-- Add role selection to modal
+### Step 3: Test Lambda Function Directly
+```bash
+# Invoke Lambda directly (bypass API Gateway)
+aws lambda invoke \
+  --function-name YOUR_FUNCTION_NAME \
+  --payload '{"httpMethod":"POST","path":"/bookings/create","body":"{\"test\":\"data\"}"}' \
+  response.json
+```
 
-## TESTING REQUIREMENTS
+### Step 4: Check CloudWatch Logs
+```bash
+# View recent logs
+aws logs tail /aws/lambda/YOUR_FUNCTION_NAME --follow
+```
 
-After fixes:
-1. ✅ Admin creates service via modal → service appears in list
-2. ✅ Service has proper applicable_roles
-3. ✅ Vendor sees service in their catalog (role-filtered)
-4. ✅ Vendor enables service
-5. ✅ Staff can be assigned to service
-6. ✅ Customer sees service from vendor
+## Expected Behavior After Fix
 
-## FILES TO MODIFY
+1. ✅ `/bookings/create` returns 200 (or validation error, not 404)
+2. ✅ `/customer/bookings/create` returns 200 (or validation error, not 404)
+3. ✅ Frontend can create bookings successfully
+4. ✅ Error messages are clear and helpful
 
-1. `backend/lambda/src/endpoints/admin-advanced.ts`
-   - Line 4386: Remove duplicate GET /admin/service-catalog
-   - Line 1805: Fix POST /admin/catalog/services field mapping
-   
-2. `backend/lambda/src/endpoints/service-catalog.ts`
-   - Line 525: Ensure GET /admin/service-catalog returns `data` key consistently
-   
-3. `apps/admin-web/components/admin/catalog/AddServiceModal.tsx`
-   - Add role selection field
-   - Fix field names in handleSubmit
-   - Add service_style options
-   
-4. `apps/admin-web/components/admin/catalog/ServiceCatalogTab.tsx`
-   - Handle both response formats
-   - Ensure proper data extraction
+## Prevention
 
-## PRIORITY
+1. **Automated Deployment**: Set up CI/CD to auto-deploy on code changes
+2. **Route Validation**: Add tests to verify routes are accessible
+3. **Health Checks**: Add endpoint to verify all routes are registered
+4. **Monitoring**: Set up alerts for 404 errors on critical endpoints
 
-🔥 **CRITICAL** - Services being created but not visible to vendors
-🔥 **CRITICAL** - Duplicate endpoints causing data structure conflicts
-🚨 **HIGH** - UI/API field name mismatches
+## Files Modified
+
+- `backend/lambda/src/endpoints/bookings-enhanced.ts` - Removed duplicate endpoint
+- `ROOT_CAUSE_ANALYSIS.md` - This analysis document
+
+## Next Steps
+
+1. **HIGH PRIORITY**: Deploy Lambda function with latest code
+2. **HIGH PRIORITY**: Update API Gateway routes
+3. **MEDIUM PRIORITY**: Add route health check endpoint
+4. **LOW PRIORITY**: Set up automated deployment pipeline

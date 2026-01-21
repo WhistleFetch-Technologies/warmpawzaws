@@ -143,7 +143,7 @@ export function IntegratedServicesSelector({
         </div>
         <div className="flex items-center gap-1">
           <Navigation className="w-4 h-4 text-blue-500" />
-          <span>{provider.distance.toFixed(1)} km</span>
+          <span>{Number(provider.distance || 0).toFixed(1)} km</span>
         </div>
         {provider.rating && (
           <div className="flex items-center gap-1">

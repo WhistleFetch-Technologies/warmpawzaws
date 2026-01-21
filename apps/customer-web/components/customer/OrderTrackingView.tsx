@@ -55,7 +55,8 @@ export function OrderTrackingView({ orderId, onBack }: OrderTrackingViewProps) {
       setLoading(true);
       setError(null);
       
-      const response = await apiClient.get<any>(`/ecommerce/orders/${orderId}`);
+      // PHASE 1.3 FIX: Use correct endpoint /customer/orders/:id instead of /ecommerce/orders/:id
+      const response = await apiClient.get<any>(`/customer/orders/${orderId}`);
       setOrder(response.order || response);
     } catch (err: any) {
       console.error('Error loading order:', err);

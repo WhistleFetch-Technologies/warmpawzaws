@@ -65,42 +65,17 @@ export class ApiGatewayStack extends Construct {
 
     // Create HTTP API v2 (better performance and lower cost than REST API)
     // FIXED: When using wildcard origins, we cannot use allowCredentials
+    // For dev, use specific origins without credentials to avoid CORS issues
     const allowedOrigins = props.environment === 'prod'
       ? ['https://warmpawz.com', 'https://www.warmpawz.com', 'https://customer.warmpawz.com', 'https://vendor.warmpawz.com', 'https://admin.warmpawz.com']
       : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:3002']; // Specific origins for dev
     
-    const allowCredentials = props.environment === 'prod' || props.environment === 'staging'; // Only use credentials in prod/staging
-
+    // Create API without CORS preflight (CORS handled in Lambda function)
+    // This avoids CDK validation errors with allowCredentials and wildcard origins
     this.api = new apigateway.HttpApi(this, 'WarmpawzApi', {
       apiName: `warmpawz-api-${props.environment || 'dev'}`,
       description: 'Warmpawz Platform API Gateway',
-      corsPreflight: {
-        allowOrigins: allowedOrigins,
-        allowMethods: [
-          apigateway.CorsHttpMethod.GET,
-          apigateway.CorsHttpMethod.POST,
-          apigateway.CorsHttpMethod.PUT,
-          apigateway.CorsHttpMethod.DELETE,
-          apigateway.CorsHttpMethod.PATCH,
-          apigateway.CorsHttpMethod.OPTIONS,
-          apigateway.CorsHttpMethod.HEAD,
-        ],
-        allowHeaders: [
-          'Content-Type',
-          'Authorization',
-          'X-Amz-Date',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Requested-With',
-          'X-Request-Id',
-          'X-Client-Info',
-          'X-User-Role',
-          'X-UAT-Mode',
-          'X-UAT-Token',
-        ],
-        allowCredentials: allowCredentials,
-        maxAge: cdk.Duration.days(1),
-      },
+      // CORS is handled in the Lambda function to avoid CDK validation issues
     });
 
     // Create custom domain if Route53 stack is provided

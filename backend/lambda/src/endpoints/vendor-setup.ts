@@ -64,8 +64,30 @@ class GetVendorAvailabilityHandler extends BaseHandler {
     if (!vendorId) {
       return this.error('Vendor ID is required', 400);
     }
-    const availability = await select('vendor_availability', { vendor_id: vendorId });
-    return this.success({ availability: availability[0] || null });
+    
+    try {
+      // ✅ FIX: Get availability from vendor's metadata since vendor_availability table doesn't exist
+      // The operating hours are stored in the vendor's metadata field
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return this.error('Vendor not found', 404);
+      }
+      
+      const vendor = vendors[0];
+      const metadata = vendor.metadata || {};
+      
+      // Build availability object from vendor metadata
+      const availability = {
+        operatingHours: metadata.operating_hours || metadata.operatingHours || null,
+        emergencyServices: metadata.emergency_services || metadata.emergencyServices || null,
+        operatingHoursText: vendor.operating_hours || null,
+      };
+      
+      return this.success({ availability });
+    } catch (err: any) {
+      console.error('Error fetching vendor availability:', err);
+      return this.error(err.message || 'Failed to fetch availability', 500);
+    }
   }
 }
 
@@ -73,24 +95,72 @@ class UpdateVendorAvailabilityHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const vendorId = context.event.pathParameters?.vendorId;
     const body = this.parseBody(context.event);
-    if (!vendorId || !body.availability) {
-      return this.error('Vendor ID and availability are required', 400);
+    
+    if (!vendorId) {
+      return this.error('Vendor ID is required', 400);
     }
-    const existing = await select('vendor_availability', { vendor_id: vendorId });
-    if (existing.length > 0) {
-      await update('vendor_availability', { vendor_id: vendorId }, body.availability);
-    } else {
-      await insert('vendor_availability', {
-        ...body.availability,
-        vendor_id: vendorId,
-        created_at: new Date().toISOString(),
+    
+    // ✅ FIX: Accept both legacy format (body.availability) and new format (body.operatingHours)
+    const operatingHours = body.availability?.operatingHours || body.operatingHours;
+    const emergencyServices = body.availability?.emergencyServices || body.emergencyServices;
+    
+    if (!operatingHours && !emergencyServices) {
+      return this.error('Operating hours or emergency services data is required', 400);
+    }
+    
+    try {
+      // Get current vendor
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return this.error('Vendor not found', 404);
+      }
+      
+      const vendor = vendors[0];
+      const currentMetadata = vendor.metadata || {};
+      
+      // ✅ FIX: Store in vendor's metadata field since vendor_availability table doesn't exist
+      const updatedMetadata = {
+        ...currentMetadata,
+        operating_hours: operatingHours || currentMetadata.operating_hours,
+        emergency_services: emergencyServices || currentMetadata.emergency_services,
+      };
+      
+      // Generate operating hours text for display
+      let operatingHoursText = vendor.operating_hours || '';
+      if (operatingHours) {
+        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        const openDays = days.filter(day => operatingHours[day]?.isOpen);
+        if (openDays.length > 0) {
+          const firstDay = operatingHours[openDays[0]];
+          const allSame = openDays.every((day: string) => 
+            operatingHours[day].open === firstDay.open && operatingHours[day].close === firstDay.close
+          );
+          
+          if (allSame && openDays.length === 7) {
+            operatingHoursText = `Open Daily: ${firstDay.open} - ${firstDay.close}`;
+          } else if (allSame && openDays.length >= 5) {
+            operatingHoursText = `${firstDay.open} - ${firstDay.close}`;
+          } else {
+            operatingHoursText = openDays.slice(0, 3).map((day: string) => {
+              const h = operatingHours[day];
+              return `${day.charAt(0).toUpperCase() + day.slice(1, 3)}: ${h.open}-${h.close}`;
+            }).join(', ');
+          }
+        }
+      }
+      
+      await update('vendors', { id: vendorId }, {
+        metadata: updatedMetadata,
+        operating_hours: operatingHoursText,
+        availability_configured: true,
+        updated_at: new Date().toISOString(),
       });
+      
+      return this.success({ success: true });
+    } catch (err: any) {
+      console.error('Error updating vendor availability:', err);
+      return this.error(err.message || 'Failed to update availability', 500);
     }
-    await update('vendors', { id: vendorId }, {
-      availability_configured: true,
-      updated_at: new Date().toISOString(),
-    });
-    return this.success({ success: true });
   }
 }
 
@@ -371,7 +441,17 @@ export function registerVendorSetupEndpoints(app: Hono) {
   app.post('/vendor/services/publish', async (c) => {
     try {
       const body = await c.req.json();
-      const { vendorId, serviceId, publishLevel, centreId, centreLevelPrice } = body;
+      const { 
+        vendorId, 
+        serviceId, 
+        serviceStyle,
+        publishLevel, 
+        centreId, 
+        centreLevelPrice,
+        // PHASE 1.1: Missing Features
+        serviceRadius, // Service radius in km (for at_home)
+        queueConfig, // Queue configuration JSON (for tele)
+      } = body;
 
       console.log(`📢 [PUBLISH] Publishing service ${serviceId} for vendor ${vendorId}`);
 
@@ -379,23 +459,61 @@ export function registerVendorSetupEndpoints(app: Hono) {
         return c.json({ error: 'vendorId and serviceId are required' }, 400);
       }
 
+      // Prepare update/insert data with new fields
+      const updateFields = ['is_active = true', 'publish_level = $3', 'centre_id = $4', 'price = COALESCE($5, price)'];
+      const insertFields = ['vendor_id', 'service_id', 'is_active', 'publish_level', 'centre_id', 'price'];
+      const updateValues: any[] = [vendorId, serviceId, publishLevel || 'vendor', centreId, centreLevelPrice];
+      const insertValues: any[] = [vendorId, serviceId, true, publishLevel || 'vendor', centreId, centreLevelPrice || 0];
+      let paramIndex = 6;
+
+      // Add serviceStyle if provided
+      if (serviceStyle) {
+        updateFields.push(`service_style = $${paramIndex}`);
+        insertFields.push('service_style');
+        updateValues.push(serviceStyle);
+        insertValues.push(serviceStyle);
+        paramIndex++;
+      }
+
+      // Add serviceRadius if provided (for at_home)
+      if (serviceRadius !== undefined) {
+        updateFields.push(`service_radius_km = $${paramIndex}`);
+        insertFields.push('service_radius_km');
+        updateValues.push(serviceRadius);
+        insertValues.push(serviceRadius);
+        paramIndex++;
+      }
+
+      // Add queueConfig if provided (for tele)
+      if (queueConfig !== undefined) {
+        updateFields.push(`queue_config = $${paramIndex}`);
+        insertFields.push('queue_config');
+        updateValues.push(JSON.stringify(queueConfig));
+        insertValues.push(JSON.stringify(queueConfig));
+        paramIndex++;
+      }
+
       // Update or create vendor service
       const existingService = await query(
-        `SELECT id FROM vendor_services WHERE vendor_id = $1 AND service_id = $2`,
-        [vendorId, serviceId]
+        `SELECT id FROM vendor_services WHERE vendor_id = $1 AND service_id = $2${serviceStyle ? ' AND service_style = $3' : ''}`,
+        serviceStyle ? [vendorId, serviceId, serviceStyle] : [vendorId, serviceId]
       ).catch(() => ({ rows: [] }));
 
       if (existingService.rows.length > 0) {
+        updateValues.push(new Date().toISOString());
+        updateFields.push('updated_at = NOW()');
         await query(
-          `UPDATE vendor_services SET is_active = true, publish_level = $3, centre_id = $4, price = COALESCE($5, price), updated_at = NOW()
+          `UPDATE vendor_services SET ${updateFields.join(', ')}
            WHERE vendor_id = $1 AND service_id = $2`,
-          [vendorId, serviceId, publishLevel || 'vendor', centreId, centreLevelPrice]
+          updateValues
         );
       } else {
+        insertFields.push('created_at');
+        insertValues.push(new Date().toISOString());
         await query(
-          `INSERT INTO vendor_services (vendor_id, service_id, is_active, publish_level, centre_id, price, created_at)
-           VALUES ($1, $2, true, $3, $4, $5, NOW())`,
-          [vendorId, serviceId, publishLevel || 'vendor', centreId, centreLevelPrice || 0]
+          `INSERT INTO vendor_services (${insertFields.join(', ')})
+           VALUES (${insertFields.map((_, i) => `$${i + 1}`).join(', ')})`,
+          insertValues
         );
       }
 

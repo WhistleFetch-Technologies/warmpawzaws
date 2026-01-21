@@ -140,20 +140,25 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         }
         
         // Update localStorage with identity and application data
-        // ✅ FIX: Resolve roleId from multiple sources with fallbacks
+        // ✅ FIX GAP 1.1: Simplified and prioritized role ID resolution
+        // PRIORITY: API response is the source of truth, localStorage is ONLY for offline fallback
+        // The backend should always return role from identity.selected_role_id
         const resolvedRoleId = 
-          identity.selected_role_id || // 1. From identity table
-          application?.role_id ||       // 2. From application record
-          role?.id ||                   // 3. From role object
-          localStorage.getItem('vendorRole') || // 4. From localStorage
+          identity.selected_role_id || // 1. PRIMARY: From identity table (backend source of truth)
+          role?.id ||                   // 2. From role object returned by API
+          application?.role_id ||       // 3. From application record
           null;
         
-        console.log('🔍 [VendorApp] Role ID resolution:', {
+        // ✅ ONLY use localStorage as a last resort when API fails (handled in catch block)
+        // Do NOT include localStorage in the primary resolution chain
+        // This prevents stale localStorage data from overriding fresh API data
+        
+        console.log('🔍 [VendorApp] Role ID resolution (simplified):', {
           'identity.selected_role_id': identity.selected_role_id,
-          'application.role_id': application?.role_id,
           'role.id': role?.id,
-          'localStorage.vendorRole': localStorage.getItem('vendorRole'),
-          'resolvedRoleId': resolvedRoleId
+          'application.role_id': application?.role_id,
+          'resolvedRoleId': resolvedRoleId,
+          'source': identity.selected_role_id ? 'identity' : (role?.id ? 'role_object' : 'application'),
         });
         
         const vendorData: any = {
@@ -224,16 +229,22 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         } else if (onboardingStatus === 'REJECTED') {
           setStatus('rejected');
           vendorData.status = 'rejected';
+          // ✅ FIX GAP VO-2: Use feedback object for rejection reason
+          const feedback = (application as any)?.feedback;
           setApplicationData({
-            rejectionReason: application?.rejection_reason || 'Your application was not approved.',
-            allowResubmit: true
+            rejectionReason: feedback?.rejectionReason || application?.rejection_reason || 'Your application was not approved.',
+            allowResubmit: true,
+            reviewedAt: feedback?.reviewedAt || application?.reviewed_at,
           });
         } else if (onboardingStatus === 'CLARIFICATION_REQUIRED') {
           setStatus('clarification');
           vendorData.status = 'clarification';
+          // ✅ FIX GAP VO-1: Use feedback object from API response (preferred) or fallback to application fields
+          const feedback = (application as any)?.feedback;
           setApplicationData({
-            clarificationNotes: application?.admin_comments || 'Please provide additional information.',
-            reviewerName: application?.reviewed_by || 'Admin'
+            clarificationNotes: feedback?.clarificationNote || application?.admin_comments || application?.clarification_notes || 'Please provide additional information.',
+            reviewerName: feedback?.reviewedBy || application?.reviewed_by || 'Admin',
+            reviewedAt: feedback?.reviewedAt || application?.reviewed_at,
           });
         } else if (onboardingStatus === 'FORM_PENDING' || onboardingStatus === 'ROLE_PENDING') {
           // Still in onboarding
@@ -330,17 +341,49 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     try {
       // Step 1: Save selected role to backend
       console.log('📤 Saving role selection to backend...');
-      await apiClient.post('/vendor/onboarding/select-role', { phone, role_id: role });
+      const roleResponse = await apiClient.post<any>('/vendor/onboarding/select-role', { phone, role_id: role });
       console.log('✅ Role saved');
       
-      // Step 2: Auto-set vendor type to "business" (lowercase, since we removed Solo/Business selection)
-      console.log('📤 Setting vendor type to business...');
-      await apiClient.post('/vendor/onboarding/select-vendor-type', { phone, vendor_type: 'business' });
+      // Step 2: Determine vendor type based on role configuration
+      // Fetch role details to check supported vendor types
+      let vendorType = 'business'; // Default fallback
+      try {
+        const rolesResponse = await apiClient.get<any>('/config/roles');
+        if (rolesResponse?.roles) {
+          const selectedRoleData = rolesResponse.roles.find((r: any) => 
+            r.id === role || r.name === role || r.roleCode === role
+          );
+          if (selectedRoleData) {
+            const vendorConfig = selectedRoleData.vendorConfiguration;
+            const supportedTypes = selectedRoleData.config?.vendorTypes || [];
+            
+            // If role has vendorConfiguration set (solo or business), use it
+            if (vendorConfig === 'solo') {
+              vendorType = 'solo';
+            } else if (vendorConfig === 'business') {
+              vendorType = 'business';
+            } else if (supportedTypes.length === 1) {
+              // If only one type is supported, use it
+              vendorType = supportedTypes[0];
+            } else if (!supportedTypes.includes('business') && supportedTypes.includes('solo')) {
+              // Role only supports solo
+              vendorType = 'solo';
+            }
+            console.log('📋 Role vendor configuration:', { vendorConfig, supportedTypes, resolvedType: vendorType });
+          }
+        }
+      } catch (roleErr) {
+        console.warn('⚠️ Could not fetch role details, using default vendor type:', roleErr);
+      }
+      
+      console.log('📤 Setting vendor type to:', vendorType);
+      await apiClient.post('/vendor/onboarding/select-vendor-type', { phone, vendor_type: vendorType });
       console.log('✅ Vendor type saved');
       
       // Now set state and show onboarding form
       setSelectedRole(role);
       localStorage.setItem('vendorRole', role);
+      localStorage.setItem('vendorType', vendorType);
       setShowOnboarding(true);
     } catch (error) {
       console.error('❌ Error saving role/vendor type:', error);
@@ -496,24 +539,75 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           try {
             const phone = session.phone || localStorage.getItem('vendorPhone');
             
+            // ✅ FIX: Sanitize formData to remove invalid/placeholder fields
+            const sanitizedFormData: Record<string, any> = {};
+            const invalidFieldPatterns = ['new_field', 'newfield', 'new-field'];
+            const invalidValuePatterns = ['xxxxxxxx', 'placeholder'];
+            
+            for (const [key, value] of Object.entries(submissionData.formData || {})) {
+              // Skip fields with placeholder names
+              if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+                console.warn(`⚠️ [VendorApp] Skipping invalid field: ${key}`);
+                continue;
+              }
+              
+              // Skip boolean values for fields that should be strings (e.g., phone: true)
+              if (key === 'phone' && typeof value === 'boolean') {
+                console.warn(`⚠️ [VendorApp] Skipping boolean phone field`);
+                continue;
+              }
+              
+              // Skip placeholder values
+              if (typeof value === 'string' && invalidValuePatterns.some(pattern => value.toLowerCase().includes(pattern))) {
+                console.warn(`⚠️ [VendorApp] Skipping placeholder value for ${key}: ${value}`);
+                continue;
+              }
+              
+              // Skip empty/null values (but keep false booleans and 0 numbers)
+              if (value === null || value === undefined || value === '') {
+                continue;
+              }
+              
+              sanitizedFormData[key] = value;
+            }
+            
+            // ✅ FIX: Sanitize documents to only include valid entries with URLs
+            const validDocuments = Object.entries(submissionData.documents || {})
+              .filter(([key, doc]: [string, any]) => {
+                // Skip invalid document types
+                if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+                  console.warn(`⚠️ [VendorApp] Skipping invalid document type: ${key}`);
+                  return false;
+                }
+                // Only include documents with valid URLs
+                if (!doc?.url || doc.url.trim() === '') {
+                  console.warn(`⚠️ [VendorApp] Skipping document without URL: ${key}`);
+                  return false;
+                }
+                return true;
+              })
+              .map(([key, doc]: [string, any]) => ({
+                type: key,
+                name: doc?.name || key,
+                url: doc?.url || '',
+                size: doc?.size,
+                mime_type: doc?.type,
+              }));
+            
             const payload = {
               phone,
               application_payload: {
-                ...submissionData.formData,
+                ...sanitizedFormData,
                 roleId: selectedRole,
                 location: submissionData.coordinates,
                 coordinates: submissionData.coordinates,
                 specializations: submissionData.specializations || [],
                 agreedToTerms: submissionData.agreedToTerms || true,
               },
-              uploaded_documents: Object.entries(submissionData.documents || {}).map(([key, doc]: [string, any]) => ({
-                type: key,
-                name: doc?.name || key,
-                url: doc?.url || '',
-                size: doc?.size,
-                mime_type: doc?.type,
-              })),
+              uploaded_documents: validDocuments,
             };
+            
+            console.log('📤 [VendorApp] Sanitized payload:', JSON.stringify(payload, null, 2));
 
             const response = await apiClient.post<any>('/vendor/onboarding/submit-application', payload);
             
@@ -530,7 +624,25 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             }
           } catch (error: any) {
             console.error('❌ [VendorApp] Error submitting application:', error);
-            alert(error.message || 'Error submitting application');
+            // ✅ FIX: Properly extract error message from various error formats
+            let errorMessage = 'Error submitting application';
+            if (typeof error === 'string') {
+              errorMessage = error;
+            } else if (error?.message && typeof error.message === 'string') {
+              errorMessage = error.message;
+            } else if (error?.error && typeof error.error === 'string') {
+              errorMessage = error.error;
+            } else if (error?.response?.data?.error) {
+              errorMessage = error.response.data.error;
+            } else if (typeof error === 'object') {
+              try {
+                errorMessage = JSON.stringify(error);
+              } catch (e) {
+                errorMessage = 'Error submitting application (unknown error)';
+              }
+            }
+            console.error('❌ [VendorApp] Error message:', errorMessage);
+            alert(errorMessage);
           }
         }}
         onBack={() => {

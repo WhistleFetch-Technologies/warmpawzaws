@@ -236,7 +236,7 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
                  'Tele-consult'}
              </Badge>
              {service.distance && (
-                <p className="text-xs text-gray-400 text-right">{service.distance.toFixed(1)} km</p>
+                <p className="text-xs text-gray-400 text-right">{Number(service.distance || 0).toFixed(1)} km</p>
              )}
           </div>
         </div>

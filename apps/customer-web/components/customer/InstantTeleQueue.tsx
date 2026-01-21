@@ -6,14 +6,19 @@ import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Video, Clock, Users, AlertCircle, CheckCircle2, X, User, Dog, Phone } from 'lucide-react';
+import { Video, Clock, Users, AlertCircle, CheckCircle2, X, User, Dog, Phone, ArrowLeft } from 'lucide-react';
 
 interface Provider {
-  staffId: string;
+  staffId?: string;
+  providerId?: string; // ✅ FIX: Support both staff and vendor providers
+  vendorId?: string;
+  providerType?: 'staff' | 'vendor';
   name: string;
   photo?: string;
   role: string;
   experienceYears?: number;
+  qualifications?: string;
+  businessName?: string;
   rating?: string;
   reviewCount: number;
   queueCount: number;
@@ -53,6 +58,10 @@ interface InstantTeleQueueProps {
   roleId?: string;
   category?: string;
   serviceId?: string;
+  problemId?: string; // ✅ NEW: Filter by problem/concern
+  availableInMinutes?: number; // ✅ NEW: Filter by availability (default: 5 min)
+  showHorizontalScroll?: boolean; // ✅ NEW: Show providers in horizontal scroll
+  onBack?: () => void; // ✅ NEW: Back button handler
   onQueueJoined?: (queueId: string) => void;
   onAccepted?: (bookingId: string, meetingId?: string) => void;
 }
@@ -63,6 +72,10 @@ export function InstantTeleQueue({
   roleId,
   category,
   serviceId,
+  problemId,
+  availableInMinutes = 5,
+  showHorizontalScroll = false,
+  onBack,
   onQueueJoined,
   onAccepted,
 }: InstantTeleQueueProps) {
@@ -110,6 +123,10 @@ export function InstantTeleQueue({
       if (roleId) params.set('roleId', roleId);
       if (category) params.set('category', category);
       if (serviceId) params.set('serviceId', serviceId);
+      // ✅ NEW: Add problem filter
+      if (problemId) params.set('problemId', problemId);
+      // ✅ NEW: Add availability filter (available in next N minutes)
+      if (availableInMinutes) params.set('availableIn', availableInMinutes.toString());
 
       const response = await apiClient.get<any>(
         `/customer/tele/available-providers?${params.toString()}`
@@ -222,9 +239,12 @@ export function InstantTeleQueue({
 
     setJoiningQueue(true);
     try {
+      // ✅ FIX: Use providerId or staffId depending on provider type
+      const staffIdValue = provider.providerId || provider.staffId;
+      
       const response = await apiClient.post<any>('/customer/tele/join-queue', {
         customerId,
-        staffId: provider.staffId,
+        staffId: staffIdValue,
         petId,
         serviceId: selectedServiceId,
         symptoms: symptoms.trim() || undefined,
@@ -437,184 +457,335 @@ export function InstantTeleQueue({
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-            <Video className="w-5 h-5 text-blue-600" />
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+
+      {/* ✅ Fixed: Changed from -mt-4 to -mt-6 to prevent overlap, added z-index */}
+      <div className="px-4 -mt-6 relative z-10">
+        {/* ✅ NEW: Available in N minutes badge */}
+        {availableInMinutes && (
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+              <Clock className="w-4 h-4" />
+              Available in next {availableInMinutes} min
+            </div>
+            <span className="text-xs text-gray-500">
+              {providers.length} providers online
+            </span>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">
-              Instant Tele Consultation
-            </h2>
-            <p className="text-sm text-gray-500">
-              Connect with available providers instantly via video call
+        )}
+
+        {/* ✅ NEW: "One provider will be assigned" message for auto-assign mode */}
+        {showHorizontalScroll && providers.length > 0 && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <p className="text-sm text-blue-800">
+              <span className="font-semibold">💡 Quick Start:</span> One of these providers will be assigned once you confirm. 
+              Or scroll to select a specific provider.
             </p>
           </div>
-        </div>
+        )}
 
         {providers.length === 0 ? (
-          <div className="text-center py-12 bg-gray-50 rounded-lg">
-            <Video className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium mb-1">
-              No providers available right now
-            </p>
-            <p className="text-sm text-gray-400">
-              Try again later or book a scheduled consultation
-            </p>
+          <div className="text-center py-16 bg-gray-50 rounded-2xl border border-gray-100">
+            <Video className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600 font-semibold mb-2">No providers available right now</p>
+            <p className="text-sm text-gray-400">Try again later or book a scheduled consultation</p>
+            <Button 
+              onClick={loadAvailableProviders}
+              className="mt-4 bg-[#FF8C42] hover:bg-[#FF7A35] text-white"
+            >
+              Refresh
+            </Button>
           </div>
-        ) : (
+        ) : showHorizontalScroll ? (
+          /* ✅ NEW: Horizontal scroll layout for instant providers */
           <div className="space-y-4">
-            {providers.map((provider) => (
-              <div
-                key={provider.staffId}
-                className={`p-4 rounded-lg border-2 ${
-                  selectedProvider?.staffId === provider.staffId
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 bg-white'
-                }`}
-              >
-                <div className="flex items-start gap-4">
-                  {/* Provider Avatar */}
-                  {provider.photo ? (
-                    <img
-                      src={provider.photo}
-                      alt={provider.name}
-                      className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
-                      <User className="w-8 h-8 text-blue-600" />
-                    </div>
-                  )}
-
-                  {/* Provider Info */}
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{provider.name}</h3>
-                        <p className="text-sm text-gray-500">{provider.role}</p>
-                      </div>
-                      <div className="text-right">
-                        {provider.rating && (
-                          <div className="flex items-center gap-1 text-sm">
-                            <span className="font-medium">{provider.rating}</span>
-                            <span className="text-gray-400">
-                              ({provider.reviewCount} reviews)
-                            </span>
-                          </div>
-                        )}
-                        {provider.queueCount > 0 && (
-                          <Badge variant="secondary" className="mt-1 bg-yellow-100 text-yellow-700">
-                            {provider.queueCount} in queue
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Services */}
-                    <div className="mb-3">
-                      <p className="text-xs text-gray-500 mb-2">Available Services:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {provider.services.map((service) => (
-                          <button
-                            key={service.id}
-                            onClick={() => {
-                              setSelectedServiceId(service.id);
-                              setSelectedProvider(provider);
-                            }}
-                            className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                              selectedProvider?.staffId === provider.staffId &&
-                              selectedServiceId === service.id
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            {service.name} - ₹{service.price}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Queue Info */}
-                    {provider.queueCount > 0 && (
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
+            <p className="text-sm text-gray-600 mb-2">
+              Instantly available providers
+            </p>
+            
+            <div className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1">
+              {providers.map((provider) => {
+                const isProviderSelected = selectedProvider?.staffId === provider.staffId || 
+                                           selectedProvider?.providerId === (provider as any).providerId;
+                
+                return (
+                  <div
+                    key={provider.staffId || (provider as any).providerId}
+                    className={`flex-shrink-0 w-40 rounded-2xl border-2 overflow-hidden transition-all cursor-pointer ${
+                      isProviderSelected
+                        ? 'border-[#FF8C42] bg-orange-50 shadow-lg'
+                        : 'border-gray-200 bg-white hover:border-orange-200 hover:shadow-md'
+                    }`}
+                    onClick={() => {
+                      setSelectedProvider(provider);
+                      if (provider.services && provider.services.length > 0) {
+                        setSelectedServiceId(provider.services[0].id);
+                      }
+                    }}
+                  >
+                    <div className="p-3 text-center">
+                      {/* Avatar */}
+                      {provider.photo ? (
+                        <img
+                          src={provider.photo}
+                          alt={provider.name}
+                          className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 mx-auto mb-2"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center mx-auto mb-2">
+                          <User className="w-8 h-8 text-[#FF8C42]" />
+                        </div>
+                      )}
+                      
+                      <h3 className="font-bold text-gray-900 text-sm truncate">{provider.name}</h3>
+                      <p className="text-xs text-gray-500 truncate">{provider.role}</p>
+                      
+                      {/* Rating */}
+                      {provider.rating && (
+                        <div className="flex items-center justify-center gap-1 mt-1">
+                          <span className="text-yellow-500 text-xs">★</span>
+                          <span className="text-xs font-medium">{provider.rating}</span>
+                        </div>
+                      )}
+                      
+                      {/* Queue info */}
+                      {provider.queueCount > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs mt-2">
                           <Users className="w-3 h-3" />
                           {provider.queueCount} waiting
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Est. wait: {formatTime(provider.estimatedWaitMinutes)}
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs mt-2">
+                          Available now
                         </span>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-                    {/* Join Queue Form */}
-                    {selectedProvider?.staffId === provider.staffId && selectedServiceId && (
-                      <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Symptoms/Reason (Optional)
-                          </label>
-                          <textarea
-                            value={symptoms}
-                            onChange={(e) => setSymptoms(e.target.value)}
-                            placeholder="Brief description of why you need consultation..."
-                            rows={2}
-                            className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Urgency
-                          </label>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setUrgency('normal')}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                urgency === 'normal'
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}
-                            >
-                              Normal
-                            </button>
-                            <button
-                              onClick={() => setUrgency('urgent')}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                urgency === 'urgent'
-                                  ? 'bg-red-600 text-white'
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}
-                            >
-                              Urgent
-                            </button>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => joinQueue(provider)}
-                          disabled={joiningQueue}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                          {joiningQueue ? (
-                            'Joining Queue...'
-                          ) : (
-                            <>
-                              <Users className="w-4 h-4 mr-2" />
-                              Join Queue
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    )}
+            {/* Selected provider details */}
+            {selectedProvider && selectedServiceId && (
+              <div className="bg-orange-50 border-2 border-[#FF8C42] rounded-2xl p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  {selectedProvider.photo ? (
+                    <img src={selectedProvider.photo} alt={selectedProvider.name} className="w-12 h-12 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-orange-200 flex items-center justify-center">
+                      <User className="w-6 h-6 text-[#FF8C42]" />
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-bold text-gray-900">{selectedProvider.name}</h3>
+                    <p className="text-sm text-gray-500">{selectedProvider.role}</p>
                   </div>
                 </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Symptoms/Reason (Optional)
+                  </label>
+                  <textarea
+                    value={symptoms}
+                    onChange={(e) => setSymptoms(e.target.value)}
+                    placeholder="Brief description..."
+                    rows={2}
+                    className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#FF8C42]"
+                  />
+                </div>
+                
+                <Button
+                  onClick={() => joinQueue(selectedProvider)}
+                  disabled={joiningQueue}
+                  className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] text-white h-12 rounded-xl"
+                >
+                  {joiningQueue ? 'Joining...' : 'Join Queue & Start Consultation'}
+                </Button>
               </div>
-            ))}
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 mb-2">
+              Select a provider and service to join the queue
+            </p>
+            
+            {providers.map((provider) => {
+              const isProviderSelected = selectedProvider?.staffId === provider.staffId || 
+                                         selectedProvider?.providerId === (provider as any).providerId;
+              
+              return (
+                <div
+                  key={provider.staffId || (provider as any).providerId}
+                  className={`rounded-2xl border-2 overflow-hidden transition-all cursor-pointer ${
+                    isProviderSelected
+                      ? 'border-[#FF8C42] bg-orange-50 shadow-lg'
+                      : 'border-gray-200 bg-white hover:border-orange-200 hover:shadow-md'
+                  }`}
+                  onClick={() => {
+                    if (!isProviderSelected) {
+                      setSelectedProvider(provider);
+                      // Auto-select first service
+                      if (provider.services && provider.services.length > 0) {
+                        setSelectedServiceId(provider.services[0].id);
+                      }
+                    }
+                  }}
+                >
+                  <div className="p-4">
+                    <div className="flex items-start gap-4">
+                      {/* Provider Avatar */}
+                      {provider.photo ? (
+                        <img
+                          src={provider.photo}
+                          alt={provider.name}
+                          className="w-14 h-14 rounded-full object-cover border-2 border-gray-200"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center flex-shrink-0">
+                          <User className="w-7 h-7 text-[#FF8C42]" />
+                        </div>
+                      )}
+
+                      {/* Provider Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 className="font-bold text-gray-900 text-lg">{provider.name}</h3>
+                            <p className="text-sm text-gray-500">{provider.role}</p>
+                          </div>
+                          {isProviderSelected && (
+                            <div className="w-6 h-6 rounded-full bg-[#FF8C42] flex items-center justify-center flex-shrink-0">
+                              <CheckCircle2 className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Rating */}
+                        {provider.rating && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className="text-yellow-500">★</span>
+                            <span className="text-sm font-medium">{provider.rating}</span>
+                            <span className="text-sm text-gray-400">({provider.reviewCount} reviews)</span>
+                          </div>
+                        )}
+
+                        {/* Queue Info */}
+                        {provider.queueCount > 0 && (
+                          <div className="flex items-center gap-3 mt-2 text-xs">
+                            <span className="flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full">
+                              <Users className="w-3 h-3" />
+                              {provider.queueCount} waiting
+                            </span>
+                            <span className="flex items-center gap-1 text-gray-500">
+                              <Clock className="w-3 h-3" />
+                              ~{formatTime(provider.estimatedWaitMinutes)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Services - Always visible */}
+                    <div className="mt-4">
+                      <p className="text-xs font-medium text-gray-500 mb-2">Available Services:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {provider.services.map((service) => {
+                          const isServiceSelected = isProviderSelected && selectedServiceId === service.id;
+                          return (
+                            <button
+                              key={service.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedServiceId(service.id);
+                                setSelectedProvider(provider);
+                              }}
+                              className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                                isServiceSelected
+                                  ? 'bg-[#FF8C42] text-white shadow-md'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-orange-100 hover:text-[#FF8C42]'
+                              }`}
+                            >
+                              {service.name} - ₹{service.price.toFixed(2)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Join Queue Form - Expanded when provider + service selected */}
+                  {isProviderSelected && selectedServiceId && (
+                    <div className="border-t border-orange-200 bg-orange-50/50 p-4 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Symptoms/Reason (Optional)
+                        </label>
+                        <textarea
+                          value={symptoms}
+                          onChange={(e) => setSymptoms(e.target.value)}
+                          placeholder="Brief description of why you need consultation..."
+                          rows={2}
+                          className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Urgency Level
+                        </label>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setUrgency('normal'); }}
+                            className={`flex-1 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                              urgency === 'normal'
+                                ? 'bg-[#FF8C42] text-white shadow-md'
+                                : 'bg-white border border-gray-200 text-gray-700 hover:border-[#FF8C42]'
+                            }`}
+                          >
+                            Normal
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setUrgency('urgent'); }}
+                            className={`flex-1 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                              urgency === 'urgent'
+                                ? 'bg-red-500 text-white shadow-md'
+                                : 'bg-white border border-gray-200 text-gray-700 hover:border-red-300'
+                            }`}
+                          >
+                            🚨 Urgent
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <Button
+                        onClick={(e) => { e.stopPropagation(); joinQueue(provider); }}
+                        disabled={joiningQueue}
+                        className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] text-white h-12 rounded-xl text-base font-semibold shadow-lg"
+                      >
+                        {joiningQueue ? (
+                          <span className="flex items-center gap-2">
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Joining Queue...
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center gap-2">
+                            <Video className="w-5 h-5" />
+                            Join Queue & Start Consultation
+                          </span>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
-      </Card>
-    </div>
+      </div>
+    </>
   );
 }

@@ -1,321 +1,188 @@
-# Next Steps - Customer App API Integration
+# Next Steps - Booking Creation Fix
 
-## 🚀 Immediate Actions
+## ✅ What's Been Fixed
 
-### 1. Deploy Backend Changes
+1. **Service Validation**: Enhanced to check vendor ownership and state
+2. **Lambda Deployed**: Code is live with fixes
+3. **API Gateway**: Auto-deployed to use latest Lambda
+
+## 🧪 Step 1: Test Booking Creation
+
+### From Frontend
+1. Navigate to vet clinic booking page
+2. Select service, date, time, pet
+3. Click "Book Now"
+4. **Expected**: Booking should be created successfully ✅
+
+### What to Check
+- ✅ Booking creation succeeds
+- ✅ No "Service not found" errors
+- ✅ Booking appears in vendor dashboard
+- ✅ Booking ID is returned
+
+### If Still Getting Errors
+
+**Error: "Service not found"**
+- Check CloudWatch logs for service lookup details
+- Verify service exists in database
+- Verify service ID is correct
+
+**Error: "Service does not belong to this vendor"**
+- Service exists but vendor_id doesn't match
+- Check vendor dashboard - service should be assigned to correct vendor
+
+**Error: "Service is not available (state: X)"**
+- Service exists but state is not active/live
+- Activate service in vendor dashboard
+
+## 🔍 Step 2: Check CloudWatch Logs
+
+Monitor Lambda logs for booking creation:
+
 ```bash
-# Navigate to backend directory
-cd backend/lambda
+# Watch logs in real-time
+aws logs tail /aws/lambda/warmpawz-dev-api-handler --follow
 
-# Build and deploy (adjust based on your deployment process)
-npm run build
-# Or use your CDK deployment
-cd ../../infrastructure/cdk
-cdk deploy
+# Or check recent logs
+aws logs tail /aws/lambda/warmpawz-dev-api-handler --since 10m
 ```
 
-**What to verify:**
-- ✅ Lambda function builds successfully
-- ✅ API Gateway routes are updated
-- ✅ No deployment errors
+**Look for**:
+- `[BOOKING] Service X found in vendor_services`
+- `[BOOKING] Service X validated successfully`
+- Any error messages about service lookup
 
-### 2. Verify API Gateway Routes
-**Check these endpoints are accessible:**
-- `GET /customer/vendors/by-problem`
-- `GET /customer/services/by-problem`
-- `GET /customer/discover-services`
+## 💳 Step 3: Test Payment Flow
 
-**Test with curl or Postman:**
+After booking is created successfully:
+
+1. **Navigate to Payment Page**
+   - Should show booking details
+   - Should show amount to pay
+
+2. **Click "Pay"**
+   - Should create payment
+   - Should show success/error messages clearly
+
+3. **Check Error Messages** (if payment fails)
+   - Should be clear and specific
+   - Should show validation errors
+   - Should not show "undefined" errors
+
+## 📊 Step 4: Verify End-to-End Flow
+
+### Complete Booking Lifecycle
+
+1. ✅ **Service Selection** - Works
+2. ✅ **Date/Time Selection** - Works
+3. ✅ **Pet Selection** - Works
+4. ⏳ **Booking Creation** - Test now
+5. ⏳ **Payment Creation** - Test after booking
+6. ⏳ **Vendor Dashboard** - Verify booking appears
+7. ⏳ **Booking Status** - Verify status updates
+
+## 🐛 Step 5: Debugging (If Needed)
+
+### Check Service in Database
+
+If booking creation fails, verify service exists:
+
+```sql
+-- Check if service exists
+SELECT id, vendor_id, state, status, is_active, is_live 
+FROM vendor_services 
+WHERE id = '54424497-4a20-49e9-9a21-338a6a26aefc';
+
+-- Check service belongs to vendor
+SELECT id, vendor_id, state, status 
+FROM vendor_services 
+WHERE id = '54424497-4a20-49e9-9a21-338a6a26aefc' 
+  AND vendor_id = 'e4306109-d03e-40bd-a78c-58f08b30a958';
+```
+
+### Check Booking Creation Logs
+
 ```bash
-# Test endpoint with problemGridId
-curl "https://your-api-gateway-url/customer/vendors/by-problem?problemGridId=test-problem&roleId=veterinarian"
-
-# Test with problemId (backward compatibility)
-curl "https://your-api-gateway-url/customer/vendors/by-problem?problemId=test-problem&roleId=veterinarian"
+# Filter for booking creation
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/warmpawz-dev-api-handler \
+  --filter-pattern "BOOKING" \
+  --start-time $(date -u -d '10 minutes ago' +%s)000
 ```
 
-### 3. Database Verification
-**Check if these tables exist and have data:**
-```sql
--- Check problem_grid_mappings
-SELECT COUNT(*) FROM problem_grid_mappings;
+## ✅ Step 6: Verification Checklist
 
--- Check vendors with staff
-SELECT v.id, v.business_name, COUNT(s.id) as staff_count
-FROM vendors v
-LEFT JOIN staff s ON s.vendor_id = v.id AND s.is_active = true
-WHERE v.status = 'approved' AND v.is_active = true
-GROUP BY v.id
-HAVING COUNT(s.id) > 0
-LIMIT 10;
+After testing, verify:
 
--- Check vendor_schedule_slots (if exists)
-SELECT EXISTS (
-  SELECT FROM information_schema.tables 
-  WHERE table_schema = 'public' 
-  AND table_name = 'vendor_schedule_slots'
-);
+- [ ] Booking creation works from frontend
+- [ ] No "Service not found" errors
+- [ ] Service validation works correctly
+- [ ] Booking appears in vendor dashboard
+- [ ] Payment creation works (if tested)
+- [ ] Error messages are clear and helpful
+- [ ] CloudWatch logs show successful service lookup
 
--- Check staff_specializations (if exists)
-SELECT EXISTS (
-  SELECT FROM information_schema.tables 
-  WHERE table_schema = 'public' 
-  AND table_name = 'staff_specializations'
-);
-```
+## 📝 Step 7: Document Results
 
-## 🧪 Testing Checklist
+After testing, document:
 
-### Frontend Testing
+1. **What Works**: List successful operations
+2. **What Doesn't**: List any remaining issues
+3. **Error Messages**: Copy exact error messages
+4. **Logs**: Note any relevant log entries
 
-#### 1. Test Problem Grid Navigation
-- [ ] Navigate to customer app
-- [ ] Open problem grid (e.g., from Vet service)
-- [ ] Select a problem (e.g., "Health Checkup")
-- [ ] Verify vendors/specialists are displayed
-- [ ] Check browser console for API calls
-- [ ] Verify no placeholder data appears
+## 🚀 Quick Test Commands
 
-#### 2. Test Vendor Discovery
-- [ ] Verify real vendor names appear
-- [ ] Verify ratings and reviews are real numbers
-- [ ] Check that specialists are shown for vet clinics
-- [ ] Verify schedule availability displays
-- [ ] Test distance calculation (if location enabled)
+### Test Booking Creation via API
 
-#### 3. Test Filters
-- [ ] Test price range filter (`feeMin`/`feeMax`)
-- [ ] Test sorting (rating, distance, price)
-- [ ] Test role filter (`roleId`)
-- [ ] Test location-based filtering
-
-#### 4. Test Specialization Filter
-- [ ] Open search filters
-- [ ] Check if specializations appear
-- [ ] Test filtering by specialization
-- [ ] Verify filtered results are correct
-
-### Backend Testing
-
-#### 1. Test API Endpoints Directly
 ```bash
-# Test with real problem ID
-PROBLEM_ID="your-actual-problem-id"
-ROLE_ID="veterinarian"
-
-curl -X GET \
-  "https://your-api/customer/vendors/by-problem?problemGridId=${PROBLEM_ID}&roleId=${ROLE_ID}" \
-  -H "Authorization: Bearer YOUR_TOKEN"
+curl -X POST https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/bookings/create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer uat-token-customer-1768412859000" \
+  -d '{
+    "customerId": "39c84571-b26d-475a-bb38-94975cb8262d",
+    "vendorId": "e4306109-d03e-40bd-a78c-58f08b30a958",
+    "serviceId": "54424497-4a20-49e9-9a21-338a6a26aefc",
+    "bookingDate": "2026-01-21",
+    "bookingTime": "09:30",
+    "serviceType": "at_center",
+    "petId": "6e28df3a-3880-460a-b747-bd359330fc32",
+    "amount": 500,
+    "idempotencyKey": "'$(uuidgen)'"
+  }'
 ```
 
-**Expected Response:**
-- `success: true`
-- `vendors` array with real data
-- `specialists` array (if vendors have staff)
-- `data.vendors` and `data.specialists` for compatibility
+**Expected Response**:
+- ✅ `200` with booking details (success)
+- ✅ `400` with validation errors (if data invalid)
+- ❌ `404` with "Service not found" (should not happen now)
 
-#### 2. Test Edge Cases
-- [ ] Test with non-existent problem ID (should return empty array)
-- [ ] Test with vendor that has no staff (should return empty specialists)
-- [ ] Test with vendor that has no schedule (should default to available)
-- [ ] Test with missing location (distance should be null)
+## 📋 Summary
 
-#### 3. Test Error Handling
-- [ ] Test with invalid parameters
-- [ ] Test with missing required parameters
-- [ ] Verify graceful error messages
+### Immediate Actions
 
-## 🔍 Monitoring & Debugging
+1. **Test booking creation** from frontend
+2. **Check CloudWatch logs** if errors occur
+3. **Verify service** exists and belongs to vendor
+4. **Test payment flow** after booking succeeds
 
-### 1. Enable API Logging
-**Check Lambda CloudWatch Logs:**
-- Look for API request/response logs
-- Check for any SQL errors
-- Monitor query performance
+### If Everything Works
 
-### 2. Frontend Console Monitoring
-**Open browser DevTools:**
-- Network tab: Check API calls
-- Console tab: Look for errors or warnings
-- Verify API responses contain real data
+✅ **Success!** The booking creation flow is now working end-to-end.
 
-### 3. Key Metrics to Monitor
-- API response times
-- Number of vendors returned
-- Number of specialists returned
-- Error rates
-- Database query performance
+### If Issues Persist
 
-## 🐛 Troubleshooting Guide
+1. Check CloudWatch logs for specific error
+2. Verify service in database
+3. Check service state/status
+4. Review error messages for clues
 
-### Issue: No vendors returned
-**Possible causes:**
-1. Problem ID doesn't exist in `problem_grid_mappings`
-2. No vendors match the role filter
-3. All vendors are inactive or not approved
+## 🎯 Success Criteria
 
-**Solution:**
-```sql
--- Check problem mappings
-SELECT * FROM problem_grid_mappings WHERE problem_id = 'your-problem-id';
+- ✅ Booking creation succeeds
+- ✅ No "Service not found" errors
+- ✅ Booking appears in vendor dashboard
+- ✅ Payment creation works
+- ✅ Error messages are clear
 
--- Check vendors for role
-SELECT v.* FROM vendors v
-INNER JOIN roles r ON v.role_id = r.id
-WHERE r.id = 'your-role-id' AND v.status = 'approved';
-```
-
-### Issue: No specialists returned
-**Possible causes:**
-1. Vendors don't have staff members
-2. Staff table structure differs
-3. Staff are inactive
-
-**Solution:**
-```sql
--- Check staff for vendors
-SELECT s.*, v.business_name
-FROM staff s
-INNER JOIN vendors v ON s.vendor_id = v.id
-WHERE v.status = 'approved' AND s.is_active = true
-LIMIT 10;
-```
-
-### Issue: Schedule data not showing
-**Possible causes:**
-1. `vendor_schedule_slots` table doesn't exist
-2. No schedule slots configured
-3. Schedule check query failing
-
-**Solution:**
-- Check if table exists (code handles gracefully)
-- Verify schedule slots are created for vendors
-- Check CloudWatch logs for schedule query errors
-
-### Issue: Placeholder data still showing
-**Possible causes:**
-1. API calls failing (falling back to defaults)
-2. API returning empty results
-3. Frontend not using API data
-
-**Solution:**
-- Check browser Network tab for API calls
-- Verify API responses in console
-- Check if `groomingServices.length > 0` in CustomerHomeComplete.tsx
-
-## 📊 Performance Optimization (If Needed)
-
-### 1. Database Indexes
-**Add indexes if queries are slow:**
-```sql
--- Index for vendor role filtering
-CREATE INDEX IF NOT EXISTS idx_vendors_role_status 
-ON vendors(role_id, status, is_active);
-
--- Index for vendor specializations
-CREATE INDEX IF NOT EXISTS idx_vendor_specializations_vendor 
-ON vendor_specializations(vendor_id);
-
--- Index for staff by vendor
-CREATE INDEX IF NOT EXISTS idx_staff_vendor_active 
-ON staff(vendor_id, is_active);
-
--- Index for schedule slots
-CREATE INDEX IF NOT EXISTS idx_schedule_slots_vendor_day 
-ON vendor_schedule_slots(vendor_id, day_of_week, is_enabled);
-```
-
-### 2. Query Optimization
-- Consider pagination for large result sets
-- Add LIMIT clauses where appropriate (already done)
-- Cache frequently accessed problem mappings
-
-### 3. API Response Caching
-- Consider caching problem mappings
-- Cache vendor lists for popular problems
-- Use CDN for static problem grid data
-
-## ✅ Success Criteria
-
-### Functional Requirements
-- [x] Real vendor data displays (not placeholders)
-- [x] Specialists/staff appear for relevant vendors
-- [x] Schedule availability shows correctly
-- [x] Filters work (price, location, sorting)
-- [x] Problem grid navigation works
-- [x] No API errors in console
-
-### Performance Requirements
-- [ ] API response time < 2 seconds
-- [ ] No database query timeouts
-- [ ] Frontend loads smoothly
-
-### Data Quality
-- [ ] All displayed data is from database
-- [ ] Ratings and reviews are accurate
-- [ ] Services and prices are correct
-- [ ] Location data is accurate
-
-## 📝 Documentation Updates
-
-### Update API Documentation
-- Document new parameters (`problemGridId`, `feeMin`, `feeMax`)
-- Document response format with specialists
-- Document schedule availability fields
-
-### Update Frontend Documentation
-- Document new API integration
-- Update component props if needed
-- Document filter usage
-
-## 🎯 Final Verification
-
-### End-to-End Test Flow
-1. **Customer opens app** → Home screen loads
-2. **Selects service** → Vet service opens
-3. **Opens problem grid** → Problems display
-4. **Selects problem** → "Health Checkup"
-5. **Views vendors** → Real clinics appear
-6. **Views specialists** → Real doctors appear
-7. **Checks availability** → Schedule shows
-8. **Filters by price** → Results filtered
-9. **Selects specialist** → Booking flow starts
-
-### Verification Checklist
-- [ ] All steps complete without errors
-- [ ] Real data displayed throughout
-- [ ] No placeholder/mock data visible
-- [ ] API calls successful in Network tab
-- [ ] No console errors
-- [ ] Performance acceptable
-
-## 🚨 Rollback Plan (If Needed)
-
-If issues occur after deployment:
-
-1. **Revert Lambda function** to previous version
-2. **Check API Gateway** routes are correct
-3. **Verify database** connections
-4. **Review CloudWatch logs** for errors
-5. **Test with previous API version**
-
-## 📞 Support Contacts
-
-- **Backend Issues**: Check Lambda CloudWatch logs
-- **Frontend Issues**: Check browser console
-- **Database Issues**: Check RDS connection logs
-- **API Gateway Issues**: Check API Gateway logs
-
----
-
-## 🎉 Expected Outcome
-
-After completing these steps:
-- ✅ Customer app displays real vendor data
-- ✅ Specialists appear for vet clinics
-- ✅ Schedule availability shows correctly
-- ✅ All filters work properly
-- ✅ No placeholder data visible
-- ✅ Smooth user experience
-
-**Status**: Ready for production deployment and testing! 🚀
+**Ready to test! Try booking creation from the frontend now.**

@@ -433,6 +433,49 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
   });
 
   /**
+   * POST /admin/forms
+   * Save/update onboarding form configuration
+   */
+  app.post('/admin/forms', async (c) => {
+    try {
+      const { id, name, roleId, fields } = await c.req.json();
+
+      if (!roleId && !id) {
+        return c.json({ error: 'roleId or id is required' }, 400);
+      }
+
+      const targetRoleId = roleId || id;
+
+      // Check if form already exists
+      const existingForms = await select('onboarding_forms', { role_id: targetRoleId });
+
+      if (existingForms.length > 0) {
+        // Update existing form
+        await update('onboarding_forms', { role_id: targetRoleId }, {
+          name: name || existingForms[0].name,
+          fields: JSON.stringify(fields),
+          updated_at: new Date().toISOString(),
+        });
+      } else {
+        // Create new form
+        await insert('onboarding_forms', {
+          role_id: targetRoleId,
+          name: name || `${targetRoleId} Onboarding Form`,
+          fields: JSON.stringify(fields),
+        });
+      }
+
+      return c.json({
+        success: true,
+        message: 'Form saved successfully',
+      });
+    } catch (error: any) {
+      console.error('Error saving form:', error);
+      return c.json({ error: error.message || 'Failed to save form' }, 500);
+    }
+  });
+
+  /**
    * POST /admin/onboarding-fields/sync
    * Sync onboarding fields from role configs (healing/migration endpoint)
    */

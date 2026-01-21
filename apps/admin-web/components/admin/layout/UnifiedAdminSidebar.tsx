@@ -161,11 +161,11 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
   const sidebarWidth = 256; // 64 * 4 (w-64)
   
   return (
-    <div className="z-50">
-      {/* Open button (shows when sidebar is closed) */}
+    <>
+      {/* Open button (shows when sidebar is closed) - fixed positioning */}
       {!open && (
         <button
-          className="fixed cursor-pointer top-4 left-4 z-40 bg-white border border-gray-200 rounded-full p-2 shadow transition-opacity hover:bg-gray-100"
+          className="fixed cursor-pointer top-4 left-4 z-40 bg-white border border-gray-200 rounded-full p-2 shadow-md hover:shadow-lg transition-all hover:bg-gray-50"
           onClick={() => setOpen(true)}
           aria-label="Open sidebar"
         >
@@ -173,17 +173,18 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
         </button>
       )}
 
-      {/* Blur overlay (shows when sidebar is open) */}
+      {/* Blur overlay (shows when sidebar is open) - z-40 to be above content */}
       {open && (
         <div
-          className="fixed inset-0 z-20 transition-all duration-300 cursor-pointer backdrop-blur-sm bg-white/30"
+          className="fixed inset-0 z-40 transition-all duration-300 cursor-pointer backdrop-blur-sm bg-black/20"
           onClick={() => setOpen(false)}
           aria-label="Close sidebar overlay"
         />
       )}
 
+      {/* Sidebar - z-50 to be above overlay */}
       <aside
-        className={`w-64 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-30 h-screen transition-transform duration-300 ease-in-out ${open ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"}`}
+        className={`w-64 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-50 h-screen transition-transform duration-300 ease-in-out shadow-xl ${open ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"}`}
         style={{ WebkitOverflowScrolling: "touch", width: sidebarWidth }}
       >
         {/* Close button (always visible when sidebar is open) */}
@@ -275,7 +276,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
           </button>
         </div>
       </aside>
-    </div>
+    </>
   );
 }
 

@@ -46,11 +46,34 @@ export default function EarningsPage() {
     try {
       const vendorId = localStorage.getItem('vendorId');
       if (vendorId) {
-        const [summaryRes, transactionsRes] = await Promise.all([
-          apiClient.get<EarningsSummary>(`/vendor/${vendorId}/earnings/summary?period=${period}`),
-          apiClient.get<{ transactions: Transaction[] }>(`/vendor/${vendorId}/transactions?period=${period}`),
+        // ✅ Load real data from backend
+        const [dashboardRes, settlementsRes, transactionsRes] = await Promise.all([
+          apiClient.get<any>(`/vendor/${vendorId}/dashboard?timeframe=${period}`).catch(() => ({ success: false })),
+          apiClient.get<any>(`/vendor/${vendorId}/settlements?summary=true`).catch(() => ({ success: false })),
+          apiClient.get<{ transactions: Transaction[] }>(`/vendor/${vendorId}/transactions?period=${period}`).catch(() => ({ transactions: [] })),
         ]);
-        setSummary(summaryRes);
+        
+        // Extract earnings from dashboard stats
+        const dashboardStats = dashboardRes?.stats || dashboardRes?.data?.stats || {};
+        const settlementSummary = settlementsRes?.summary || {};
+        
+        // Calculate earnings from real data
+        const completedEarnings = dashboardStats.earnings || 0;
+        const pendingAmount = settlementSummary.pending_amount || settlementSummary.pendingAmount || 0;
+        const settledAmount = settlementSummary.total_settled || settlementSummary.totalSettled || 0;
+        
+        setSummary({
+          totalEarnings: completedEarnings + settledAmount,
+          pendingSettlement: pendingAmount,
+          lastSettlement: settlementSummary.last_settlement || 0,
+          thisMonth: dashboardStats.thisMonthEarnings || completedEarnings,
+          lastMonth: dashboardStats.lastMonthEarnings || 0,
+          totalBookings: dashboardStats.totalBookings || dashboardStats.appointments || 0,
+          completedBookings: dashboardStats.completedServices || dashboardStats.completedBookings || 0,
+          averageBookingValue: dashboardStats.averageBookingValue || 
+            (dashboardStats.totalBookings > 0 ? completedEarnings / dashboardStats.totalBookings : 0),
+        });
+        
         setTransactions(transactionsRes.transactions || []);
       }
     } catch (err) {

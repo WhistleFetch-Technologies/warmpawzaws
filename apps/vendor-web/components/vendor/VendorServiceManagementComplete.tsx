@@ -11,6 +11,7 @@ import { VendorCustomServiceCreation } from './VendorCustomServiceCreation';
 import { PackageManagementContainer } from './packages/PackageManagementContainer';
 import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
@@ -39,6 +40,13 @@ export function VendorServiceManagementComplete({
     at_center: 0,
     tele: 0
   }); // ✅ NEW: Track service counts per style
+
+  // ✅ NEW: Load vendor capabilities for capability-based checks
+  const { capabilities } = useVendorCapabilities(vendorData?.roleId);
+  
+  // ✅ NEW: Check if vendor is solo provider
+  const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendor_configuration || null;
+  const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
 
   useEffect(() => {
     loadRoleConfiguration();
@@ -73,7 +81,18 @@ export function VendorServiceManagementComplete({
         console.log('✅ [ROLE-CONFIG] API Response:', data);
         
         // ✅ FIX: Extract allowedServiceStyles and role config from services endpoint response
-        const allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || ['at_home', 'at_center', 'tele'];
+        let allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || ['at_home', 'at_center', 'tele'];
+        
+        // ✅ FIX: Ensure veterinarian roles always have at_home, at_center, and tele options
+        const roleId = data.role?.id || data.roleId || '';
+        const roleName = data.role?.name || data.roleName || '';
+        if ((roleId?.toLowerCase().includes('veterinarian') || roleName?.toLowerCase().includes('veterinarian')) 
+            && Array.isArray(allowedStyles)) {
+          // Ensure all three service styles are available for veterinarians
+          const requiredStyles = ['at_home', 'at_center', 'tele'];
+          allowedStyles = [...new Set([...allowedStyles, ...requiredStyles])];
+        }
+        
         const roleConfig = data.role?.config || data.roleConfig || {};
         
         // ✅ NEW: Extract service counts per style
@@ -229,8 +248,9 @@ export function VendorServiceManagementComplete({
     );
   }
 
-  // ✅ NEW: Check if vendor can create custom services (only at_center or both)
-  const canCreateCustomServices = vendorData?.serviceStyle === 'at_center' || vendorData?.serviceStyle === 'both';
+  // ✅ NEW: Check if vendor can create custom services (capability-based, not service-style-based)
+  // Custom services can be enabled for any service provider (solo or business) via role config
+  const canCreateCustomServices = capabilities.custom_services || capabilities.customServices || false;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -265,73 +285,122 @@ export function VendorServiceManagementComplete({
           </div>
         )}
 
-        {/* Service Style Selection */}
-        <div className="p-4">
-          <div className="mb-4">
-            <h2 className="font-semibold text-gray-900 mb-1">Select Service Type</h2>
-            <p className="text-sm text-gray-600">Choose how you want to deliver your services</p>
-          </div>
-
-          <div className="space-y-3">
-            {[
-              { value: 'at_home' as ServiceStyle, label: 'Home Services', icon: '🏠', color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', activeColor: 'border-blue-500' },
-              { value: 'at_center' as ServiceStyle, label: 'Book at Clinic', icon: '🏥', color: 'bg-green-50 border-green-200 hover:bg-green-100', activeColor: 'border-green-500' },
-              { value: 'tele' as ServiceStyle, label: 'Tele Consultation', icon: '📱', color: 'bg-purple-50 border-purple-200 hover:bg-purple-100', activeColor: 'border-purple-500' }
-            ]
-              .filter(type => Array.isArray(allowedServiceStyles) && allowedServiceStyles.includes(type.value))
-              .map(type => {
-                const count = serviceCounts[type.value] || 0;
-                const hasServices = count > 0;
-                
-                return (
-                  <button
-                    key={type.value}
-                    onClick={() => setSelectedServiceStyle(type.value)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all text-left ${type.color} ${hasServices ? type.activeColor : ''}`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="text-4xl">{type.icon}</div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{type.label}</h3>
-                          {hasServices && (
-                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">
-                              {count}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          {hasServices 
-                            ? `${count} service${count > 1 ? 's' : ''} enabled` 
-                            : getStyleDescription(type.value)
-                          }
-                        </p>
-                      </div>
-                      <div className="text-gray-400">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-          </div>
-
-          {(Array.isArray(allowedServiceStyles) ? allowedServiceStyles : []).length === 0 && (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <X className="w-8 h-8 text-gray-400" />
+        {/* ✅ FIX: Platform Catalog Section - Show at top for easy access */}
+        {/* ✅ FIX: Allow solo vendors to browse catalog - services are filtered by role and allowed service styles */}
+        {(capabilities.catalog || capabilities.booking) && (
+          <div className="p-4">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-2 text-lg">Browse Service Catalog</h3>
+                  <p className="text-sm text-white/90 mb-4">
+                    Browse services from the admin catalog and add them to your vendor offerings
+                  </p>
+                </div>
+                <Package className="w-6 h-6 flex-shrink-0" />
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2">No Service Styles Configured</h3>
-              <p className="text-sm text-gray-600">
-                No service styles are available for your vendor type. Please contact support.
+              
+              <Button
+                onClick={() => setShowCatalogView(true)}
+                className="w-full bg-white text-blue-600 hover:bg-gray-100 font-semibold"
+              >
+                Browse Catalog
+              </Button>
+              
+              <p className="text-xs text-white/80 mt-3 text-center">
+                ℹ️ Add services from the platform catalog to your offerings
               </p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* ✅ NEW: Custom Services Section (Only for at_center or both) */}
+        {/* Service Style Selection */}
+        {/* ✅ SOLO VENDOR FIX: Hide service style selection for solo providers - they don't configure via style tabs */}
+        {!isSoloProvider && (
+          <div className="p-4">
+            <div className="mb-4">
+              <h2 className="font-semibold text-gray-900 mb-1">Select Service Type</h2>
+              <p className="text-sm text-gray-600">Choose how you want to deliver your services</p>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { value: 'at_home' as ServiceStyle, label: 'Home Services', icon: '🏠', color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', activeColor: 'border-blue-500' },
+                { value: 'at_center' as ServiceStyle, label: 'Book at Clinic', icon: '🏥', color: 'bg-green-50 border-green-200 hover:bg-green-100', activeColor: 'border-green-500' },
+                { value: 'tele' as ServiceStyle, label: 'Tele Consultation', icon: '📱', color: 'bg-purple-50 border-purple-200 hover:bg-purple-100', activeColor: 'border-purple-500' }
+              ]
+                .filter(type => Array.isArray(allowedServiceStyles) && allowedServiceStyles.includes(type.value))
+                .map(type => {
+                  const count = serviceCounts[type.value] || 0;
+                  const hasServices = count > 0;
+                  
+                  return (
+                    <button
+                      key={type.value}
+                      onClick={() => setSelectedServiceStyle(type.value)}
+                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${type.color} ${hasServices ? type.activeColor : ''}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="text-4xl">{type.icon}</div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-gray-900">{type.label}</h3>
+                            {hasServices && (
+                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-500 text-white">
+                                {count}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-600 mt-0.5">
+                            {hasServices 
+                              ? `${count} service${count > 1 ? 's' : ''} enabled` 
+                              : getStyleDescription(type.value)
+                            }
+                          </p>
+                        </div>
+                        <div className="text-gray-400">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+
+            {(Array.isArray(allowedServiceStyles) ? allowedServiceStyles : []).length === 0 && (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
+                  <X className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-2">No Service Styles Configured</h3>
+                <p className="text-sm text-gray-600">
+                  No service styles are available for your vendor type. Please contact support.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* ✅ SOLO VENDOR: Show info banner explaining solo provider service model */}
+        {isSoloProvider && (
+          <div className="p-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+              <h3 className="font-semibold text-blue-900 mb-2">Solo Provider Services</h3>
+              <p className="text-sm text-blue-800 leading-relaxed">
+                As a solo provider, you can browse the service catalog to enable services relevant to your role, or create custom services that you personally deliver to customers via home visits or tele-consultation.
+                {!canCreateCustomServices && (
+                  <span className="block mt-2 text-blue-600 font-medium">
+                    ℹ️ Custom Services capability is not enabled. Contact admin to enable this feature.
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ NEW: Custom Services Section (Capability-based) */}
         {canCreateCustomServices && (
           <div className="p-4">
             <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-2xl p-6 text-white">
@@ -339,7 +408,7 @@ export function VendorServiceManagementComplete({
                 <div className="flex-1">
                   <h3 className="font-semibold mb-2 text-lg">Custom Services</h3>
                   <p className="text-sm text-white/90 mb-4">
-                    Create your own specialized services tailored to your center's expertise
+                    Create your own specialized services and packages tailored to your expertise
                   </p>
                 </div>
                 <Plus className="w-6 h-6 flex-shrink-0" />
@@ -353,14 +422,14 @@ export function VendorServiceManagementComplete({
               </Button>
               
               <p className="text-xs text-white/80 mt-3 text-center">
-                ⭐ Only available for center-based services
+                ⭐ Available for all service styles (home, tele, center)
               </p>
             </div>
           </div>
         )}
 
-        {/* ✅ NEW: Package Management Section (Only for at_center or both) */}
-        {canCreateCustomServices && (
+        {/* ✅ NEW: Package Management Section (Capability-based) */}
+        {(capabilities.custom_packages || capabilities.customPackages) && (
           <div className="p-4">
             <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-2xl p-6 text-white">
               <div className="flex items-start justify-between mb-4">
@@ -381,37 +450,11 @@ export function VendorServiceManagementComplete({
               </Button>
               
               <p className="text-xs text-white/80 mt-3 text-center">
-                ⭐ Only available for center-based services
+                ⭐ Available for all service styles (home, tele, center)
               </p>
             </div>
           </div>
         )}
-
-        {/* ✅ Service Catalog Section - Available for ALL vendors */}
-        <div className="p-4">
-          <div className="bg-gradient-to-r from-[#26C6DA] to-[#00ACC1] rounded-2xl p-6 text-white">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1">
-                <h3 className="font-semibold mb-2 text-lg">Service Catalog</h3>
-                <p className="text-sm text-white/90 mb-4">
-                  Browse and enable certified services from the admin catalog
-                </p>
-              </div>
-              <Package className="w-6 h-6 flex-shrink-0" />
-            </div>
-            
-            <Button
-              onClick={() => setShowCatalogView(true)}
-              className="w-full bg-white text-[#26C6DA] hover:bg-gray-100 font-semibold"
-            >
-              Browse Service Catalog
-            </Button>
-            
-            <p className="text-xs text-white/80 mt-3 text-center">
-              📋 All tele and home services are controlled from here
-            </p>
-          </div>
-        </div>
 
         {/* Help Section */}
         <div className="p-4 mt-8">

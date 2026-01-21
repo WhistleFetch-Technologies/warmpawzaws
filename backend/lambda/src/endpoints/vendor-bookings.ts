@@ -514,6 +514,24 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
+      // ✅ FIX: Extract pet_id from notes if not in pet_id column
+      // Legacy bookings stored pet_id in notes as "Pet ID: <uuid>"
+      let petIdToUse = booking.pet_id;
+      if (!petIdToUse && booking.notes) {
+        const petIdMatch = booking.notes.match(/Pet ID:\s*([0-9a-f-]{36})/i);
+        if (petIdMatch) {
+          petIdToUse = petIdMatch[1];
+          console.log(`📋 [BOOKING-DETAILS] Extracted pet_id from notes: ${petIdToUse}`);
+        }
+      }
+      if (!petIdToUse && booking.special_instructions) {
+        const petIdMatch = booking.special_instructions.match(/Pet ID:\s*([0-9a-f-]{36})/i);
+        if (petIdMatch) {
+          petIdToUse = petIdMatch[1];
+          console.log(`📋 [BOOKING-DETAILS] Extracted pet_id from special_instructions: ${petIdToUse}`);
+        }
+      }
+
       // Fetch related data in parallel
       const [customer, service, pet, vendor, prescriptions, activities] = await Promise.all([
         // Customer info
@@ -524,9 +542,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         booking.service_id
           ? select('services', { id: booking.service_id }).catch(() => [])
           : Promise.resolve([]),
-        // Pet info
-        booking.pet_id
-          ? select('pets', { id: booking.pet_id }).catch(() => [])
+        // Pet info - use extracted petIdToUse
+        petIdToUse
+          ? select('pets', { id: petIdToUse }).catch(() => [])
           : Promise.resolve([]),
         // Vendor info
         booking.vendor_id
@@ -569,13 +587,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         customerEmail: customer.length > 0 ? customer[0].email : null,
         customerAddress: customer.length > 0 ? customer[0].address : null,
         
-        // Pet details
-        petId: booking.pet_id,
+        // Pet details - use extracted petIdToUse
+        petId: petIdToUse || booking.pet_id,
         petName: pet.length > 0 ? pet[0].name : booking.pet_name || 'Unknown Pet',
-        petType: pet.length > 0 ? pet[0].species : booking.pet_type,
-        petBreed: pet.length > 0 ? pet[0].breed : null,
-        petAge: pet.length > 0 ? pet[0].age : null,
-        petWeight: pet.length > 0 ? pet[0].weight : null,
+        petType: pet.length > 0 ? pet[0].species : booking.pet_type || '',
+        petBreed: pet.length > 0 ? pet[0].breed : booking.pet_breed || '',
+        petAge: pet.length > 0 ? (pet[0].age_years || pet[0].age) : booking.pet_age || '',
+        petWeight: pet.length > 0 ? (pet[0].weight_kg || pet[0].weight) : null,
+        petPhoto: pet.length > 0 ? pet[0].profile_photo_url : null,
         
         // Service details
         serviceId: booking.service_id,
@@ -587,6 +606,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         vendorId: booking.vendor_id,
         vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,
         vendorPhone: vendor.length > 0 ? vendor[0].phone : null,
+        vendorAddress: vendor.length > 0 
+          ? [vendor[0].address, vendor[0].city, vendor[0].state, vendor[0].pincode].filter(Boolean).join(', ')
+          : null,
         
         // OTP and session tracking
         otpCode: booking.otp_code,
@@ -622,6 +644,103 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('❌ [VENDOR-BOOKINGS] Error fetching booking details:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ✅ FIX: Add alias route for frontend compatibility
+  // Frontend calls /vendor/:vendorId/bookings but backend has /vendor/bookings/:vendorId
+  app.get("/vendor/:vendorId/bookings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check capability - allow if vendor has booking_view or booking_create
+      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') || 
+                                   await checkVendorCapability(vendorId, 'booking_create');
+      if (!hasBookingCapability) {
+        return c.json({ error: 'Vendor does not have booking viewing capability' }, 403);
+      }
+      const date = c.req.query('date');
+      const status = c.req.query('status') || 'all';
+      const startDate = c.req.query('startDate');
+
+      console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId} (alias route)`);
+      console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
+
+      // Get vendor bookings
+      let queryText = 'SELECT * FROM bookings WHERE vendor_id = $1';
+      const params: any[] = [vendorId];
+      let paramIndex = 2;
+
+      // Filter by date
+      if (date) {
+        queryText += ` AND booking_date = $${paramIndex}`;
+        params.push(date);
+        paramIndex++;
+      }
+
+      // Filter by start date (for upcoming)
+      if (startDate) {
+        queryText += ` AND booking_date >= $${paramIndex}`;
+        params.push(startDate);
+        paramIndex++;
+      }
+
+      // Filter by status
+      if (status && status !== 'all') {
+        queryText += ` AND status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+
+      queryText += ' ORDER BY booking_date DESC, booking_time DESC';
+
+      const result = await query(queryText, params).catch(() => ({ rows: [] }));
+
+      // Enrich bookings with customer and service data
+      const enrichedBookings = await Promise.all(
+        result.rows.map(async (booking: any) => {
+          const [customer, service] = await Promise.all([
+            booking.customer_id
+              ? select('customers', { id: booking.customer_id }).catch(() => [])
+              : Promise.resolve([]),
+            booking.service_id
+              ? select('services', { id: booking.service_id }).catch(() => [])
+              : Promise.resolve([]),
+          ]);
+
+          return {
+            ...booking,
+            customer: customer.length > 0 ? {
+              id: customer[0].id,
+              name: customer[0].full_name || customer[0].name,
+              phone: customer[0].phone,
+            } : null,
+            service: service.length > 0 ? {
+              id: service[0].id,
+              name: service[0].name,
+              category: service[0].category,
+            } : null,
+            chatEnabled: true,
+            hasUnreadMessages: false,
+            unreadMessageCount: 0,
+            hasPrescription: false,
+            prescriptionCount: 0,
+            hasMedicalRecords: false,
+            medicalRecordCount: 0,
+            isFollowUp: false,
+          };
+        })
+      );
+
+      return c.json({ 
+        success: true, 
+        bookings: enrichedBookings,
+        total: enrichedBookings.length,
+        filters: { status }
+      });
+    } catch (error: any) {
+      console.error('❌ [VENDOR-BOOKINGS] Error fetching bookings:', error);
+      return c.json({ error: error.message || 'Failed to fetch bookings' }, 500);
     }
   });
 

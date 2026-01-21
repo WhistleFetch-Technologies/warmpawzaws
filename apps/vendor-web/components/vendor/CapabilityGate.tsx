@@ -44,6 +44,12 @@ interface CapabilityGateProps {
    * Custom message for disabled state
    */
   disabledMessage?: string;
+  
+  /**
+   * Optional roleId to use for capability checking
+   * If not provided, uses localStorage fallback
+   */
+  roleId?: string;
 }
 
 /**
@@ -85,8 +91,10 @@ export function CapabilityGate({
   fallback = null,
   showDisabledMessage = false,
   disabledMessage,
+  roleId,
 }: CapabilityGateProps) {
-  const { capabilities, loading, roleName } = useVendorCapabilities(undefined);
+  // Use provided roleId or fall back to localStorage lookup in the hook
+  const { capabilities, loading, roleName } = useVendorCapabilities(roleId || undefined);
   
   // Show nothing while loading (prevents flickering)
   if (loading) {
@@ -157,9 +165,11 @@ export function CapabilityGate({
 /**
  * Hook to check if vendor has specific capabilities
  * Useful for conditional logic outside of JSX
+ * @param capability - The capability to check
+ * @param roleId - Optional roleId (uses localStorage fallback if not provided)
  */
-export function useHasCapability(capability: string): boolean {
-  const { capabilities, loading } = useVendorCapabilities(undefined);
+export function useHasCapability(capability: string, roleId?: string): boolean {
+  const { capabilities, loading } = useVendorCapabilities(roleId || undefined);
   
   if (loading) return false;
   
@@ -168,9 +178,11 @@ export function useHasCapability(capability: string): boolean {
 
 /**
  * Hook to check if vendor has all specified capabilities
+ * @param requiredCapabilities - Array of capabilities to check
+ * @param roleId - Optional roleId (uses localStorage fallback if not provided)
  */
-export function useHasAllCapabilities(requiredCapabilities: string[]): boolean {
-  const { capabilities, loading } = useVendorCapabilities(undefined);
+export function useHasAllCapabilities(requiredCapabilities: string[], roleId?: string): boolean {
+  const { capabilities, loading } = useVendorCapabilities(roleId || undefined);
   
   if (loading || !requiredCapabilities.length) return false;
   
@@ -179,9 +191,11 @@ export function useHasAllCapabilities(requiredCapabilities: string[]): boolean {
 
 /**
  * Hook to check if vendor has any of the specified capabilities
+ * @param requiredCapabilities - Array of capabilities to check
+ * @param roleId - Optional roleId (uses localStorage fallback if not provided)
  */
-export function useHasAnyCapability(requiredCapabilities: string[]): boolean {
-  const { capabilities, loading } = useVendorCapabilities(undefined);
+export function useHasAnyCapability(requiredCapabilities: string[], roleId?: string): boolean {
+  const { capabilities, loading } = useVendorCapabilities(roleId || undefined);
   
   if (loading || !requiredCapabilities.length) return false;
   

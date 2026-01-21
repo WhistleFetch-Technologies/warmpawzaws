@@ -166,7 +166,11 @@ type ScreenType =
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
+  
+  // ✅ NAVIGATION HISTORY STACK - Fixes back/forward navigation issues
+  const [navigationHistory, setNavigationHistory] = useState<ScreenType[]>([initialScreen || 'home']);
+  const currentScreen = navigationHistory[navigationHistory.length - 1];
+  
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -183,6 +187,12 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
   const { addToCart } = useCart();
+
+  // ✅ Navigate to a screen (push to history)
+  const navigateToScreen = (screen: ScreenType) => {
+    if (screen === currentScreen) return; // Don't push if already on this screen
+    setNavigationHistory(prev => [...prev, screen]);
+  };
 
   // Notification Service logic... (kept same as original)
   useNotificationService({

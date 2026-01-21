@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Plus, X, UserPlus, Save, Loader2, ArrowLeft, CheckCircle2, AlertCircle, Phone, Mail, Settings } from 'lucide-react';
+import { Plus, X, UserPlus, Save, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,8 +19,6 @@ interface StaffMember {
   role: string;
   phone?: string;
   email?: string;
-  mobileVerified?: boolean;
-  mobileVerifiedAt?: string;
   isActive?: boolean;
   services?: Array<{
     id: string;
@@ -32,18 +30,12 @@ interface StaffMember {
 
 /**
  * Enhanced staff management screen for web
- * 
- * ⚠️ CRITICAL BUSINESS RULES:
- * - Staff must verify mobile number via OTP before going live
- * - Only verified staff can be assigned to at_home/tele services
- * - Staff members have independent login credentials
  */
 export function StaffManagementScreen({ vendorId, onBack }: StaffManagementScreenProps) {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [resendingOtp, setResendingOtp] = useState<string | null>(null);
   const [selectedStaffForServices, setSelectedStaffForServices] = useState<StaffMember | null>(null);
   const [newStaff, setNewStaff] = useState({
     name: '',
@@ -51,24 +43,6 @@ export function StaffManagementScreen({ vendorId, onBack }: StaffManagementScree
     phone: '',
     email: ''
   });
-
-  // Resend verification OTP to staff member
-  const handleResendVerificationOtp = async (staffMember: StaffMember) => {
-    try {
-      setResendingOtp(staffMember.id);
-      const response = await apiClient.post<{ success?: boolean; message?: string }>(`/staff/${staffMember.id}/resend-verification-otp`, {});
-      if (response.success) {
-        toast.success(response.message || 'Verification OTP sent successfully');
-      } else {
-        throw new Error((response as any).error || 'Failed to send OTP');
-      }
-    } catch (error: any) {
-      console.error('[StaffManagementScreen] Failed to resend OTP', error);
-      toast.error(error.message || 'Failed to send verification OTP');
-    } finally {
-      setResendingOtp(null);
-    }
-  };
 
   useEffect(() => {
     loadStaff();

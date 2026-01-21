@@ -95,8 +95,8 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
-        // Database (using RDS Proxy)
-        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        // Database (using RDS Proxy or direct cluster)
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
         // Cognito
@@ -185,10 +185,10 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
-        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
-        AWS_REGION: process.env.CDK_DEFAULT_REGION || 'ap-south-1',
+        // AWS_REGION is automatically set by Lambda runtime
         NOTIFICATION_QUEUE_URL: props.sqsStack.notificationQueue.queueUrl,
       },
       description: 'Processes notifications from notification queue',
@@ -217,10 +217,10 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
-        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
-        AWS_REGION: process.env.CDK_DEFAULT_REGION || 'ap-south-1',
+        // AWS_REGION is automatically set by Lambda runtime
         SES_FROM_EMAIL: process.env.SES_FROM_EMAIL || 'noreply@warmpawz.com',
       },
       description: 'Processes emails from email queue',
@@ -249,10 +249,10 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
-        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
-        AWS_REGION: process.env.CDK_DEFAULT_REGION || 'ap-south-1',
+        // AWS_REGION is automatically set by Lambda runtime
         SMS_QUEUE_URL: props.sqsStack.smsQueue.queueUrl,
       },
       description: 'Processes SMS from SMS queue',
@@ -281,10 +281,10 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
-        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
-        AWS_REGION: process.env.CDK_DEFAULT_REGION || 'ap-south-1',
+        // AWS_REGION is automatically set by Lambda runtime
         ANALYTICS_QUEUE_URL: props.sqsStack.analyticsQueue.queueUrl,
       },
       description: 'Processes analytics events from analytics queue',
@@ -313,10 +313,10 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
-        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+        AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
-        AWS_REGION: process.env.CDK_DEFAULT_REGION || 'ap-south-1',
+        // AWS_REGION is automatically set by Lambda runtime
         SETTLEMENT_QUEUE_URL: props.sqsStack.settlementQueue.queueUrl,
         RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
         RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',

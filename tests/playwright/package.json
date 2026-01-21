@@ -1,0 +1,23 @@
+{
+  "name": "warmpawz-playwright-tests",
+  "version": "1.0.0",
+  "description": "Warmpawz Playwright E2E Tests",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:admin": "npx playwright test --project=admin-chromium",
+    "test:customer": "npx playwright test --project=customer-chromium",
+    "test:vendor": "npx playwright test --project=vendor-chromium",
+    "test:mobile": "npx playwright test --project=customer-mobile",
+    "test:api": "npx playwright test --project=api",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:ui": "npx playwright test --ui",
+    "report": "npx playwright show-report test-results/html-report",
+    "install": "npx playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

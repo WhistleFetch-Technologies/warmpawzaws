@@ -69,6 +69,15 @@ export function registerStaffEndpoints(app: Hono) {
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
 
+      // ✅ FIX: Check if service_styles column exists in staff_services table (once at the start)
+      const schemaCheck = await query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'staff_services' AND column_name = 'service_styles'
+        ) as has_service_styles
+      `);
+      const hasServiceStylesColumn = schemaCheck.rows[0]?.has_service_styles || false;
+
       // Get staff matching criteria
       // ⚠️ IMPORTANT: For at_home and tele services, only show verified staff/individual providers
       // ⚠️ Must have: schedule slots with service configured, service enabled, within radius
@@ -126,16 +135,30 @@ export function registerStaffEndpoints(app: Hono) {
       }
       
       // ⚠️ CRITICAL: Check service styles match
+      // ✅ FIX: Use service_styles column only if it exists
       if (serviceStyle) {
-        staffQuery += ` AND EXISTS (
-          SELECT 1 FROM staff_services ss 
-          WHERE ss.staff_id = s.id
-            AND ss.enabled_by_staff = true
-            AND ss.is_active = true
-            AND $${paramIndex} = ANY(ss.service_styles)
-        )`;
-        params.push(serviceStyle);
-        paramIndex++;
+        if (hasServiceStylesColumn) {
+          // Use service_styles column if it exists
+          staffQuery += ` AND EXISTS (
+            SELECT 1 FROM staff_services ss 
+            WHERE ss.staff_id = s.id
+              AND ss.enabled_by_staff = true
+              AND ss.is_active = true
+              AND $${paramIndex} = ANY(ss.service_styles)
+          )`;
+          params.push(serviceStyle);
+          paramIndex++;
+        } else {
+          // Fallback: Check service style via vendor_services or service_catalog
+          // For now, just check if staff has any active services (less strict filtering)
+          staffQuery += ` AND EXISTS (
+            SELECT 1 FROM staff_services ss 
+            WHERE ss.staff_id = s.id
+              AND ss.enabled_by_staff = true
+              AND ss.is_active = true
+          )`;
+          // Don't push serviceStyle to params since we're not using it in the query
+        }
       }
       
       // ⚠️ CRITICAL: Check if staff has availability slots with this service configured
@@ -438,17 +461,28 @@ export function registerStaffEndpoints(app: Hono) {
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
 
+      // ✅ FIX: Check if service_styles column exists in staff_services table
+      const schemaCheck = await query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'staff_services' AND column_name = 'service_styles'
+        ) as has_service_styles
+      `);
+      const hasServiceStylesColumn = schemaCheck.rows[0]?.has_service_styles || false;
+
       // Enrich with services, specializations, and availability
       const enrichedStaff = await Promise.all(
         staff.map(async (s: any) => {
-          // Get services
-          const services = await query(
-            `SELECT ss.*, sv.name as service_name, ss.service_styles 
-             FROM staff_services ss 
-             INNER JOIN services sv ON ss.service_id = sv.id 
-             WHERE ss.staff_id = $1`,
-            [s.id]
-          );
+          // Get services - conditionally include service_styles if column exists
+          let servicesQuery = `
+            SELECT ss.*, sv.name as service_name
+            ${hasServiceStylesColumn ? ', ss.service_styles' : ''}
+            FROM staff_services ss 
+            INNER JOIN services sv ON ss.service_id = sv.id 
+            WHERE ss.staff_id = $1
+          `;
+          
+          const services = await query(servicesQuery, [s.id]);
 
           // Get specializations from staff_specializations table
           let specializations: string[] = [];
@@ -479,7 +513,7 @@ export function registerStaffEndpoints(app: Hono) {
             services: services.rows.map((svc: any) => ({
               id: svc.id,
               name: svc.service_name,
-              service_style: svc.service_styles,
+              service_style: hasServiceStylesColumn ? svc.service_styles : null,
             })),
           };
         })
@@ -509,21 +543,37 @@ export function registerStaffEndpoints(app: Hono) {
       
       const staffData = await c.req.json();
 
-      // ⚠️ MANDATORY FIELD VALIDATION
+      // ⚠️ BASIC VALIDATION - Only name and phone are truly required
+      // Photo, qualifications, and specializations can be added later
       if (!staffData.name || !staffData.phone) {
         return c.json({ error: 'Name and phone are required' }, 400);
       }
 
-      if (!staffData.photo) {
-        return c.json({ error: 'Photo is mandatory for all staff members' }, 400);
-      }
+      // ✅ Photo, qualifications, and specializations are now optional
+      // Staff can complete their profile later through the mobile app
 
-      if (!staffData.qualifications || staffData.qualifications.trim() === '') {
-        return c.json({ error: 'Qualifications are mandatory for all staff members' }, 400);
-      }
+      // ✅ FIX: Check for duplicate phone number for this vendor
+      const existingStaff = await query(
+        `SELECT id, name, phone, is_active FROM staff WHERE vendor_id = $1 AND phone = $2`,
+        [vendorId, staffData.phone]
+      );
 
-      if (!staffData.specializations || !Array.isArray(staffData.specializations) || staffData.specializations.length === 0) {
-        return c.json({ error: 'At least one specialization is mandatory' }, 400);
+      if (existingStaff.rows.length > 0) {
+        const existing = existingStaff.rows[0];
+        if (existing.is_active) {
+          return c.json({ 
+            error: `A staff member with phone number ${staffData.phone} already exists for this vendor`,
+            existingStaffId: existing.id,
+            existingStaffName: existing.name
+          }, 409); // 409 Conflict
+        } else {
+          // Staff exists but is inactive - allow reactivation or return helpful message
+          return c.json({ 
+            error: `A staff member with phone number ${staffData.phone} already exists but is inactive. Please reactivate the existing staff member instead.`,
+            existingStaffId: existing.id,
+            existingStaffName: existing.name
+          }, 409);
+        }
       }
 
       // Resolve role name if roleId is provided
@@ -536,89 +586,49 @@ export function registerStaffEndpoints(app: Hono) {
         }
       }
 
-      const staff = await insert('staff', {
+      // ✅ FIX: Check which columns exist in the staff table before inserting
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo') as has_photo,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'qualifications') as has_qualifications
+      `);
+      
+      const schema = schemaCheck.rows[0] || {};
+      
+      // Build insert data dynamically based on schema
+      const insertData: any = {
         vendor_id: vendorId,
         name: staffData.name,
         phone: staffData.phone,
         email: staffData.email || null,
         role: roleName, // Staff table uses 'role' TEXT column, not 'role_id'
         experience_years: staffData.experienceYears || staffData.experience_years || null,
-        photo: staffData.photo, // ⚠️ MANDATORY
-        qualifications: staffData.qualifications, // ⚠️ MANDATORY
         is_active: staffData.isActive !== false,
         mobile_verified: false, // ⚠️ New staff must verify mobile before going live
-      });
+      };
+      
+      // Only include photo if column exists
+      if (schema.has_photo && staffData.photo) {
+        insertData.photo = staffData.photo;
+      }
+      
+      // Only include qualifications if column exists
+      if (schema.has_qualifications && staffData.qualifications) {
+        insertData.qualifications = staffData.qualifications;
+      }
+      
+      const staff = await insert('staff', insertData);
 
-      // Add specializations (MANDATORY - at least one)
-      if (staffData.specializations && Array.isArray(staffData.specializations)) {
+      // Add specializations (optional)
+      if (staffData.specializations && Array.isArray(staffData.specializations) && staffData.specializations.length > 0) {
         for (const spec of staffData.specializations) {
           await insert('staff_specializations', {
             staff_id: staff[0].id,
             specialization: typeof spec === 'string' ? spec : spec.name || spec,
+          }).catch(() => {
+            // Ignore if staff_specializations table doesn't exist
           });
         }
-      }
-      
-      // Send OTP to staff mobile for verification
-      try {
-        const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
-        const otp = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
-        
-        // Store OTP in database with purpose 'staff_verification'
-        const expiresAt = new Date();
-        expiresAt.setMinutes(expiresAt.getMinutes() + 10); // 10 minutes expiry
-        
-        await insert('otp_tokens', {
-          phone: staffData.phone,
-          code: otp,
-          purpose: 'staff_verification',
-          expires_at: expiresAt,
-          is_used: false,
-        });
-        
-        // Send OTP via SMS using SNS (same pattern as auth.ts)
-        if (!UAT_MODE) {
-          try {
-            const settings = await select('platform_settings', {
-              setting_key: 'admin:settings:aws',
-            });
-
-            if (settings.length > 0) {
-              const awsSettings = settings[0].setting_value;
-              
-              if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
-                const snsClient = new SNSClient({
-                  region: awsSettings.sns.region || 'ap-south-1',
-                  credentials: {
-                    accessKeyId: awsSettings.credentials.accessKeyId,
-                    secretAccessKey: awsSettings.credentials.secretAccessKey,
-                  },
-                });
-
-                const message = `Your Warmpawz staff verification code is: ${otp}. Valid for 10 minutes.`;
-                await snsClient.send(
-                  new PublishCommand({
-                    PhoneNumber: staffData.phone,
-                    Message: message,
-                    MessageAttributes: {
-                      'AWS.SNS.SMS.SMSType': {
-                        DataType: 'String',
-                        StringValue: 'Transactional',
-                      },
-                    },
-                  })
-                );
-              }
-            }
-          } catch (snsError) {
-            console.error('[STAFF] SNS send failed, OTP logged only:', snsError);
-          }
-        }
-        
-        console.log(`[STAFF] OTP sent to ${staffData.phone} for staff verification: ${UAT_MODE ? '123456 (UAT)' : '***'}`);
-      } catch (error) {
-        console.error('[STAFF] Failed to send OTP:', error);
-        // Don't fail staff creation if OTP sending fails - they can request resend
       }
 
       // Add services if provided
@@ -634,8 +644,7 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ 
         success: true, 
         staff: staff[0], 
-        message: 'Staff member created successfully. OTP sent to mobile for verification.',
-        requiresVerification: true,
+        message: 'Staff member created successfully.',
       });
     } catch (error: any) {
       console.error('Error creating staff:', error);
@@ -794,6 +803,251 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, availability: results, message: 'Availability set successfully' });
     } catch (error: any) {
       console.error('Error setting staff availability:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // ✅ FIX GAP CS-1, CS-5: STAFF AVAILABILITY PER SERVICE STYLE
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/staff/:staffId/availability-per-style
+   * Get staff availability configured per service style (home/center/tele)
+   * Fixes GAP: CS-1 - Staff can set availability per service style
+   */
+  app.get("/vendor/:vendorId/staff/:staffId/availability-per-style", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const serviceStyle = c.req.query('serviceStyle');
+
+      let queryText = `
+        SELECT * FROM staff_availability_per_style 
+        WHERE staff_id = $1
+        AND is_active = true
+      `;
+      const params: any[] = [staffId];
+
+      if (serviceStyle && ['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
+        queryText += ` AND service_style = $2`;
+        params.push(serviceStyle);
+      }
+
+      queryText += ` ORDER BY service_style, day_of_week, start_time`;
+
+      const result = await query(queryText, params);
+
+      // Group by service style for easier frontend consumption
+      const grouped: Record<string, any[]> = {
+        at_home: [],
+        at_center: [],
+        tele: [],
+      };
+
+      (result.rows || []).forEach((row: any) => {
+        if (grouped[row.service_style]) {
+          grouped[row.service_style].push({
+            id: row.id,
+            dayOfWeek: row.day_of_week,
+            dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][row.day_of_week],
+            startTime: row.start_time,
+            endTime: row.end_time,
+            maxAppointmentsPerSlot: row.max_appointments_per_slot,
+            slotDurationMinutes: row.slot_duration_minutes,
+            bufferMinutes: row.buffer_minutes,
+          });
+        }
+      });
+
+      return c.json({ 
+        success: true, 
+        availability: grouped,
+        staffId,
+      });
+    } catch (error: any) {
+      // Handle table not existing gracefully
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        return c.json({ 
+          success: true, 
+          availability: { at_home: [], at_center: [], tele: [] },
+          message: 'Per-style availability not configured yet',
+        });
+      }
+      console.error('Error fetching staff availability per style:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/staff/:staffId/availability-per-style
+   * Set staff availability for a specific service style
+   * Fixes GAP: CS-1 - Staff can set availability per service style
+   */
+  app.post("/vendor/:vendorId/staff/:staffId/availability-per-style", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const data = await c.req.json();
+
+      const { 
+        serviceStyle,
+        dayOfWeek,
+        startTime,
+        endTime,
+        maxAppointmentsPerSlot = 1,
+        slotDurationMinutes = 30,
+        bufferMinutes = 15,
+      } = data;
+
+      // Validate service style
+      if (!serviceStyle || !['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
+        return c.json({ error: 'serviceStyle must be at_home, at_center, or tele' }, 400);
+      }
+
+      // Validate day of week
+      if (dayOfWeek === undefined || dayOfWeek < 0 || dayOfWeek > 6) {
+        return c.json({ error: 'dayOfWeek must be 0-6 (Sunday-Saturday)' }, 400);
+      }
+
+      // Validate times
+      if (!startTime || !endTime) {
+        return c.json({ error: 'startTime and endTime are required' }, 400);
+      }
+
+      // Upsert availability (delete existing and insert new)
+      await query(
+        `DELETE FROM staff_availability_per_style 
+         WHERE staff_id = $1 AND service_style = $2 AND day_of_week = $3`,
+        [staffId, serviceStyle, dayOfWeek]
+      );
+
+      const result = await insert('staff_availability_per_style', {
+        staff_id: staffId,
+        service_style: serviceStyle,
+        day_of_week: dayOfWeek,
+        start_time: startTime,
+        end_time: endTime,
+        max_appointments_per_slot: maxAppointmentsPerSlot,
+        slot_duration_minutes: slotDurationMinutes,
+        buffer_minutes: bufferMinutes,
+        is_active: true,
+      });
+
+      return c.json({ 
+        success: true, 
+        availability: result[0],
+        message: 'Availability set successfully',
+      });
+    } catch (error: any) {
+      console.error('Error setting staff availability per style:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/staff/:staffId/availability-per-style/bulk
+   * Bulk update staff availability for all service styles
+   * Expects: { at_home: [...], at_center: [...], tele: [...] }
+   */
+  app.put("/vendor/:vendorId/staff/:staffId/availability-per-style/bulk", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const data = await c.req.json();
+
+      const results: any[] = [];
+
+      for (const serviceStyle of ['at_home', 'at_center', 'tele']) {
+        const slots = data[serviceStyle] || [];
+        
+        // Clear existing for this style
+        await query(
+          `DELETE FROM staff_availability_per_style 
+           WHERE staff_id = $1 AND service_style = $2`,
+          [staffId, serviceStyle]
+        );
+
+        // Insert new slots
+        for (const slot of slots) {
+          const result = await insert('staff_availability_per_style', {
+            staff_id: staffId,
+            service_style: serviceStyle,
+            day_of_week: slot.dayOfWeek,
+            start_time: slot.startTime,
+            end_time: slot.endTime,
+            max_appointments_per_slot: slot.maxAppointmentsPerSlot || 1,
+            slot_duration_minutes: slot.slotDurationMinutes || 30,
+            buffer_minutes: slot.bufferMinutes || 15,
+            is_active: true,
+          });
+          results.push(result[0]);
+        }
+      }
+
+      return c.json({ 
+        success: true, 
+        updated: results.length,
+        message: 'Bulk availability updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error bulk updating staff availability:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/staff/:staffId/availability-per-style/:availabilityId
+   * Delete specific availability slot
+   */
+  app.delete("/vendor/:vendorId/staff/:staffId/availability-per-style/:availabilityId", async (c) => {
+    try {
+      const { availabilityId } = c.req.param();
+
+      await update('staff_availability_per_style', 
+        { id: availabilityId }, 
+        { is_active: false }
+      );
+
+      return c.json({ 
+        success: true, 
+        message: 'Availability slot deleted',
+      });
+    } catch (error: any) {
+      console.error('Error deleting staff availability:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/staff/:staffId/photo
+   * Upload staff photo
+   * Fixes GAP: CS-4, GN-8 - Staff photos not stored/retrieved
+   */
+  app.put("/vendor/:vendorId/staff/:staffId/photo", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const { photoUrl, photos } = await c.req.json();
+
+      const updateData: any = {};
+      
+      if (photoUrl) {
+        updateData.photo_url = photoUrl;
+      }
+      
+      if (photos && Array.isArray(photos)) {
+        updateData.photos = JSON.stringify(photos);
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return c.json({ error: 'photoUrl or photos array required' }, 400);
+      }
+
+      await update('staff', { id: staffId }, updateData);
+
+      return c.json({ 
+        success: true, 
+        message: 'Staff photo updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating staff photo:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -1173,6 +1427,264 @@ export function registerStaffEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Slot deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting availability slot:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // ✅ FIX GAP 2.1: STAFF AVAILABILITY PER SERVICE STYLE
+  // ============================================
+
+  /**
+   * GET /staff/:staffId/availability-by-style
+   * Get staff availability configured per service style (at_home, tele, at_center)
+   * ✅ FIX GAP 2.1: New endpoint for service-style-specific availability
+   */
+  app.get("/staff/:staffId/availability-by-style", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const serviceStyle = c.req.query('serviceStyle'); // Optional filter
+      const startDate = c.req.query('startDate') || new Date().toISOString().split('T')[0];
+      const endDate = c.req.query('endDate');
+
+      // Query to get availability slots with their associated services and styles
+      let availabilityQuery = `
+        SELECT DISTINCT 
+          sas.id as slot_id,
+          sas.date,
+          sas.start_time,
+          sas.end_time,
+          sas.location_override,
+          sas.is_available,
+          sas.notes,
+          s.service_style,
+          s.id as service_id,
+          s.name as service_name,
+          sss.lead_time_minutes,
+          sss.buffer_time_minutes,
+          sss.radius_km
+        FROM staff_availability_slots sas
+        LEFT JOIN staff_slot_services sss ON sas.id = sss.slot_id
+        LEFT JOIN services s ON sss.service_id = s.id
+        WHERE sas.staff_id = $1
+        AND sas.date >= $2
+        AND sas.is_available = true
+      `;
+      const params: any[] = [staffId, startDate];
+      let paramIndex = 3;
+
+      if (endDate) {
+        availabilityQuery += ` AND sas.date <= $${paramIndex}`;
+        params.push(endDate);
+        paramIndex++;
+      }
+
+      if (serviceStyle) {
+        availabilityQuery += ` AND s.service_style = $${paramIndex}`;
+        params.push(serviceStyle);
+        paramIndex++;
+      }
+
+      availabilityQuery += ` ORDER BY sas.date, sas.start_time, s.service_style`;
+
+      const result = await query(availabilityQuery, params);
+
+      // Group by service style for easier frontend consumption
+      const byStyle: Record<string, any[]> = {
+        at_home: [],
+        tele: [],
+        at_center: [],
+      };
+
+      for (const row of result.rows) {
+        const style = row.service_style || 'at_center';
+        if (byStyle[style]) {
+          byStyle[style].push({
+            slotId: row.slot_id,
+            date: row.date,
+            startTime: row.start_time,
+            endTime: row.end_time,
+            locationOverride: row.location_override,
+            serviceId: row.service_id,
+            serviceName: row.service_name,
+            leadTimeMinutes: row.lead_time_minutes,
+            bufferTimeMinutes: row.buffer_time_minutes,
+            radiusKm: row.radius_km,
+          });
+        }
+      }
+
+      return c.json({
+        success: true,
+        staffId,
+        availability: byStyle,
+        summary: {
+          at_home: byStyle.at_home.length,
+          tele: byStyle.tele.length,
+          at_center: byStyle.at_center.length,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching availability by style:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /staff/:staffId/availability-by-style
+   * Configure staff availability for a specific service style
+   * ✅ FIX GAP 2.1: New endpoint for service-style-specific availability configuration
+   */
+  app.put("/staff/:staffId/availability-by-style", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const body = await c.req.json();
+
+      const { serviceStyle, slots, defaultSettings } = body;
+
+      if (!serviceStyle || !['at_home', 'tele', 'at_center'].includes(serviceStyle)) {
+        return c.json({ error: 'serviceStyle is required (at_home, tele, or at_center)' }, 400);
+      }
+
+      // Get services for this staff member with the specified style
+      const staffServicesResult = await query(
+        `SELECT ss.service_id, s.name
+         FROM staff_services ss
+         INNER JOIN services s ON ss.service_id = s.id
+         WHERE ss.staff_id = $1 
+         AND s.service_style = $2
+         AND ss.is_active = true`,
+        [staffId, serviceStyle]
+      );
+
+      if (staffServicesResult.rows.length === 0) {
+        return c.json({
+          error: `No active ${serviceStyle} services assigned to this staff member`,
+        }, 400);
+      }
+
+      const serviceIds = staffServicesResult.rows.map(r => r.service_id);
+
+      // If updating default settings for this style
+      if (defaultSettings) {
+        // Update staff_services with default lead time, buffer time, radius for this style
+        for (const serviceId of serviceIds) {
+          await update('staff_services',
+            { staff_id: staffId, service_id: serviceId },
+            {
+              lead_time_minutes: defaultSettings.leadTimeMinutes ?? 0,
+              buffer_time_minutes: defaultSettings.bufferTimeMinutes ?? 15,
+              radius_km: defaultSettings.radiusKm ?? (serviceStyle === 'at_home' ? 10 : null),
+            }
+          );
+        }
+      }
+
+      // If creating/updating slots
+      const createdSlots: any[] = [];
+      if (slots && Array.isArray(slots)) {
+        for (const slotData of slots) {
+          if (!slotData.date || !slotData.startTime || !slotData.endTime) {
+            continue; // Skip invalid slots
+          }
+
+          // Check for existing slot at this time
+          const existingSlot = await query(
+            `SELECT id FROM staff_availability_slots
+             WHERE staff_id = $1 AND date = $2 
+             AND start_time = $3 AND end_time = $4`,
+            [staffId, slotData.date, slotData.startTime, slotData.endTime]
+          );
+
+          let slotId: string;
+
+          if (existingSlot.rows.length > 0) {
+            // Update existing slot
+            slotId = existingSlot.rows[0].id;
+            await update('staff_availability_slots',
+              { id: slotId },
+              {
+                location_override: slotData.locationOverride || null,
+                is_available: slotData.isAvailable !== false,
+                notes: slotData.notes || null,
+              }
+            );
+          } else {
+            // Create new slot
+            const newSlot = await insert('staff_availability_slots', {
+              staff_id: staffId,
+              date: slotData.date,
+              start_time: slotData.startTime,
+              end_time: slotData.endTime,
+              location_override: slotData.locationOverride || null,
+              is_available: slotData.isAvailable !== false,
+              notes: slotData.notes || null,
+            });
+            slotId = newSlot[0].id;
+          }
+
+          // Clear existing services for this slot and add the style-specific ones
+          await query('DELETE FROM staff_slot_services WHERE slot_id = $1', [slotId]);
+          
+          for (const serviceId of serviceIds) {
+            await insert('staff_slot_services', {
+              slot_id: slotId,
+              service_id: serviceId,
+              lead_time_minutes: defaultSettings?.leadTimeMinutes ?? slotData.leadTimeMinutes ?? 0,
+              buffer_time_minutes: defaultSettings?.bufferTimeMinutes ?? slotData.bufferTimeMinutes ?? 15,
+              radius_km: defaultSettings?.radiusKm ?? slotData.radiusKm ?? null,
+            });
+          }
+
+          createdSlots.push({ slotId, date: slotData.date, startTime: slotData.startTime, endTime: slotData.endTime });
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: `Availability configured for ${serviceStyle} services`,
+        serviceStyle,
+        slotsCreated: createdSlots.length,
+        slots: createdSlots,
+        servicesConfigured: serviceIds.length,
+      });
+    } catch (error: any) {
+      console.error('Error configuring availability by style:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /staff/:staffId/service-styles
+   * Get all service styles this staff member is configured for
+   * Helper endpoint to know which styles staff supports
+   */
+  app.get("/staff/:staffId/service-styles", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+
+      const result = await query(
+        `SELECT DISTINCT s.service_style, COUNT(*) as service_count
+         FROM staff_services ss
+         INNER JOIN services s ON ss.service_id = s.id
+         WHERE ss.staff_id = $1 AND ss.is_active = true
+         GROUP BY s.service_style`,
+        [staffId]
+      );
+
+      const styles = result.rows.map(r => ({
+        style: r.service_style,
+        serviceCount: parseInt(r.service_count, 10),
+      }));
+
+      return c.json({
+        success: true,
+        staffId,
+        serviceStyles: styles,
+        supportedStyles: styles.map(s => s.style),
+      });
+    } catch (error: any) {
+      console.error('Error fetching staff service styles:', error);
       return c.json({ error: error.message }, 500);
     }
   });

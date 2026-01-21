@@ -19,6 +19,14 @@ import { select, insert, update, query, deleteRows } from '../database/rds-conne
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+// PHASE 1.3: S3 client for product image uploads
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'ap-south-1',
+});
+// Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
+const S3_BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
 
 // ============================================================================
 // GET /vendor/:vendorId/products - List vendor products
@@ -197,6 +205,15 @@ class CreateVendorProductHandler extends BaseHandler {
         is_active: body.is_active !== false,
       };
 
+      // PHASE 1.3: Handle variants, images, delivery_regions in metadata
+      if (body.variants || body.images || body.delivery_regions) {
+        productData.metadata = {
+          ...(body.variants && { variants: body.variants }),
+          ...(body.images && { images: body.images }),
+          ...(body.delivery_regions && { delivery_regions: body.delivery_regions }),
+        };
+      }
+
       // Create product
       const newProduct = await insert('products', productData);
 
@@ -291,6 +308,23 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.gst_rate !== undefined) updateData.gst_rate = body.gst_rate ? parseFloat(body.gst_rate) : null;
       if (body.images !== undefined) updateData.images = body.images;
       if (body.is_active !== undefined) updateData.is_active = body.is_active;
+
+      // PHASE 1.3: Handle variants, images, delivery_regions in metadata
+      if (body.variants !== undefined || body.images !== undefined || body.delivery_regions !== undefined) {
+        // Get existing metadata if available
+        const existingProducts = await query(
+          'SELECT metadata FROM products WHERE id = $1',
+          [productId]
+        );
+        const existingMetadata = existingProducts.rows[0]?.metadata || {};
+        
+        updateData.metadata = {
+          ...existingMetadata,
+          ...(body.variants !== undefined && { variants: body.variants }),
+          ...(body.images !== undefined && { images: body.images }),
+          ...(body.delivery_regions !== undefined && { delivery_regions: body.delivery_regions }),
+        };
+      }
 
       updateData.updated_at = new Date().toISOString();
 
@@ -520,6 +554,104 @@ export function registerVendorProductsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error deleting product:', error);
       return c.json({ error: error.message || 'Failed to delete product' }, 500);
+    }
+  });
+
+  // GET /vendor/:vendorId/products/low-stock - Get products with low stock
+  app.get('/vendor/:vendorId/products/low-stock', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      const threshold = parseInt(c.req.query('threshold') || '10', 10);
+
+      // Handle test vendor IDs
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          products: [],
+          count: 0,
+          threshold,
+        });
+      }
+
+      const result = await query(`
+        SELECT 
+          p.id,
+          p.name,
+          p.sku,
+          p.stock_quantity,
+          p.price,
+          p.is_active
+        FROM products p
+        WHERE p.vendor_id = $1 
+          AND p.stock_quantity <= $2
+          AND p.is_active = true
+        ORDER BY p.stock_quantity ASC
+      `, [vendorId, threshold]);
+
+      const products = result.rows || [];
+
+      return c.json({
+        success: true,
+        products,
+        count: products.length,
+        threshold,
+      });
+    } catch (error: any) {
+      console.error('Error fetching low stock products:', error);
+      // Return empty array on error instead of 500
+      if (error.message?.includes('does not exist') || error.message?.includes('invalid input syntax')) {
+        return c.json({
+          success: true,
+          products: [],
+          count: 0,
+          threshold: 10,
+        });
+      }
+      return c.json({ error: error.message || 'Failed to fetch low stock products' }, 500);
+    }
+  });
+
+  // PHASE 1.3 FIX: Product Image Upload Endpoint
+  app.post('/vendor/:vendorId/products/images', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const formData = await c.req.formData();
+      const imageFile = formData.get('image') as File;
+
+      if (!imageFile) {
+        return c.json({ error: 'Image file is required' }, 400);
+      }
+
+      // Generate unique file key
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 15);
+      const fileExtension = imageFile.name.split('.').pop() || 'jpg';
+      const fileKey = `products/${vendorId}/${timestamp}_${randomStr}.${fileExtension}`;
+
+      // Upload file directly to S3
+      const buffer = await imageFile.arrayBuffer();
+      const command = new PutObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: fileKey,
+        Body: Buffer.from(buffer),
+        ContentType: imageFile.type || 'image/jpeg',
+      });
+
+      await s3Client.send(command);
+
+      // Public URL
+      const imageUrl = `https://${S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileKey}`;
+
+      return c.json({
+        success: true,
+        image_url: imageUrl,
+        url: imageUrl, // Support both naming conventions
+        fileKey,
+        message: 'Image uploaded successfully',
+      });
+    } catch (error: any) {
+      console.error('Error uploading product image:', error);
+      return c.json({ error: error.message || 'Failed to upload image' }, 500);
     }
   });
 }

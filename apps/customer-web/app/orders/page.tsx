@@ -120,6 +120,44 @@ export default function OrdersPage() {
     }
   };
 
+  const downloadInvoice = async (orderId: string) => {
+    try {
+      // First, generate the invoice if not already generated
+      await apiClient.post<any>(`/orders/${orderId}/invoice/generate`, {});
+      
+      // Then get the invoice download URL
+      const result = await apiClient.get<any>(`/orders/${orderId}/invoice`);
+      
+      if (result?.invoice?.download_url) {
+        // Open the download URL in a new tab
+        window.open(result.invoice.download_url, '_blank');
+      } else if (result?.invoice?.pdf_data) {
+        // If PDF data is returned directly, create a blob and download
+        const byteCharacters = atob(result.invoice.pdf_data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `invoice-${orderId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } else {
+        alert('Invoice is being generated. Please try again in a moment.');
+      }
+    } catch (err: any) {
+      console.error('Error downloading invoice:', err);
+      alert('Failed to download invoice: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   const filteredOrders = orders.filter(order => 
     order.order_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     order.items?.some(item => item.product_name?.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -433,7 +471,10 @@ export default function OrdersPage() {
                             </button>
                           </>
                         )}
-                        <button className="px-4 py-3 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors flex items-center gap-2">
+                        <button 
+                          onClick={() => downloadInvoice(order.id)}
+                          className="px-4 py-3 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        >
                           <Download className="w-4 h-4" />
                           Invoice
                         </button>

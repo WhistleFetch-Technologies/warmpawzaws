@@ -101,7 +101,19 @@ async function runMigration() {
     // Read migration file
     console.log('⚙️  Running migration...');
     console.log('─────────────────────────');
-    const migrationPath = path.join(__dirname, '..', 'db', 'migrations', '053_admin_endpoints_tables.sql');
+    
+    // Get migration file path from command line argument or default
+    const migrationFile = process.argv[2] || '053_admin_endpoints_tables.sql';
+    const migrationPath = migrationFile.startsWith('db/') 
+      ? path.join(__dirname, '..', migrationFile)
+      : path.join(__dirname, '..', 'db', 'migrations', migrationFile);
+    
+    console.log(`📄 Migration file: ${migrationPath}`);
+    
+    if (!fs.existsSync(migrationPath)) {
+      throw new Error(`Migration file not found: ${migrationPath}`);
+    }
+    
     const sql = fs.readFileSync(migrationPath, 'utf8');
 
     // Execute migration

@@ -116,6 +116,13 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           createdAt: b.created_at,
           completedAt: b.completed_at,
           cancelledAt: b.cancelled_at,
+          // ✅ FIX: Include OTP code for paid bookings
+          otpCode: b.otp_code,
+          otpVerified: b.otp_verified,
+          otpExpiresAt: b.otp_expires_at,
+          // ✅ Include cancellation/refund info
+          cancellationReason: b.cancellation_reason,
+          rescheduledFromBookingId: b.rescheduled_from_booking_id,
         })),
         stats: {
           total: parseInt(stats?.total || '0', 10),

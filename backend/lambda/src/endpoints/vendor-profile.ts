@@ -21,6 +21,7 @@ import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getEffectiveCapabilities } from '../utils/capability-filter';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -237,15 +238,111 @@ export function registerVendorProfileEndpoints(app: Hono) {
   });
 
   /**
-   * PUT /vendor/:vendorId/profile
-   * Update vendor profile - requires re-approval only if critical fields changed
+   * POST /vendor/:vendorId/profile/photo
+   * Upload vendor profile photo to S3
    */
-  app.put("/vendor/:vendorId/profile", async (c) => {
+  app.post("/vendor/:vendorId/profile/photo", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const updates = await c.req.json();
+      
+      console.log(`📸 [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
+      
+      // Verify vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
 
-      console.log(`📝 [PROFILE-UPDATE] Vendor ${vendorId} updating profile`);
+      // Parse the multipart form data
+      const formData = await c.req.formData();
+      const photo = formData.get('photo') as File;
+      
+      if (!photo) {
+        return c.json({ error: 'No photo provided' }, 400);
+      }
+
+      // Upload to S3
+      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+      
+      // Generate unique filename
+      const timestamp = Date.now();
+      const ext = photo.name.split('.').pop() || 'jpg';
+      const fileName = `vendors/${vendorId}/profile/photo_${timestamp}.${ext}`;
+      
+      // Convert File to ArrayBuffer and upload
+      const arrayBuffer = await photo.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileName,
+        Body: uint8Array,
+        ContentType: photo.type || 'image/jpeg',
+      }));
+      
+      // Generate presigned URL for access (valid for 1 year)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileName,
+        }),
+        { expiresIn: 604800 } // 7 days (max for presigned URLs)
+      );
+      
+      // Update vendor with new photo URL
+      await update('vendors', { id: vendorId }, {
+        logo_url: signedUrl,
+        updated_at: new Date().toISOString(),
+      });
+      
+      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${vendorId}`);
+      
+      return c.json({
+        success: true,
+        photo_url: signedUrl,
+        fileName: fileName,
+      });
+    } catch (error: any) {
+      console.error('❌ [PROFILE-PHOTO] Error uploading photo:', error);
+      return c.json({ error: error.message || 'Failed to upload photo' }, 500);
+    }
+  });
+
+  /**
+   * PUT/POST /vendor/:vendorId/profile
+   * Update vendor profile - requires re-approval only if critical fields changed
+   */
+  const profileUpdateHandler = async (c: any) => {
+    try {
+      const { vendorId } = c.req.param();
+      const rawUpdates = await c.req.json();
+
+      console.log(`📝 [PROFILE-UPDATE] Vendor ${vendorId} updating profile`, rawUpdates);
+
+      // Convert camelCase keys to snake_case for database compatibility
+      const camelToSnakeMap: Record<string, string> = {
+        businessName: 'business_name',
+        ownerName: 'owner_name',
+        profilePhotoUrl: 'profile_photo_url',
+        isActive: 'is_active',
+        setupCompleted: 'setup_completed',
+        servicesSetupCompleted: 'services_setup_completed',
+        availabilitySetupCompleted: 'availability_setup_completed',
+        roleId: 'role_id',
+        createdAt: 'created_at',
+        updatedAt: 'updated_at',
+      };
+
+      const updates: any = {};
+      for (const [key, value] of Object.entries(rawUpdates)) {
+        const dbKey = camelToSnakeMap[key] || key;
+        updates[dbKey] = value;
+      }
 
       // Get existing vendor
       const vendors = await select('vendors', { id: vendorId });
@@ -271,10 +368,33 @@ export function registerVendorProfileEndpoints(app: Hono) {
       console.log(`🔍 [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
       console.log(`📋 [PROFILE-UPDATE] Changed fields: ${changedFields.join(', ')}`);
 
-      // Prepare update data
-      const updateData: any = {
-        ...updates,
-      };
+      // Dynamically check which columns exist in the vendors table
+      const schemaResult = await query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'vendors'
+      `);
+      const existingColumns = new Set(schemaResult.rows.map((r: any) => r.column_name));
+      
+      // Known safe columns that can be updated
+      const safeColumns = [
+        'business_name', 'owner_name', 'phone', 'email', 'address', 'city', 'state', 'pincode',
+        'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
+        'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata'
+      ];
+
+      const updateData: any = {};
+      for (const [key, value] of Object.entries(updates)) {
+        // Only include if it's a safe column AND exists in the database
+        if (safeColumns.includes(key) && existingColumns.has(key)) {
+          updateData[key] = value;
+        }
+      }
+      
+      // Log skipped fields for debugging
+      const skippedFields = Object.keys(updates).filter(k => !existingColumns.has(k) && safeColumns.includes(k));
+      if (skippedFields.length > 0) {
+        console.log(`⚠️ [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(', ')}`);
+      }
 
       // If critical fields changed and vendor was approved, require re-approval
       if (criticalFieldsChanged && wasApproved) {
@@ -298,9 +418,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           notification_type: 'admin_alert',
           channels: { email: true, sms: false, inApp: true, push: false },
           is_read: false,
-          // Note: notifications table doesn't have metadata column
         }).catch((error) => {
-          // Expected: notification may fail, but don't fail the main operation
           console.warn('[VENDOR-PROFILE] Error creating notification:', error instanceof Error ? error.message : 'Unknown error');
         });
 
@@ -345,7 +463,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
       console.error('❌ [PROFILE-UPDATE] Error updating profile:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+
+  app.put("/vendor/:vendorId/profile", profileUpdateHandler);
+  app.post("/vendor/:vendorId/profile", profileUpdateHandler);
 
   /**
    * GET /vendor/:vendorId/profile/edit-check
@@ -412,6 +533,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
       let role = null;
       let capabilities: string[] = [];
       let roleConfig: any = {};
+      let vendorConfiguration: 'solo' | 'business' | null = null;
+      let selectedServiceStyles: string[] = [];
+      let customerService: string | null = null;
       
       if (vendor.role_id) {
         try {
@@ -420,10 +544,27 @@ export function registerVendorProfileEndpoints(app: Hono) {
           if (roles.length > 0) {
             role = roles[0];
             roleConfig = role.config || {};
+            customerService = role.customer_service || roleConfig?.customer_service || null;
+            vendorConfiguration = roleConfig?.vendorConfiguration || null;
+            selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
             
-            // Get capabilities from DB
+            // Get base capabilities from DB
             const permissions = await select('role_permissions', { role_id: vendor.role_id });
-            capabilities = permissions.map(p => p.permission_name);
+            const baseCapabilities = permissions.map(p => p.permission_name);
+            
+            // ✅ TWO-STAGE CAPABILITY FILTERING
+            if (vendorConfiguration) {
+              const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
+                vendorConfiguration,
+                selectedServiceStyles,
+                baseCapabilities,
+                capabilityRules: roleConfig?.capabilityRules
+              });
+              capabilities = effectiveCapabilities;
+            } else {
+              // Fallback to base capabilities if vendorConfiguration not set
+              capabilities = baseCapabilities;
+            }
           }
         } catch (roleError: any) {
           console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
@@ -443,9 +584,15 @@ export function registerVendorProfileEndpoints(app: Hono) {
             description: role.description,
             config: roleConfig,
           } : null,
-          capabilities, // Include capabilities directly
+          customer_service: customerService,
+          vendorConfiguration: vendorConfiguration,
+          serviceStyles: selectedServiceStyles,
+          capabilities, // ✅ Filtered capabilities (two-stage)
           vendorTypes: roleConfig?.vendorTypes || [],
-          serviceStyles: roleConfig?.serviceStyles || [],
+          profileType: vendorConfiguration === 'solo' ? 'professional' : 'center',
+          allowedServiceStyles: vendorConfiguration 
+            ? (roleConfig?.serviceStyles?.[vendorConfiguration] || [])
+            : [],
         },
       });
     } catch (error: any) {
@@ -572,6 +719,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/bank-account
    * Get vendor bank account details
+   * ✅ FIX: Check both vendor_bank_details and vendor_bank_accounts tables
    */
   app.get("/vendor/:vendorId/bank-account", async (c) => {
     try {
@@ -581,7 +729,37 @@ export function registerVendorProfileEndpoints(app: Hono) {
         return c.json({ error: 'Invalid vendor ID' }, 400);
       }
 
-      const bankAccounts = await select('vendor_bank_details', { vendor_id: vendorId });
+      // ✅ FIX: Check which table exists and query both
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+      `);
+      
+      const schema = schemaCheck.rows[0] || {};
+      let bankAccounts: any[] = [];
+      
+      // Try vendor_bank_accounts first (newer table)
+      if (schema.has_accounts_table) {
+        try {
+          const accounts = await query(
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            [vendorId]
+          );
+          bankAccounts = accounts.rows;
+        } catch (e) {
+          console.warn('Error querying vendor_bank_accounts:', e);
+        }
+      }
+      
+      // Fallback to vendor_bank_details if no results
+      if (bankAccounts.length === 0 && schema.has_details_table) {
+        try {
+          bankAccounts = await select('vendor_bank_details', { vendor_id: vendorId });
+        } catch (e) {
+          console.warn('Error querying vendor_bank_details:', e);
+        }
+      }
       
       if (bankAccounts.length === 0) {
         return c.json({ success: true, bankAccount: null });
@@ -768,10 +946,10 @@ export function registerVendorProfileEndpoints(app: Hono) {
   });
 
   /**
-   * PUT /vendor/:vendorId/settings
+   * PUT/POST /vendor/:vendorId/settings
    * Update vendor general settings
    */
-  app.put("/vendor/:vendorId/settings", async (c) => {
+  const settingsHandler = async (c: any) => {
     try {
       const { vendorId } = c.req.param();
       const body = await c.req.json();
@@ -786,7 +964,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
         if (!emergency_contact.name || !emergency_contact.phone) {
           return c.json({ error: 'Emergency contact must have both name and phone' }, 400);
         }
-        if (!/^[6-9]\d{9}$/.test(emergency_contact.phone.replace(/\D/g, ''))) {
+        // Allow any 10-digit phone
+        const phoneDigits = emergency_contact.phone.replace(/\D/g, '');
+        if (phoneDigits.length < 10) {
           return c.json({ error: 'Invalid emergency contact phone number' }, 400);
         }
       }
@@ -797,25 +977,76 @@ export function registerVendorProfileEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Update vendor settings
-      const updateData: any = {
-        updated_at: new Date().toISOString(),
-      };
+      // Check which columns exist in vendors table to avoid column errors
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') as has_service_radius,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') as has_emergency_contact,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') as has_max_dogs,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') as has_walk_durations,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') as has_other_config,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_settings') as has_vendor_settings_table
+      `);
+      
+      const schema = schemaCheck.rows[0] || {};
 
-      if (service_radius !== undefined) updateData.service_radius = service_radius;
-      if (emergency_contact !== undefined) updateData.emergency_contact = emergency_contact;
-      if (max_dogs_per_walk !== undefined) updateData.max_dogs_per_walk = max_dogs_per_walk;
-      if (walk_durations !== undefined) updateData.walk_durations = walk_durations;
-      if (other_config !== undefined) updateData.other_config = other_config;
+      // Build update using raw SQL to handle type conversions properly
+      const setClauses: string[] = ['updated_at = NOW()'];
+      const params: any[] = [];
+      let paramIdx = 1;
 
-      await update('vendors', { id: vendorId }, updateData);
+      if (service_radius !== undefined && schema.has_service_radius) {
+        setClauses.push(`service_radius = $${paramIdx}`);
+        params.push(service_radius);
+        paramIdx++;
+      }
+      
+      if (emergency_contact !== undefined && schema.has_emergency_contact) {
+        setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
+        params.push(JSON.stringify(emergency_contact));
+        paramIdx++;
+      }
+      
+      if (max_dogs_per_walk !== undefined && schema.has_max_dogs) {
+        setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
+        params.push(max_dogs_per_walk);
+        paramIdx++;
+      }
+      
+      // Handle walk_durations - convert array to TEXT[] format
+      if (walk_durations !== undefined && schema.has_walk_durations) {
+        if (Array.isArray(walk_durations) && walk_durations.length > 0) {
+          setClauses.push(`walk_durations = $${paramIdx}::text[]`);
+          params.push(walk_durations);
+          paramIdx++;
+        } else {
+          // Empty array or null - set to NULL without using a parameter
+          setClauses.push(`walk_durations = NULL`);
+        }
+      }
+      
+      if (other_config !== undefined && schema.has_other_config) {
+        setClauses.push(`other_config = $${paramIdx}::jsonb`);
+        params.push(JSON.stringify(other_config || {}));
+        paramIdx++;
+      }
+
+      params.push(vendorId);
+      
+      await query(
+        `UPDATE vendors SET ${setClauses.join(', ')} WHERE id = $${paramIdx}`,
+        params
+      );
 
       return c.json({ success: true, message: 'Settings updated successfully' });
     } catch (error: any) {
       console.error('Error updating settings:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+  
+  app.put("/vendor/:vendorId/settings", settingsHandler);
+  app.post("/vendor/:vendorId/settings", settingsHandler);
 
   /**
    * GET /vendor/:vendorId

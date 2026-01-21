@@ -101,7 +101,7 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       
       // Handle 401 by clearing token and redirecting to auth
       if (response.status === 401) {
@@ -112,7 +112,25 @@ export class ApiClient {
         }
       }
       
-      throw new Error(error.error || error.message || `HTTP ${response.status}`);
+      // ✅ FIX: Ensure error message is always a string, not [object Object]
+      let errorMessage = `HTTP ${response.status}`;
+      if (typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      } else if (typeof errorData.message === 'string') {
+        errorMessage = errorData.message;
+      } else if (errorData.error && typeof errorData.error === 'object') {
+        // Handle nested error objects
+        errorMessage = errorData.error.message || errorData.error.code || JSON.stringify(errorData.error);
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      }
+      
+      // Log the full error for debugging in UAT mode
+      if (UAT_MODE && typeof window !== 'undefined') {
+        console.error('❌ [UAT] API Error Response:', errorData);
+      }
+      
+      throw new Error(errorMessage);
     }
 
     return response.json();

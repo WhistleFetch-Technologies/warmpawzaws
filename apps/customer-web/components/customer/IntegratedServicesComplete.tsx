@@ -369,14 +369,14 @@ export function IntegratedServicesComplete({
                       {provider.rating > 0 && (
                         <span className="flex items-center gap-1 text-yellow-600">
                           <Star className="w-4 h-4 fill-current" />
-                          {provider.rating.toFixed(1)}
+                          {Number(provider.rating || 0).toFixed(1)}
                         </span>
                       )}
                       
                       {provider.distance !== undefined && (
                         <span className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-4 h-4" />
-                          {provider.distance.toFixed(1)} km
+                          {Number(provider.distance || 0).toFixed(1)} km
                         </span>
                       )}
 

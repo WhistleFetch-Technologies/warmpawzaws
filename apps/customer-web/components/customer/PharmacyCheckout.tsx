@@ -13,7 +13,7 @@ import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
 interface PharmacyCheckoutProps {
   phone: string;
   onBack: () => void;
-  onSuccess: () => void;
+  onSuccess: (orderId?: string) => void;
 }
 
 export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutProps) {
@@ -92,9 +92,10 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
       const orderResponse = await apiClient.post<any>('/customer/pharmacy/orders', orderData);
 
       if (orderResponse.success || orderResponse.orderId) {
+        const orderId = orderResponse.orderId || orderResponse.order?.id || orderResponse.id;
         clearCart();
-        toast.success('Order placed successfully!');
-        onSuccess();
+        toast.success('Order placed successfully! Finding nearby pharmacy...');
+        onSuccess(orderId);
       } else {
         throw new Error('Failed to create order');
       }

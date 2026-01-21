@@ -77,7 +77,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
             userType: 'customer'
           }) as any;
           console.log('✅ Referral code applied:', referralData);
-          toast.success('🎉 Referral code applied! You\'ll earn bonus points!', { duration: 4000 });
+          toast.success('Referral code applied! You\'ll earn bonus points!', { duration: 4000 });
         } catch (refError: any) {
           console.error('❌ Referral code error:', refError);
           // Don't block signup if referral fails

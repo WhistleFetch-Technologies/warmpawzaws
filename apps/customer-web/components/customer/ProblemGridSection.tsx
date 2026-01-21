@@ -5,7 +5,7 @@ import {
   GraduationCap, Home, PawPrint, AlertTriangle, Trophy, Dog as DogLeash,
   Footprints, Bone, Mountain,
   Frown, Volume2, Bomb, Ghost, Shield,
-  Hotel, Sun, Star, Pill,
+  Hotel, Sun, Star, Pill, Syringe,
   Stethoscope, Heart, Activity, FileText, Eye, Siren, Package
 } from 'lucide-react';
 
@@ -124,60 +124,128 @@ export function ProblemGridSection({
 // Unified Warmpawz Theme
 // ========================================
 
+/**
+ * GROOMING NEEDS - Ordered by daily use frequency
+ * Basic hygiene first, luxury/spa last
+ * Priority: Lower number = shown first
+ */
 export const GROOMING_NEEDS = [
-  { id: 'full_grooming', name: 'Full Grooming', icon: <Scissors className="w-6 h-6 text-orange-500" /> },
-  { id: 'bath_only', name: 'Bath & Brush', icon: <Bath className="w-6 h-6 text-blue-500" /> },
-  { id: 'haircut_styling', name: 'Hair Styling', icon: <Brush className="w-6 h-6 text-pink-500" /> },
-  { id: 'nail_care', name: 'Nail Care', icon: <Hand className="w-6 h-6 text-purple-500" /> },
-  { id: 'deshedding', name: 'De-shedding', icon: <Dog className="w-6 h-6 text-amber-500" /> },
-  { id: 'spa_treatment', name: 'Spa & Wellness', icon: <Sparkles className="w-6 h-6 text-rose-500" /> },
-  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
+  // Essential/Daily (shown first)
+  { id: 'bath_only', name: 'Bath & Brush', icon: <Bath className="w-6 h-6 text-blue-500" />, priority: 1 },
+  { id: 'full_grooming', name: 'Full Grooming', icon: <Scissors className="w-6 h-6 text-orange-500" />, priority: 2 },
+  { id: 'nail_care', name: 'Nail Care', icon: <Hand className="w-6 h-6 text-purple-500" />, priority: 3 },
+  // Regular Maintenance
+  { id: 'haircut_styling', name: 'Hair Styling', icon: <Brush className="w-6 h-6 text-pink-500" />, priority: 21 },
+  { id: 'deshedding', name: 'De-shedding', icon: <Dog className="w-6 h-6 text-amber-500" />, priority: 22 },
+  // Specialty/Luxury
+  { id: 'spa_treatment', name: 'Spa & Wellness', icon: <Sparkles className="w-6 h-6 text-rose-500" />, priority: 41 },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];
 
+/**
+ * TRAINING GOALS - Ordered by fundamental importance
+ * Basic obedience first, specialized training last
+ * Priority: Lower number = shown first
+ */
 export const TRAINING_GOALS = [
-  { id: 'basic_obedience', name: 'Basic Obedience', icon: <GraduationCap className="w-6 h-6 text-purple-500" /> },
-  { id: 'potty_training', name: 'Potty Training', icon: <Home className="w-6 h-6 text-green-500" /> },
-  { id: 'socialization', name: 'Socialization', icon: <PawPrint className="w-6 h-6 text-blue-500" /> },
-  { id: 'aggression', name: 'Aggression Fix', icon: <AlertTriangle className="w-6 h-6 text-red-500" /> },
-  { id: 'advanced_training', name: 'Advanced Skills', icon: <Trophy className="w-6 h-6 text-amber-500" /> },
-  { id: 'leash_training', name: 'Leash Training', icon: <DogLeash className="w-6 h-6 text-indigo-500" /> },
-  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
+  // Essential Training (shown first)
+  { id: 'basic_obedience', name: 'Basic Obedience', icon: <GraduationCap className="w-6 h-6 text-purple-500" />, priority: 1 },
+  { id: 'potty_training', name: 'Potty Training', icon: <Home className="w-6 h-6 text-green-500" />, priority: 2 },
+  { id: 'leash_training', name: 'Leash Training', icon: <DogLeash className="w-6 h-6 text-indigo-500" />, priority: 3 },
+  // Socialization
+  { id: 'socialization', name: 'Socialization', icon: <PawPrint className="w-6 h-6 text-blue-500" />, priority: 21 },
+  // Advanced/Specialty
+  { id: 'advanced_training', name: 'Advanced Skills', icon: <Trophy className="w-6 h-6 text-amber-500" />, priority: 41 },
+  { id: 'aggression', name: 'Aggression Fix', icon: <AlertTriangle className="w-6 h-6 text-red-500" />, priority: 42 },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];
 
+/**
+ * WALKING NEEDS - Ordered by daily usage
+ * Regular daily walks first, adventure walks last
+ * Priority: Lower number = shown first
+ */
 export const WALKING_NEEDS = [
-  { id: 'daily_walk', name: 'Daily Walk', icon: <Footprints className="w-6 h-6 text-green-500" /> },
-  { id: 'puppy_walk', name: 'Puppy Walking', icon: <Dog className="w-6 h-6 text-blue-500" /> },
-  { id: 'senior_walk', name: 'Senior Care', icon: <Bone className="w-6 h-6 text-amber-500" /> },
-  { id: 'multiple_dogs', name: 'Multiple Dogs', icon: <DogLeash className="w-6 h-6 text-indigo-500" /> },
-  { id: 'long_walk', name: 'Adventure Walk', icon: <Mountain className="w-6 h-6 text-emerald-500" /> },
-  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
+  // Daily Essentials (shown first)
+  { id: 'daily_walk', name: 'Daily Walk', icon: <Footprints className="w-6 h-6 text-green-500" />, priority: 1 },
+  { id: 'puppy_walk', name: 'Puppy Walking', icon: <Dog className="w-6 h-6 text-blue-500" />, priority: 2 },
+  // Regular Needs
+  { id: 'multiple_dogs', name: 'Multiple Dogs', icon: <DogLeash className="w-6 h-6 text-indigo-500" />, priority: 21 },
+  { id: 'senior_walk', name: 'Senior Care', icon: <Bone className="w-6 h-6 text-amber-500" />, priority: 22 },
+  // Special Occasions
+  { id: 'long_walk', name: 'Adventure Walk', icon: <Mountain className="w-6 h-6 text-emerald-500" />, priority: 41 },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];
 
+/**
+ * BEHAVIORAL ISSUES - Ordered by common occurrence
+ * Most common issues first, complex behaviors last
+ * Priority: Lower number = shown first
+ */
 export const BEHAVIORAL_ISSUES = [
-  { id: 'separation_anxiety', name: 'Anxiety & Stress', icon: <Frown className="w-6 h-6 text-yellow-500" /> },
-  { id: 'barking', name: 'Barking Issues', icon: <Volume2 className="w-6 h-6 text-orange-500" /> },
-  { id: 'destructive', name: 'Destructive Habits', icon: <Bomb className="w-6 h-6 text-red-500" /> },
-  { id: 'fear_phobia', name: 'Fear Issues', icon: <Ghost className="w-6 h-6 text-indigo-500" /> },
-  { id: 'resource_guarding', name: 'Possessive Behavior', icon: <Shield className="w-6 h-6 text-blue-500" /> },
-  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
+  // Common Issues (shown first)
+  { id: 'separation_anxiety', name: 'Anxiety & Stress', icon: <Frown className="w-6 h-6 text-yellow-500" />, priority: 1 },
+  { id: 'barking', name: 'Barking Issues', icon: <Volume2 className="w-6 h-6 text-orange-500" />, priority: 2 },
+  // Regular Issues
+  { id: 'fear_phobia', name: 'Fear Issues', icon: <Ghost className="w-6 h-6 text-indigo-500" />, priority: 21 },
+  // Complex Issues
+  { id: 'destructive', name: 'Destructive Habits', icon: <Bomb className="w-6 h-6 text-red-500" />, priority: 41 },
+  { id: 'resource_guarding', name: 'Possessive Behavior', icon: <Shield className="w-6 h-6 text-blue-500" />, priority: 42 },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];
 
+/**
+ * BOARDING NEEDS - Ordered by frequency of use
+ * Daycare/short stays first, specialty boarding last
+ * Priority: Lower number = shown first
+ */
 export const BOARDING_NEEDS = [
-  { id: 'short_stay', name: 'Weekend Stay', icon: <Hotel className="w-6 h-6 text-orange-500" /> },
-  { id: 'long_stay', name: 'Extended Stay', icon: <Home className="w-6 h-6 text-amber-500" /> },
-  { id: 'daycare', name: 'Daily Daycare', icon: <Sun className="w-6 h-6 text-yellow-500" /> },
-  { id: 'luxury_boarding', name: 'Luxury Stay', icon: <Star className="w-6 h-6 text-purple-500" /> },
-  { id: 'medical_boarding', name: 'Medical Care', icon: <Pill className="w-6 h-6 text-blue-500" /> },
-  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" /> }
+  // Common Needs (shown first)
+  { id: 'daycare', name: 'Daily Daycare', icon: <Sun className="w-6 h-6 text-yellow-500" />, priority: 1 },
+  { id: 'short_stay', name: 'Weekend Stay', icon: <Hotel className="w-6 h-6 text-orange-500" />, priority: 2 },
+  // Extended Care
+  { id: 'long_stay', name: 'Extended Stay', icon: <Home className="w-6 h-6 text-amber-500" />, priority: 21 },
+  // Specialty
+  { id: 'luxury_boarding', name: 'Luxury Stay', icon: <Star className="w-6 h-6 text-purple-500" />, priority: 41 },
+  { id: 'medical_boarding', name: 'Medical Care', icon: <Pill className="w-6 h-6 text-blue-500" />, priority: 42 },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];
 
+/**
+ * VET PROBLEMS - Ordered by frequency of need
+ * General/preventive care first, surgery/emergency last
+ * Priority: Lower number = shown first (daily use → specialty)
+ */
 export const VET_PROBLEMS = [
-  { id: 'surgery', name: 'Surgery', icon: <Stethoscope className="w-6 h-6 text-teal-500" /> },
-  { id: 'cardiology', name: 'Heart Care', icon: <Heart className="w-6 h-6 text-red-500" /> },
-  { id: 'dermatology', name: 'Skin Care', icon: <Activity className="w-6 h-6 text-green-500" /> },
-  { id: 'dentistry', name: 'Dental', icon: <FileText className="w-6 h-6 text-blue-500" /> },
-  { id: 'ophthalmology', name: 'Eye Care', icon: <Eye className="w-6 h-6 text-cyan-500" /> },
-  { id: 'emergency', name: 'Emergency', icon: <Siren className="w-6 h-6 text-red-500" /> },
-  { id: 'medicine', name: 'General', icon: <Package className="w-6 h-6 text-purple-500" /> },
-  { id: 'view_all', name: '20+ more', icon: <Plus className="w-6 h-6" /> }
+  // Daily/Preventive Care (shown first)
+  { id: 'medicine', name: 'General', icon: <Package className="w-6 h-6 text-purple-500" />, priority: 1 },
+  { id: 'vaccination', name: 'Vaccination', icon: <Pill className="w-6 h-6 text-blue-500" />, priority: 2 },
+  // Common Health Issues
+  { id: 'dermatology', name: 'Skin Care', icon: <Activity className="w-6 h-6 text-green-500" />, priority: 21 },
+  { id: 'dentistry', name: 'Dental', icon: <FileText className="w-6 h-6 text-blue-500" />, priority: 22 },
+  { id: 'ophthalmology', name: 'Eye Care', icon: <Eye className="w-6 h-6 text-cyan-500" />, priority: 23 },
+  // Specialty Care
+  { id: 'cardiology', name: 'Heart Care', icon: <Heart className="w-6 h-6 text-red-500" />, priority: 41 },
+  // Rare/Emergency (shown last - rarely needed)
+  { id: 'surgery', name: 'Surgery', icon: <Stethoscope className="w-6 h-6 text-teal-500" />, priority: 61 },
+  { id: 'emergency', name: 'Emergency', icon: <Siren className="w-6 h-6 text-red-500" />, priority: 62 },
+  { id: 'view_all', name: '20+ more', icon: <Plus className="w-6 h-6" />, priority: 999 }
+];
+
+/**
+ * NUTRITIONIST NEEDS - Ordered by daily relevance
+ * General diet planning first, medical diets last
+ * Priority: Lower number = shown first
+ */
+export const NUTRITIONIST_NEEDS = [
+  // Daily Needs (shown first)
+  { id: 'diet_plan', name: 'Diet Planning', icon: <FileText className="w-6 h-6 text-green-500" />, priority: 1 },
+  { id: 'puppy_nutrition', name: 'Puppy Diet', icon: <Dog className="w-6 h-6 text-blue-500" />, priority: 2 },
+  { id: 'senior_nutrition', name: 'Senior Diet', icon: <Heart className="w-6 h-6 text-purple-500" />, priority: 3 },
+  // Health-Related
+  { id: 'weight_management', name: 'Weight Loss', icon: <Activity className="w-6 h-6 text-orange-500" />, priority: 21 },
+  { id: 'allergies', name: 'Food Allergies', icon: <AlertTriangle className="w-6 h-6 text-red-500" />, priority: 22 },
+  // Specialty
+  { id: 'special_diet', name: 'Medical Diet', icon: <Pill className="w-6 h-6 text-teal-500" />, priority: 41 },
+  { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6" />, priority: 999 }
 ];

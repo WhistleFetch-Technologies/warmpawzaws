@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Apple, Star, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Apple, Star, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight, AlertCircle, Plus, Video, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
+import { NUTRITIONIST_NEEDS } from './ProblemGridSection';
 
 interface NutritionistServicesLandingProps {
   phone: string;
@@ -55,7 +57,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
         activeNutritionists: nutritionistList.length || 45,
         consultations: '1.5K+',
         rating: nutritionistList.length > 0 
-          ? (nutritionistList.reduce((acc: number, n: any) => acc + (n.rating || 4.9), 0) / nutritionistList.length).toFixed(1) 
+          ? Number(nutritionistList.reduce((acc: number, n: any) => acc + Number(n.rating || 4.9), 0) / nutritionistList.length).toFixed(1) 
           : '4.9'
       });
     } catch (error) {
@@ -76,7 +78,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
     
     try {
-      onNavigate?.('create-booking', { 
+      onNavigate?.('nutritionist-booking', { 
         vendorId: nutritionist.id || nutritionist.vendorId, 
         serviceId: 'pet_nutritionist' 
       });
@@ -95,7 +97,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
     
     try {
-      onNavigate?.('create-booking', { 
+      onNavigate?.('nutritionist-booking', { 
         serviceId: 'pet_nutritionist',
         ...data 
       });
@@ -188,36 +190,96 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
-          {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">First Time</div>
-                    <div className="text-2xl font-bold text-slate-900">30% OFF</div>
-                    <div className="text-slate-500 text-xs">First Consultation</div>
-                  </div>
-                  <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
-                    <Apple className="w-5 h-5 text-green-600" />
-                  </div>
+          {/* Promotion Banner */}
+          <PromotionBanner service="nutrition" maxPromotions={3} />
+
+          {/* Problem Grid - Consult by Need */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-orange-50 rounded-lg">
+                  <Apple className="w-4 h-4 text-[#FF8C42]" />
                 </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹999</span>
-                    <span className="ml-2 font-bold text-slate-900">₹699</span>
-                  </div>
-                  <Button size="sm" className="bg-green-600 text-white hover:bg-green-700 h-8 text-xs px-4 rounded-lg" onClick={() => handleBookNow()}>
-                    Book Now
-                  </Button>
-                </div>
-              </Card>
+                <h2 className="text-lg font-semibold text-slate-900">Consult by Need</h2>
+              </div>
+              <button 
+                onClick={() => onNavigate?.('problem_grid')}
+                className="text-sm text-[#FF8C42] font-medium hover:text-[#FF7029] transition-colors"
+              >
+                View All
+              </button>
             </div>
+            <div className="grid grid-cols-4 gap-3">
+              {NUTRITIONIST_NEEDS.map((need) => {
+                const isViewAll = need.id === 'view_all';
+                return (
+                  <button
+                    key={need.id}
+                    onClick={() => {
+                      if (isViewAll) {
+                        onNavigate?.('problem_grid');
+                      } else {
+                        onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
+                      }
+                    }}
+                    className="group relative flex flex-col items-center"
+                  >
+                    <div className={`
+                      w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
+                      ${isViewAll 
+                        ? 'bg-orange-50 border-orange-100 text-orange-700 hover:bg-orange-100' 
+                        : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
+                      }
+                    `}>
+                      <div className={`
+                        w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
+                        ${isViewAll ? 'bg-white/50' : 'bg-slate-50 group-hover:bg-orange-50'}
+                      `}>
+                        {typeof need.icon === 'string' ? (
+                          <span className="text-xl">{need.icon}</span>
+                        ) : (
+                          <div className="text-slate-600 group-hover:text-orange-600">
+                            {need.icon}
+                          </div>
+                        )}
+                      </div>
+                      <p className={`
+                        text-[10px] font-medium text-center leading-tight line-clamp-2
+                        ${isViewAll ? 'text-orange-700' : 'text-slate-600 group-hover:text-orange-700'}
+                      `}>
+                        {need.name}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ✅ NEW: Tele Consultation CTA */}
+          <div>
+            <button
+              onClick={() => onNavigate?.('nutritionist-tele')}
+              className="w-full p-4 rounded-2xl text-left transition-all border-2 border-green-200 hover:border-green-400 hover:shadow-lg bg-gradient-to-r from-green-50 to-emerald-50"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Video className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h3 className="font-semibold text-base text-gray-900">Video Consultation</h3>
+                    <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium flex items-center gap-1">
+                      <Zap className="w-3 h-3" /> Instant Available
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 leading-snug">
+                    Connect with pet nutritionists via video call. From ₹300
+                  </p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
+              </div>
+            </button>
           </div>
 
           {/* Service Types */}

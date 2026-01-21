@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -56,6 +56,11 @@ interface Service {
   serviceName?: string;
   category?: string;
   subCategory?: string;
+  // ✅ FIX: Add catalog service properties for toggle functionality
+  isPlatformService?: boolean;
+  isVendorEnabled?: boolean;
+  serviceId?: string;
+  catalogServiceId?: string;
 }
 
 export function VendorServiceConfigurationScreen({ 
@@ -88,6 +93,22 @@ export function VendorServiceConfigurationScreen({
   
   const isPlatformManaged = serviceStyle === 'at_home' || serviceStyle === 'tele';
   
+  // Get roleId from vendorData or roleConfig for catalog lookup
+  const roleId = vendorData?.roleId || vendorData?.role_id || vendorData?.roleName || roleConfig?.name || roleConfig?.roleId || 'veterinarian';
+  
+  // ✅ FIX: Check if vendor is solo provider
+  const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendor_configuration || roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+  const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
+  
+  // ✅ CRITICAL: Solo providers cannot access at_center services
+  useEffect(() => {
+    if (isSoloProvider && serviceStyle === 'at_center') {
+      toast.error('Solo providers cannot use "at_center" service style. Only "at_home" and "tele" are allowed.');
+      onBack();
+      return;
+    }
+  }, [isSoloProvider, serviceStyle, onBack]);
+  
   // Check if this vendor can control pricing based on role config
   const canControlPrice = roleConfig?.pricingControl?.canControlPrice || false;
   const canControlDuration = roleConfig?.pricingControl?.canControlDuration || false;
@@ -96,52 +117,150 @@ export function VendorServiceConfigurationScreen({
   const canEditPricing = serviceStyle === 'at_center' && canControlPrice;
 
   useEffect(() => {
+    // Don't load services if solo provider trying to access at_center
+    if (isSoloProvider && serviceStyle === 'at_center') {
+      return;
+    }
     loadServices();
-  }, [vendorId, serviceStyle]);
+  }, [vendorId, serviceStyle, roleId, isSoloProvider]);
 
   const loadServices = async () => {
     try {
       setLoading(true);
       
-      console.log(`🔄 Loading services for vendor ${vendorId}, style: ${serviceStyle}`);
+      console.log(`🔄 Loading services for vendor ${vendorId}, style: ${serviceStyle}, roleId: ${roleId}`);
       
-      // Catalog status check removed - not needed
+      // ✅ FIX: Fetch BOTH catalog services AND vendor's enabled services, then merge
+      // This ensures vendor sees all available services from platform catalog
       
-      const data = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
-
-      if (data) {
-        console.log('✅ Services loaded:', data);
-        // ✅ FIX: Normalize service data to ensure consistent field names
-        const normalizedServices = (data.services || []).map((svc: any) => ({
-          ...svc,
+      // 1. Fetch service catalog for vendor's role
+      let catalogServices: any[] = [];
+      try {
+        const catalogData = await apiClient.get(`/service-catalog/role/${roleId}?serviceStyle=${serviceStyle}`) as any;
+        if (catalogData?.services) {
+          catalogServices = catalogData.services;
+          console.log(`📚 Catalog services loaded: ${catalogServices.length}`);
+        }
+        // ✅ FIX: Check for error message from API (e.g., solo provider trying to access at_center)
+        if (catalogData?.message && catalogData?.success === false) {
+          toast.error(catalogData.message);
+          onBack();
+          return;
+        }
+      } catch (catalogError: any) {
+        console.warn('⚠️ Could not load catalog services:', catalogError);
+        // ✅ FIX: Show error message if API returns specific error
+        if (catalogError?.response?.data?.error || catalogError?.message) {
+          const errorMsg = catalogError?.response?.data?.error || catalogError?.message;
+          if (errorMsg.includes('Solo providers') || errorMsg.includes('at_center')) {
+            toast.error(errorMsg);
+            onBack();
+            return;
+          }
+        }
+      }
+      
+      // 2. Fetch vendor's own enabled services
+      let vendorServices: any[] = [];
+      try {
+        const vendorData = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
+        if (vendorData?.services) {
+          vendorServices = vendorData.services;
+          console.log(`🏪 Vendor services loaded: ${vendorServices.length}`);
+        }
+        // ✅ FIX: Check for error message from API
+        if (vendorData?.error && vendorData?.success === false) {
+          toast.error(vendorData.error);
+          onBack();
+          return;
+        }
+      } catch (vendorError: any) {
+        console.warn('⚠️ Could not load vendor services:', vendorError);
+        // ✅ FIX: Show error message if API returns specific error
+        if (vendorError?.response?.data?.error || vendorError?.message) {
+          const errorMsg = vendorError?.response?.data?.error || vendorError?.message;
+          if (errorMsg.includes('Solo providers') || errorMsg.includes('at_center')) {
+            toast.error(errorMsg);
+            onBack();
+            return;
+          }
+        }
+      }
+      
+      // 3. Merge: catalog services with vendor's enablement status
+      const vendorServiceIds = new Set(vendorServices.map((s: any) => 
+        s.serviceId || s.service_id || s.catalogServiceId || s.catalog_service_id || s.id
+      ));
+      
+      // Create a map of vendor services for quick lookup
+      const vendorServiceMap = new Map(vendorServices.map((s: any) => [
+        s.serviceId || s.service_id || s.catalogServiceId || s.catalog_service_id || s.id, 
+        s
+      ]));
+      
+      // Merge catalog with vendor status
+      const mergedServices = catalogServices.map((catalogSvc: any) => {
+        const catalogId = catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id;
+        const vendorSvc = vendorServiceMap.get(catalogId);
+        
+        return {
+          ...catalogSvc,
+          // Use vendor's data if exists, otherwise catalog data
+          id: vendorSvc?.id || catalogId,
+          serviceId: catalogId,
+          catalogServiceId: catalogId,
           // Normalize name field
-          name: svc.name || svc.serviceName || svc.service_name || 'Unnamed Service',
-          serviceName: svc.serviceName || svc.service_name || svc.name || 'Unnamed Service',
-          // Normalize price fields
+          name: catalogSvc.name || catalogSvc.serviceName || catalogSvc.service_name || 'Unnamed Service',
+          serviceName: catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || 'Unnamed Service',
+          // Normalize price fields - use vendor's custom price if set
+          price: vendorSvc?.customPrice || vendorSvc?.custom_price || catalogSvc.price || catalogSvc.basePrice || catalogSvc.base_price || 0,
+          basePrice: catalogSvc.basePrice || catalogSvc.base_price || catalogSvc.price || 0,
+          customPrice: vendorSvc?.customPrice || vendorSvc?.custom_price,
+          // Normalize duration - use vendor's custom duration if set
+          duration: vendorSvc?.customDuration || vendorSvc?.custom_duration || catalogSvc.duration || catalogSvc.duration_minutes || 30,
+          customDuration: vendorSvc?.customDuration || vendorSvc?.custom_duration,
+          // Normalize category fields
+          categoryName: catalogSvc.categoryName || catalogSvc.category_name || catalogSvc.category || 'Platform Services',
+          category: catalogSvc.category || catalogSvc.category_name || catalogSvc.categoryName || 'Platform Services',
+          subCategoryName: catalogSvc.subCategoryName || catalogSvc.sub_category_name || catalogSvc.subCategory || '',
+          subCategory: catalogSvc.subCategory || catalogSvc.sub_category_name || catalogSvc.subCategoryName || '',
+          // ✅ Key: Show vendor's enablement status
+          isEnabled: vendorSvc ? (vendorSvc.isEnabled !== undefined ? vendorSvc.isEnabled : (vendorSvc.is_enabled !== undefined ? vendorSvc.is_enabled : true)) : false,
+          publishStatus: vendorSvc?.publishStatus || vendorSvc?.publish_status || 'draft',
+          // Normalize description
+          description: vendorSvc?.customDescription || vendorSvc?.custom_description || catalogSvc.description || '',
+          customDescription: vendorSvc?.customDescription || vendorSvc?.custom_description || '',
+          // Flag to indicate source
+          isPlatformService: true,
+          isVendorEnabled: vendorServiceIds.has(catalogId),
+        };
+      });
+      
+      // Add any vendor custom services that aren't from catalog
+      const catalogIds = new Set(catalogServices.map((s: any) => s.serviceId || s.service_id || s.id));
+      const customVendorServices = vendorServices
+        .filter((s: any) => {
+          const svcId = s.serviceId || s.service_id || s.catalogServiceId || s.id;
+          return !catalogIds.has(svcId);
+        })
+        .map((svc: any) => ({
+          ...svc,
+          name: svc.name || svc.serviceName || svc.service_name || 'Custom Service',
+          serviceName: svc.serviceName || svc.service_name || svc.name || 'Custom Service',
           price: svc.price || svc.basePrice || svc.base_price || 0,
           basePrice: svc.basePrice || svc.base_price || svc.price || 0,
-          customPrice: svc.customPrice || svc.custom_price,
-          // Normalize duration
           duration: svc.duration || svc.duration_minutes || 30,
-          customDuration: svc.customDuration || svc.custom_duration,
-          // Normalize category fields
-          categoryName: svc.categoryName || svc.category_name || svc.category || 'Other',
-          category: svc.category || svc.category_name || svc.categoryName || 'Other',
-          subCategoryName: svc.subCategoryName || svc.sub_category_name || svc.subCategory || '',
-          subCategory: svc.subCategory || svc.sub_category_name || svc.subCategoryName || '',
-          // Normalize status fields
-          isEnabled: svc.isEnabled !== undefined ? svc.isEnabled : (svc.is_enabled !== undefined ? svc.is_enabled : false),
+          categoryName: svc.categoryName || svc.category_name || 'Custom Services',
+          isEnabled: svc.isEnabled !== undefined ? svc.isEnabled : (svc.is_enabled !== undefined ? svc.is_enabled : true),
           publishStatus: svc.publishStatus || svc.publish_status || 'draft',
-          // Normalize description
-          description: svc.description || svc.customDescription || svc.custom_description || '',
-          customDescription: svc.customDescription || svc.custom_description || svc.description || '',
+          isPlatformService: false,
+          isVendorEnabled: true,
         }));
-        setServices(normalizedServices);
-      } else {
-        console.error('❌ Failed to load services:', data);
-        toast.error('Failed to load services');
-        setServices([]);
-      }
+      
+      const allServices = [...mergedServices, ...customVendorServices];
+      console.log(`✅ Total services: ${allServices.length} (${mergedServices.length} from catalog, ${customVendorServices.length} custom)`);
+      
+      setServices(allServices);
     } catch (error) {
       console.error('❌ Error loading services:', error);
       toast.error('Error loading services');
@@ -151,11 +270,68 @@ export function VendorServiceConfigurationScreen({
     }
   };
 
-  const toggleService = (serviceId: string) => {
+  const toggleService = async (serviceId: string) => {
+    const service = services.find(s => s.id === serviceId);
+    if (!service) return;
+    
+    const newEnabled = !service.isEnabled;
+    
+    // Optimistically update UI
     setServices(services.map(s => 
-      s.id === serviceId ? { ...s, isEnabled: !s.isEnabled } : s
+      s.id === serviceId ? { ...s, isEnabled: newEnabled } : s
     ));
-    setHasChanges(true);
+    
+    try {
+      if (newEnabled && service.isPlatformService && !service.isVendorEnabled) {
+        // ✅ FIX: First time enabling a catalog service - ADD to vendor offerings
+        console.log(`➕ Adding catalog service ${service.serviceName} to vendor offerings...`);
+        const result = await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
+          catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
+          serviceStyle: serviceStyle,
+          customPrice: service.customPrice || service.basePrice || service.price,
+          customDuration: service.customDuration || service.duration,
+          isEnabled: true
+        }) as any;
+        
+        if (result?.success) {
+          toast.success(`${service.serviceName} added to your offerings!`);
+          // Update the service with the new vendor service ID
+          setServices(services.map(s => 
+            s.id === serviceId ? { 
+              ...s, 
+              isEnabled: true, 
+              isVendorEnabled: true,
+              id: result.vendorServiceId || result.id || s.id 
+            } : s
+          ));
+        } else {
+          throw new Error(result?.error || 'Failed to add service');
+        }
+      } else if (!newEnabled && service.isVendorEnabled) {
+        // Disabling an enabled vendor service - just update status
+        console.log(`➖ Disabling vendor service ${service.serviceName}...`);
+        await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+          is_enabled: false
+        });
+        toast.success(`${service.serviceName} disabled`);
+      } else if (newEnabled && service.isVendorEnabled) {
+        // Re-enabling a previously disabled vendor service
+        console.log(`✅ Re-enabling vendor service ${service.serviceName}...`);
+        await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+          is_enabled: true
+        });
+        toast.success(`${service.serviceName} enabled`);
+      }
+      
+      setHasChanges(false); // Changes saved immediately
+    } catch (error: any) {
+      console.error('Error toggling service:', error);
+      toast.error(error.message || 'Failed to update service');
+      // Revert optimistic update on error
+      setServices(services.map(s => 
+        s.id === serviceId ? { ...s, isEnabled: !newEnabled } : s
+      ));
+    }
   };
 
   const updateServicePrice = (serviceId: string, price: number) => {
@@ -552,8 +728,11 @@ export function VendorServiceConfigurationScreen({
   };
 
   const getStatusBadge = (service: Service) => {
+    // Only show publish status badge - the enabled/disabled state is shown by the Switch toggle
+    // This prevents duplicate UI elements for the same state
     if (!service.isEnabled) {
-      return <Badge variant="outline" className="text-gray-500">Disabled</Badge>;
+      // Don't show "Disabled" badge since the Switch already shows "Off"
+      return null;
     }
     
     switch (service.publishStatus) {
@@ -814,6 +993,23 @@ export function VendorServiceConfigurationScreen({
                 >
                   <Users className="w-4 h-4 mr-2" />
                   Assign Services to Staff
+                </Button>
+              )}
+
+              {/* PHASE 1.1: Room Management Button (for at_center services) */}
+              {serviceStyle === 'at_center' && (
+                <Button
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.location.href = `/rooms?serviceStyle=${serviceStyle}`;
+                    } else {
+                      toast.info('Please go to Room Management to configure consultation rooms');
+                    }
+                  }}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm"
+                >
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Manage Consultation Rooms
                 </Button>
               )}
               
@@ -1080,12 +1276,17 @@ export function VendorServiceConfigurationScreen({
                             )}
                           </div>
 
-                          {/* Enable Toggle */}
-                          <Switch
-                            checked={service.isEnabled}
-                            onCheckedChange={() => toggleService(service.id)}
-                            className="data-[state=checked]:bg-[#FF8C42] flex-shrink-0"
-                          />
+                          {/* Enable Toggle with Label */}
+                          <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                            <Switch
+                              checked={service.isEnabled}
+                              onCheckedChange={() => toggleService(service.id)}
+                              aria-label={service.isEnabled ? 'Disable service' : 'Enable service'}
+                            />
+                            <span className={`text-[10px] font-medium ${service.isEnabled ? 'text-[#FF8C42]' : 'text-gray-500'}`}>
+                              {service.isEnabled ? 'On' : 'Off'}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Expand/Collapse Button */}

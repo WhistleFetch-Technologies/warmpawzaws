@@ -8,10 +8,75 @@
  * 
  * DESIGN UPDATE:
  * - Enforced Warmpawz Design Philosophy (Orange Header / White Card)
+ * - Uses consistent lucide-react icons instead of emojis
  */
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Search, ChevronRight, Check, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Search, ChevronRight, Check, Loader2, AlertCircle, 
+  Stethoscope, Syringe, Bone, Heart, Activity, AlertTriangle, 
+  Scissors, Droplets, Sparkles, Hand, Wind, Brush,
+  GraduationCap, Home as HomeIcon, Users, Dog, PawPrint, Trophy,
+  MapPin, Clock, Timer, Bike, Sun,
+  Frown, Volume2, Zap, Ghost,
+  Hotel, Building, CalendarDays, Star,
+  Scale, Apple, Baby, HeartPulse
+} from 'lucide-react';
+
+// Map problem IDs to lucide-react icons for consistent display
+const getProblemIcon = (problemId: string, roleId: string): React.ReactNode => {
+  const iconMap: Record<string, any> = {
+    // Vet problems
+    'general_consultation': Stethoscope,
+    'vaccination': Syringe,
+    'dental_care': Bone,
+    'skin_allergies': Heart,
+    'digestive_issues': Activity,
+    'emergency': AlertTriangle,
+    
+    // Groomer problems
+    'full_grooming': Scissors,
+    'bath_only': Droplets,
+    'haircut_styling': Scissors,
+    'nail_care': Hand,
+    'deshedding': Wind,
+    'spa_treatment': Sparkles,
+    
+    // Trainer problems
+    'basic_obedience': GraduationCap,
+    'potty_training': HomeIcon,
+    'socialization': Users,
+    'aggression': AlertTriangle,
+    'leash_training': Dog,
+    'advanced_training': Trophy,
+    
+    // Walker problems
+    'daily_walk': Bike,
+    'puppy_walk': PawPrint,
+    'senior_walk': Clock,
+    'long_walk': MapPin,
+    
+    // Behavioral problems
+    'separation_anxiety': Frown,
+    'barking': Volume2,
+    'destructive': Zap,
+    'fear_phobia': Ghost,
+    
+    // Boarding problems
+    'short_stay': Hotel,
+    'long_stay': Building,
+    'daycare': Sun,
+    'luxury_boarding': Star,
+    
+    // Nutritionist problems
+    'weight_management': Scale,
+    'allergies_sensitivities': AlertTriangle,
+    'puppy_kitten_nutrition': Baby,
+    'senior_nutrition': HeartPulse,
+  };
+
+  const IconComponent = iconMap[problemId] || PawPrint;
+  return <IconComponent className="w-6 h-6 text-[#FF8C42]" />;
+};
 import { apiClient } from '@/lib/api-client';
 
 interface ProblemGridSelectorProps {
@@ -45,7 +110,8 @@ export function ProblemGridSelector({
   const loadProblemGrid = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<{ problems?: any[] }>(`/customer/problems?roleId=${roleId}`);
+      // Use public endpoint since problem grid is shown to all users (no auth required)
+      const data = await apiClient.get<{ problems?: any[] }>(`/public/problems?roleId=${roleId}`);
       setProblems(data.problems || []);
     } catch (error) {
       console.error('Error loading problem grid:', error);
@@ -169,12 +235,12 @@ export function ProblemGridSelector({
                   )}
                   
                   <div className="relative z-10">
-                    {/* Icon */}
+                    {/* Icon - Using lucide-react for consistency */}
                     <div className={`
-                      w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-3 transition-colors
+                      w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-colors
                       ${isSelected ? 'bg-white' : 'bg-slate-50 group-hover:bg-orange-50'}
                     `}>
-                      {problem.icon}
+                      {getProblemIcon(problem.id, roleId)}
                     </div>
                     
                     {/* Text */}

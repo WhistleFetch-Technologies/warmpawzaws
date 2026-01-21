@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { ArrowLeft, Settings, User, Building2, CreditCard, Clock, Bell, Power } from 'lucide-react';
 
 interface VendorProfile {
   id: string;
@@ -32,10 +33,11 @@ interface BankDetails {
 
 interface VendorSettingsPageProps {
   vendorId: string;
+  onBack?: () => void;
 }
 
-export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'bank' | 'schedule' | 'notifications' | 'golive'>('profile');
+export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps) {
+  const [activeTab, setActiveTab] = useState<'golive' | 'profile' | 'bank' | 'schedule' | 'notifications'>('golive');
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,328 +114,387 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500 mx-auto mb-3"></div>
+          <p className="text-gray-500 text-sm">Loading settings...</p>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div>
-      {/* Tabs */}
-      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit flex-wrap">
-        {[
-          { id: 'golive', label: 'Go Live', icon: '🚀' },
-          { id: 'profile', label: 'Profile', icon: '👤' },
-          { id: 'bank', label: 'Bank Account', icon: '🏦' },
-          { id: 'schedule', label: 'Schedule', icon: '📅' },
-          { id: 'notifications', label: 'Notifications', icon: '🔔' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-0 rounded-lg text-sm font-medium transition flex items-center gap-3 ${
-              activeTab === tab.id
-                ? 'bg-orange-500 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <span>{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
-      </div>
+  const tabs = [
+    { id: 'golive', label: 'Go Live', icon: Power },
+    { id: 'profile', label: 'Profile', icon: User },
+    { id: 'bank', label: 'Bank', icon: CreditCard },
+    { id: 'schedule', label: 'Schedule', icon: Clock },
+    { id: 'notifications', label: 'Alerts', icon: Bell },
+  ];
 
-      {/* Profile Tab */}
-      {/* Go Live Tab */}
-      {activeTab === 'golive' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm mt-4">
-          <h2 className="text-lg font-semibold mb-4">🚀 Go Live Status</h2>
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-4">
+        {/* Header */}
+        <div className="sticky top-0 z-20 bg-white border-b">
+          <div className="p-4 flex items-center gap-3">
+            {onBack && (
+              <button onClick={onBack} className="w-8 h-8 flex items-center justify-center -ml-1">
+                <ArrowLeft className="w-5 h-5 text-gray-700" />
+              </button>
+            )}
+            <div className="flex-1">
+              <h1 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-orange-500" />
+                Settings
+              </h1>
+              <p className="text-xs text-gray-500">Manage your account</p>
+            </div>
+          </div>
           
-          <div className="mb-6 p-4 rounded-xl border-2 border-dashed border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold text-gray-800">
-                  {isLive ? '✅ Your Business is LIVE' : '⏸️ Your Business is OFFLINE'}
-                </h3>
-                <p className="text-gray-600 mt-1">
-                  {isLive 
-                    ? 'Customers can discover and book your services on the WarmPawz app.' 
-                    : 'Your services are hidden from customers. Toggle to go live when ready.'}
+          {/* Tab Bar - Horizontal scrollable */}
+          <div className="overflow-x-auto scrollbar-hide">
+            <div className="flex px-2 pb-2 gap-1 min-w-max">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
+                      activeTab === tab.id
+                        ? 'bg-orange-500 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-4">
+          {/* Go Live Tab */}
+          {activeTab === 'golive' && (
+            <div className="space-y-4">
+              {/* Live Status Card */}
+              <div className={`rounded-2xl p-5 ${isLive ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="text-white">
+                    <h3 className="text-lg font-bold">
+                      {isLive ? '✅ You\'re LIVE' : '⏸️ Offline'}
+                    </h3>
+                    <p className="text-sm text-white/80 mt-1">
+                      {isLive 
+                        ? 'Customers can book your services' 
+                        : 'Hidden from customers'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleGoLiveToggle}
+                    disabled={goLiveLoading}
+                    className={`relative w-14 h-8 rounded-full transition-colors duration-300 ${
+                      isLive ? 'bg-white/30' : 'bg-white/20'
+                    } ${goLiveLoading ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-1 left-1 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 ${
+                        isLive ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Checklist */}
+              <div className="bg-white rounded-xl border p-4">
+                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Checklist</h3>
+                <div className="space-y-2.5">
+                  <ChecklistItem 
+                    label="Business Profile" 
+                    done={!!profile?.business_name}
+                    hint="Name & contact"
+                  />
+                  <ChecklistItem 
+                    label="Bank Account" 
+                    done={!!bankDetails?.account_number}
+                    hint="For payments"
+                  />
+                  <ChecklistItem 
+                    label="Operating Hours" 
+                    done={!!profile?.operating_hours}
+                    hint="Your schedule"
+                  />
+                </div>
+              </div>
+
+              {/* Tip */}
+              <div className="bg-orange-50 rounded-xl p-3 border border-orange-200">
+                <p className="text-xs text-orange-800">
+                  <strong>💡 Tip:</strong> Toggle anytime. Existing bookings stay active when offline.
                 </p>
               </div>
-              <button
-                onClick={handleGoLiveToggle}
-                disabled={goLiveLoading}
-                className={`relative inline-flex h-10 w-20 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
-                  isLive ? 'bg-green-500' : 'bg-gray-300'
-                } ${goLiveLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <span
-                  className={`inline-block h-8 w-8 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                    isLive ? 'translate-x-11' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="font-semibold text-gray-700">Before Going Live, ensure:</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className={`p-4 rounded-lg border ${profile?.business_name ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
-                <div className="flex items-center gap-2">
-                  <span>{profile?.business_name ? '✓' : '✗'}</span>
-                  <span className="font-medium">Business Profile Complete</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">Name, address, and contact details</p>
-              </div>
-              <div className={`p-4 rounded-lg border ${bankDetails?.account_number ? 'border-green-300 bg-green-50' : 'border-yellow-300 bg-yellow-50'}`}>
-                <div className="flex items-center gap-2">
-                  <span>{bankDetails?.account_number ? '✓' : '!'}</span>
-                  <span className="font-medium">Bank Account Added</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">Required for receiving payments</p>
-              </div>
-              <div className={`p-4 rounded-lg border ${profile?.operating_hours ? 'border-green-300 bg-green-50' : 'border-yellow-300 bg-yellow-50'}`}>
-                <div className="flex items-center gap-2">
-                  <span>{profile?.operating_hours ? '✓' : '!'}</span>
-                  <span className="font-medium">Operating Hours Set</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">Define your availability</p>
-              </div>
-              <div className="p-4 rounded-lg border border-blue-300 bg-blue-50">
-                <div className="flex items-center gap-2">
-                  <span>ℹ️</span>
-                  <span className="font-medium">Services Configured</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">Add services from Service Catalog</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
-            <p className="text-sm text-orange-800">
-              <strong>Tip:</strong> You can toggle your status anytime. When offline, existing bookings will still be honored, but no new bookings can be made.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Profile Tab */}
-      {activeTab === 'profile' && profile && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm mt-4">
-          <h2 className="text-lg font-semibold mb-4">Business Profile</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Business Name</label>
-              <input
-                type="text"
-                value={profile.business_name}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, business_name: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Owner Name</label>
-              <input
-                type="text"
-                value={profile.owner_name}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, owner_name: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Phone</label>
-              <input
-                type="tel"
-                value={profile.phone}
-                disabled
-                className="w-full px-0 py-0 border rounded-lg bg-gray-50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Email</label>
-              <input
-                type="email"
-                value={profile.email}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-0">Address</label>
-              <input
-                type="text"
-                value={profile.address}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, address: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">City</label>
-              <input
-                type="text"
-                value={profile.city}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, city: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">State</label>
-              <input
-                type="text"
-                value={profile.state}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, state: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Pincode</label>
-              <input
-                type="text"
-                value={profile.pincode}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, pincode: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">GST Number</label>
-              <input
-                type="text"
-                value={profile.gst_number || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, gst_number: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">PAN Number</label>
-              <input
-                type="text"
-                value={profile.pan_number || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, pan_number: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Operating Hours</label>
-              <input
-                type="text"
-                value={profile.operating_hours || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, operating_hours: e.target.value })}
-                placeholder="e.g., Mon-Sat 9:00 AM - 8:00 PM"
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-0">Description</label>
-              <textarea
-                value={profile.description || ''}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, description: e.target.value })}
-                rows={3}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-          </div>
-          <button
-            onClick={handleSaveProfile}
-            disabled={saving}
-            className="mt-0 px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Profile'}
-          </button>
-        </div>
-      )}
-
-      {/* Bank Account Tab */}
-      {activeTab === 'bank' && (
-        <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Bank Account Details</h2>
-            {bankDetails?.is_verified && (
-              <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-3">
-                ✓ Verified
-              </span>
-            )}
-          </div>
-          
-          {!bankDetails?.is_verified && (
-            <div className="mb-4 p-0 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
-              ⚠️ Bank account verification is required to receive payouts
             </div>
           )}
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Account Holder Name</label>
-              <input
-                type="text"
-                value={bankDetails?.account_holder_name || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, account_holder_name: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Account Number</label>
-              <input
-                type="text"
-                value={bankDetails?.account_number || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, account_number: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">IFSC Code</label>
-              <input
-                type="text"
-                value={bankDetails?.ifsc_code || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, ifsc_code: e.target.value.toUpperCase() })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">Bank Name</label>
-              <input
-                type="text"
-                value={bankDetails?.bank_name || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, bank_name: e.target.value })}
-                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-          </div>
-          <button
-            onClick={handleSaveBankDetails}
-            disabled={saving}
-            className="mt-0 px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : bankDetails?.is_verified ? 'Update & Re-verify' : 'Save & Verify'}
-          </button>
-        </div>
-      )}
+          {/* Profile Tab */}
+          {activeTab === 'profile' && profile && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border p-4">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-orange-500" />
+                  Business Info
+                </h3>
+                
+                <div className="space-y-4">
+                  <FormField 
+                    label="Business Name"
+                    value={profile.business_name}
+                    onChange={(v) => setProfile({ ...profile, business_name: v })}
+                  />
+                  <FormField 
+                    label="Owner Name"
+                    value={profile.owner_name}
+                    onChange={(v) => setProfile({ ...profile, owner_name: v })}
+                  />
+                  <FormField 
+                    label="Phone"
+                    value={profile.phone}
+                    disabled
+                  />
+                  <FormField 
+                    label="Email"
+                    value={profile.email}
+                    type="email"
+                    onChange={(v) => setProfile({ ...profile, email: v })}
+                  />
+                  <FormField 
+                    label="Address"
+                    value={profile.address}
+                    onChange={(v) => setProfile({ ...profile, address: v })}
+                    multiline
+                  />
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField 
+                      label="City"
+                      value={profile.city}
+                      onChange={(v) => setProfile({ ...profile, city: v })}
+                    />
+                    <FormField 
+                      label="State"
+                      value={profile.state}
+                      onChange={(v) => setProfile({ ...profile, state: v })}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField 
+                      label="Pincode"
+                      value={profile.pincode}
+                      onChange={(v) => setProfile({ ...profile, pincode: v })}
+                    />
+                    <FormField 
+                      label="GST Number"
+                      value={profile.gst_number || ''}
+                      onChange={(v) => setProfile({ ...profile, gst_number: v })}
+                      placeholder="Optional"
+                    />
+                  </div>
+                  
+                  <FormField 
+                    label="PAN Number"
+                    value={profile.pan_number || ''}
+                    onChange={(v) => setProfile({ ...profile, pan_number: v })}
+                    placeholder="Optional"
+                  />
+                  
+                  <FormField 
+                    label="Operating Hours"
+                    value={profile.operating_hours || ''}
+                    onChange={(v) => setProfile({ ...profile, operating_hours: v })}
+                    placeholder="e.g., Mon-Sat 9AM - 6PM"
+                  />
+                  
+                  <FormField 
+                    label="Description"
+                    value={profile.description || ''}
+                    onChange={(v) => setProfile({ ...profile, description: v })}
+                    placeholder="Tell customers about your business..."
+                    multiline
+                  />
+                </div>
+              </div>
 
-      {/* Schedule Tab */}
-      {activeTab === 'schedule' && (
-        <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Working Schedule</h2>
-          <ScheduleManager vendorId={vendorId} />
-        </div>
-      )}
+              <button
+                onClick={handleSaveProfile}
+                disabled={saving}
+                className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors"
+              >
+                {saving ? 'Saving...' : 'Save Profile'}
+              </button>
+            </div>
+          )}
 
-      {/* Notifications Tab */}
-      {activeTab === 'notifications' && (
-        <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Notification Preferences</h2>
-          <NotificationPreferences vendorId={vendorId} />
+          {/* Bank Tab */}
+          {activeTab === 'bank' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-orange-500" />
+                    Bank Account
+                  </h3>
+                  {bankDetails?.is_verified && (
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                      ✓ Verified
+                    </span>
+                  )}
+                </div>
+                
+                {!bankDetails?.is_verified && (
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700">
+                    ⚠️ Bank verification required for payouts
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <FormField 
+                    label="Account Holder Name"
+                    value={bankDetails?.account_holder_name || ''}
+                    onChange={(v) => setBankDetails({ ...bankDetails!, account_holder_name: v })}
+                  />
+                  <FormField 
+                    label="Account Number"
+                    value={bankDetails?.account_number || ''}
+                    onChange={(v) => setBankDetails({ ...bankDetails!, account_number: v })}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField 
+                      label="IFSC Code"
+                      value={bankDetails?.ifsc_code || ''}
+                      onChange={(v) => setBankDetails({ ...bankDetails!, ifsc_code: v.toUpperCase() })}
+                    />
+                    <FormField 
+                      label="Bank Name"
+                      value={bankDetails?.bank_name || ''}
+                      onChange={(v) => setBankDetails({ ...bankDetails!, bank_name: v })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSaveBankDetails}
+                disabled={saving}
+                className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors"
+              >
+                {saving ? 'Saving...' : bankDetails?.is_verified ? 'Update & Re-verify' : 'Save & Verify'}
+              </button>
+            </div>
+          )}
+
+          {/* Schedule Tab */}
+          {activeTab === 'schedule' && (
+            <div className="bg-white rounded-xl border p-4">
+              <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-orange-500" />
+                Working Schedule
+              </h3>
+              <ScheduleManager vendorId={vendorId} />
+            </div>
+          )}
+
+          {/* Notifications Tab */}
+          {activeTab === 'notifications' && (
+            <div className="bg-white rounded-xl border p-4">
+              <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-orange-500" />
+                Notification Preferences
+              </h3>
+              <NotificationPreferences vendorId={vendorId} />
+            </div>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Reusable Form Field Component
+function FormField({ 
+  label, 
+  value, 
+  onChange, 
+  type = 'text',
+  disabled = false,
+  placeholder,
+  multiline = false
+}: { 
+  label: string;
+  value: string;
+  onChange?: (value: string) => void;
+  type?: string;
+  disabled?: boolean;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  const baseClasses = "w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-colors";
+  const disabledClasses = disabled ? "bg-gray-50 text-gray-500" : "bg-white";
+  
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1.5">{label}</label>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          disabled={disabled}
+          placeholder={placeholder}
+          rows={3}
+          className={`${baseClasses} ${disabledClasses} resize-none`}
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          disabled={disabled}
+          placeholder={placeholder}
+          className={`${baseClasses} ${disabledClasses}`}
+        />
       )}
     </div>
   );
 }
 
+// Checklist Item Component
+function ChecklistItem({ label, done, hint }: { label: string; done: boolean; hint: string }) {
+  return (
+    <div className={`flex items-center gap-3 p-2.5 rounded-lg ${done ? 'bg-green-50' : 'bg-gray-50'}`}>
+      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+        done ? 'bg-green-500 text-white' : 'bg-gray-300 text-white'
+      }`}>
+        {done ? '✓' : '!'}
+      </div>
+      <div className="flex-1">
+        <p className={`text-sm font-medium ${done ? 'text-green-800' : 'text-gray-700'}`}>{label}</p>
+        <p className="text-xs text-gray-500">{hint}</p>
+      </div>
+    </div>
+  );
+}
+
+// Schedule Manager Component
 function ScheduleManager({ vendorId }: { vendorId: string }) {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const daysFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const [schedule, setSchedule] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadSchedule();
@@ -446,7 +507,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
         setSchedule(response.schedule);
       } else {
         // Default schedule
-        setSchedule(days.map((_, idx) => ({
+        setSchedule(daysFull.map((_, idx) => ({
           day_of_week: idx,
           is_open: idx !== 0, // Closed on Sunday
           open_time: '09:00',
@@ -455,30 +516,47 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
       }
     } catch (err) {
       console.error('Error loading schedule:', err);
+      // Set default schedule on error
+      setSchedule(daysFull.map((_, idx) => ({
+        day_of_week: idx,
+        is_open: idx !== 0,
+        open_time: '09:00',
+        close_time: '18:00',
+      })));
     } finally {
       setLoading(false);
     }
   };
 
   const handleSave = async () => {
+    setSaving(true);
     try {
       await apiClient.put(`/vendor/${vendorId}/schedule`, { schedule });
       alert('Schedule saved successfully');
     } catch (err) {
       alert('Failed to save schedule');
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
       {schedule.map((day, idx) => (
-        <div key={idx} className="flex items-center gap-4 py-0 border-b">
-          <div className="w-28">
-            <span className="font-medium text-gray-700">{days[day.day_of_week]}</span>
+        <div key={idx} className="flex items-center gap-2 py-2 border-b border-gray-100 last:border-0">
+          <div className="w-10">
+            <span className="text-xs font-semibold text-gray-600">{days[day.day_of_week]}</span>
           </div>
-          <label className="flex items-center gap-3 cursor-pointer">
+          
+          <label className="flex items-center cursor-pointer">
             <input
               type="checkbox"
               checked={day.is_open}
@@ -487,12 +565,12 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
                 newSchedule[idx].is_open = e.target.checked;
                 setSchedule(newSchedule);
               }}
-              className="w-4 h-4 accent-orange-500"
+              className="w-4 h-4 accent-orange-500 rounded"
             />
-            <span className="text-sm text-gray-500">Open</span>
           </label>
-          {day.is_open && (
-            <>
+          
+          {day.is_open ? (
+            <div className="flex items-center gap-1.5 flex-1">
               <input
                 type="time"
                 value={day.open_time}
@@ -501,9 +579,9 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
                   newSchedule[idx].open_time = e.target.value;
                   setSchedule(newSchedule);
                 }}
-                className="px-0 py-0 border rounded"
+                className="flex-1 px-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
-              <span className="text-gray-400">to</span>
+              <span className="text-xs text-gray-400">to</span>
               <input
                 type="time"
                 value={day.close_time}
@@ -512,25 +590,27 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
                   newSchedule[idx].close_time = e.target.value;
                   setSchedule(newSchedule);
                 }}
-                className="px-0 py-0 border rounded"
+                className="flex-1 px-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
-            </>
-          )}
-          {!day.is_open && (
-            <span className="text-sm text-gray-400 italic">Closed</span>
+            </div>
+          ) : (
+            <span className="text-xs text-gray-400 italic flex-1">Closed</span>
           )}
         </div>
       ))}
+      
       <button
         onClick={handleSave}
-        className="mt-4 px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+        disabled={saving}
+        className="w-full mt-4 py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors text-sm"
       >
-        Save Schedule
+        {saving ? 'Saving...' : 'Save Schedule'}
       </button>
     </div>
   );
 }
 
+// Notification Preferences Component
 function NotificationPreferences({ vendorId }: { vendorId: string }) {
   const [prefs, setPrefs] = useState({
     newBooking: true,
@@ -542,78 +622,85 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
     emailEnabled: true,
     pushEnabled: true,
   });
+  const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    setSaving(true);
     try {
       await apiClient.put(`/vendor/${vendorId}/notification-preferences`, prefs);
       alert('Notification preferences saved');
     } catch (err) {
       alert('Failed to save preferences');
+    } finally {
+      setSaving(false);
     }
   };
 
+  const notificationTypes = [
+    { key: 'newBooking', label: 'New Bookings', icon: '📅' },
+    { key: 'bookingReminder', label: 'Reminders', icon: '⏰' },
+    { key: 'cancellations', label: 'Cancellations', icon: '❌' },
+    { key: 'payments', label: 'Payments', icon: '💰' },
+    { key: 'promotions', label: 'Updates', icon: '📢' },
+  ];
+
+  const channels = [
+    { key: 'smsEnabled', label: 'SMS', icon: '📱' },
+    { key: 'emailEnabled', label: 'Email', icon: '✉️' },
+    { key: 'pushEnabled', label: 'Push', icon: '🔔' },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Notification Types */}
       <div>
-        <h3 className="font-medium text-gray-900 mb-0">Notification Types</h3>
-        <div className="space-y-3">
-          {[
-            { key: 'newBooking', label: 'New Bookings', desc: 'Get notified when a new booking is made' },
-            { key: 'bookingReminder', label: 'Booking Reminders', desc: 'Reminders for upcoming bookings' },
-            { key: 'cancellations', label: 'Cancellations', desc: 'Alerts when bookings are cancelled' },
-            { key: 'payments', label: 'Payments & Settlements', desc: 'Payment received and payout updates' },
-            { key: 'promotions', label: 'Platform Updates', desc: 'Tips, news, and promotional updates' },
-          ].map((item) => (
-            <label key={item.key} className="flex items-center justify-between p-0 bg-gray-50 rounded-lg cursor-pointer">
-              <div>
-                <span className="font-medium text-gray-700">{item.label}</span>
-                <p className="text-sm text-gray-500">{item.desc}</p>
+        <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Notify me about</h4>
+        <div className="space-y-2">
+          {notificationTypes.map((item) => (
+            <label key={item.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+              <div className="flex items-center gap-2">
+                <span>{item.icon}</span>
+                <span className="text-sm font-medium text-gray-700">{item.label}</span>
               </div>
               <input
                 type="checkbox"
                 checked={(prefs as any)[item.key]}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrefs({ ...prefs, [item.key]: e.target.checked })}
-                className="w-5 h-5 accent-orange-500"
+                className="w-5 h-5 accent-orange-500 rounded"
               />
             </label>
           ))}
         </div>
       </div>
 
+      {/* Channels */}
       <div>
-        <h3 className="font-medium text-gray-900 mb-0">Channels</h3>
-        <div className="flex gap-4">
-          {[
-            { key: 'smsEnabled', label: 'SMS', icon: '📱' },
-            { key: 'emailEnabled', label: 'Email', icon: '✉️' },
-            { key: 'pushEnabled', label: 'Push', icon: '🔔' },
-          ].map((channel) => (
-            <label
+        <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Channels</h4>
+        <div className="grid grid-cols-3 gap-2">
+          {channels.map((channel) => (
+            <button
               key={channel.key}
-              className={`flex-1 flex items-center justify-center gap-3 p-0 rounded-lg cursor-pointer border-2 transition ${
-                (prefs as any)[channel.key] ? 'border-orange-500 bg-orange-50' : 'border-gray-200'
+              onClick={() => setPrefs({ ...prefs, [channel.key]: !(prefs as any)[channel.key] })}
+              className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
+                (prefs as any)[channel.key] 
+                  ? 'border-orange-500 bg-orange-50 text-orange-600' 
+                  : 'border-gray-200 bg-white text-gray-500'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={(prefs as any)[channel.key]}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrefs({ ...prefs, [channel.key]: e.target.checked })}
-                className="hidden"
-              />
-              <span>{channel.icon}</span>
-              <span className="font-medium">{channel.label}</span>
-            </label>
+              <span className="text-lg">{channel.icon}</span>
+              <span className="text-xs font-medium">{channel.label}</span>
+            </button>
           ))}
         </div>
       </div>
 
       <button
         onClick={handleSave}
-        className="px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+        disabled={saving}
+        className="w-full py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors text-sm"
       >
-        Save Preferences
+        {saving ? 'Saving...' : 'Save Preferences'}
       </button>
     </div>
   );
 }
-

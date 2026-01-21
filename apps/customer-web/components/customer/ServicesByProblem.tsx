@@ -202,7 +202,7 @@ export function ServicesByProblem({
                     {service.distance !== undefined && (
                       <span className="flex items-center gap-1">
                         <MapPin className="w-4 h-4" />
-                        {service.distance.toFixed(1)} km
+                        {Number(service.distance || 0).toFixed(1)} km
                       </span>
                     )}
 

@@ -23,7 +23,7 @@
 
 import { Hono } from 'hono';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
-import { query, select, withTransaction } from '../database/rds-connection';
+import { query, select, insert, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
 import { calculateStaffETA } from '../utils/commute-time-calculator';
@@ -146,6 +146,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       idempotencyKey,
     } = validationResult.data;
 
+    // ✅ Phase 2.3: Extract roomId and promotionId from raw body (may not be in schema)
+    const roomId = body.roomId || body.room_id;
+    const promotionId = body.promotionId || body.promotion_id;
+
     // Check idempotency key first
     if (idempotencyKey) {
       const existing = await checkIdempotencyKey(idempotencyKey);
@@ -164,16 +168,134 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
-    // Validate service exists
-    const services = await select('services', { id: serviceId });
-    let service = services.length > 0 ? services[0] : null;
+    // Validate service exists and belongs to vendor
+    // ✅ CRITICAL FIX: Frontend sends serviceId which is service.service_id (base service UUID)
+    // NOT vendor_services.id. We need to look up by service_id column in vendor_services table.
+    console.log(`[BOOKING] Looking up service ${serviceId} for vendor ${vendorId}`);
     
-    if (!service) {
-      const vendorServices = await select('vendor_services', { id: serviceId });
-      if (vendorServices.length === 0) {
-        return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+    let service: any = null; // Initialize service variable
+    
+    // PRIMARY LOOKUP: Check vendor_services by service_id first (most common case)
+    // Match the same criteria as customer clinic services endpoint:
+    // - is_enabled = true (or NULL)
+    // - publish_status = 'published'
+    let vendorServicesResult = await query(
+      `SELECT * FROM vendor_services 
+       WHERE service_id = $1::uuid 
+       AND vendor_id = $2::uuid 
+       AND (is_enabled = true OR is_enabled IS NULL)
+       AND publish_status = 'published'
+       LIMIT 1`,
+      [serviceId, vendorId]
+    );
+    
+    if (vendorServicesResult.rows.length > 0) {
+      console.log(`[BOOKING] Found vendor_service by service_id (primary lookup)`);
+      service = vendorServicesResult.rows[0];
+    } else {
+      // FALLBACK 1: Try without publish_status check
+      console.log(`[BOOKING] Service not found with publish_status='published', trying without it`);
+      vendorServicesResult = await query(
+        `SELECT * FROM vendor_services 
+         WHERE service_id = $1::uuid 
+         AND vendor_id = $2::uuid 
+         AND (is_enabled = true OR is_enabled IS NULL)
+         LIMIT 1`,
+        [serviceId, vendorId]
+      );
+      
+      if (vendorServicesResult.rows.length > 0) {
+        console.log(`[BOOKING] Found vendor_service by service_id (without publish_status check)`);
+        service = vendorServicesResult.rows[0];
+      } else {
+        // FALLBACK 2: Try without any status checks
+        console.log(`[BOOKING] Service not found with status checks, trying without any checks`);
+        vendorServicesResult = await query(
+          `SELECT * FROM vendor_services 
+           WHERE service_id = $1::uuid 
+           AND vendor_id = $2::uuid 
+           LIMIT 1`,
+          [serviceId, vendorId]
+        );
+        
+        if (vendorServicesResult.rows.length > 0) {
+          console.log(`[BOOKING] Found vendor_service by service_id (no status checks)`);
+          service = vendorServicesResult.rows[0];
+        } else {
+          // FALLBACK 3: Check if it's a vendor_services.id (direct lookup)
+          console.log(`[BOOKING] Service not found by service_id, checking if it's a vendor_services.id`);
+          let vendorServiceByIdResult = await query(
+            `SELECT * FROM vendor_services 
+             WHERE id = $1::uuid 
+             AND vendor_id = $2::uuid 
+             LIMIT 1`,
+            [serviceId, vendorId]
+          );
+          
+          if (vendorServiceByIdResult.rows.length > 0) {
+            console.log(`[BOOKING] Found vendor_service by id (direct lookup)`);
+            service = vendorServiceByIdResult.rows[0];
+          } else {
+            // FALLBACK 4: Check base services table
+            const services = await select('services', { id: serviceId });
+            console.log(`[BOOKING] Found ${services.length} services in services table`);
+            let baseService = services.length > 0 ? services[0] : null;
+            
+            if (baseService) {
+              // Base service exists, but no vendor_services entry found
+              // This shouldn't happen if the service was fetched from the customer clinic endpoint
+              console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${vendorId}`);
+              return this.error('Service not found for this vendor', 404, 'NOT_FOUND', undefined, requestId);
+            } else {
+              // Service doesn't exist in base services table either
+              console.error(`[BOOKING] Service ${serviceId} not found in services table or vendor_services table`);
+              return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+            }
+          }
+        }
       }
-      service = vendorServices[0];
+    }
+    
+    // Final check: if service still not found after all fallbacks
+    if (!service) {
+      // Try without vendor_id check for better error message
+      console.log(`[BOOKING] Checking if service exists for any vendor (without vendor_id check)`);
+      const anyVendorServiceResult = await query(
+        `SELECT * FROM vendor_services WHERE service_id = $1::uuid LIMIT 1`,
+        [serviceId]
+      );
+      const anyVendorService = anyVendorServiceResult.rows;
+      console.log(`[BOOKING] Found ${anyVendorService.length} vendor_services with service_id=${serviceId} (any vendor)`);
+      
+      if (anyVendorService.length === 0) {
+        console.error(`[BOOKING] Service ${serviceId} not found in vendor_services table (no vendor has this service)`);
+        return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+      } else {
+        const foundVendorId = anyVendorService[0].vendor_id || anyVendorService[0].vendorId;
+        console.error(`[BOOKING] Service ${serviceId} exists but belongs to vendor ${foundVendorId}, not ${vendorId}`);
+        return this.error('Service does not belong to this vendor', 404, 'NOT_FOUND', undefined, requestId);
+      }
+    }
+    
+    // Validate service state/status (for all service lookup paths)
+    if (service) {
+      console.log(`[BOOKING] Service found: id=${service.id}, vendor_id=${service.vendor_id || service.vendorId}, state=${service.state}, status=${service.status}`);
+      console.log(`[BOOKING] Service object keys: ${Object.keys(service).join(', ')}`);
+      console.log(`[BOOKING] Will use service.id=${service.id} for booking insert (instead of serviceId=${serviceId})`);
+      
+      // Check if service is active/live (if state/status fields exist)
+      if (service.state && service.state !== 'active' && service.state !== 'live') {
+        console.error(`[BOOKING] Service ${serviceId} state is ${service.state}, not active/live`);
+        return this.error(`Service is not available (state: ${service.state})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+      }
+      if (service.status && service.status !== 'active' && service.status !== 'live') {
+        console.error(`[BOOKING] Service ${serviceId} status is ${service.status}, not active/live`);
+        return this.error(`Service is not available (status: ${service.status})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+      }
+      if (service.is_active === false || service.is_live === false) {
+        console.error(`[BOOKING] Service ${serviceId} is not active/live`);
+        return this.error('Service is not currently available', 400, 'VALIDATION_ERROR', undefined, requestId);
+      }
     }
 
     // Get vendor's role to validate service availability
@@ -265,20 +387,126 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Create booking
+        // ✅ CRITICAL FIX: Foreign key constraint expects services.id (base service UUID)
+        // If service doesn't exist in services table, we need to handle custom services
+        if (!service) {
+          console.error(`[BOOKING] Service object is missing. serviceId=${serviceId}`);
+          throw new Error('Service object is invalid');
+        }
+        
+        // Check if base service exists in services table (required for foreign key)
+        const baseServiceId = service.service_id || serviceId;
+        console.log(`[BOOKING] Checking if base service ${baseServiceId} exists in services table for foreign key constraint`);
+        const baseServices = await select('services', { id: baseServiceId });
+        
+        let finalServiceId: string;
+        if (baseServices.length === 0) {
+          // Custom service - doesn't exist in services table
+          // Create service in services table for custom services to satisfy foreign key
+          console.warn(`[BOOKING] Base service ${baseServiceId} not found in services table. Creating service entry for custom service.`);
+          
+          try {
+            await insert('services', {
+              id: baseServiceId,
+              name: service.service_name || service.name || 'Custom Service',
+              description: service.custom_description || service.description || '',
+              category: service.category || 'custom',
+              price: service.price || service.custom_price || 0,
+              duration_minutes: service.duration_minutes || service.custom_duration || 30,
+              vendor_id: vendorId,
+              is_active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            console.log(`[BOOKING] Created service entry in services table: ${baseServiceId}`);
+          } catch (insertError: any) {
+            // If insert fails (e.g., duplicate key), service might have been created concurrently
+            console.warn(`[BOOKING] Failed to create service entry (may already exist): ${insertError.message}`);
+          }
+          
+          finalServiceId = baseServiceId;
+        } else {
+          // Base service exists - use it for foreign key
+          console.log(`[BOOKING] Base service ${baseServiceId} found in services table. Using it for foreign key.`);
+          finalServiceId = baseServiceId;
+        }
+        
+        console.log(`[BOOKING] Inserting booking with service_id=${finalServiceId} (for foreign key constraint)`);
+        
+        // ✅ FIX GAP PM-1: Check for active unlimited subscription
+        let subscriptionId: string | null = null;
+        let isSubscriptionBooking = false;
+        let finalAmount = amount || 0;
+        
+        try {
+          // Get service category for subscription matching
+          const serviceCategory = service.category || baseServices[0]?.category || null;
+          
+          const activeSubscriptions = await query(
+            `SELECT * FROM customer_subscriptions 
+             WHERE customer_id = $1 
+             AND status = 'active'
+             AND start_date <= CURRENT_DATE
+             AND end_date >= CURRENT_DATE
+             AND plan_type = 'unlimited'
+             AND (service_category IS NULL OR service_category = $2)
+             AND (vendor_id IS NULL OR vendor_id = $3)
+             AND (bookings_limit IS NULL OR bookings_used < bookings_limit)
+             ORDER BY 
+               CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
+               CASE WHEN service_category = $2 THEN 0 ELSE 1 END
+             LIMIT 1`,
+            [customerId, serviceCategory, vendorId]
+          );
+          
+          const subscriptions = (activeSubscriptions as any).rows || [];
+          
+          if (subscriptions.length > 0) {
+            const subscription = subscriptions[0];
+            subscriptionId = subscription.id;
+            isSubscriptionBooking = true;
+            finalAmount = 0; // Zero payment for unlimited subscription
+            
+            // Increment usage count
+            await query(
+              `UPDATE customer_subscriptions 
+               SET bookings_used = COALESCE(bookings_used, 0) + 1, updated_at = NOW()
+               WHERE id = $1`,
+              [subscriptionId]
+            );
+            
+            console.log(`[BOOKING] ✅ Active unlimited subscription found: ${subscriptionId}. Setting amount to ₹0.`);
+          }
+        } catch (subError) {
+          console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError);
+        }
+        
         const bookingData: Record<string, any> = {
           customer_id: customerId,
           vendor_id: vendorId,
-          service_id: serviceId,
+          service_id: finalServiceId, // Use base service UUID for foreign key constraint (references services.id)
           booking_date: bookingDate,
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
           address: address,
           base_price: amount || 0,
-          total_amount: amount || 0,
+          total_amount: finalAmount, // ✅ Use finalAmount (may be 0 for subscriptions)
           status: 'pending',
-          payment_status: 'pending',
+          payment_status: isSubscriptionBooking ? 'paid' : 'pending', // ✅ Mark as paid for subscription
           notes: petId ? `Pet ID: ${petId}` : null,
+          subscription_id: subscriptionId, // ✅ Track subscription used
+          subscription_booking: isSubscriptionBooking, // ✅ Flag for subscription booking
         };
+
+        // ✅ Phase 2.3: Add roomId if provided (for boarding/resort bookings)
+        if (roomId) {
+          bookingData.room_id = roomId;
+        }
+
+        // ✅ Phase 2.3: Add promotionId if provided (for applied promotions)
+        if (promotionId) {
+          bookingData.promotion_id = promotionId;
+        }
 
         if (staffId) {
           bookingData.staff_id = staffId;
@@ -394,7 +622,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       return this.success(response, requestId);
 
     } catch (error: unknown) {
-      if (error.message === 'SLOT_CONFLICT' || error.code === '55P03') {
+      const err = error as any;
+      const errorMessage = err?.message || 'Unknown error';
+      
+      // Slot conflict
+      if (errorMessage === 'SLOT_CONFLICT' || err?.code === '55P03') {
         return this.error(
           'This time slot is already booked. Please select a different time.',
           409,
@@ -403,7 +635,57 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           requestId
         );
       }
-      throw error;
+      
+      // Service not found / invalid
+      if (errorMessage.includes('Service') || errorMessage.includes('service')) {
+        return this.error(errorMessage, 404, 'SERVICE_NOT_FOUND', undefined, requestId);
+      }
+      
+      // Foreign key constraint violation (missing required data)
+      if (err?.code === '23503' || errorMessage.includes('foreign key') || errorMessage.includes('constraint')) {
+        console.error('[BOOKING] Foreign key constraint error:', errorMessage);
+        return this.error(
+          'Required data missing. Please ensure customer, vendor, and service exist.',
+          400,
+          'VALIDATION_ERROR',
+          { originalError: errorMessage },
+          requestId
+        );
+      }
+      
+      // Table doesn't exist
+      if (errorMessage.includes('does not exist') || errorMessage.includes('relation')) {
+        console.error('[BOOKING] Table missing:', errorMessage);
+        return this.error(
+          'System configuration error. Please contact support.',
+          500,
+          'SYSTEM_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      
+      // Database connection error
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('timeout') || errorMessage.includes('connection')) {
+        console.error('[BOOKING] Database connection error:', errorMessage);
+        return this.error(
+          'Unable to connect to database. Please try again later.',
+          503,
+          'DATABASE_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      
+      // Generic error - log and return structured error
+      console.error('[BOOKING] Unexpected error during booking creation:', error);
+      return this.error(
+        'Failed to create booking. Please try again.',
+        500,
+        'INTERNAL_ERROR',
+        { details: errorMessage },
+        requestId
+      );
     }
   }
 }
@@ -417,13 +699,101 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Booking ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
-    const bookings = await select('bookings', { id: bookingId });
+    // ✅ FIX: Get enriched booking data with service, vendor, customer, and pet info
+    const bookingResult = await query(
+      `SELECT b.*,
+              s.name as service_name,
+              s.category as service_category,
+              s.description as service_description,
+              s.duration_minutes as service_duration,
+              v.business_name as vendor_name,
+              v.owner_name as vendor_owner_name,
+              v.phone as vendor_phone,
+              v.email as vendor_email,
+              v.address as vendor_address,
+              v.city as vendor_city,
+              v.state as vendor_state,
+              v.pincode as vendor_pincode,
+              v.latitude as vendor_latitude,
+              v.longitude as vendor_longitude,
+              c.full_name as customer_name,
+              c.phone as customer_phone,
+              c.email as customer_email,
+              c.address as customer_address
+       FROM bookings b
+       LEFT JOIN services s ON b.service_id = s.id
+       LEFT JOIN vendors v ON b.vendor_id = v.id
+       LEFT JOIN customers c ON b.customer_id = c.id
+       WHERE b.id = $1`,
+      [bookingId]
+    );
     
-    if (bookings.length === 0) {
+    if (bookingResult.rows.length === 0) {
       return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
     }
 
-    return this.success({ booking: bookings[0] }, requestId);
+    const booking = bookingResult.rows[0];
+    
+    // Try to get pet info from notes field (format: "Pet ID: uuid")
+    let petInfo = null;
+    if (booking.notes && booking.notes.includes('Pet ID:')) {
+      const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]+)/i);
+      if (petIdMatch) {
+        const petId = petIdMatch[1];
+        const petResult = await query(
+          `SELECT id, name, species, breed, age_years as age, weight_kg as weight, profile_photo_url as photo_url FROM pets WHERE id = $1`,
+          [petId]
+        ).catch(() => ({ rows: [] }));
+        if (petResult.rows.length > 0) {
+          petInfo = petResult.rows[0];
+        }
+      }
+    }
+
+    // Build enriched response
+    const enrichedBooking = {
+      ...booking,
+      // Service info
+      service: booking.service_name ? {
+        id: booking.service_id,
+        name: booking.service_name,
+        category: booking.service_category,
+        description: booking.service_description,
+        duration: booking.service_duration || booking.duration_minutes,
+      } : null,
+      // Vendor info
+      vendor: booking.vendor_name ? {
+        id: booking.vendor_id,
+        businessName: booking.vendor_name,
+        ownerName: booking.vendor_owner_name,
+        phone: booking.vendor_phone,
+        email: booking.vendor_email,
+        address: booking.vendor_address,
+        city: booking.vendor_city,
+        state: booking.vendor_state,
+        pincode: booking.vendor_pincode,
+        latitude: booking.vendor_latitude,
+        longitude: booking.vendor_longitude,
+      } : null,
+      // Customer info
+      customer: booking.customer_name ? {
+        id: booking.customer_id,
+        name: booking.customer_name,
+        phone: booking.customer_phone,
+        email: booking.customer_email,
+        address: booking.customer_address,
+      } : null,
+      // Pet info
+      pet: petInfo,
+      // Computed fields for convenience
+      serviceName: booking.service_name,
+      vendorName: booking.vendor_name,
+      customerName: booking.customer_name,
+      petName: petInfo?.name || null,
+      amount: parseFloat(booking.total_amount || '0'),
+    };
+
+    return this.success({ booking: enrichedBooking }, requestId);
   }
 }
 
@@ -466,7 +836,8 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       }
     } catch (error: unknown) {
       // If query fails, return empty history
-      console.warn('[Booking History] Error querying status history:', error.message);
+      const err = error as any;
+      console.warn('[Booking History] Error querying status history:', err?.message || error);
       history = [];
     }
 
@@ -564,6 +935,57 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
         values
       );
     });
+
+    // ✅ AUTO-INITIATE GPS TRACKING for at_home services when status changes to "in_progress"
+    if (status === 'in_progress' && (currentBooking.service_style === 'at_home' || currentBooking.service_type === 'at_home')) {
+      try {
+        console.log(`🚀 [GPS-AUTO-INIT] Auto-initiating GPS tracking for booking ${bookingId}`);
+        
+        // Check if tracking session already exists
+        const existingSessions = await select('gps_tracking_sessions', {
+          booking_id: bookingId,
+          status: 'active',
+        });
+
+        if (existingSessions.length === 0) {
+          // Create tracking session
+          const newSessions = await insert('gps_tracking_sessions', {
+            booking_id: bookingId,
+            vendor_id: currentBooking.vendor_id,
+            status: 'active',
+            started_at: new Date(),
+            last_update: new Date(),
+            auto_initiated: true, // Mark as auto-initiated
+          });
+
+          console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
+
+          // Send notification to customer
+          try {
+            const { publishNotification } = await import('../utils/sns-client');
+            await publishNotification({
+              userId: currentBooking.customer_id,
+              userType: 'customer',
+              type: 'booking_tracking_started',
+              title: 'Service Provider is on the way!',
+              message: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+              data: {
+                bookingId,
+                trackingSessionId: newSessions[0].id,
+              },
+            });
+          } catch (notifError) {
+            console.error('Failed to send tracking notification:', notifError);
+            // Non-critical, continue
+          }
+        } else {
+          console.log(`ℹ️  [GPS-AUTO-INIT] Tracking session already exists for booking ${bookingId}`);
+        }
+      } catch (gpsError) {
+        console.error('❌ [GPS-AUTO-INIT] Failed to auto-initiate GPS tracking:', gpsError);
+        // Non-critical error, don't fail the status update
+      }
+    }
 
     // Log status change
     await logBookingStatusChange(
@@ -751,9 +1173,10 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         },
       }, requestId);
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error calculating refund preview:', error);
       return this.error(
-        error.message || 'Failed to calculate refund preview',
+        err?.message || 'Failed to calculate refund preview',
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -776,6 +1199,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const reason = body.reason || body.cancellationReason || 'Customer cancellation';
     const actorId = context.userId || body.customerId || body.actorId;
     const actorType = context.userRole || body.actorType || 'customer';
+    const refundMethod = body.refundMethod || 'wallet'; // 'wallet' or 'original'
 
     // Get current booking
     const existingBookings = await select('bookings', { id: bookingId });
@@ -852,41 +1276,132 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          // Get payment for refund
-          const payments = await query(
-            `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
-            [bookingId]
-          );
-
-          if (payments.rows.length > 0) {
-            const paymentId = payments.rows[0].id;
-            
-            // Create refund request (refunds table uses refund_status, not status)
-            const refundRequests = await query(
-              `INSERT INTO refunds (
-                payment_id,
-                booking_id, 
-                customer_id, 
-                vendor_id,
-                refund_amount,
-                refund_reason, 
-                refund_status,
-                requested_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW()) 
-              RETURNING *`,
-              [
-                paymentId,
-                bookingId,
-                currentBooking.customer_id,
-                currentBooking.vendor_id || null,
-                currentBooking.total_amount,
-                `Booking cancellation: ${reason}`
-              ]
+          // Calculate refund amount using policy
+          const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
+          const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+          
+          // Get refund rules
+          const rulesResult = await query(
+            `SELECT * FROM booking_cancellation_rules
+             WHERE (vendor_id = $1 OR vendor_id IS NULL)
+               AND (service_id = $2 OR service_id IS NULL)
+             ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+             LIMIT 1`,
+            [currentBooking.vendor_id || null, currentBooking.service_id || null]
+          ).catch(() => ({ rows: [] }));
+          
+          // Calculate refund percentage based on rules
+          let refundPercentage = 100; // Default to full refund
+          const rule = rulesResult.rows[0];
+          if (rule) {
+            if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) {
+              refundPercentage = 100;
+            } else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) {
+              refundPercentage = rule.partial_refund_percentage || 50;
+            } else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) {
+              refundPercentage = 25;
+            } else {
+              refundPercentage = 0;
+            }
+          } else {
+            // Default policy: 100% if 24+ hours, 50% if 12+ hours, 25% if 6+ hours, 0% otherwise
+            if (hoursUntilBooking >= 24) refundPercentage = 100;
+            else if (hoursUntilBooking >= 12) refundPercentage = 50;
+            else if (hoursUntilBooking >= 6) refundPercentage = 25;
+            else refundPercentage = 0;
+          }
+          
+          const refundAmount = (parseFloat(currentBooking.total_amount) * refundPercentage) / 100;
+          
+          if (refundAmount > 0) {
+            // Get payment for refund
+            const payments = await query(
+              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
+              [bookingId]
             );
+
+            if (payments.rows.length > 0) {
+              const paymentId = payments.rows[0].id;
+              
+              if (refundMethod === 'wallet') {
+                // Credit to wallet
+                try {
+                  await query(
+                    `INSERT INTO wallet_transactions (
+                      customer_id, 
+                      type, 
+                      amount, 
+                      description, 
+                      reference_type,
+                      reference_id,
+                      status
+                    ) VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
+                    [
+                      currentBooking.customer_id,
+                      refundAmount,
+                      `Refund for cancelled booking (${refundPercentage}%)`,
+                      bookingId
+                    ]
+                  ).catch(() => null);
+                  
+                  // Update wallet balance
+                  await query(
+                    `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
+                    [refundAmount, currentBooking.customer_id]
+                  ).catch(() => null);
+                  
+                  refundInfo = {
+                    amount: refundAmount,
+                    percentage: refundPercentage,
+                    method: 'wallet',
+                    status: 'completed',
+                    message: `₹${refundAmount.toFixed(2)} credited to your wallet`
+                  };
+                } catch (walletError) {
+                  console.error('Error crediting wallet:', walletError);
+                }
+              } else {
+                // Create refund request for original payment method
+                const refundRequests = await query(
+                  `INSERT INTO refunds (
+                    payment_id,
+                    booking_id, 
+                    customer_id, 
+                    vendor_id,
+                    refund_amount,
+                    refund_reason, 
+                    refund_status,
+                    refund_method,
+                    requested_at
+                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW()) 
+                  RETURNING *`,
+                  [
+                    paymentId,
+                    bookingId,
+                    currentBooking.customer_id,
+                    currentBooking.vendor_id || null,
+                    refundAmount,
+                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`
+                  ]
+                ).catch(() => ({ rows: [] }));
+                
+                refundInfo = {
+                  refundId: refundRequests.rows[0]?.id,
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'original',
+                  status: 'pending',
+                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`
+                };
+              }
+            }
+          } else {
             refundInfo = {
-              refundId: refundRequests.rows[0]?.id,
-              amount: currentBooking.total_amount,
-              status: 'pending'
+              amount: 0,
+              percentage: 0,
+              method: null,
+              status: 'not_eligible',
+              message: 'Cancellation is too close to booking time. No refund applicable as per policy.'
             };
           }
         } catch (error) {
@@ -917,9 +1432,10 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         refund: refundInfo,
       }, requestId);
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error cancelling booking:', error);
       return this.error(
-        error.message || 'Failed to cancel booking',
+        err?.message || 'Failed to cancel booking',
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -1081,7 +1597,8 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         newTime,
       }, requestId);
     } catch (error: unknown) {
-      if (error.message === 'SLOT_CONFLICT' || error.code === '55P03') {
+      const err = error as any;
+      if (err?.message === 'SLOT_CONFLICT' || err?.code === '55P03') {
         return this.error(
           'This time slot is already booked. Please select a different time.',
           409,
@@ -1092,7 +1609,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
       console.error('Error rescheduling booking:', error);
       return this.error(
-        error.message || 'Failed to reschedule booking',
+        err?.message || 'Failed to reschedule booking',
         500,
         'INTERNAL_ERROR',
         undefined,
@@ -1169,8 +1686,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       const result: any = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error in bookings/create:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: err?.message || 'Internal server error' }, 500);
     }
   });
 
@@ -1212,8 +1730,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error in booking/create:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: err?.message || 'Internal server error' }, 500);
     }
   });
   
@@ -1254,12 +1773,67 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error in customer/booking/create:', error);
-      return c.json({ error: error.message }, 500);
+      return c.json({ error: err?.message || 'Internal server error' }, 500);
+    }
+  });
+
+  // ✅ FIX: Add plural route for frontend compatibility
+  // Frontend tries multiple endpoints: /bookings/create, /booking/create, /customer/booking/create, /customer/bookings/create
+  app.post('/customer/bookings/create', async (c) => {
+    try {
+      // Use pre-parsed body from handler context (c.env) instead of global state
+      const contextData = c.env as { parsedBody?: Record<string, unknown>; event?: unknown } | undefined;
+      let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
+      
+      if (!body || Object.keys(body).length === 0) {
+        try {
+          body = await c.req.json() as Record<string, unknown>;
+        } catch (e) {
+          body = {};
+        }
+      }
+      
+      const event: ApiGatewayEventLike = {
+        httpMethod: 'POST',
+        path: c.req.path,
+        headers: Object.fromEntries(c.req.raw.headers),
+        body: JSON.stringify(body),
+        pathParameters: {},
+        queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
+        requestContext: {
+          http: {
+            method: c.req.method || 'POST',
+            path: c.req.path,
+          },
+          requestId: crypto.randomUUID(),
+        },
+        rawPath: c.req.path,
+        rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
+        isBase64Encoded: false,
+      };
+      const context = createLambdaContext();
+      const result = await createHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: unknown) {
+      const err = error as any;
+      console.error('Error in customer/bookings/create:', error);
+      return c.json({ error: err?.message || 'Internal server error' }, 500);
     }
   });
 
   app.get('/bookings/:bookingId', async (c) => {
+    const event = await createApiGatewayEvent(c);
+    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    const context = createLambdaContext();
+    const result: any = await getHandler.execute(event, context);
+    const body = JSON.parse(result.body);
+    return c.json(body, result.statusCode);
+  });
+
+  // ✅ FIX: Add customer-prefixed route for frontend compatibility
+  app.get('/customer/bookings/:bookingId', async (c) => {
     const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
@@ -1473,8 +2047,9 @@ export function registerBookingOTPEndpoint(app: Hono) {
         expiresAt: expiresAt.toISOString(),
       });
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error generating booking OTP:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: err?.message || 'Internal server error' }, 500);
     }
   });
 
@@ -1533,8 +2108,9 @@ export function registerBookingOTPEndpoint(app: Hono) {
         message: 'OTP verified successfully. Service can now begin.',
       });
     } catch (error: unknown) {
+      const err = error as any;
       console.error('Error verifying booking OTP:', error);
-      return c.json({ success: false, error: error.message }, 500);
+      return c.json({ success: false, error: err?.message || 'Internal server error' }, 500);
     }
   });
 }

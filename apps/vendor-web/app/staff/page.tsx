@@ -180,15 +180,40 @@ export default function StaffManagementPage() {
     }
 
     try {
-      // Convert to base64 for now (in production, use S3 upload)
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewStaff({ ...newStaff, photo: reader.result as string });
+      // Upload to S3 via storage endpoint
+      const vendorId = localStorage.getItem('vendorId');
+      if (!vendorId) {
+        toast.error('Please log in first');
+        return;
+      }
+
+      toast.loading('Uploading photo...');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('vendorId', vendorId);
+      formData.append('documentType', 'staff_photo');
+
+      const response = await apiClient.post<{
+        success: boolean;
+        url?: string;
+        publicUrl?: string;
+        error?: string;
+      }>('/storage/upload', formData);
+
+      toast.dismiss();
+
+      if (response.success && (response.url || response.publicUrl)) {
+        setNewStaff({ ...newStaff, photo: response.url || response.publicUrl || '' });
         setFormErrors({ ...formErrors, photo: '' });
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      toast.error('Failed to upload photo');
+        toast.success('Photo uploaded successfully');
+      } else {
+        throw new Error(response.error || 'Upload failed');
+      }
+    } catch (err: any) {
+      toast.dismiss();
+      console.error('Error uploading photo:', err);
+      toast.error(err.message || 'Failed to upload photo');
     }
   };
 

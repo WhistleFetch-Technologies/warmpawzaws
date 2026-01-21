@@ -612,21 +612,46 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           const allowedGenders = ['male', 'female', 'neutered', 'spayed'];
           const validGender = normalizedGender && allowedGenders.includes(normalizedGender) ? normalizedGender : null;
           
+          // ✅ ENHANCED: Calculate age from DOB if provided
+          let age_years = pet.age ? parseInt(pet.age) : null;
+          let age_months = null;
+          if (pet.dob && !age_years) {
+            const birthDate = new Date(pet.dob);
+            const now = new Date();
+            const ageInMonthsCalc = (now.getFullYear() - birthDate.getFullYear()) * 12 + 
+                               (now.getMonth() - birthDate.getMonth());
+            age_years = Math.floor(ageInMonthsCalc / 12);
+            age_months = ageInMonthsCalc % 12;
+          }
+          
           // Build pet data matching the pets table schema
+          // ✅ ENHANCED: Now supports vaccination records, allergies, chronic conditions, behavior notes
           const petData: Record<string, any> = {
             customer_id: customer.id,
             name: pet.name,
             species: petSpecies,
             breed: pet.breed || null,
-            age_years: pet.age ? parseInt(pet.age) : null,
+            age_years: age_years,
+            age_months: age_months,
             gender: validGender,
             weight_kg: pet.weight ? parseFloat(pet.weight) : null,
-            profile_photo_url: pet.photo && pet.photo.startsWith('http') ? pet.photo : null,
+            profile_photo_url: pet.photo || null,
             // Store health records and vaccinations in medical_history JSONB
             medical_history: {
               ...pet.healthRecords,
-              vaccinations: pet.vaccinations,
-              microchip_id: pet.microchipId || null,
+              dob: pet.dob || null,
+              microchipId: pet.microchipId || null,
+              allergies: pet.allergies || [],
+              chronicConditions: pet.chronicConditions || [],
+              vaccinations: pet.vaccinations || [],
+              behaviorNotes: pet.behaviorNotes || null,
+              feedingSchedule: pet.feedingSchedule || null,
+              dietaryRestrictions: pet.dietaryRestrictions || [],
+              spayedNeutered: pet.spayedNeutered || false,
+              specialNeeds: pet.specialNeeds || null,
+              emergencyContact: pet.emergencyContact || null,
+              color: pet.color || null,
+              size: pet.size || null,
             },
           };
 
@@ -848,6 +873,245 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error removing payment method:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // CUSTOMER PREFERENCES & ONBOARDING ENDPOINTS
+  // ============================================================================
+
+  /**
+   * GET /customer/:phone/preferences
+   * Get customer preferences and onboarding data
+   */
+  app.get('/customer/:phone/preferences', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+
+      // Get customer by phone
+      const customers = await select('customers', { phone });
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customer = customers[0];
+
+      // Try to get preferences from dedicated table first
+      const preferencesResult = await query(
+        `SELECT * FROM customer_preferences WHERE customer_id = $1`,
+        [customer.id]
+      ).catch(() => ({ rows: [] }));
+
+      // Also get preferences from customer.preferences JSONB as fallback
+      const customerPreferences = customer.preferences || {};
+
+      const preferences = preferencesResult.rows.length > 0 
+        ? preferencesResult.rows[0] 
+        : customerPreferences;
+
+      return c.json({
+        success: true,
+        preferences: {
+          journeyType: preferences.journey_type || preferences.journeyType,
+          livingSpace: {
+            homeType: preferences.home_type || preferences.homeType,
+            outdoorSpace: preferences.outdoor_space || preferences.outdoorSpace,
+          },
+          lifestyle: {
+            workSchedule: preferences.work_schedule || preferences.workSchedule,
+            activityLevel: preferences.activity_level || preferences.activityLevel,
+            travelFrequency: preferences.travel_frequency || preferences.travelFrequency,
+          },
+          budget: preferences.monthly_budget || preferences.budget,
+          servicePreferences: preferences.service_preferences || preferences.servicePreferences || [],
+          onboardingCompletedAt: preferences.onboarding_completed_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer preferences:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/:phone/preferences
+   * Save customer preferences (from onboarding journey)
+   */
+  app.post('/customer/:phone/preferences', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const body = await c.req.json();
+
+      const {
+        journeyType,
+        livingSpace,
+        lifestyle,
+        budget,
+        servicePreferences,
+        hasChildren,
+        hasOtherPets,
+        otherPetTypes,
+      } = body;
+
+      // Get customer by phone
+      const customers = await select('customers', { phone });
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found. Please create profile first.' }, 404);
+      }
+
+      const customer = customers[0];
+
+      // Check if preferences exist
+      const existingPrefs = await query(
+        `SELECT id FROM customer_preferences WHERE customer_id = $1`,
+        [customer.id]
+      ).catch(() => ({ rows: [] }));
+
+      const preferencesData = {
+        journey_type: journeyType,
+        home_type: livingSpace?.homeType,
+        outdoor_space: livingSpace?.outdoorSpace,
+        work_schedule: lifestyle?.workSchedule,
+        activity_level: lifestyle?.activityLevel,
+        travel_frequency: lifestyle?.travelFrequency,
+        monthly_budget: budget,
+        service_preferences: servicePreferences || [],
+        has_children: hasChildren,
+        has_other_pets: hasOtherPets,
+        other_pet_types: otherPetTypes || [],
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existingPrefs.rows.length > 0) {
+        // Update existing preferences
+        await query(
+          `UPDATE customer_preferences SET
+            journey_type = COALESCE($1, journey_type),
+            home_type = COALESCE($2, home_type),
+            outdoor_space = COALESCE($3, outdoor_space),
+            work_schedule = COALESCE($4, work_schedule),
+            activity_level = COALESCE($5, activity_level),
+            travel_frequency = COALESCE($6, travel_frequency),
+            monthly_budget = COALESCE($7, monthly_budget),
+            service_preferences = COALESCE($8, service_preferences),
+            has_children = COALESCE($9, has_children),
+            has_other_pets = COALESCE($10, has_other_pets),
+            other_pet_types = COALESCE($11, other_pet_types),
+            updated_at = NOW()
+          WHERE customer_id = $12`,
+          [
+            preferencesData.journey_type,
+            preferencesData.home_type,
+            preferencesData.outdoor_space,
+            preferencesData.work_schedule,
+            preferencesData.activity_level,
+            preferencesData.travel_frequency,
+            preferencesData.monthly_budget,
+            JSON.stringify(preferencesData.service_preferences),
+            preferencesData.has_children,
+            preferencesData.has_other_pets,
+            preferencesData.other_pet_types,
+            customer.id,
+          ]
+        );
+      } else {
+        // Insert new preferences
+        await query(
+          `INSERT INTO customer_preferences (
+            customer_id, journey_type, home_type, outdoor_space,
+            work_schedule, activity_level, travel_frequency,
+            monthly_budget, service_preferences, has_children,
+            has_other_pets, other_pet_types
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            customer.id,
+            preferencesData.journey_type,
+            preferencesData.home_type,
+            preferencesData.outdoor_space,
+            preferencesData.work_schedule,
+            preferencesData.activity_level,
+            preferencesData.travel_frequency,
+            preferencesData.monthly_budget,
+            JSON.stringify(preferencesData.service_preferences),
+            preferencesData.has_children,
+            preferencesData.has_other_pets,
+            preferencesData.other_pet_types,
+          ]
+        );
+      }
+
+      // Also update customer.preferences JSONB as backup
+      await update('customers', { id: customer.id }, {
+        preferences: {
+          ...customer.preferences,
+          journeyType,
+          livingSpace,
+          lifestyle,
+          budget,
+          servicePreferences,
+        },
+      });
+
+      return c.json({
+        success: true,
+        message: 'Preferences saved successfully',
+      });
+    } catch (error: any) {
+      console.error('Error saving customer preferences:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/:phone/onboarding/complete
+   * Mark onboarding as complete
+   */
+  app.post('/customer/:phone/onboarding/complete', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const body = await c.req.json();
+      const { journeyType } = body;
+
+      // Get customer by phone
+      const customers = await select('customers', { phone });
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customer = customers[0];
+
+      // Update customer onboarding status
+      await update('customers', { id: customer.id }, {
+        onboarding_status: 'COMPLETED',
+        profile_completed: true,
+        status: 'active',
+      });
+
+      // Update preferences with completion timestamp
+      await query(
+        `UPDATE customer_preferences SET
+          onboarding_completed_at = NOW(),
+          journey_type = COALESCE($1, journey_type)
+        WHERE customer_id = $2`,
+        [journeyType, customer.id]
+      ).catch(() => {
+        // Create preferences record if it doesn't exist
+        return query(
+          `INSERT INTO customer_preferences (customer_id, journey_type, onboarding_completed_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (customer_id) DO UPDATE SET onboarding_completed_at = NOW()`,
+          [customer.id, journeyType]
+        );
+      });
+
+      return c.json({
+        success: true,
+        message: 'Onboarding completed successfully',
+        customerId: customer.id,
+      });
+    } catch (error: any) {
+      console.error('Error completing onboarding:', error);
       return c.json({ error: error.message }, 500);
     }
   });

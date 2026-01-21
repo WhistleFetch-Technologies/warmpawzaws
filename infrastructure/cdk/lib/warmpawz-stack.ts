@@ -80,6 +80,8 @@ export class WarmpawzStack extends cdk.Stack {
     // Deploy Aurora RDS (use existing if cluster identifier provided)
     const existingClusterId = this.node.tryGetContext('existingRdsClusterId') || 
                               process.env.EXISTING_RDS_CLUSTER_ID;
+    const existingClusterEndpoint = this.node.tryGetContext('existingRdsClusterEndpoint') || 
+                              process.env.EXISTING_RDS_CLUSTER_ENDPOINT;
     const existingSecretArn = this.node.tryGetContext('existingRdsSecretArn') || 
                               process.env.EXISTING_RDS_SECRET_ARN;
     const existingProxyName = this.node.tryGetContext('existingRdsProxyName') || 
@@ -89,6 +91,7 @@ export class WarmpawzStack extends cdk.Stack {
       vpc: this.vpc,
       environment: environment,
       existingClusterIdentifier: existingClusterId || 'warmpawz-dev-cluster', // Default from CI/CD
+      existingClusterEndpoint: existingClusterEndpoint || 'warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com',
       existingSecretArn: existingSecretArn,
       existingProxyName: existingProxyName || 'warmpawz-aurora-proxy',
     });
@@ -286,11 +289,19 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-AuroraEndpoint',
     });
 
-    new cdk.CfnOutput(this, 'AuroraProxyEndpoint', {
-      value: this.auroraStack.proxy.endpoint,
-      description: 'RDS Proxy Endpoint - For A4 (Backend Engineer)',
-      exportName: 'Warmpawz-AuroraProxyEndpoint',
-    });
+    if (this.auroraStack.proxy) {
+      new cdk.CfnOutput(this, 'AuroraProxyEndpoint', {
+        value: this.auroraStack.proxy.endpoint,
+        description: 'RDS Proxy Endpoint - For A4 (Backend Engineer)',
+        exportName: 'Warmpawz-AuroraProxyEndpoint',
+      });
+    } else {
+      new cdk.CfnOutput(this, 'AuroraClusterEndpoint', {
+        value: this.auroraStack.cluster.clusterEndpoint.hostname,
+        description: 'RDS Cluster Endpoint - For A4 (Backend Engineer)',
+        exportName: 'Warmpawz-AuroraClusterEndpoint',
+      });
+    }
 
     new cdk.CfnOutput(this, 'AuroraSecretArn', {
       value: this.auroraStack.secret.secretArn,
@@ -376,11 +387,13 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-UploadsBucketName',
     });
 
-    new cdk.CfnOutput(this, 'CloudFrontDomainName', {
-      value: this.s3Stack.distribution.distributionDomainName,
-      description: 'CloudFront Domain - For A6 (Mobile Engineer)',
-      exportName: 'Warmpawz-CloudFrontDomainName',
-    });
+    if (this.s3Stack.distribution) {
+      new cdk.CfnOutput(this, 'CloudFrontDomainName', {
+        value: this.s3Stack.distribution.distributionDomainName,
+        description: 'CloudFront Domain - For A6 (Mobile Engineer)',
+        exportName: 'Warmpawz-CloudFrontDomainName',
+      });
+    }
 
     new cdk.CfnOutput(this, 'ApiDomainName', {
       value: this.route53Stack.apiDomainName,
@@ -406,17 +419,21 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-AdminDomain',
     });
 
-    new cdk.CfnOutput(this, 'ApkBucketName', {
-      value: this.s3Stack.apkBucket.bucketName,
-      description: 'APK Storage Bucket - For Mobile Apps',
-      exportName: 'Warmpawz-ApkBucketName',
-    });
+    if (this.s3Stack.apkBucket) {
+      new cdk.CfnOutput(this, 'ApkBucketName', {
+        value: this.s3Stack.apkBucket.bucketName,
+        description: 'APK Storage Bucket - For Mobile Apps',
+        exportName: 'Warmpawz-ApkBucketName',
+      });
+    }
 
-    new cdk.CfnOutput(this, 'ApkDistributionDomain', {
-      value: this.s3Stack.apkDistribution.distributionDomainName,
-      description: 'APK CloudFront Distribution Domain',
-      exportName: 'Warmpawz-ApkDistributionDomain',
-    });
+    if (this.s3Stack.apkDistribution) {
+      new cdk.CfnOutput(this, 'ApkDistributionDomain', {
+        value: this.s3Stack.apkDistribution.distributionDomainName,
+        description: 'APK CloudFront Distribution Domain',
+        exportName: 'Warmpawz-ApkDistributionDomain',
+      });
+    }
 
     new cdk.CfnOutput(this, 'LambdaExecutionRoleArn', {
       value: this.iamStack.lambdaExecutionRole.roleArn,

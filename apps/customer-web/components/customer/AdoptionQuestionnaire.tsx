@@ -62,18 +62,29 @@ export function AdoptionQuestionnaire(props: AdoptionQuestionnaireProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold">Adoption Questionnaire</h1>
+    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-white pb-24">
+      <div className="max-w-md mx-auto min-h-screen">
+        {/* ✅ FIX: Match AdoptionServiceRouter header theme (PINK gradient) */}
+        <div className="bg-gradient-to-br from-pink-500 to-rose-600 text-white px-6 pt-8 pb-6 relative">
+          <button 
+            onClick={props.onBack}
+            className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Back</span>
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+              <Heart className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Adoption Questionnaire</h1>
+              <p className="text-white/80 text-sm">Help us find the perfect match</p>
+            </div>
           </div>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="px-6 py-6 space-y-4">
           <Card className="p-4 bg-gradient-to-br from-pink-50 to-red-50 border-pink-200">
             <div className="flex items-center gap-3">
               <Heart className="w-8 h-8 text-pink-600" />

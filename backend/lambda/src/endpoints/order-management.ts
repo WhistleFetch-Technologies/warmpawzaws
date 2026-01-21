@@ -90,6 +90,23 @@ export function registerOrderManagementEndpoints(app: Hono) {
         updateData
       );
 
+      // ✅ Trigger webhooks
+      try {
+        const { triggerWebhook } = await import('./webhooks');
+        const eventType = status === 'cancelled' ? 'order.cancelled' : 
+                         status === 'delivered' ? 'order.completed' : 
+                         'order.updated';
+        await triggerWebhook(eventType, {
+          orderId,
+          status,
+          previousStatus: order.order_status,
+          customerId: order.customer_id,
+          vendorId: order.vendor_id,
+        });
+      } catch (error) {
+        console.error('Failed to trigger webhooks:', error);
+      }
+
       // Get customer and vendor for notifications
       const customer = await select('customers', { id: order.customer_id });
       const vendor = order.vendor_id ? await select('vendors', { id: order.vendor_id }) : [];
@@ -125,7 +142,24 @@ export function registerOrderManagementEndpoints(app: Hono) {
     try {
       const { orderId } = c.req.param();
 
-      const orders = await select('orders', { id: orderId });
+      // Validate UUID format
+      if (!orderId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) {
+        return c.json({ error: 'Invalid order ID format' }, 400);
+      }
+
+      // Use query with error handling for table existence
+      let orders: any[] = [];
+      try {
+        orders = await select('orders', { id: orderId });
+      } catch (selectError: any) {
+        // If table doesn't exist or other DB error, return 404 not 500
+        console.error('Order lookup failed:', selectError.message);
+        if (selectError.message?.includes('does not exist') || selectError.message?.includes('relation')) {
+          return c.json({ error: 'Order not found', details: 'Orders table not configured' }, 404);
+        }
+        throw selectError;
+      }
+
       if (orders.length === 0) {
         return c.json({ error: 'Order not found' }, 404);
       }
@@ -152,7 +186,11 @@ export function registerOrderManagementEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching order tracking:', error);
-      return c.json({ error: error.message }, 500);
+      // Return 404 for not found-like errors, 500 for others
+      if (error.message?.includes('not found') || error.message?.includes('invalid')) {
+        return c.json({ error: error.message }, 404);
+      }
+      return c.json({ error: error.message || 'Failed to fetch order tracking' }, 500);
     }
   });
 

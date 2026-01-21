@@ -1,30 +1,16 @@
 /**
- * Centralized exports for all reusable hooks
- * Improves code reusability and maintainability
+ * Hooks index
+ * Centralized exports for all hooks (domain-specific and reusable)
  */
 
-export { useApiData } from './useApiData';
-export { useCrud } from './useCrud';
-export { useFormModal } from './useFormModal';
-export { useNotifications } from './useNotifications';
+// Domain-specific hooks
+export * from './useVendors';
+export * from './useOrders';
+export * from './usePayments';
+export * from './useBookings';
 
-export type {
-  UseApiDataOptions,
-  UseApiDataReturn,
-} from './useApiData';
-
-export type {
-  UseCrudOptions,
-  UseCrudReturn,
-} from './useCrud';
-
-export type {
-  UseFormModalOptions,
-  UseFormModalReturn,
-} from './useFormModal';
-
-export type {
-  UseNotificationsReturn,
-  UseNotificationsOptions,
-} from './useNotifications';
-
+// Reusable hooks
+export * from './useApiData';
+export * from './useCrud';
+export * from './useFormModal';
+export * from './useNotifications';

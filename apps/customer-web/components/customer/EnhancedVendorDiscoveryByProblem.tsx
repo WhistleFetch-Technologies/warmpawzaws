@@ -284,7 +284,7 @@ export function EnhancedVendorDiscoveryByProblem({
                             <span className="text-gray-300">•</span>
                             <div className="flex items-center gap-1 text-gray-500">
                               <MapPin className="w-3.5 h-3.5" />
-                              <span className="text-xs">{result.distance.toFixed(1)} km</span>
+                              <span className="text-xs">{Number(result.distance || 0).toFixed(1)} km</span>
                             </div>
                           </>
                         )}

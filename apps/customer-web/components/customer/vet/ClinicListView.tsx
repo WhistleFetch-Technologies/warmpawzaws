@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, MapPin, Clock, Filter, Search, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, Clock, Filter, Search, ChevronRight, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 
@@ -22,6 +22,7 @@ interface Clinic {
   services: string[];
   price_range: string;
   is_open?: boolean;
+  photo?: string; // ✅ Added photo support
 }
 
 export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
@@ -37,86 +38,91 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const loadClinics = async () => {
     try {
       setLoading(true);
+      
+      // Get customer location from localStorage for distance-based sorting
+      let locationParams = '';
       try {
-        const response = await apiClient.get('/vendors?role=veterinary_clinic') as any;
+        const customerLat = localStorage.getItem('customer_latitude');
+        const customerLng = localStorage.getItem('customer_longitude');
+        if (customerLat && customerLng) {
+          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
+        }
+      } catch (e) {
+        console.log('Could not get customer location');
+      }
+      
+      // Try primary endpoint
+      try {
+        const response = await apiClient.get(`/customer/discover-services?category=vet&roleId=veterinarian&serviceStyle=at_center${locationParams}`) as any;
         console.log('📋 [CLINIC-LIST] API Response:', response);
         
-        if (response && response.vendors && response.vendors.length > 0) {
-          console.log(`✅ [CLINIC-LIST] Found ${response.vendors.length} clinics from API`);
-          const mappedClinics = response.vendors.map((v: any) => ({
-            id: v.id,
-            name: v.businessName || v.business_name || v.name || 'Unnamed Clinic',
-            address: v.address || `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() || 'Location available on booking',
-            rating: parseFloat(v.rating || v.avgRating || '4.5'),
-            review_count: parseInt(v.reviewCount || v.review_count || '0', 10),
-            distance: v.distance || '2.5 km', // TODO: Calculate actual distance from user location
-            timing: v.timing || v.businessHours || '9 AM - 8 PM',
-            services: v.services?.map((s: any) => typeof s === 'string' ? s : s.name) || ['General Consultation', 'Vaccination'],
-            price_range: v.price_range || v.priceRange || '₹399 - ₹2999',
-            is_open: v.is_open !== undefined ? v.is_open : true,
-          }));
+        const servicesData = response.vendors || response.services || [];
+        if (servicesData.length > 0) {
+          // Group by vendor to get unique clinics
+          const vendorMap = new Map();
+          servicesData.forEach((service: any) => {
+            const vendorId = service.vendorId || service.id;
+            if (!vendorMap.has(vendorId)) {
+              vendorMap.set(vendorId, {
+                id: vendorId,
+                name: service.vendorName || service.businessName || service.business_name || service.name || 'Unnamed Clinic',
+                address: service.vendorLocation?.address || service.address || `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() || 'Location available on booking',
+                rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.5'),
+                review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
+                distance: service.distance ? `${Number(service.distance).toFixed(1)} km` : null,
+                timing: service.businessHours || service.timing || '9 AM - 8 PM',
+                services: service.services?.map((s: any) => typeof s === 'string' ? s : s.name) || [service.serviceName || 'General Consultation'].filter(Boolean),
+                price_range: service.priceRange || service.price_range || (service.price ? `₹${service.price}` : '₹399 - ₹2999'),
+                is_open: service.is_open !== undefined ? service.is_open : true,
+                photo: service.vendorPhoto || service.photo || service.businessPhoto, // ✅ Added photo support
+              });
+            } else {
+              // Add service to existing clinic
+              const clinic = vendorMap.get(vendorId);
+              if (service.serviceName && !clinic.services.includes(service.serviceName)) {
+                clinic.services.push(service.serviceName);
+              }
+            }
+          });
+          
+          const mappedClinics = Array.from(vendorMap.values());
           setClinics(mappedClinics);
-          console.log('🏥 [CLINIC-LIST] Mapped clinics:', mappedClinics);
+          console.log(`✅ [CLINIC-LIST] Found ${mappedClinics.length} clinics from API`);
           return;
         } else {
-          console.warn('⚠️ [CLINIC-LIST] No vendors in response, using mock data');
+          console.warn('⚠️ [CLINIC-LIST] No vendors in response');
         }
       } catch (err: any) {
-        console.error('❌ [CLINIC-LIST] API Error:', err);
-        console.log('📝 [CLINIC-LIST] Using mock data for clinics');
+        console.error('❌ [CLINIC-LIST] Primary API Error:', err);
+        
+        // Try fallback endpoint
+        try {
+          const fallbackResponse = await apiClient.get('/vendors?role=veterinarian') as any;
+          if (fallbackResponse && fallbackResponse.vendors && fallbackResponse.vendors.length > 0) {
+            const mappedClinics = fallbackResponse.vendors.map((v: any) => ({
+              id: v.id,
+              name: v.businessName || v.business_name || v.name || 'Unnamed Clinic',
+              address: v.address || `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() || 'Location available on booking',
+              rating: parseFloat(v.rating || v.avgRating || '4.5'),
+              review_count: parseInt(v.reviewCount || v.review_count || '0', 10),
+              distance: v.distance || null,
+              timing: v.timing || v.businessHours || '9 AM - 8 PM',
+              services: v.services?.map((s: any) => typeof s === 'string' ? s : s.name) || ['General Consultation', 'Vaccination'],
+              price_range: v.price_range || v.priceRange || '₹399 - ₹2999',
+              is_open: v.is_open !== undefined ? v.is_open : true,
+              photo: v.photo || v.businessPhoto || v.vendorPhoto, // ✅ Added photo support
+            }));
+            setClinics(mappedClinics);
+            console.log(`✅ [CLINIC-LIST] Found ${mappedClinics.length} clinics from fallback endpoint`);
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error('❌ [CLINIC-LIST] Fallback endpoint also failed:', fallbackErr);
+        }
       }
 
-      // Mock data
-      setClinics([
-        {
-          id: '1',
-          name: 'PetCare Veterinary Clinic',
-          address: 'Linking Road, Bandra West',
-          rating: 4.8,
-          review_count: 156,
-          distance: '1.2 km',
-          timing: '9 AM - 8 PM',
-          services: ['General', 'Surgery', 'Dental', 'Lab'],
-          price_range: '₹399 - ₹2999',
-          is_open: true,
-        },
-        {
-          id: '2',
-          name: 'Happy Paws Animal Hospital',
-          address: 'Hill Road, Bandra',
-          rating: 4.6,
-          review_count: 89,
-          distance: '2.1 km',
-          timing: '8 AM - 10 PM',
-          services: ['General', 'Emergency', 'Vaccination'],
-          price_range: '₹299 - ₹1999',
-          is_open: true,
-        },
-        {
-          id: '3',
-          name: 'VetLife Clinic',
-          address: 'Turner Road, Bandra',
-          rating: 4.5,
-          review_count: 67,
-          distance: '3.4 km',
-          timing: '10 AM - 7 PM',
-          services: ['General', 'Grooming', 'Pharmacy'],
-          price_range: '₹349 - ₹1499',
-          is_open: false,
-        },
-        {
-          id: '4',
-          name: 'Pet Wellness Center',
-          address: 'SV Road, Santacruz',
-          rating: 4.7,
-          review_count: 112,
-          distance: '4.0 km',
-          timing: '24 Hours',
-          services: ['Emergency', 'ICU', 'Surgery', 'Lab'],
-          price_range: '₹499 - ₹5999',
-          is_open: true,
-        },
-      ]);
+      // No clinics found - will show empty state
+      setClinics([]);
     } catch (error) {
       console.error('Error loading clinics:', error);
     } finally {
@@ -154,27 +160,22 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-4 py-3">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-lg font-semibold">Veterinary Clinics</h1>
-          </div>
-
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Content */}
+      <div className="px-4 pb-24 pt-2 bg-white">
+        {/* Search and Filters */}
+        <div className="mb-4 space-y-3">
+          <div className="relative">
             <input
               type="text"
               placeholder="Search clinics..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
             />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           </div>
 
           {/* Filters */}
@@ -185,8 +186,8 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                 onClick={() => setSelectedFilter(filter.id as any)}
                 className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                   selectedFilter === filter.id
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-white text-gray-600 border border-gray-200'
                 }`}
               >
                 {filter.label}
@@ -194,10 +195,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
             ))}
           </div>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="max-w-md mx-auto px-4 py-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500"></div>
@@ -219,10 +217,18 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                 className="w-full bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow text-left"
               >
                 <div className="flex gap-3">
-                  {/* Clinic Icon */}
-                  <div className="w-16 h-16 rounded-xl bg-purple-100 flex items-center justify-center text-2xl flex-shrink-0">
-                    🏥
-                  </div>
+                  {/* Clinic Photo or Icon */}
+                  {clinic.photo ? (
+                    <img 
+                      src={clinic.photo} 
+                      alt={clinic.name}
+                      className="w-16 h-16 rounded-xl object-cover border-2 border-[#FF8C42] flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-orange-100 flex items-center justify-center text-2xl flex-shrink-0">
+                      🏥
+                    </div>
+                  )}
                   
                   {/* Info */}
                   <div className="flex-1 min-w-0">
@@ -279,6 +285,6 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

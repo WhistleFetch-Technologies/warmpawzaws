@@ -23,7 +23,8 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'warmpawz-storage';
+// Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
+const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
 
 export function registerStorageEndpoints(app: Hono) {
   /**
@@ -69,7 +70,7 @@ export function registerStorageEndpoints(app: Hono) {
           Bucket: BUCKET_NAME,
           Key: fileName,
         }),
-        { expiresIn: 31536000 } // 1 year in seconds
+        { expiresIn: 604800 } // 7 days (max for presigned URLs)
       );
 
       return c.json({
@@ -133,7 +134,7 @@ export function registerStorageEndpoints(app: Hono) {
                 Bucket: BUCKET_NAME,
                 Key: fileName,
               }),
-              { expiresIn: 31536000 }
+              { expiresIn: 604800 } // 7 days (max for presigned URLs)
             );
 
             uploadResults.push({
@@ -227,6 +228,121 @@ export function registerStorageEndpoints(app: Hono) {
   });
 
   /**
+   * GET /storage/media/*
+   * Serve media files via presigned URLs
+   * 
+   * This endpoint handles direct S3 URLs that are stored in the database
+   * and generates fresh presigned URLs for access.
+   * 
+   * Usage: /storage/media/path/to/file.jpg
+   * OR: /storage/media?url=https://bucket.s3.amazonaws.com/path/to/file.jpg
+   */
+  app.get("/storage/media/*", async (c) => {
+    try {
+      // Extract file path from URL
+      const fullPath = c.req.path;
+      let fileKey = fullPath.replace('/storage/media/', '');
+      
+      // Check if URL query param is provided (for direct S3 URLs)
+      const urlParam = c.req.query('url');
+      if (urlParam) {
+        // Extract key from full S3 URL
+        // Format: https://bucket.s3.region.amazonaws.com/key
+        try {
+          const parsedUrl = new URL(urlParam);
+          fileKey = parsedUrl.pathname.substring(1); // Remove leading /
+        } catch {
+          fileKey = urlParam;
+        }
+      }
+      
+      if (!fileKey) {
+        return c.json({ error: 'File path is required' }, 400);
+      }
+
+      // Decode the file key
+      fileKey = decodeURIComponent(fileKey);
+
+      // Generate a fresh presigned URL (1 hour validity)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 3600 }
+      );
+
+      // Redirect to the presigned URL
+      return c.redirect(signedUrl, 302);
+    } catch (error: any) {
+      console.error('❌ Error serving media:', error);
+      
+      // Return a 404 with helpful message
+      if (error.name === 'NoSuchKey' || error.Code === 'NoSuchKey') {
+        return c.json({ error: 'File not found' }, 404);
+      }
+      
+      return c.json({ error: error.message || 'Failed to serve media' }, 500);
+    }
+  });
+
+  /**
+   * GET /storage/refresh-url
+   * Convert a direct S3 URL to a fresh presigned URL
+   * 
+   * This is useful when the frontend has stored direct S3 URLs that have expired
+   * or are returning 403 errors.
+   */
+  app.get("/storage/refresh-url", async (c) => {
+    try {
+      const url = c.req.query('url');
+      
+      if (!url) {
+        return c.json({ error: 'url parameter is required' }, 400);
+      }
+
+      let fileKey = url;
+      
+      // Parse the URL to extract the key
+      if (url.includes('amazonaws.com')) {
+        try {
+          const parsedUrl = new URL(url);
+          fileKey = parsedUrl.pathname.substring(1); // Remove leading /
+        } catch {
+          // If URL parsing fails, assume it's already a key
+        }
+      }
+
+      // Decode the file key
+      fileKey = decodeURIComponent(fileKey);
+
+      // Generate a fresh presigned URL (1 hour validity)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 3600 }
+      );
+
+      return c.json({
+        success: true,
+        originalUrl: url,
+        signedUrl,
+        expiresIn: 3600,
+      });
+    } catch (error: any) {
+      console.error('❌ Error refreshing URL:', error);
+      return c.json({ 
+        success: false,
+        error: error.message || 'Failed to refresh URL' 
+      }, 500);
+    }
+  });
+
+  /**
    * POST /storage/upload-media
    * Upload media for customers or pets (photos)
    */
@@ -271,7 +387,7 @@ export function registerStorageEndpoints(app: Hono) {
           Bucket: BUCKET_NAME,
           Key: fileName,
         }),
-        { expiresIn: 31536000 } // 1 year in seconds
+        { expiresIn: 604800 } // 7 days (max for presigned URLs)
       );
 
       // Also generate public URL

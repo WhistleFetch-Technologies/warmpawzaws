@@ -58,11 +58,25 @@ class GetOnboardingStatusHandler extends BaseHandler {
         role = roles.length > 0 ? roles[0] : null;
       }
 
+      // ✅ FIX GAP VO-1, VO-2: Extract clarification notes and rejection reason
+      const clarificationNote = application?.admin_comments || application?.clarification_notes || null;
+      const rejectionReason = application?.rejection_reason || null;
+      const reviewedAt = application?.reviewed_at || null;
+      const reviewedBy = application?.reviewed_by || null;
+
       return this.success({
         identity: vendorIdentity,
         application,
         role,
         nextStep: this.getNextStep(vendorIdentity.onboarding_status),
+        // ✅ FIX: Explicitly include feedback for frontend display
+        feedback: {
+          clarificationNote,
+          rejectionReason,
+          reviewedAt,
+          reviewedBy,
+          status: vendorIdentity.onboarding_status,
+        },
       });
     } catch (error: any) {
       console.error('Error getting onboarding status:', error);
@@ -76,9 +90,9 @@ class GetOnboardingStatusHandler extends BaseHandler {
       ROLE_PENDING: '/onboarding/vendor-type',
       FORM_PENDING: '/onboarding/form',
       UNDER_REVIEW: '/onboarding/pending-review',
-      CLARIFICATION_REQUIRED: '/onboarding/clarification',
+      CLARIFICATION_REQUIRED: '/onboarding/form', // ✅ FIX GAP VO-3: Go back to form for corrections
       APPROVED: '/onboarding/approved',
-      REJECTED: '/onboarding/rejected',
+      REJECTED: '/onboarding/role-selection', // ✅ FIX: Go back to role selection after rejection
       ACTIVATED: '/dashboard',
     };
     return stepMap[status] || '/onboarding/role-selection';
@@ -521,28 +535,165 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
 class SubmitApplicationHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { phone, application_payload, uploaded_documents } = body;
+    
+    // ✅ FIX: Handle both wrapped (application_payload) and unwrapped payload formats
+    // Some frontends send: { phone, application_payload: {...}, uploaded_documents: [...] }
+    // Others send: { phone, businessName, roleId, ... } (flat structure)
+    let normalizedBody = body;
+    
+    if (!body.application_payload && body.businessName) {
+      // Convert flat structure to expected format
+      const { phone, uploaded_documents, specializations, agreedToTerms, ...restFields } = body;
+      normalizedBody = {
+        phone,
+        application_payload: restFields,
+        uploaded_documents: uploaded_documents || [],
+      };
+      console.log('📦 [SUBMIT] Normalized flat payload to wrapped format');
+    }
+    
+    let { phone, application_payload, uploaded_documents } = normalizedBody;
 
     if (!phone || !application_payload) {
       return this.error('Phone and application_payload are required', 400);
     }
 
+    // ✅ FIX: Validate and sanitize phone field
+    if (typeof phone !== 'string') {
+      return this.error('Phone must be a string', 400);
+    }
+    phone = phone.trim().replace(/\D/g, ''); // Remove non-digits
+    if (phone.length !== 10) {
+      return this.error('Phone must be a 10-digit number', 400);
+    }
+
+    // ✅ FIX: Validate application_payload is an object
+    if (typeof application_payload !== 'object' || application_payload === null) {
+      return this.error('application_payload must be a valid object', 400);
+    }
+
+    // ✅ FIX: Sanitize application_payload - remove invalid fields and values
+    const invalidFieldPatterns = ['new_field', 'newfield', 'new-field'];
+    const invalidValuePatterns = ['xxxxxxxx', 'placeholder'];
+    
+    const sanitizedPayload: Record<string, any> = {};
+    for (const [key, value] of Object.entries(application_payload)) {
+      // Skip fields with placeholder names
+      if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+        console.warn(`[SubmitApplication] Skipping invalid field: ${key}`);
+        continue;
+      }
+      // Skip boolean values for fields that should be strings (e.g., phone: true)
+      if (key === 'phone' && typeof value === 'boolean') {
+        console.warn(`[SubmitApplication] Skipping boolean phone field`);
+        continue;
+      }
+      // Skip placeholder values
+      if (typeof value === 'string' && invalidValuePatterns.some(pattern => value.toLowerCase().includes(pattern))) {
+        console.warn(`[SubmitApplication] Skipping placeholder value for ${key}`);
+        continue;
+      }
+      sanitizedPayload[key] = value;
+    }
+    application_payload = sanitizedPayload;
+
+    // ✅ FIX: Sanitize uploaded_documents - filter out invalid entries
+    if (uploaded_documents && Array.isArray(uploaded_documents)) {
+      uploaded_documents = uploaded_documents.filter((doc: any) => {
+        // Must have a type that isn't a placeholder
+        if (!doc.type || invalidFieldPatterns.some(pattern => doc.type.toLowerCase().includes(pattern))) {
+          console.warn(`[SubmitApplication] Skipping invalid document type: ${doc?.type}`);
+          return false;
+        }
+        // Must have a valid URL
+        if (!doc.url || typeof doc.url !== 'string' || doc.url.trim() === '') {
+          console.warn(`[SubmitApplication] Skipping document without URL: ${doc?.type}`);
+          return false;
+        }
+        return true;
+      });
+    } else {
+      uploaded_documents = [];
+    }
+
     try {
       // Get vendor identity
-      const identities = await select('vendor_identity', { phone });
+      let identities = await select('vendor_identity', { phone });
+      
+      // ✅ FIX: Auto-create vendor identity if not found
       if (identities.length === 0) {
-        return this.error('Vendor identity not found', 404);
+        console.log('📦 [SUBMIT] Creating new vendor identity for phone:', phone);
+        const newIdentity = await insert('vendor_identity', {
+          phone,
+          onboarding_status: 'FORM_PENDING',
+          metadata: {},
+        });
+        identities = newIdentity;
       }
 
-      const identity = identities[0];
+      let identity = identities[0];
 
-      if (!identity.selected_role_id || !identity.vendor_type) {
-        return this.error('Role and vendor type must be selected first', 400);
+      // ✅ FIX: Extract roleId and vendorType from payload or body if not in identity
+      // Note: businessType (e.g., "veterinarian") is different from vendor_type (e.g., "solo" or "business")
+      // vendor_type refers to whether the vendor is a solo provider or a business with staff
+      const payloadRoleId = application_payload?.roleId || application_payload?.role_id || body.roleId || body.role_id;
+      
+      // Only use explicit vendor_type values, NOT businessType (which is the category like "veterinarian")
+      let payloadVendorType = application_payload?.vendorType || application_payload?.vendor_type || 
+                               body.vendorType || body.vendor_type;
+      
+      // Validate vendor_type is a valid value, otherwise default to 'business'
+      if (!payloadVendorType || !['solo', 'business', 'center'].includes(payloadVendorType)) {
+        payloadVendorType = 'business';
       }
+
+      // ✅ FIX: Auto-update vendor_identity with role and vendor_type from payload if missing
+      if ((!identity.selected_role_id || !identity.vendor_type) && (payloadRoleId || payloadVendorType)) {
+        console.log('📦 [SUBMIT] Auto-setting role and vendor_type from payload:', {
+          payloadRoleId,
+          payloadVendorType,
+          currentRoleId: identity.selected_role_id,
+          currentVendorType: identity.vendor_type
+        });
+        
+        const updateData: Record<string, any> = {
+          updated_at: new Date().toISOString(),
+        };
+        
+        if (!identity.selected_role_id && payloadRoleId) {
+          updateData.selected_role_id = payloadRoleId;
+        }
+        if (!identity.vendor_type && payloadVendorType) {
+          updateData.vendor_type = payloadVendorType;
+        }
+        // Also update onboarding_status to FORM_PENDING if it's still INIT or ROLE_PENDING
+        if (['INIT', 'ROLE_PENDING'].includes(identity.onboarding_status)) {
+          updateData.onboarding_status = 'FORM_PENDING';
+        }
+        
+        await update('vendor_identity', { id: identity.id }, updateData);
+        
+        // Refresh identity with updated values
+        const refreshedIdentities = await select('vendor_identity', { id: identity.id });
+        if (refreshedIdentities.length > 0) {
+          identity = refreshedIdentities[0];
+        }
+        
+        console.log('✅ [SUBMIT] Updated vendor_identity with role and vendor_type');
+      }
+
+      // Final check - if still no role or vendor_type, return error with helpful message
+      if (!identity.selected_role_id && !payloadRoleId) {
+        return this.error('Role ID is required. Please provide roleId in the payload or select a role first.', 400);
+      }
+      
+      // Use payloadVendorType as fallback if identity.vendor_type is still not set
+      const effectiveVendorType = identity.vendor_type || payloadVendorType || 'business';
+      const effectiveRoleId = identity.selected_role_id || payloadRoleId;
 
       // Get form schema version
-      const roles = await select('roles', { id: identity.selected_role_id });
-      const formVersion = roles[0]?.config?.onboardingFormSchema?.[identity.vendor_type]?.version || '1.0';
+      const roles = await select('roles', { id: effectiveRoleId });
+      const formVersion = roles[0]?.config?.onboardingFormSchema?.[effectiveVendorType]?.version || '1.0';
 
       // Check if application exists
       let applicationId = identity.application_id;
@@ -580,8 +731,8 @@ class SubmitApplicationHandler extends BaseHandler {
         // Create new application
         const newApp = await insert('vendor_onboarding_applications', {
           vendor_identity_id: identity.id,
-          role_id: identity.selected_role_id,
-          vendor_type: identity.vendor_type,
+          role_id: effectiveRoleId,
+          vendor_type: effectiveVendorType,
           application_payload,
           uploaded_documents: uploaded_documents || [],
           form_version: formVersion,
@@ -616,7 +767,11 @@ class SubmitApplicationHandler extends BaseHandler {
       });
     } catch (error: any) {
       console.error('Error submitting application:', error);
-      return this.error(error.message || 'Failed to submit application', 500);
+      // ✅ FIX: Ensure error message is always a string
+      const errorMessage = typeof error?.message === 'string' 
+        ? error.message 
+        : (typeof error === 'string' ? error : 'Failed to submit application');
+      return this.error(errorMessage, 500);
     }
   }
 }
@@ -741,9 +896,54 @@ class AdminReviewApplicationHandler extends BaseHandler {
         ]
       );
 
+      // ✅ FIX GAP VO-1, VO-2, GN-1: Send push notification to vendor
+      try {
+        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        
+        if (action === 'APPROVE') {
+          await pushNotificationService.sendEventNotification({
+            eventType: 'vendor_application_approved',
+            recipientId: identity.id,
+            recipientType: 'vendor',
+            relatedId: applicationId,
+            data: { applicationId },
+          });
+        } else if (action === 'REQUEST_CLARIFICATION') {
+          await pushNotificationService.sendEventNotification({
+            eventType: 'vendor_application_clarification',
+            recipientId: identity.id,
+            recipientType: 'vendor',
+            relatedId: applicationId,
+            data: { 
+              applicationId, 
+              comment: comments,
+            },
+          });
+        } else if (action === 'REJECT') {
+          await pushNotificationService.sendEventNotification({
+            eventType: 'vendor_application_rejected',
+            recipientId: identity.id,
+            recipientType: 'vendor',
+            relatedId: applicationId,
+            data: { 
+              applicationId, 
+              reason: rejection_reason,
+            },
+          });
+        }
+      } catch (notifError) {
+        console.warn('Failed to send notification:', notifError);
+        // Don't fail the whole operation for notification failure
+      }
+
       return this.success({
         message: `Application ${action.toLowerCase()}d successfully`,
         status: newStatus,
+        // ✅ Include feedback in response for immediate UI update
+        feedback: action === 'APPROVE' ? null : {
+          clarificationNote: action === 'REQUEST_CLARIFICATION' ? comments : null,
+          rejectionReason: action === 'REJECT' ? rejection_reason : null,
+        },
       });
     } catch (error: any) {
       console.error('Error reviewing application:', error);

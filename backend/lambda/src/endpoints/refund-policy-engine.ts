@@ -349,6 +349,63 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
     const result = await updateRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  // ✅ NEW: Get refund policy settings for frontend
+  app.get('/admin/settings/refund-policy', async (c) => {
+    try {
+      // Get default policy rules
+      const rules = await query(
+        `SELECT * FROM booking_cancellation_rules
+         WHERE vendor_id IS NULL AND service_id IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1`
+      ).catch(() => ({ rows: [] }));
+
+      if (rules.rows.length > 0) {
+        const rule = rules.rows[0];
+        return c.json({
+          success: true,
+          policy: {
+            cancellationWindowHours: rule.no_refund_before_hours || 0,
+            refundPercentages: [
+              { withinHours: rule.full_refund_before_hours || 24, percentage: 100 },
+              { withinHours: rule.partial_refund_before_hours || 12, percentage: rule.partial_refund_percentage || 50 },
+              { withinHours: rule.no_refund_before_hours || 2, percentage: 0 },
+            ],
+            defaultRefundMethod: 'wallet',
+          },
+        });
+      }
+
+      // Return default policy if not configured
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+            { withinHours: 6, percentage: 25 },
+            { withinHours: 2, percentage: 0 },
+          ],
+          defaultRefundMethod: 'wallet',
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching refund policy:', error);
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+          ],
+          defaultRefundMethod: 'wallet',
+        },
+      });
+    }
+  });
 }
 
 function createApiGatewayEvent(req: any): any {

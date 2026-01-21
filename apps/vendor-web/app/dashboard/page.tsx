@@ -18,6 +18,11 @@ export default function DashboardPage() {
       'analytics': '/analytics',
       'settings': '/settings',
       'booking-detail': '/bookings/[id]',
+      'specialized': '/specialized',
+      'adoption': '/specialized',
+      'relocation': '/specialized',
+      'holidays': '/specialized',
+      'breeder': '/specialized',
     };
 
     const route = routeMap[screen];

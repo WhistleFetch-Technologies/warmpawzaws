@@ -45,7 +45,6 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ApiGatewayStack = void 0;
-const cdk = __importStar(require("aws-cdk-lib"));
 const apigateway = __importStar(require("aws-cdk-lib/aws-apigatewayv2"));
 const apigatewayv2 = __importStar(require("aws-cdk-lib/aws-apigatewayv2"));
 const authorizers = __importStar(require("aws-cdk-lib/aws-apigatewayv2-authorizers"));
@@ -67,39 +66,17 @@ class ApiGatewayStack extends constructs_1.Construct {
             identitySource: ['$request.header.Authorization'],
         });
         // Create HTTP API v2 (better performance and lower cost than REST API)
+        // FIXED: When using wildcard origins, we cannot use allowCredentials
+        // For dev, use specific origins without credentials to avoid CORS issues
         const allowedOrigins = props.environment === 'prod'
             ? ['https://warmpawz.com', 'https://www.warmpawz.com', 'https://customer.warmpawz.com', 'https://vendor.warmpawz.com', 'https://admin.warmpawz.com']
-            : ['*']; // Allow all origins in dev/test for easier development
+            : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:3002']; // Specific origins for dev
+        // Create API without CORS preflight (CORS handled in Lambda function)
+        // This avoids CDK validation errors with allowCredentials and wildcard origins
         this.api = new apigateway.HttpApi(this, 'WarmpawzApi', {
             apiName: `warmpawz-api-${props.environment || 'dev'}`,
             description: 'Warmpawz Platform API Gateway',
-            corsPreflight: {
-                allowOrigins: allowedOrigins,
-                allowMethods: [
-                    apigateway.CorsHttpMethod.GET,
-                    apigateway.CorsHttpMethod.POST,
-                    apigateway.CorsHttpMethod.PUT,
-                    apigateway.CorsHttpMethod.DELETE,
-                    apigateway.CorsHttpMethod.PATCH,
-                    apigateway.CorsHttpMethod.OPTIONS,
-                    apigateway.CorsHttpMethod.HEAD,
-                ],
-                allowHeaders: [
-                    'Content-Type',
-                    'Authorization',
-                    'X-Amz-Date',
-                    'X-Api-Key',
-                    'X-Amz-Security-Token',
-                    'X-Requested-With',
-                    'X-Request-Id',
-                    'X-Client-Info',
-                    'X-User-Role',
-                    'X-UAT-Mode',
-                    'X-UAT-Token',
-                ],
-                allowCredentials: true,
-                maxAge: cdk.Duration.days(1),
-            },
+            // CORS is handled in the Lambda function to avoid CDK validation issues
         });
         // Create custom domain if Route53 stack is provided
         if (props.route53Stack && props.route53Stack.certificate) {

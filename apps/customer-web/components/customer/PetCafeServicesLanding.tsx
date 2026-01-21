@@ -54,7 +54,7 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
         activeCafes: uniqueCafes.length || 25,
         reservations: '3K+',
         rating: uniqueCafes.length > 0 
-          ? (uniqueCafes.reduce((acc: number, c: any) => acc + (c.vendorRating || 4.5), 0) / uniqueCafes.length).toFixed(1) 
+          ? Number(uniqueCafes.reduce((acc: number, c: any) => acc + Number(c.vendorRating || 4.5), 0) / uniqueCafes.length).toFixed(1) 
           : '4.5'
       });
     } catch (error) {

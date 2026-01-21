@@ -50,8 +50,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Booking is already completed' }, 400);
       }
 
-      // For tele consultations, no OTP required
-      if (booking.service_type === 'online') {
+      // ✅ FIXED: For tele/video consultations, no OTP required - completed via prescription upload or video call end
+      const isTeleConsultation = booking.service_type === 'tele' || 
+                                  booking.service_type === 'online' || 
+                                  booking.service_type === 'video_consultation' ||
+                                  booking.service_style === 'tele';
+      
+      if (isTeleConsultation) {
         const updated = await update('bookings',
           { id: bookingId },
           {
@@ -60,8 +65,8 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           }
         );
 
-        console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP`);
-        return c.json({ success: true, booking: updated[0], message: 'Booking completed successfully!' });
+        console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
+        return c.json({ success: true, booking: updated[0], message: 'Tele consultation completed successfully!' });
       }
 
       // Verify OTP for in-person services
@@ -169,6 +174,56 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       );
 
       console.log(`✅ [START-SESSION] Session started successfully`);
+
+      // ✅ AUTO-INITIATE GPS TRACKING for at_home services
+      if (booking.service_style === 'at_home' || booking.service_type === 'at_home') {
+        try {
+          console.log(`🚀 [GPS-AUTO-INIT] Auto-initiating GPS tracking for booking ${bookingId}`);
+          
+          // Check if tracking session already exists
+          const existingSessions = await select('gps_tracking_sessions', {
+            booking_id: bookingId,
+            status: 'active',
+          });
+
+          if (existingSessions.length === 0) {
+            // Create tracking session
+            const { insert } = await import('../database/rds-connection');
+            const newSessions = await insert('gps_tracking_sessions', {
+              booking_id: bookingId,
+              vendor_id: vendorId,
+              status: 'active',
+              started_at: new Date(),
+              last_update: new Date(),
+              auto_initiated: true, // Mark as auto-initiated
+            });
+
+            console.log(`✅ [GPS-AUTO-INIT] GPS tracking session created: ${newSessions[0].id}`);
+
+            // Send notification to customer
+            try {
+              const { publishNotification } = await import('../utils/sns-client');
+              await publishNotification({
+                userId: booking.customer_id,
+                userType: 'customer',
+                type: 'booking_tracking_started',
+                title: 'Service Provider is on the way!',
+                message: `Your ${booking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+                data: {
+                  bookingId,
+                  trackingSessionId: newSessions[0].id,
+                },
+              });
+            } catch (notifError) {
+              console.error('Failed to send tracking notification:', notifError);
+              // Non-critical, continue
+            }
+          }
+        } catch (gpsError) {
+          console.error('❌ [GPS-AUTO-INIT] Failed to auto-initiate GPS tracking:', gpsError);
+          // Non-critical error, don't fail the session start
+        }
+      }
 
       return c.json({
         success: true,
@@ -309,13 +364,19 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // For security, accept any 4-6 digit OTP in demo mode
-      const isValidOtp = otp === booking.completion_otp || 
-                         otp === booking.start_otp ||
-                         (otp.length >= 4 && otp.length <= 6);
-
-      if (!isValidOtp) {
-        return c.json({ error: 'Invalid OTP', verified: false }, 400);
+      // ✅ FIXED: Strict OTP validation - must match actual OTP stored in booking
+      const expectedOtp = String(booking.otp_code || booking.completion_otp || booking.start_otp || '').trim();
+      const providedOtp = String(otp).trim();
+      
+      // Only validate if we have an expected OTP
+      if (!expectedOtp) {
+        console.error(`❌ [OTP-VERIFY] No OTP found for booking ${bookingId}`);
+        return c.json({ error: 'No OTP found for this booking. Please contact support.', verified: false }, 400);
+      }
+      
+      if (expectedOtp !== providedOtp) {
+        console.error(`❌ [OTP-VERIFY] Invalid OTP. Expected: "${expectedOtp}", Got: "${providedOtp}"`);
+        return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
       }
 
       // Update booking based on action
@@ -487,13 +548,18 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
-      // Accept any valid OTP format
-      const isValidOtp = otp === booking.completion_otp || 
-                         otp === booking.start_otp ||
-                         (otp.length >= 4 && otp.length <= 6);
-
-      if (!isValidOtp) {
-        return c.json({ error: 'Invalid OTP', verified: false }, 400);
+      // ✅ FIXED: Strict OTP validation - must match actual OTP stored in booking
+      const expectedOtp = String(booking.otp_code || booking.completion_otp || booking.start_otp || '').trim();
+      const providedOtp = String(otp).trim();
+      
+      if (!expectedOtp) {
+        console.error(`❌ [VERIFY-OTP] No OTP found for booking ${bookingId}`);
+        return c.json({ error: 'No OTP found for this booking', verified: false }, 400);
+      }
+      
+      if (expectedOtp !== providedOtp) {
+        console.error(`❌ [VERIFY-OTP] Invalid OTP. Expected: "${expectedOtp}", Got: "${providedOtp}"`);
+        return c.json({ error: 'Invalid OTP. Please check with the customer.', verified: false }, 400);
       }
 
       return c.json({

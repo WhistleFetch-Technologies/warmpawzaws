@@ -65,6 +65,8 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     }
   });
   const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
 
@@ -114,34 +116,38 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
       };
       reader.readAsDataURL(file);
       
-      // Upload to S3
+      // Upload to S3 with progress tracking
+      setUploadingPhoto(true);
+      setUploadProgress(0);
       try {
-        setLoading(true);
-        const { uploadPetPhoto } = await import('@/lib/photo-upload');
-        const result = await uploadPetPhoto(file, currentPet.id || `pet_${Date.now()}`, session.phone);
+        const { uploadPetPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
+        const result = await uploadPetPhotoWithProgress(
+          file,
+          currentPet.id || `pet_${Date.now()}`,
+          session.phone,
+          {
+            onProgress: (progress) => {
+              setUploadProgress(progress);
+            },
+            verifyUpload: true,
+            maxRetries: 3,
+          }
+        );
         
         if (result.success && result.publicUrl) {
           setCurrentPet({ ...currentPet, photo: result.publicUrl });
           console.log('✅ Pet photo uploaded to S3:', result.publicUrl);
         } else {
-          console.error('Failed to upload photo:', result.error);
-          // Fallback to base64 if S3 upload fails
-          const base64Reader = new FileReader();
-          base64Reader.onloadend = () => {
-            setCurrentPet({ ...currentPet, photo: base64Reader.result as string });
-          };
-          base64Reader.readAsDataURL(file);
+          alert(result.error || 'Failed to upload photo. Please try again.');
+          setPhotoPreview(currentPet.photo || '');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error uploading photo to S3:', error);
-        // Fallback to base64
-        const base64Reader = new FileReader();
-        base64Reader.onloadend = () => {
-          setCurrentPet({ ...currentPet, photo: base64Reader.result as string });
-        };
-        base64Reader.readAsDataURL(file);
+        alert(error.message || 'Failed to upload photo. Please try again.');
+        setPhotoPreview(currentPet.photo || '');
       } finally {
-        setLoading(false);
+        setUploadingPhoto(false);
+        setUploadProgress(0);
       }
     }
   };
@@ -407,16 +413,29 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
         {/* Photo Upload */}
         <div className="flex flex-col items-center mb-6">
           <div 
-            onClick={() => fileInputRef.current?.click()}
-            className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-3 relative group"
+            onClick={() => !uploadingPhoto && fileInputRef.current?.click()}
+            className={`w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center transition-all border-4 border-white shadow-lg mb-3 relative group ${
+              uploadingPhoto ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer hover:bg-orange-200'
+            }`}
           >
-            {photoPreview ? (
+            {photoPreview && !uploadingPhoto ? (
               <>
                 <img src={photoPreview} alt="Pet" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="w-8 h-8 text-white" />
                 </div>
               </>
+            ) : uploadingPhoto ? (
+              <div className="flex flex-col items-center justify-center h-full bg-black bg-opacity-50">
+                <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                <span className="text-white text-xs">{uploadProgress}%</span>
+                <div className="mt-2 w-20 bg-gray-300 rounded-full h-1">
+                  <div
+                    className="bg-white h-1 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
             ) : (
               <div className="flex flex-col items-center">
                 <Camera className="w-10 h-10 text-[#FF8C42] mb-2" />
@@ -429,6 +448,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
             type="file"
             accept="image/*"
             onChange={handlePhotoUpload}
+            disabled={uploadingPhoto}
             className="hidden"
           />
           <p className="text-xs text-gray-500 text-center">

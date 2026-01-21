@@ -39,9 +39,25 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
 
+    // Log incoming request for debugging
+    console.log('📥 [PAYMENT-CREATE] Received request:', {
+      requestId,
+      bodyKeys: Object.keys(body || {}),
+      bookingId: body?.bookingId,
+      amount: body?.amount,
+      amountType: typeof body?.amount,
+      paymentMethod: body?.paymentMethod,
+      customerId: body?.customerId,
+      vendorId: body?.vendorId,
+    });
+
     // Validate request with Zod schema
     const validationResult = CreatePaymentRequestSchema.safeParse(body);
     if (!validationResult.success) {
+      console.error('❌ [PAYMENT-CREATE] Validation failed:', {
+        errors: validationResult.error.errors,
+        receivedBody: body,
+      });
       return this.error(
         'Validation failed',
         400,
@@ -100,15 +116,31 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       if (booking.customer_id) {
         const customers = await select('customers', { id: booking.customer_id });
         if (customers.length > 0 && customers[0].address) {
-          const addr = typeof customers[0].address === 'string'
-            ? JSON.parse(customers[0].address)
-            : customers[0].address;
-          if (addr?.state) {
-            customerLocation = {
-              state: addr.state,
-              city: addr.city,
-              pincode: addr.pincode,
-            };
+          try {
+            // ✅ FIX: Handle both JSON and plain text addresses
+            const rawAddr = customers[0].address;
+            let addr: any = null;
+            if (typeof rawAddr === 'string') {
+              // Try to parse as JSON, but handle plain text addresses gracefully
+              if (rawAddr.startsWith('{') || rawAddr.startsWith('[')) {
+                addr = JSON.parse(rawAddr);
+              } else {
+                // Plain text address - skip location extraction
+                console.log('[PAYMENT] Customer address is plain text, skipping location extraction');
+              }
+            } else {
+              addr = rawAddr;
+            }
+            if (addr?.state) {
+              customerLocation = {
+                state: addr.state,
+                city: addr.city,
+                pincode: addr.pincode,
+              };
+            }
+          } catch (addrParseError) {
+            console.warn('[PAYMENT] Failed to parse customer address as JSON:', addrParseError);
+            // Continue without location - tax calculation will use defaults
           }
         }
       }
@@ -116,14 +148,30 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       if (booking.vendor_id) {
         const vendors = await select('vendors', { id: booking.vendor_id });
         if (vendors.length > 0 && vendors[0].address) {
-          const addr = typeof vendors[0].address === 'string'
-            ? JSON.parse(vendors[0].address)
-            : vendors[0].address;
-          if (addr?.state) {
-            vendorLocation = {
-              state: addr.state,
-              city: addr.city,
-            };
+          try {
+            // ✅ FIX: Handle both JSON and plain text addresses
+            const rawAddr = vendors[0].address;
+            let addr: any = null;
+            if (typeof rawAddr === 'string') {
+              // Try to parse as JSON, but handle plain text addresses gracefully
+              if (rawAddr.startsWith('{') || rawAddr.startsWith('[')) {
+                addr = JSON.parse(rawAddr);
+              } else {
+                // Plain text address - skip location extraction
+                console.log('[PAYMENT] Vendor address is plain text, skipping location extraction');
+              }
+            } else {
+              addr = rawAddr;
+            }
+            if (addr?.state) {
+              vendorLocation = {
+                state: addr.state,
+                city: addr.city,
+              };
+            }
+          } catch (addrParseError) {
+            console.warn('[PAYMENT] Failed to parse vendor address as JSON:', addrParseError);
+            // Continue without location - tax calculation will use defaults
           }
         }
       }
@@ -456,6 +504,24 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         } catch (error) {
           console.error('Failed to publish payment processed event:', error);
         }
+
+        // Trigger auto-shipment creation for e-commerce orders
+        try {
+          // Get the order from payment notes or metadata
+          const notes = paymentEntity?.notes || {};
+          const orderId = notes.order_id || notes.orderId;
+          const orderType = notes.order_type || notes.orderType || 'ecommerce';
+          
+          if (orderId && (orderType === 'ecommerce' || orderType === 'pharmacy' || orderType === 'meal')) {
+            // Async call to auto-create shipment (don't wait for result)
+            triggerAutoShipment(orderId, orderType).catch((e) => {
+              console.error('[AUTO-SHIPMENT] Failed to trigger:', e);
+            });
+          }
+        } catch (shipmentError) {
+          console.error('[AUTO-SHIPMENT] Error in trigger:', shipmentError);
+          // Don't fail the webhook for shipment errors
+        }
       } catch (error: any) {
         console.error('Error processing webhook:', error);
         return this.error(
@@ -566,16 +632,51 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
   const getHandler = new GetPaymentHandlerEnhanced();
 
   app.post('/payments/create', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result: any = await createHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
+    try {
+      // ✅ FIX: Parse body from Hono context FIRST, then pass to createApiGatewayEvent
+      const requestBody = await c.req.json().catch(() => ({}));
+      console.log('📥 [PAYMENT-CREATE] Raw request body from Hono:', JSON.stringify(requestBody));
+      
+      const event = createApiGatewayEventWithBody(c.req, requestBody);
+      const context = createLambdaContext();
+      const result: any = await createHandler.execute(event, context);
+      
+      // Parse body safely
+      let body: any;
+      try {
+        body = JSON.parse(result.body);
+      } catch (parseError) {
+        // If parsing fails, return the raw body as error
+        console.error('Failed to parse response body:', result.body);
+        return c.json({ 
+          success: false, 
+          error: { 
+            code: 'PARSE_ERROR', 
+            message: 'Failed to parse response',
+            details: { rawBody: result.body }
+          } 
+        }, result.statusCode || 500);
+      }
+      
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      console.error('Error in payments/create endpoint:', error);
+      return c.json({ 
+        success: false, 
+        error: { 
+          code: 'INTERNAL_ERROR', 
+          message: error?.message || 'Internal server error',
+          details: error 
+        } 
+      }, 500);
+    }
   });
   
   // Alias for frontend compatibility
   app.post('/payments/create-order', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result: any = await createHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -583,7 +684,9 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/payments/razorpay/webhook', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    // ✅ FIX: Parse body from Hono context FIRST
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody(c.req, requestBody);
     const context = createLambdaContext();
     const result: any = await webhookHandler.execute(event, context);
     const body = JSON.parse(result.body);
@@ -591,7 +694,7 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
   });
 
   app.get('/payments/:paymentId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const event = createApiGatewayEventWithBody(c.req, null);
     event.pathParameters = { paymentId: c.req.param('paymentId') };
     const context = createLambdaContext();
     const result: any = await getHandler.execute(event, context);
@@ -645,12 +748,13 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+// ✅ FIX: Accept pre-parsed body since Hono doesn't have req.body
+function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
   return {
     httpMethod: req.method,
     path: req.url,
     headers: req.headers,
-    body: JSON.stringify(req.body || {}),
+    body: parsedBody ? JSON.stringify(parsedBody) : null,
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
@@ -667,3 +771,152 @@ function createLambdaContext(): any {
   };
 }
 
+/**
+ * Trigger auto-shipment creation after payment success
+ * This is called asynchronously to not block the webhook response
+ */
+async function triggerAutoShipment(orderId: string, orderType: string): Promise<void> {
+  console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
+  
+  try {
+    // Import the auto-shipment logic directly to avoid HTTP call
+    const { select, insert, update, query: dbQuery } = await import('../database/rds-connection');
+    const { logisticsPartnerService } = await import('../lib/services/logistics-partner-service');
+
+    // Get order details based on type
+    let order: any = null;
+    let orderItems: any[] = [];
+    let vendorId: string | null = null;
+
+    if (orderType === 'ecommerce') {
+      const orders = await select('orders', { id: orderId });
+      if (orders.length === 0) {
+        console.warn(`[AUTO-SHIPMENT] Order not found: ${orderId}`);
+        return;
+      }
+      order = orders[0];
+      
+      // Get order items
+      const items = await select('order_items', { order_id: orderId });
+      orderItems = items;
+      vendorId = order.vendor_id;
+      
+    } else if (orderType === 'pharmacy') {
+      const orders = await select('pharmacy_orders', { id: orderId });
+      if (orders.length === 0) {
+        console.warn(`[AUTO-SHIPMENT] Pharmacy order not found: ${orderId}`);
+        return;
+      }
+      order = orders[0];
+      vendorId = order.pharmacy_id;
+      
+      // Create delivery tracking for pharmacy orders
+      const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      await insert('delivery_tracking', {
+        pharmacy_order_id: orderId,
+        status: 'pending_assignment',
+        delivery_otp: deliveryOtp,
+      });
+      
+      await update('pharmacy_orders', { id: orderId }, {
+        status: 'processing',
+        logistics_type: 'warmpawz',
+      });
+      
+      console.log(`[AUTO-SHIPMENT] Pharmacy delivery tracking created for ${orderId}`);
+      return;
+      
+    } else if (orderType === 'meal') {
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders.length === 0) {
+        console.warn(`[AUTO-SHIPMENT] Meal order not found: ${orderId}`);
+        return;
+      }
+      order = orders[0];
+      vendorId = order.vendor_id;
+      
+      // Create delivery tracking for meal orders
+      const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      await insert('delivery_tracking', {
+        meal_order_id: orderId,
+        status: 'pending_assignment',
+        delivery_otp: deliveryOtp,
+      });
+      
+      await update('meal_orders', { id: orderId }, {
+        status: 'processing',
+        logistics_type: 'warmpawz',
+      });
+      
+      console.log(`[AUTO-SHIPMENT] Meal delivery tracking created for ${orderId}`);
+      return;
+    }
+
+    // For e-commerce orders - check if auto-shipment is enabled
+    const settingsResult = await dbQuery(
+      `SELECT setting_value FROM platform_settings WHERE setting_key = 'platform:logistics:auto_shipment'`
+    );
+    const autoShipmentEnabled = settingsResult.rows.length > 0 
+      ? (settingsResult.rows[0].setting_value as any)?.enabled !== false 
+      : true;
+
+    if (!autoShipmentEnabled) {
+      console.log(`[AUTO-SHIPMENT] Auto-shipment disabled, skipping for ${orderId}`);
+      return;
+    }
+
+    // Get customer details
+    let customer: any = null;
+    if (order.customer_id) {
+      const customers = await select('customers', { id: order.customer_id });
+      if (customers.length > 0) customer = customers[0];
+    }
+
+    // Parse shipping address
+    const shippingAddress = typeof order.shipping_address === 'string' 
+      ? JSON.parse(order.shipping_address) 
+      : order.shipping_address;
+
+    // Select best logistics partner
+    const partner = await logisticsPartnerService.selectPartner({
+      orderId,
+      pickupLocation: {
+        pincode: order.pickup_pincode || '560001',
+      },
+      deliveryLocation: {
+        pincode: shippingAddress?.pincode || shippingAddress?.zip || '000000',
+        city: shippingAddress?.city,
+        state: shippingAddress?.state,
+      },
+      weight: order.total_weight || 1,
+      orderValue: parseFloat(order.total_amount || '0'),
+    });
+
+    if (!partner) {
+      console.log(`[AUTO-SHIPMENT] No partner available, marking for manual processing: ${orderId}`);
+      await update('orders', { id: orderId }, {
+        order_status: 'processing',
+        logistics_notes: 'Pending manual shipment creation',
+      });
+      return;
+    }
+
+    // Create shipment record (actual Shiprocket API call would happen during manual processing or scheduled job)
+    await insert('shipments', {
+      order_id: orderId,
+      logistics_partner: partner.partner_type,
+      logistics_partner_id: partner.id,
+      status: 'pending_creation',
+    });
+
+    await update('orders', { id: orderId }, {
+      order_status: 'processing',
+    });
+
+    console.log(`[AUTO-SHIPMENT] Shipment record created for ${orderId}, partner: ${partner.partner_name}`);
+
+  } catch (error: any) {
+    console.error(`[AUTO-SHIPMENT] Error processing ${orderId}:`, error.message);
+    throw error;
+  }
+}

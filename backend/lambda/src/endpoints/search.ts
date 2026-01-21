@@ -155,6 +155,7 @@ class UniversalSearchHandler extends BaseHandler {
 
   /**
    * Search using SQL (fallback method)
+   * ✅ LIVE STATUS: Only returns vendors that meet live eligibility criteria
    */
   private async searchWithSQL(
     searchQuery: string,
@@ -163,6 +164,8 @@ class UniversalSearchHandler extends BaseHandler {
     limit: number
   ): Promise<HandlerResponse> {
     // ✅ SQL: Search vendors and services
+    // ✅ LIVE STATUS FILTER: Only show vendors that are eligible for listing
+    // Criteria: At least 1 enabled service, has schedule, has location (lat/lng)
     let vendorsQuery = `
       SELECT v.*, 
              (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
@@ -170,6 +173,18 @@ class UniversalSearchHandler extends BaseHandler {
       FROM vendors v
       WHERE v.is_active = true 
         AND v.status = 'approved'
+        AND v.latitude IS NOT NULL 
+        AND v.longitude IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM vendor_services vs 
+          WHERE vs.vendor_id = v.id 
+            AND vs.is_enabled = true 
+            AND vs.publish_status = 'published'
+        )
+        AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va 
+          WHERE va.vendor_id = v.id
+        )
     `;
 
     const params: any[] = [];
@@ -204,6 +219,7 @@ class UniversalSearchHandler extends BaseHandler {
     const { rows: vendors } = await query(vendorsQuery, params);
 
     // ✅ SQL: Search services
+    // ✅ LIVE STATUS FILTER: Only show services from live-eligible vendors
     let servicesQuery = `
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
       FROM vendor_services vs
@@ -212,6 +228,12 @@ class UniversalSearchHandler extends BaseHandler {
         AND vs.is_enabled = true
         AND v.is_active = true
         AND v.status = 'approved'
+        AND v.latitude IS NOT NULL 
+        AND v.longitude IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va 
+          WHERE va.vendor_id = v.id
+        )
     `;
 
     const serviceParams: any[] = [];

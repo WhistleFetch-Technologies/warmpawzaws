@@ -32,6 +32,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
     photo: ''
   });
   const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,34 +53,33 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
       };
       reader.readAsDataURL(file);
       
-      // Upload to S3
+      // Upload to S3 with progress tracking
+      setUploadingPhoto(true);
+      setUploadProgress(0);
       try {
-        setLoading(true);
-        const { uploadCustomerPhoto } = await import('@/lib/photo-upload');
-        const result = await uploadCustomerPhoto(file, session.phone);
+        const { uploadCustomerPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
+        const result = await uploadCustomerPhotoWithProgress(file, session.phone, {
+          onProgress: (progress) => {
+            setUploadProgress(progress);
+          },
+          verifyUpload: true,
+          maxRetries: 3,
+        });
         
         if (result.success && result.publicUrl) {
           setProfile({ ...profile, photo: result.publicUrl });
           console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
         } else {
-          console.error('Failed to upload photo:', result.error);
-          // Fallback to base64 if S3 upload fails
-          const base64Reader = new FileReader();
-          base64Reader.onloadend = () => {
-            setProfile({ ...profile, photo: base64Reader.result as string });
-          };
-          base64Reader.readAsDataURL(file);
+          alert(result.error || 'Failed to upload photo. Please try again.');
+          setPhotoPreview(profile.photo || '');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error uploading photo to S3:', error);
-        // Fallback to base64
-        const base64Reader = new FileReader();
-        base64Reader.onloadend = () => {
-          setProfile({ ...profile, photo: base64Reader.result as string });
-        };
-        base64Reader.readAsDataURL(file);
+        alert(error.message || 'Failed to upload photo. Please try again.');
+        setPhotoPreview(profile.photo || '');
       } finally {
-        setLoading(false);
+        setUploadingPhoto(false);
+        setUploadProgress(0);
       }
     }
   };
@@ -176,13 +177,24 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
               onClick={() => fileInputRef.current?.click()}
               className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-3 relative group"
             >
-              {photoPreview ? (
+              {photoPreview && !uploadingPhoto ? (
                 <>
                   <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera className="w-8 h-8 text-white" />
                   </div>
                 </>
+              ) : uploadingPhoto ? (
+                <div className="flex flex-col items-center justify-center h-full bg-black bg-opacity-50">
+                  <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                  <span className="text-white text-xs">{uploadProgress}%</span>
+                  <div className="mt-2 w-20 bg-gray-300 rounded-full h-1">
+                    <div
+                      className="bg-white h-1 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
               ) : (
                 <div className="flex flex-col items-center">
                   <Camera className="w-10 h-10 text-[#FF8C42] mb-2" />
@@ -195,6 +207,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
               type="file"
               accept="image/*"
               onChange={handlePhotoUpload}
+              disabled={uploadingPhoto}
               className="hidden"
             />
             <p className="text-xs text-gray-500 text-center">

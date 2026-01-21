@@ -41,6 +41,13 @@ import {
 	Zap,
 	Tag,
 	Image as ImageIcon,
+	FileText,
+	Bell,
+	Calendar,
+	Link as LinkIcon,
+	Eye,
+	EyeOff,
+	ExternalLink,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast, Toaster } from "sonner";
@@ -58,8 +65,61 @@ export default function MarketingPromotionsTab() {
 		| "spotlight"
 		| "coupons"
 		| "advanced"
+		| "banners"
+		| "articles"
+		| "announcements"
 	>("promotions");
 	const [loading, setLoading] = useState(false);
+	
+	// Banners State
+	const [banners, setBanners] = useState<any[]>([]);
+	const [showBannerModal, setShowBannerModal] = useState(false);
+	const [editingBanner, setEditingBanner] = useState<any>(null);
+	const [bannerForm, setBannerForm] = useState({
+		title: "",
+		subtitle: "",
+		image_url: "",
+		cta_text: "Shop Now",
+		cta_link: "",
+		position: "home_top",
+		is_active: true,
+		start_date: new Date().toISOString().split("T")[0],
+		end_date: "",
+		display_order: 0,
+		gradient_from: "#FF8C42",
+		gradient_to: "#FF6B35",
+	});
+	
+	// Articles State
+	const [articles, setArticles] = useState<any[]>([]);
+	const [showArticleModal, setShowArticleModal] = useState(false);
+	const [editingArticle, setEditingArticle] = useState<any>(null);
+	const [articleForm, setArticleForm] = useState({
+		title: "",
+		slug: "",
+		content: "",
+		category: "tips",
+		read_time: "5 min",
+		is_published: false,
+		featured: false,
+	});
+	
+	// Announcements State (What's New)
+	const [announcements, setAnnouncements] = useState<any[]>([]);
+	const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+	const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
+	const [announcementForm, setAnnouncementForm] = useState({
+		title: "",
+		subtitle: "",
+		badge_text: "NEW",
+		badge_color: "green",
+		icon: "✨",
+		cta_text: "",
+		cta_link: "",
+		is_active: true,
+		display_order: 0,
+		announcement_type: "feature", // feature, emergency, premium
+	});
 
 	// Spotlight State
 	const [spotlights, setSpotlights] = useState<any[]>([]);
@@ -102,6 +162,12 @@ export default function MarketingPromotionsTab() {
 		} else if (activeTab === "spotlight") {
 			loadSpotlights();
 			loadVendors();
+		} else if (activeTab === "banners") {
+			loadBanners();
+		} else if (activeTab === "articles") {
+			loadArticles();
+		} else if (activeTab === "announcements") {
+			loadAnnouncements();
 		} else {
 			loadRoles(); // Load roles first
 		}
@@ -331,6 +397,301 @@ export default function MarketingPromotionsTab() {
 	};
 
 	// ===========================
+	// BANNERS LOGIC
+	// ===========================
+
+	const loadBanners = async () => {
+		setLoading(true);
+		try {
+			const data = await apiClient.get("/admin/banners");
+			const bannersList = Array.isArray((data as any).banners) ? (data as any).banners : [];
+			setBanners(bannersList);
+		} catch (error) {
+			console.error("Error loading banners:", error);
+			setBanners([]);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleSaveBanner = async () => {
+		try {
+			if (editingBanner) {
+				await apiClient.put(`/admin/banners/${editingBanner.id}`, {
+					title: bannerForm.title,
+					description: bannerForm.subtitle,
+					imageUrl: bannerForm.image_url,
+					linkUrl: bannerForm.cta_link,
+					position: bannerForm.position,
+					priority: bannerForm.display_order,
+					startDate: bannerForm.start_date,
+					endDate: bannerForm.end_date || null,
+					isActive: bannerForm.is_active,
+					ctaText: bannerForm.cta_text,
+					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+				});
+			} else {
+				await apiClient.post("/admin/banners", {
+					title: bannerForm.title,
+					description: bannerForm.subtitle,
+					imageUrl: bannerForm.image_url,
+					linkUrl: bannerForm.cta_link,
+					position: bannerForm.position,
+					priority: bannerForm.display_order,
+					startDate: bannerForm.start_date,
+					endDate: bannerForm.end_date || null,
+					isActive: bannerForm.is_active,
+					ctaText: bannerForm.cta_text,
+					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+				});
+			}
+			toast.success(`Banner ${editingBanner ? "updated" : "created"} successfully`);
+			setShowBannerModal(false);
+			loadBanners();
+			resetBannerForm();
+		} catch (error) {
+			console.error("Error saving banner:", error);
+			toast.error("Error saving banner");
+		}
+	};
+
+	const handleDeleteBanner = async (id: string) => {
+		if (!confirm("Are you sure you want to delete this banner?")) return;
+		try {
+			await apiClient.delete(`/admin/banners/${id}`);
+			toast.success("Banner deleted");
+			loadBanners();
+		} catch (error) {
+			toast.error("Failed to delete banner");
+		}
+	};
+
+	const resetBannerForm = () => {
+		setEditingBanner(null);
+		setBannerForm({
+			title: "",
+			subtitle: "",
+			image_url: "",
+			cta_text: "Shop Now",
+			cta_link: "",
+			position: "home_top",
+			is_active: true,
+			start_date: new Date().toISOString().split("T")[0],
+			end_date: "",
+			display_order: banners.length,
+			gradient_from: "#FF8C42",
+			gradient_to: "#FF6B35",
+		});
+	};
+
+	const openEditBannerModal = (banner: any) => {
+		setEditingBanner(banner);
+		setBannerForm({
+			title: banner.title || "",
+			subtitle: banner.subtitle || banner.description || "",
+			image_url: banner.image_url || banner.imageUrl || "",
+			cta_text: banner.cta_text || banner.ctaText || "Shop Now",
+			cta_link: banner.cta_link || banner.linkUrl || "",
+			position: banner.position || "home_top",
+			is_active: banner.is_active !== false,
+			start_date: banner.start_date ? new Date(banner.start_date).toISOString().split("T")[0] : "",
+			end_date: banner.end_date ? new Date(banner.end_date).toISOString().split("T")[0] : "",
+			display_order: banner.display_order || banner.priority || 0,
+			gradient_from: banner.metadata?.gradient_from || "#FF8C42",
+			gradient_to: banner.metadata?.gradient_to || "#FF6B35",
+		});
+		setShowBannerModal(true);
+	};
+
+	// ===========================
+	// ARTICLES LOGIC
+	// ===========================
+
+	const loadArticles = async () => {
+		setLoading(true);
+		try {
+			const data = await apiClient.get("/admin/content/pages");
+			const allPages = Array.isArray((data as any).pages) ? (data as any).pages : [];
+			// Filter for marketing articles
+			const articlesList = allPages.filter((p: any) => p.category === 'marketing' || p.category === 'tips' || p.category === 'article');
+			setArticles(articlesList);
+		} catch (error) {
+			console.error("Error loading articles:", error);
+			setArticles([]);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleSaveArticle = async () => {
+		try {
+			const slug = articleForm.slug || articleForm.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+			if (editingArticle) {
+				await apiClient.put(`/admin/content/pages/${editingArticle.pageId || editingArticle.id}`, {
+					title: articleForm.title,
+					slug: slug,
+					content: articleForm.content,
+					category: articleForm.category,
+					isPublished: articleForm.is_published,
+					metadata: { read_time: articleForm.read_time, featured: articleForm.featured },
+				});
+			} else {
+				await apiClient.post("/admin/content/pages", {
+					title: articleForm.title,
+					slug: slug,
+					content: articleForm.content,
+					category: articleForm.category,
+					isPublished: articleForm.is_published,
+					metadata: { read_time: articleForm.read_time, featured: articleForm.featured },
+				});
+			}
+			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`);
+			setShowArticleModal(false);
+			loadArticles();
+			resetArticleForm();
+		} catch (error) {
+			console.error("Error saving article:", error);
+			toast.error("Error saving article");
+		}
+	};
+
+	const handleDeleteArticle = async (id: string) => {
+		if (!confirm("Are you sure you want to delete this article?")) return;
+		try {
+			await apiClient.delete(`/admin/content/pages/${id}`);
+			toast.success("Article deleted");
+			loadArticles();
+		} catch (error) {
+			toast.error("Failed to delete article");
+		}
+	};
+
+	const resetArticleForm = () => {
+		setEditingArticle(null);
+		setArticleForm({
+			title: "",
+			slug: "",
+			content: "",
+			category: "tips",
+			read_time: "5 min",
+			is_published: false,
+			featured: false,
+		});
+	};
+
+	const openEditArticleModal = (article: any) => {
+		setEditingArticle(article);
+		setArticleForm({
+			title: article.title || "",
+			slug: article.slug || "",
+			content: article.content || "",
+			category: article.category || "tips",
+			read_time: article.metadata?.read_time || "5 min",
+			is_published: article.isPublished || article.is_published || false,
+			featured: article.metadata?.featured || false,
+		});
+		setShowArticleModal(true);
+	};
+
+	// ===========================
+	// ANNOUNCEMENTS LOGIC (What's New)
+	// ===========================
+
+	const loadAnnouncements = async () => {
+		setLoading(true);
+		try {
+			// Use platform_settings for announcements
+			const data = await apiClient.get("/admin/platform-settings?key=home_announcements");
+			if ((data as any).success && (data as any).setting?.setting_value) {
+				const announcementList = Array.isArray((data as any).setting.setting_value) 
+					? (data as any).setting.setting_value 
+					: [];
+				setAnnouncements(announcementList);
+			} else {
+				// Default announcements if none exist
+				setAnnouncements([]);
+			}
+		} catch (error) {
+			console.error("Error loading announcements:", error);
+			setAnnouncements([]);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleSaveAnnouncement = async () => {
+		try {
+			const updatedAnnouncements = editingAnnouncement 
+				? announcements.map((a) => a.id === editingAnnouncement.id ? { ...announcementForm, id: editingAnnouncement.id } : a)
+				: [...announcements, { ...announcementForm, id: `ann_${Date.now()}` }];
+
+			await apiClient.put("/admin/platform-settings", {
+				settingKey: "home_announcements",
+				settingValue: updatedAnnouncements,
+				settingType: "array",
+				description: "Customer home page announcements (What's New section)",
+			});
+			toast.success(`Announcement ${editingAnnouncement ? "updated" : "created"} successfully`);
+			setShowAnnouncementModal(false);
+			setAnnouncements(updatedAnnouncements);
+			resetAnnouncementForm();
+		} catch (error) {
+			console.error("Error saving announcement:", error);
+			toast.error("Error saving announcement");
+		}
+	};
+
+	const handleDeleteAnnouncement = async (id: string) => {
+		if (!confirm("Are you sure you want to delete this announcement?")) return;
+		try {
+			const updatedAnnouncements = announcements.filter((a) => a.id !== id);
+			await apiClient.put("/admin/platform-settings", {
+				settingKey: "home_announcements",
+				settingValue: updatedAnnouncements,
+				settingType: "array",
+				description: "Customer home page announcements (What's New section)",
+			});
+			toast.success("Announcement deleted");
+			setAnnouncements(updatedAnnouncements);
+		} catch (error) {
+			toast.error("Failed to delete announcement");
+		}
+	};
+
+	const resetAnnouncementForm = () => {
+		setEditingAnnouncement(null);
+		setAnnouncementForm({
+			title: "",
+			subtitle: "",
+			badge_text: "NEW",
+			badge_color: "green",
+			icon: "✨",
+			cta_text: "",
+			cta_link: "",
+			is_active: true,
+			display_order: announcements.length,
+			announcement_type: "feature",
+		});
+	};
+
+	const openEditAnnouncementModal = (announcement: any) => {
+		setEditingAnnouncement(announcement);
+		setAnnouncementForm({
+			title: announcement.title || "",
+			subtitle: announcement.subtitle || "",
+			badge_text: announcement.badge_text || "NEW",
+			badge_color: announcement.badge_color || "green",
+			icon: announcement.icon || "✨",
+			cta_text: announcement.cta_text || "",
+			cta_link: announcement.cta_link || "",
+			is_active: announcement.is_active !== false,
+			display_order: announcement.display_order || 0,
+			announcement_type: announcement.announcement_type || "feature",
+		});
+		setShowAnnouncementModal(true);
+	};
+
+	// ===========================
 	// UI CONFIG LOGIC
 	// ===========================
 
@@ -466,62 +827,95 @@ export default function MarketingPromotionsTab() {
 							</div>
 						</div>
 
-						{/* Tabs - Match wireframe: Integrated into header with border-b pattern */}
-						<div className="flex gap-1 overflow-x-auto">
+						{/* ✅ FIX: Improved tabs with thicker border and better visual hierarchy */}
+						<div className="flex gap-0 overflow-x-auto border-b border-gray-200 -mb-px">
 							<button
 								onClick={() => setActiveTab("promotions")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "promotions"
-										? "border-[#FF8C42] text-[#FF8C42]"
-										: "border-transparent text-gray-600 hover:text-gray-900"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
 								}`}
 							>
-								<Megaphone className="w-5 h-5" />
-								<span className="font-medium">Promotions</span>
+								<Megaphone className="w-4 h-4" />
+								<span className="font-medium text-sm">Promotions</span>
 							</button>
 							<button
 								onClick={() => setActiveTab("ui-config")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "ui-config"
-										? "border-[#FF8C42] text-[#FF8C42]"
-										: "border-transparent text-gray-600 hover:text-gray-900"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
 								}`}
 							>
-								<LayoutTemplate className="w-5 h-5" />
-								<span className="font-medium">Dashboard UI</span>
+								<LayoutTemplate className="w-4 h-4" />
+								<span className="font-medium text-sm">Dashboard UI</span>
 							</button>
 							<button
 								onClick={() => setActiveTab("spotlight")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "spotlight"
-										? "border-[#FF8C42] text-[#FF8C42]"
-										: "border-transparent text-gray-600 hover:text-gray-900"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
 								}`}
 							>
-								<Star className="w-5 h-5" />
-								<span className="font-medium">Spotlight</span>
+								<Star className="w-4 h-4" />
+								<span className="font-medium text-sm">Spotlight</span>
 							</button>
 							<button
 								onClick={() => setActiveTab("coupons")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "coupons"
-										? "border-[#FF8C42] text-[#FF8C42]"
-										: "border-transparent text-gray-600 hover:text-gray-900"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
 								}`}
 							>
-								<Tag className="w-5 h-5" />
-								<span className="font-medium">Coupons</span>
+								<Tag className="w-4 h-4" />
+								<span className="font-medium text-sm">Coupons</span>
 							</button>
 							<button
 								onClick={() => setActiveTab("advanced")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "advanced"
-										? "border-[#FF8C42] text-[#FF8C42]"
-										: "border-transparent text-gray-600 hover:text-gray-900"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
 								}`}
 							>
-								<Zap className="w-5 h-5" />
-								<span className="font-medium">Advanced</span>
+								<Zap className="w-4 h-4" />
+								<span className="font-medium text-sm">Advanced</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("banners")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+									activeTab === "banners"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+								}`}
+							>
+								<ImageIcon className="w-4 h-4" />
+								<span className="font-medium text-sm">Banners</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("articles")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+									activeTab === "articles"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+								}`}
+							>
+								<FileText className="w-4 h-4" />
+								<span className="font-medium text-sm">Articles</span>
+							</button>
+							<button
+								onClick={() => setActiveTab("announcements")}
+								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
+									activeTab === "announcements"
+										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
+										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+								}`}
+							>
+								<Bell className="w-4 h-4" />
+								<span className="font-medium text-sm">What's New</span>
 							</button>
 						</div>
 					</div>
@@ -639,20 +1033,22 @@ export default function MarketingPromotionsTab() {
 						{/* UI CONFIG TAB */}
 						{activeTab === "ui-config" && (
 							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-								<Card className="p-6 col-span-1 h-fit">
+								{/* ✅ FIX: Added overflow-visible and relative positioning for dropdown */}
+								<Card className="p-6 col-span-1 h-fit relative overflow-visible">
 									<h3 className="font-semibold mb-4">Configuration Scope</h3>
 									<div className="space-y-4">
-										<div>
-											<Label>Target Role</Label>
+										<div className="relative z-20">
+											<Label className="block text-sm font-medium text-gray-700 mb-2">Target Role</Label>
 											<Select value={selectedRole} onValueChange={setSelectedRole}>
-												<SelectTrigger>
+												<SelectTrigger className="w-full">
 													<SelectValue placeholder="Select a role" />
 												</SelectTrigger>
-												<SelectContent>
+												{/* ✅ FIX: Added position and z-index to SelectContent */}
+												<SelectContent className="max-h-[280px] overflow-y-auto z-50">
 													{Array.isArray(availableRoles) && availableRoles.length > 0 ? (
 														availableRoles.map((role) => (
 															<SelectItem key={role.id} value={role.id}>
-																{role.name}
+																{role.display_name || role.name}
 															</SelectItem>
 														))
 													) : (
@@ -923,6 +1319,309 @@ export default function MarketingPromotionsTab() {
 
 						{/* ADVANCED TAB */}
 						{activeTab === "advanced" && <AdvancedPromotionsEngine />}
+
+						{/* BANNERS TAB */}
+						{activeTab === "banners" && (
+							<div className="space-y-6">
+								<div className="flex justify-between items-center">
+									<div>
+										<h3 className="text-lg font-medium">Home Banners</h3>
+										<p className="text-sm text-gray-500">
+											Manage promotional banners displayed on customer home screen
+										</p>
+									</div>
+									<Button
+										className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
+										onClick={() => {
+											resetBannerForm();
+											setShowBannerModal(true);
+										}}
+									>
+										<Plus className="w-4 h-4 mr-2" />
+										Create Banner
+									</Button>
+								</div>
+
+								{loading ? (
+									<div className="text-center py-12">Loading banners...</div>
+								) : (
+									<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+										{banners.map((banner) => (
+											<Card key={banner.id} className="overflow-hidden">
+												<div 
+													className="h-32 flex items-center justify-center relative"
+													style={{
+														background: banner.image_url || banner.imageUrl 
+															? `url(${banner.image_url || banner.imageUrl}) center/cover` 
+															: `linear-gradient(135deg, ${banner.metadata?.gradient_from || '#FF8C42'} 0%, ${banner.metadata?.gradient_to || '#FF6B35'} 100%)`
+													}}
+												>
+													{!banner.image_url && !banner.imageUrl && (
+														<ImageIcon className="w-12 h-12 text-white/50" />
+													)}
+													<Badge 
+														className={`absolute top-2 right-2 ${banner.is_active ? 'bg-green-500' : 'bg-gray-500'}`}
+													>
+														{banner.is_active ? 'Active' : 'Inactive'}
+													</Badge>
+													<Badge className="absolute top-2 left-2 bg-blue-500">
+														{banner.position?.replace('_', ' ') || 'home_top'}
+													</Badge>
+												</div>
+												<div className="p-4">
+													<h4 className="font-semibold text-gray-900">{banner.title}</h4>
+													<p className="text-sm text-gray-500 line-clamp-1">
+														{banner.subtitle || banner.description || 'No subtitle'}
+													</p>
+													<div className="flex items-center justify-between mt-3">
+														<div className="text-xs text-gray-400">
+															Order: {banner.display_order || banner.priority || 0}
+														</div>
+														<div className="flex gap-1">
+															<Button
+																variant="ghost"
+																size="icon"
+																onClick={() => openEditBannerModal(banner)}
+															>
+																<Edit className="w-4 h-4 text-blue-600" />
+															</Button>
+															<Button
+																variant="ghost"
+																size="icon"
+																onClick={() => handleDeleteBanner(banner.id)}
+															>
+																<Trash2 className="w-4 h-4 text-red-600" />
+															</Button>
+														</div>
+													</div>
+												</div>
+											</Card>
+										))}
+
+										{banners.length === 0 && (
+											<div className="col-span-3 text-center py-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+												<ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+												<h3 className="text-gray-900 font-medium">No Banners Yet</h3>
+												<p className="text-gray-500 text-sm mt-1 mb-4">
+													Create eye-catching banners for customer home screen
+												</p>
+												<Button
+													variant="outline"
+													onClick={() => {
+														resetBannerForm();
+														setShowBannerModal(true);
+													}}
+												>
+													Create First Banner
+												</Button>
+											</div>
+										)}
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* ARTICLES TAB */}
+						{activeTab === "articles" && (
+							<div className="space-y-6">
+								<div className="flex justify-between items-center">
+									<div>
+										<h3 className="text-lg font-medium">Pet Care Articles</h3>
+										<p className="text-sm text-gray-500">
+											Manage educational articles displayed on customer home
+										</p>
+									</div>
+									<Button
+										className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
+										onClick={() => {
+											resetArticleForm();
+											setShowArticleModal(true);
+										}}
+									>
+										<Plus className="w-4 h-4 mr-2" />
+										Create Article
+									</Button>
+								</div>
+
+								{loading ? (
+									<div className="text-center py-12">Loading articles...</div>
+								) : (
+									<Card className="overflow-hidden">
+										<Table>
+											<TableHeader>
+												<TableRow>
+													<TableHead>Title</TableHead>
+													<TableHead>Category</TableHead>
+													<TableHead>Read Time</TableHead>
+													<TableHead>Status</TableHead>
+													<TableHead>Featured</TableHead>
+													<TableHead className="text-right">Actions</TableHead>
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{articles.map((article) => (
+													<TableRow key={article.pageId || article.id}>
+														<TableCell className="font-medium">
+															<div>{article.title}</div>
+															<div className="text-xs text-gray-500 font-mono">/{article.slug}</div>
+														</TableCell>
+														<TableCell>
+															<Badge variant="outline" className="capitalize">
+																{article.category}
+															</Badge>
+														</TableCell>
+														<TableCell>{article.metadata?.read_time || '5 min'}</TableCell>
+														<TableCell>
+															{article.isPublished || article.is_published ? (
+																<Badge className="bg-green-100 text-green-700">Published</Badge>
+															) : (
+																<Badge className="bg-gray-100 text-gray-700">Draft</Badge>
+															)}
+														</TableCell>
+														<TableCell>
+															{article.metadata?.featured ? (
+																<Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+															) : (
+																<Star className="w-4 h-4 text-gray-300" />
+															)}
+														</TableCell>
+														<TableCell className="text-right">
+															<Button
+																variant="ghost"
+																size="icon"
+																onClick={() => openEditArticleModal(article)}
+															>
+																<Edit className="w-4 h-4 text-blue-600" />
+															</Button>
+															<Button
+																variant="ghost"
+																size="icon"
+																onClick={() => handleDeleteArticle(article.pageId || article.id)}
+															>
+																<Trash2 className="w-4 h-4 text-red-600" />
+															</Button>
+														</TableCell>
+													</TableRow>
+												))}
+												{articles.length === 0 && (
+													<TableRow>
+														<TableCell colSpan={6} className="text-center py-8 text-gray-500">
+															No articles found. Create educational content for pet owners.
+														</TableCell>
+													</TableRow>
+												)}
+											</TableBody>
+										</Table>
+									</Card>
+								)}
+							</div>
+						)}
+
+						{/* ANNOUNCEMENTS TAB (What's New) */}
+						{activeTab === "announcements" && (
+							<div className="space-y-6">
+								<div className="flex justify-between items-center">
+									<div>
+										<h3 className="text-lg font-medium">What's New Announcements</h3>
+										<p className="text-sm text-gray-500">
+											Manage announcements for the "What's New" section on customer home
+										</p>
+									</div>
+									<Button
+										className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
+										onClick={() => {
+											resetAnnouncementForm();
+											setShowAnnouncementModal(true);
+										}}
+									>
+										<Plus className="w-4 h-4 mr-2" />
+										Add Announcement
+									</Button>
+								</div>
+
+								{loading ? (
+									<div className="text-center py-12">Loading announcements...</div>
+								) : (
+									<div className="space-y-4">
+										{announcements.map((announcement) => (
+											<Card key={announcement.id} className="p-4">
+												<div className="flex items-start gap-4">
+													<div 
+														className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0 ${
+															announcement.announcement_type === 'emergency' ? 'bg-red-100' :
+															announcement.announcement_type === 'premium' ? 'bg-purple-100' :
+															'bg-orange-100'
+														}`}
+													>
+														{announcement.icon || '✨'}
+													</div>
+													<div className="flex-1">
+														<div className="flex items-center gap-2 mb-1">
+															<Badge 
+																className={`text-xs ${
+																	announcement.badge_color === 'red' ? 'bg-red-500' :
+																	announcement.badge_color === 'purple' ? 'bg-purple-500' :
+																	announcement.badge_color === 'blue' ? 'bg-blue-500' :
+																	'bg-green-500'
+																} text-white`}
+															>
+																{announcement.badge_text || 'NEW'}
+															</Badge>
+															{!announcement.is_active && (
+																<Badge variant="outline" className="text-gray-500">Inactive</Badge>
+															)}
+														</div>
+														<h4 className="font-semibold text-gray-900">{announcement.title}</h4>
+														<p className="text-sm text-gray-500">{announcement.subtitle}</p>
+														{announcement.cta_text && (
+															<div className="flex items-center gap-1 mt-2 text-sm text-[#FF8C42]">
+																<LinkIcon className="w-3 h-3" />
+																{announcement.cta_text}
+															</div>
+														)}
+													</div>
+													<div className="flex gap-1">
+														<Button
+															variant="ghost"
+															size="icon"
+															onClick={() => openEditAnnouncementModal(announcement)}
+														>
+															<Edit className="w-4 h-4 text-blue-600" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon"
+															onClick={() => handleDeleteAnnouncement(announcement.id)}
+														>
+															<Trash2 className="w-4 h-4 text-red-600" />
+														</Button>
+													</div>
+												</div>
+											</Card>
+										))}
+
+										{announcements.length === 0 && (
+											<div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+												<Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+												<h3 className="text-gray-900 font-medium">No Announcements</h3>
+												<p className="text-gray-500 text-sm mt-1 mb-4">
+													Add announcements for the "What's New" section
+												</p>
+												<Button
+													variant="outline"
+													onClick={() => {
+														resetAnnouncementForm();
+														setShowAnnouncementModal(true);
+													}}
+												>
+													Add First Announcement
+												</Button>
+											</div>
+										)}
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
@@ -1173,6 +1872,441 @@ export default function MarketingPromotionsTab() {
 							className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
 						>
 							Add Spotlight
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* BANNER MODAL */}
+			<Dialog open={showBannerModal} onOpenChange={setShowBannerModal}>
+				<DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>
+							{editingBanner ? "Edit Banner" : "Create New Banner"}
+						</DialogTitle>
+						<DialogDescription>
+							Configure promotional banner for customer home screen
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="grid gap-4 py-4">
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Title *</Label>
+								<Input
+									value={bannerForm.title}
+									onChange={(e) => setBannerForm({ ...bannerForm, title: e.target.value })}
+									placeholder="e.g. Get 50% OFF"
+								/>
+							</div>
+							<div>
+								<Label>Subtitle</Label>
+								<Input
+									value={bannerForm.subtitle}
+									onChange={(e) => setBannerForm({ ...bannerForm, subtitle: e.target.value })}
+									placeholder="e.g. First Grooming Session"
+								/>
+							</div>
+						</div>
+
+						<div>
+							<Label>Image URL (optional)</Label>
+							<Input
+								value={bannerForm.image_url}
+								onChange={(e) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
+								placeholder="https://example.com/banner.jpg"
+							/>
+							<p className="text-xs text-gray-500 mt-1">Leave empty to use gradient colors</p>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Gradient From</Label>
+								<div className="flex gap-2">
+									<Input
+										type="color"
+										value={bannerForm.gradient_from}
+										onChange={(e) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
+										className="w-12 h-10 p-1"
+									/>
+									<Input
+										value={bannerForm.gradient_from}
+										onChange={(e) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
+										placeholder="#FF8C42"
+									/>
+								</div>
+							</div>
+							<div>
+								<Label>Gradient To</Label>
+								<div className="flex gap-2">
+									<Input
+										type="color"
+										value={bannerForm.gradient_to}
+										onChange={(e) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
+										className="w-12 h-10 p-1"
+									/>
+									<Input
+										value={bannerForm.gradient_to}
+										onChange={(e) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
+										placeholder="#FF6B35"
+									/>
+								</div>
+							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>CTA Button Text</Label>
+								<Input
+									value={bannerForm.cta_text}
+									onChange={(e) => setBannerForm({ ...bannerForm, cta_text: e.target.value })}
+									placeholder="Claim Now"
+								/>
+							</div>
+							<div>
+								<Label>CTA Link</Label>
+								<Input
+									value={bannerForm.cta_link}
+									onChange={(e) => setBannerForm({ ...bannerForm, cta_link: e.target.value })}
+									placeholder="/grooming"
+								/>
+							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Position</Label>
+								<Select
+									value={bannerForm.position}
+									onValueChange={(v) => setBannerForm({ ...bannerForm, position: v })}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
+										<SelectItem value="home_middle">Home Middle</SelectItem>
+										<SelectItem value="category">Category Page</SelectItem>
+										<SelectItem value="checkout">Checkout Page</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label>Display Order</Label>
+								<Input
+									type="number"
+									value={bannerForm.display_order}
+									onChange={(e) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
+									min="0"
+								/>
+							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Start Date</Label>
+								<Input
+									type="date"
+									value={bannerForm.start_date}
+									onChange={(e) => setBannerForm({ ...bannerForm, start_date: e.target.value })}
+								/>
+							</div>
+							<div>
+								<Label>End Date (optional)</Label>
+								<Input
+									type="date"
+									value={bannerForm.end_date}
+									onChange={(e) => setBannerForm({ ...bannerForm, end_date: e.target.value })}
+								/>
+							</div>
+						</div>
+
+						<div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+							<Switch
+								checked={bannerForm.is_active}
+								onCheckedChange={(checked) => setBannerForm({ ...bannerForm, is_active: checked })}
+							/>
+							<Label>Banner is active</Label>
+						</div>
+
+						{/* Preview */}
+						<div>
+							<Label className="mb-2 block">Preview</Label>
+							<div 
+								className="h-24 rounded-xl overflow-hidden flex items-center justify-between px-4"
+								style={{
+									background: bannerForm.image_url 
+										? `url(${bannerForm.image_url}) center/cover` 
+										: `linear-gradient(135deg, ${bannerForm.gradient_from} 0%, ${bannerForm.gradient_to} 100%)`
+								}}
+							>
+								<div>
+									<h3 className="text-white font-bold">{bannerForm.title || 'Banner Title'}</h3>
+									<p className="text-white/90 text-sm">{bannerForm.subtitle || 'Subtitle here'}</p>
+									{bannerForm.cta_text && (
+										<span className="inline-block mt-1 bg-white text-gray-900 px-3 py-1 rounded-full text-xs font-medium">
+											{bannerForm.cta_text}
+										</span>
+									)}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowBannerModal(false)}>
+							Cancel
+						</Button>
+						<Button onClick={handleSaveBanner} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+							{editingBanner ? 'Update' : 'Create'} Banner
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* ARTICLE MODAL */}
+			<Dialog open={showArticleModal} onOpenChange={setShowArticleModal}>
+				<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>
+							{editingArticle ? "Edit Article" : "Create New Article"}
+						</DialogTitle>
+						<DialogDescription>
+							Create educational content for pet owners
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="grid gap-4 py-4">
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Title *</Label>
+								<Input
+									value={articleForm.title}
+									onChange={(e) => setArticleForm({ ...articleForm, title: e.target.value })}
+									placeholder="e.g. 10 Tips for Puppy Training"
+								/>
+							</div>
+							<div>
+								<Label>Slug</Label>
+								<Input
+									value={articleForm.slug}
+									onChange={(e) => setArticleForm({ ...articleForm, slug: e.target.value })}
+									placeholder="puppy-training-tips"
+								/>
+								<p className="text-xs text-gray-500 mt-1">Auto-generated if left empty</p>
+							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Category</Label>
+								<Select
+									value={articleForm.category}
+									onValueChange={(v) => setArticleForm({ ...articleForm, category: v })}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="tips">Training Tips</SelectItem>
+										<SelectItem value="nutrition">Nutrition</SelectItem>
+										<SelectItem value="health">Health & Wellness</SelectItem>
+										<SelectItem value="grooming">Grooming</SelectItem>
+										<SelectItem value="insurance">Insurance</SelectItem>
+										<SelectItem value="behavior">Behavior</SelectItem>
+										<SelectItem value="marketing">General</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label>Read Time</Label>
+								<Select
+									value={articleForm.read_time}
+									onValueChange={(v) => setArticleForm({ ...articleForm, read_time: v })}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="2 min">2 min</SelectItem>
+										<SelectItem value="3 min">3 min</SelectItem>
+										<SelectItem value="5 min">5 min</SelectItem>
+										<SelectItem value="7 min">7 min</SelectItem>
+										<SelectItem value="10 min">10 min</SelectItem>
+										<SelectItem value="15 min">15 min</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+						</div>
+
+						<div>
+							<Label>Content *</Label>
+							<textarea
+								value={articleForm.content}
+								onChange={(e) => setArticleForm({ ...articleForm, content: e.target.value })}
+								placeholder="Write your article content here..."
+								className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent min-h-[200px]"
+							/>
+						</div>
+
+						<div className="flex gap-6 p-3 bg-gray-50 rounded-lg">
+							<div className="flex items-center gap-2">
+								<Switch
+									checked={articleForm.is_published}
+									onCheckedChange={(checked) => setArticleForm({ ...articleForm, is_published: checked })}
+								/>
+								<Label>Published</Label>
+							</div>
+							<div className="flex items-center gap-2">
+								<Switch
+									checked={articleForm.featured}
+									onCheckedChange={(checked) => setArticleForm({ ...articleForm, featured: checked })}
+								/>
+								<Label>Featured on Home</Label>
+							</div>
+						</div>
+					</div>
+
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowArticleModal(false)}>
+							Cancel
+						</Button>
+						<Button onClick={handleSaveArticle} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+							{editingArticle ? 'Update' : 'Create'} Article
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* ANNOUNCEMENT MODAL */}
+			<Dialog open={showAnnouncementModal} onOpenChange={setShowAnnouncementModal}>
+				<DialogContent className="max-w-lg">
+					<DialogHeader>
+						<DialogTitle>
+							{editingAnnouncement ? "Edit Announcement" : "Create New Announcement"}
+						</DialogTitle>
+						<DialogDescription>
+							Add to the "What's New" section on customer home
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="grid gap-4 py-4">
+						<div>
+							<Label>Title *</Label>
+							<Input
+								value={announcementForm.title}
+								onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+								placeholder="e.g. AI Pet Assistant"
+							/>
+						</div>
+
+						<div>
+							<Label>Subtitle</Label>
+							<Input
+								value={announcementForm.subtitle}
+								onChange={(e) => setAnnouncementForm({ ...announcementForm, subtitle: e.target.value })}
+								placeholder="e.g. Get instant answers about pet care"
+							/>
+						</div>
+
+						<div className="grid grid-cols-3 gap-4">
+							<div>
+								<Label>Badge Text</Label>
+								<Input
+									value={announcementForm.badge_text}
+									onChange={(e) => setAnnouncementForm({ ...announcementForm, badge_text: e.target.value })}
+									placeholder="NEW"
+								/>
+							</div>
+							<div>
+								<Label>Badge Color</Label>
+								<Select
+									value={announcementForm.badge_color}
+									onValueChange={(v) => setAnnouncementForm({ ...announcementForm, badge_color: v })}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="green">Green</SelectItem>
+										<SelectItem value="blue">Blue</SelectItem>
+										<SelectItem value="purple">Purple</SelectItem>
+										<SelectItem value="red">Red (SOS)</SelectItem>
+										<SelectItem value="orange">Orange</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label>Icon</Label>
+								<Input
+									value={announcementForm.icon}
+									onChange={(e) => setAnnouncementForm({ ...announcementForm, icon: e.target.value })}
+									placeholder="✨"
+								/>
+							</div>
+						</div>
+
+						<div>
+							<Label>Announcement Type</Label>
+							<Select
+								value={announcementForm.announcement_type}
+								onValueChange={(v) => setAnnouncementForm({ ...announcementForm, announcement_type: v })}
+							>
+								<SelectTrigger>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="feature">New Feature</SelectItem>
+									<SelectItem value="emergency">Emergency Service</SelectItem>
+									<SelectItem value="premium">Premium/Membership</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>CTA Button Text (optional)</Label>
+								<Input
+									value={announcementForm.cta_text}
+									onChange={(e) => setAnnouncementForm({ ...announcementForm, cta_text: e.target.value })}
+									placeholder="Try Now"
+								/>
+							</div>
+							<div>
+								<Label>CTA Link</Label>
+								<Input
+									value={announcementForm.cta_link}
+									onChange={(e) => setAnnouncementForm({ ...announcementForm, cta_link: e.target.value })}
+									placeholder="/ai-assistant"
+								/>
+							</div>
+						</div>
+
+						<div>
+							<Label>Display Order</Label>
+							<Input
+								type="number"
+								value={announcementForm.display_order}
+								onChange={(e) => setAnnouncementForm({ ...announcementForm, display_order: parseInt(e.target.value) || 0 })}
+								min="0"
+							/>
+						</div>
+
+						<div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+							<Switch
+								checked={announcementForm.is_active}
+								onCheckedChange={(checked) => setAnnouncementForm({ ...announcementForm, is_active: checked })}
+							/>
+							<Label>Announcement is active</Label>
+						</div>
+					</div>
+
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowAnnouncementModal(false)}>
+							Cancel
+						</Button>
+						<Button onClick={handleSaveAnnouncement} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+							{editingAnnouncement ? 'Update' : 'Create'} Announcement
 						</Button>
 					</DialogFooter>
 				</DialogContent>
