@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -130,6 +132,7 @@ interface NutritionistDashboardProps {
 }
 
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'analytics'>('products');
   const [products, setProducts] = useState<MealProduct[]>([]);
   const [orders, setOrders] = useState<MealOrder[]>([]);
@@ -143,6 +146,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     name: '',
     description: '',
     price: '',
+    durationDays: '7', // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
     ingredients: '',
     calories: '',
     protein: '',
@@ -151,7 +155,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     petTypes: ['Dog'] as string[],
     preparationTime: '60',
   });
-
+  console.log("------------------------------------->", vendorId, formData);
   const fetchProducts = useCallback(async () => {
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-products`);
@@ -190,12 +194,31 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   };
 
   const handleSaveProduct = async () => {
+    // ✅ VALIDATION: Required fields from meal_plans schema (NOT NULL constraints)
+    if (!formData.name || formData.name.trim() === '') {
+      toast.error('Meal Name is required');
+      return;
+    }
+    
+    const price = parseFloat(formData.price);
+    if (isNaN(price) || price <= 0) {
+      toast.error('Valid Price is required (must be a positive number)');
+      return;
+    }
+    
+    const durationDays = parseInt(formData.durationDays);
+    if (isNaN(durationDays) || durationDays <= 0) {
+      toast.error('Duration Days is required (must be a positive number)');
+      return;
+    }
+
     try {
       const payload = {
         name: formData.name,
         description: formData.description,
-        price: parseFloat(formData.price),
-        ingredients: formData.ingredients.split(',').map(i => i.trim()),
+        price: price,
+        durationDays: durationDays, // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
+        ingredients: formData.ingredients ? formData.ingredients.split(',').map(i => i.trim()) : [],
         nutritionalValue: {
           calories: formData.calories,
           protein: formData.protein,
@@ -203,31 +226,39 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         dietType: formData.dietType,
         suitableFor: formData.suitableFor,
         petTypes: formData.petTypes,
-        preparationLeadTime: parseInt(formData.preparationTime),
+        preparationLeadTime: parseInt(formData.preparationTime) || 60,
       };
 
       if (editingProduct) {
         await apiClient.put(`/vendor/${vendorId}/meal-products/${editingProduct.id}`, payload);
+        toast.success('Meal product updated successfully');
       } else {
         await apiClient.post(`/vendor/${vendorId}/meal-products`, payload);
+        toast.success('Meal product created successfully');
       }
 
       setShowAddProduct(false);
       setEditingProduct(null);
       resetForm();
       await fetchProducts();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving product:', error);
+      toast.error(error?.message || 'Failed to save meal product. Please check all required fields.');
     }
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    // Use toast promise for confirmation instead of native confirm
+    const confirmed = window.confirm('Are you sure you want to delete this product?');
+    if (!confirmed) return;
+    
     try {
       await apiClient.delete(`/vendor/${vendorId}/meal-products/${productId}`);
+      toast.success('Product deleted successfully');
       await fetchProducts();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting product:', error);
+      toast.error(error?.message || 'Failed to delete product');
     }
   };
 
@@ -245,6 +276,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       name: '',
       description: '',
       price: '',
+      durationDays: '7', // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
       ingredients: '',
       calories: '',
       protein: '',
@@ -261,6 +293,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       name: product.name || '',
       description: product.description || '',
       price: product.price?.toString() || '',
+      durationDays: (product as any).duration_days?.toString() || '7', // ✅ REQUIRED: meal_plans.duration_days
       ingredients: (metadata.ingredients || []).join(', '),
       calories: metadata.nutritionalValue?.calories || '',
       protein: metadata.nutritionalValue?.protein || '',
@@ -304,6 +337,15 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/')}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600 hover:text-slate-800"
+                title="Back to Dashboard"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </button>
               <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white">
                 {Icons.leaf}
               </div>
@@ -333,18 +375,16 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === tab.id
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
                     ? 'bg-emerald-600 text-white shadow-md'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                  }`}
               >
                 {tab.icon}
                 <span>{tab.label}</span>
                 {tab.count > 0 && (
-                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${
-                    activeTab === tab.id ? 'bg-white/20' : 'bg-slate-200'
-                  }`}>
+                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${activeTab === tab.id ? 'bg-white/20' : 'bg-slate-200'
+                    }`}>
                     {tab.count}
                   </span>
                 )}
@@ -393,7 +433,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                           <span className="text-lg font-bold text-emerald-600">₹{product.price}</span>
                         </div>
                         <p className="text-sm text-slate-500 mb-3 line-clamp-2">{product.description}</p>
-                        
+
                         <div className="flex flex-wrap gap-1 mb-3">
                           {metadata.dietType && (
                             <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs">
@@ -593,6 +633,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   placeholder="e.g., Chicken & Rice Bowl"
+                  required
                 />
               </div>
 
@@ -616,8 +657,24 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     placeholder="299"
+                    required
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Duration (Days) *</label>
+                  <input
+                    type="number"
+                    value={formData.durationDays}
+                    onChange={(e) => setFormData({ ...formData, durationDays: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="7"
+                    min="1"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Prep Time (min)</label>
                   <input
@@ -672,11 +729,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                       key={type}
                       type="button"
                       onClick={() => setFormData({ ...formData, dietType: type })}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        formData.dietType === type
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.dietType === type
                           ? 'bg-emerald-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
                       {type}
                     </button>
@@ -699,11 +755,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                           setFormData({ ...formData, petTypes: [...current, type] });
                         }
                       }}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        formData.petTypes.includes(type)
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.petTypes.includes(type)
                           ? 'bg-blue-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
                       {type}
                     </button>

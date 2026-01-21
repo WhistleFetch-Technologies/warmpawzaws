@@ -1,9 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Settings, Plus, Search, Filter, Edit, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Utensils, Plus } from 'lucide-react';
 
 interface VendorDietChartsProps {
   vendorId: string;
@@ -11,32 +9,12 @@ interface VendorDietChartsProps {
 }
 
 export function VendorDietCharts({ vendorId, onBack }: VendorDietChartsProps) {
-  const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<any[]>([]);
+  const router = useRouter();
 
-  useEffect(() => {
-    loadData();
-  }, [vendorId]);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      // API call would go here
-      setItems([]);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleCreateDietPlan = () => {
+    // Navigate to Nutrition Dashboard where users can create meal products/plans
+    router.push('/nutrition/dashboard');
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
@@ -49,19 +27,24 @@ export function VendorDietCharts({ vendorId, onBack }: VendorDietChartsProps) {
           )}
           <div>
             <h1 className="text-xl font-bold">Diet Charts</h1>
-            <p className="text-sm text-white/80">Manage your settings</p>
+            <p className="text-sm text-white/80">Manage your meal plans</p>
           </div>
         </div>
       </div>
 
       <div className="p-4">
         <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
-          <Settings className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">Diet Charts</h3>
-          <p className="text-gray-500 mb-4">This feature is being configured for your account.</p>
-          <button className="bg-[#FF8C42] text-white px-6 py-2 rounded-lg font-medium">
-            <Plus className="w-4 h-4 inline mr-2" />
-            Get Started
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Utensils className="w-8 h-8 text-emerald-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">Create Your Diet Plans</h3>
+          <p className="text-gray-500 mb-6">Start creating customized meal plans and products for pets. Manage ingredients, nutritional values, and pricing all in one place.</p>
+          <button 
+            onClick={handleCreateDietPlan}
+            className="bg-[#FF8C42] hover:bg-[#FF8C42]/90 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 mx-auto"
+          >
+            <Plus className="w-5 h-5" />
+            Create Diet Plan
           </button>
         </div>
       </div>

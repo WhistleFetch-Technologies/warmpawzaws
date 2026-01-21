@@ -1469,7 +1469,7 @@ export function VendorLandingPage({
           onNavigateToCafeTables={() => router.push('/cafe/tables')}
           onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
           onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
-          onNavigateToDietCharts={() => setShowDietCharts(true)}
+          onNavigateToDietCharts={() => router.push('/nutrition/dashboard')}
           onNavigateToCounseling={() => setShowCounseling(true)}
           onNavigateToDistancePricing={() => setShowDistancePricing(true)}
           onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}

@@ -227,7 +227,7 @@ export default function MealPlansPage() {
                 <div className="mb-4">
                   <p className="text-xs text-gray-500 mb-2">Pet Types:</p>
                   <div className="flex flex-wrap gap-1">
-                    {plan.pet_types.map((type) => (
+                    {plan.pet_types?.map((type) => (
                       <span
                         key={type}
                         className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"

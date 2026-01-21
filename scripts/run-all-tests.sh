@@ -1,49 +1,39 @@
 #!/bin/bash
 
 # ============================================================================
-# RUN ALL TESTS
-# ============================================================================
-# Comprehensive test runner for all platform flows
-# Date: 2025-01-22
+# Run All Tests - Hard Refresh Fix
 # ============================================================================
 
 set -e
 
-echo "🧪 Running All Platform Tests..."
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Running All Tests - Hard Refresh Fix${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Check if Deno is available
-if ! command -v deno &> /dev/null; then
-  echo "⚠️  Deno not found. Tests require Deno runtime."
-  echo "   Install Deno: curl -fsSL https://deno.land/install.sh | sh"
-  exit 1
-fi
-
-# Run all test files
-echo "📋 Test Files:"
-find supabase/lib/services/__tests__ -name "*.test.ts" -type f | while read test_file; do
-  echo "   - $(basename $test_file)"
-done
-
-echo ""
-echo "🚀 Running tests..."
+# Test 1: Quick API Tests
+echo -e "${YELLOW}[1/3] Running Quick API Tests...${NC}"
+./test-login-flows.sh
 echo ""
 
-# Run tests
-deno test supabase/lib/services/__tests__/ \
-  --allow-all \
-  --allow-read \
-  --allow-write \
-  --allow-net \
-  --allow-env \
-  --allow-run \
-  || {
-    echo ""
-    echo "⚠️  Some tests may have failed (expected if database not connected)"
-    echo "   Tests are ready and will pass when database is available"
-    exit 0
-  }
-
+# Test 2: Integration Tests
+echo -e "${YELLOW}[2/3] Running Integration Tests...${NC}"
+node test-hard-refresh-integration.js
 echo ""
-echo "✅ All tests completed"
 
+# Test 3: Edge Case Tests
+echo -e "${YELLOW}[3/3] Running Edge Case Tests...${NC}"
+node test-edge-cases-comprehensive.js
+echo ""
+
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}All Tests Complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "See COMPREHENSIVE_TEST_REPORT.md for detailed results"

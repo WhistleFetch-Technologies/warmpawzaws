@@ -225,12 +225,18 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Extract photo from preferences JSONB
-      const preferences = (customer.preferences as any) || {};
-      const photoUrl = preferences.profile_photo_url || null;
+      // Use profile_photo_url directly (preferences column may not exist yet)
+      const photoUrl = customer.profile_photo_url || null;
 
-      // Extract address fields from JSONB
-      const addressData = (customer.address as any) || {};
+      // Extract address fields from JSONB (if address is stored as JSONB)
+      // Otherwise use address as text
+      let addressData: any = {};
+      if (typeof customer.address === 'string') {
+        // Address is stored as text, use it directly
+        addressData = { street: customer.address };
+      } else if (customer.address) {
+        addressData = customer.address;
+      }
 
       return c.json({
         success: true,
@@ -360,12 +366,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       if (profileData.photo) {
-        const customers = await select('customers', { id: customerId });
-        const existingPreferences = (customers[0]?.preferences as any) || {};
-        updateData.preferences = {
-          ...existingPreferences,
-          profile_photo_url: profileData.photo,
-        };
+        // Use profile_photo_url column directly instead of storing in preferences
+        updateData.profile_photo_url = profileData.photo;
       }
 
       const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../utils/customer-state');
@@ -384,6 +386,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
       if (profileData.pincode) {
         updateData.pincode = profileData.pincode;
+      }
+
+      // Ensure we're not trying to update preferences column (it may not exist yet)
+      // Remove preferences from updateData if it somehow got added
+      if ('preferences' in updateData) {
+        delete updateData.preferences;
       }
 
       const updated = await update('customers', { id: customerId }, updateData);
@@ -410,6 +418,16 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating customer profile:', error);
+      
+      // Check if error is about missing preferences column
+      if (error.message && error.message.includes('column "preferences"')) {
+        console.error('[PROFILE] Preferences column does not exist. Run migration 139_add_customers_preferences_column.sql');
+        return c.json({ 
+          error: 'Database schema mismatch. Please run migration 139_add_customers_preferences_column.sql',
+          details: error.message 
+        }, 500);
+      }
+      
       return c.json({ error: error.message }, 500);
     }
   });
@@ -459,13 +477,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       if (profileData.photo) {
-        // Store photo in preferences JSONB
-        const customers = await select('customers', { id: customerId });
-        const existingPreferences = (customers[0]?.preferences as any) || {};
-        updateData.preferences = {
-          ...existingPreferences,
-          profile_photo_url: profileData.photo,
-        };
+        // Use profile_photo_url column directly instead of storing in preferences
+        updateData.profile_photo_url = profileData.photo;
       }
 
       // Update profile completion status
@@ -485,6 +498,12 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
       if (profileData.pincode) {
         updateData.pincode = profileData.pincode;
+      }
+
+      // Ensure we're not trying to update preferences column (it may not exist yet)
+      // Remove preferences from updateData if it somehow got added
+      if ('preferences' in updateData) {
+        delete updateData.preferences;
       }
 
       const updated = await update('customers', { id: customerId }, updateData);

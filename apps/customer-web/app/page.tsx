@@ -23,18 +23,15 @@ export default function HomePage() {
   const hasRedirected = useRef(false);
 
   useEffect(() => {
-    // Initialize session FIRST (clears on hard refresh)
     const { initializeSession } = require('@/lib/session-utils');
     initializeSession();
     
-    // Get session data from localStorage - run only once on mount
     const loadSession = async () => {
       try {
         const storedPhone = localStorage.getItem('customerPhone');
         const storedToken = localStorage.getItem('authToken');
 
         if (storedPhone && storedToken) {
-          // Get customer state from database (not just localStorage)
           try {
             const { apiClient } = require('@/lib/api-client');
             const profileResponse: any = await apiClient.get(`/customer/profile/unified/${storedPhone}`);
@@ -44,7 +41,6 @@ export default function HomePage() {
               const onboardingStatus = customerData.onboarding_status || customerData.onboardingStatus;
               const profileCompleted = customerData.profile_completed || customerData.onboardingComplete;
               
-              // Update localStorage with fresh data from database
               localStorage.setItem('customerData', JSON.stringify(customerData));
               localStorage.setItem('customerId', customerData.id);
               
@@ -64,7 +60,6 @@ export default function HomePage() {
                 isNewUser: onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'
               });
             } else {
-              // Fallback to localStorage if API fails
               const storedCustomer = localStorage.getItem('customerData');
               const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
               const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
@@ -81,7 +76,6 @@ export default function HomePage() {
             }
           } catch (apiError) {
             console.error('Error fetching customer profile:', apiError);
-            // Fallback to localStorage
             const storedCustomer = localStorage.getItem('customerData');
             const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
             const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;
@@ -107,7 +101,6 @@ export default function HomePage() {
     loadSession();
   }, []);
 
-  // Redirect to auth if no session (after loading completes) - only once
   useEffect(() => {
     if (!isLoading && !session && !hasRedirected.current) {
       hasRedirected.current = true;
@@ -127,10 +120,9 @@ export default function HomePage() {
   }
 
   if (!session) {
-    return null; // Will redirect to /auth via useEffect
+    return null; 
   }
 
-  // ✅ FIX: Wrap app with error boundary to prevent crashes (NUT-CUST-001, VET-CUST-001)
   return (
     <ErrorBoundary>
       <CustomerApp initialSession={session} />
