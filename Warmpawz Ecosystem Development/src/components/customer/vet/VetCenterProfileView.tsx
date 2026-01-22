@@ -341,9 +341,38 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <Button
                 variant="outline"
                 className="w-full border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                onClick={() => {
+                  if (facility?.latitude && facility?.longitude) {
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${facility.latitude},${facility.longitude}`;
+                    window.open(url, '_blank');
+                  } else if (facility?.address || center?.address) {
+                    const address = facility?.address || center?.address;
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+                    window.open(url, '_blank');
+                  } else {
+                    alert('Location not available');
+                  }
+                }}
               >
                 <Navigation className="w-4 h-4 mr-2" />
                 Get Directions
+              </Button>
+              
+              {/* Call Button */}
+              <Button
+                variant="outline"
+                className="w-full border-gray-300 text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  const phoneNumber = center?.phone || facility?.phone;
+                  if (phoneNumber) {
+                    window.location.href = `tel:${phoneNumber}`;
+                  } else {
+                    alert('Phone number not available');
+                  }
+                }}
+              >
+                <Phone className="w-4 h-4 mr-2" />
+                Call Now
               </Button>
             </div>
           )}

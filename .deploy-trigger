@@ -1,1 +1,6 @@
-# Deployment trigger Thu Jan  8 10:19:14 IST 2026
+# Deployment trigger Thu Jan 22 23:37:34 IST 2026
+# Vet center booking flow fixes:
+# - Fixed Call and Directions buttons in ClinicProfileView
+# - Fixed Get Directions button in VetCenterProfileView
+# - Added Scheduling Policy Info Card to SmartTimeSlotSelection
+# - Fixed bottom nav passthrough in VetServiceRouter

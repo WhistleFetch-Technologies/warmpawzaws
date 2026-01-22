@@ -172,6 +172,19 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
       setBookingFlow(prev => ({ ...prev, followUpBooking: data?.booking || null }));
       setCurrentView('followup_chat');
     } else if (screen === 'select_service') {
+      // ✅ FIXED: Capture vendor data and pre-selected service when coming from clinic profile
+      console.log('📦 [VET-ROUTER] Navigating to select_service with data:', data);
+      if (data) {
+        setBookingFlow(prev => ({
+          ...prev,
+          vendorId: data?.vendorId || data?.clinicId || prev.vendorId,
+          vendorName: data?.vendorName || prev.vendorName,
+          vendorAddress: data?.vendorAddress || prev.vendorAddress,
+          serviceType: data?.serviceType || prev.serviceType || 'center',
+          // If preSelectedService is provided, use it
+          selectedService: data?.preSelectedService || data?.service || null
+        }));
+      }
       setCurrentView('select_service');
     } else if (screen === 'home_service_book') {
       setBookingFlow(prev => ({
@@ -219,6 +232,12 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
         vendorName: data?.doctor?.name || data?.doctor?.fullName || data?.name,
         vendorAddress: data?.doctor?.clinicAddress || data?.address
       }));
+    } else {
+      // ✅ FIXED: Pass unknown screens (home, cart, bookings, profile, etc.) to parent
+      console.log('📤 [VET-ROUTER] Passing navigation to parent:', screen, data);
+      if (onNavigate) {
+        onNavigate(screen, data);
+      }
     }
   };
 
@@ -440,7 +459,9 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     return (
       <TimeSlotSelector
         vendorId={bookingFlow.vendorId}
+        vendorName={bookingFlow.vendorName || 'Vet Clinic'} // ✅ Pass vendorName for scheduling policy display
         serviceDuration={bookingFlow.services[0].duration || 60}
+        serviceStyle={bookingFlow.serviceType === 'home' ? 'at_home' : 'at_center'} // ✅ Pass serviceStyle
         onBack={() => setCurrentView('select_pet')}
         onSelect={handleTimeSelected}
       />

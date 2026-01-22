@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { StandardizedHeader } from '../shared/StandardizedHeader';
+import { StandardizedFooter } from '../shared/StandardizedFooter';
 
 interface ClinicProfileViewProps {
   phone: string;
@@ -25,7 +27,7 @@ interface ClinicInfo {
   rating: number;
   review_count: number;
   timing: string;
-  services: { id: string; name: string; price: number }[];
+  services: { id: string; name: string; price: number; duration?: number }[];
   doctors: { id: string; name: string; specialization: string; rating: number }[];
   photos: string[];
   amenities: string[];
@@ -34,6 +36,28 @@ interface ClinicInfo {
 export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: ClinicProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<ClinicInfo | null>(null);
+  const [selectedService, setSelectedService] = useState<{ id: string; name: string; price: number; duration?: number } | null>(null);
+  
+  // User profile data for header
+  const [userName, setUserName] = useState('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
+  
+  useEffect(() => {
+    loadUserProfile();
+  }, [phone]);
+  
+  const loadUserProfile = async () => {
+    try {
+      const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+      if (profileResponse?.profile || profileResponse) {
+        const profile = profileResponse.profile || profileResponse;
+        setUserName(profile.name || profile.fullName || 'User');
+        setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
 
   useEffect(() => {
     loadClinicData();
@@ -108,7 +132,27 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   };
 
   const handleBookAppointment = () => {
-    onNavigate('vet-booking', { clinicId: clinic?.id, clinic });
+    if (!selectedService) {
+      // If no service selected, show error or select first service
+      if (clinic?.services && clinic.services.length > 0) {
+        setSelectedService(clinic.services[0]);
+        return;
+      }
+      return;
+    }
+    // Navigate with service data - use 'appointment' to match CustomerHomeWrapper expectation
+    onNavigate('appointment', { 
+      clinicId: clinic?.id, 
+      vendorId: clinic?.id,
+      service: selectedService,
+      serviceId: selectedService.id,
+      serviceName: selectedService.name,
+      price: selectedService.price,
+      duration: selectedService.duration || 20,
+      serviceStyle: 'at_center', // Clinic visits are at_center type
+      serviceType: 'at_center',
+      clinic 
+    });
   };
 
   const handleViewDoctor = (doctorId: string) => {
@@ -136,21 +180,25 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header Image/Gradient */}
-      <div className="bg-gradient-to-br from-purple-600 to-purple-700 h-48 relative">
-        <button
-          onClick={onBack}
-          className="absolute top-4 left-4 p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/30"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-      </div>
+      {/* Standardized Header */}
+      <StandardizedHeader
+        userName={userName}
+        userProfilePhoto={userProfilePhoto}
+        title={clinic.name}
+        subtitle="Clinic Profile"
+        showBackButton={true}
+        showPets={false}
+        onBack={onBack}
+        onNavigate={onNavigate}
+        onProfileClick={() => onNavigate('profile')}
+        customerPhone={phone}
+      />
 
-      <div className="max-w-md mx-auto px-4 -mt-20 pb-24">
+      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-32">
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-xl bg-purple-100 flex items-center justify-center text-2xl">
+            <div className="w-16 h-16 rounded-xl bg-orange-100 flex items-center justify-center text-2xl">
               🏥
             </div>
             <div className="flex-1">
@@ -184,7 +232,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           {/* Amenities */}
           <div className="mt-4 flex flex-wrap gap-2">
             {clinic.amenities.map((amenity, idx) => (
-              <span key={idx} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium">
+              <span key={idx} className="px-3 py-1 bg-orange-50 text-orange-700 rounded-full text-xs font-medium">
                 {amenity}
               </span>
             ))}
@@ -226,38 +274,83 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           <h2 className="font-bold text-gray-900 mb-3">Services & Prices</h2>
           <div className="space-y-2">
             {clinic.services.map((service) => (
-              <div key={service.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                <span className="text-gray-700">{service.name}</span>
-                <span className="font-semibold text-gray-900">₹{service.price}</span>
-              </div>
+              <button
+                key={service.id}
+                onClick={() => setSelectedService(service)}
+                className={`w-full flex items-center justify-between py-3 px-3 rounded-lg border-2 transition-all ${
+                  selectedService?.id === service.id
+                    ? 'border-orange-600 bg-orange-50'
+                    : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
+                }`}
+              >
+                <span className={`font-medium ${selectedService?.id === service.id ? 'text-orange-900' : 'text-gray-700'}`}>
+                  {service.name}
+                </span>
+                <span className={`font-semibold ${selectedService?.id === service.id ? 'text-orange-600' : 'text-gray-900'}`}>
+                  ₹{service.price}
+                </span>
+                {selectedService?.id === service.id && (
+                  <CheckCircle2 className="w-5 h-5 text-orange-600 ml-2" />
+                )}
+              </button>
             ))}
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow">
-            <Phone className="w-5 h-5 text-purple-500" />
+        <div className="grid grid-cols-2 gap-3 mb-20">
+          <button 
+            onClick={() => {
+              if (clinic?.phone) {
+                window.location.href = `tel:${clinic.phone}`;
+              } else {
+                alert('Phone number not available');
+              }
+            }}
+            className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+          >
+            <Phone className="w-5 h-5 text-orange-500" />
             <span className="font-medium text-gray-700">Call</span>
           </button>
-          <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow">
-            <MapPin className="w-5 h-5 text-purple-500" />
+          <button 
+            onClick={() => {
+              if (clinic?.address) {
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(clinic.address + ', ' + clinic.city)}`;
+                window.open(url, '_blank');
+              } else {
+                alert('Location not available');
+              }
+            }}
+            className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+          >
+            <MapPin className="w-5 h-5 text-orange-500" />
             <span className="font-medium text-gray-700">Directions</span>
           </button>
         </div>
       </div>
 
-      {/* Fixed Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4">
-        <div className="max-w-md mx-auto">
-          <Button 
-            onClick={handleBookAppointment}
-            className="w-full bg-purple-600 hover:bg-purple-700 h-12 text-lg"
-          >
-            Book Appointment
-          </Button>
-        </div>
+      {/* Book Appointment Button - Fixed above footer */}
+      <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-40 max-w-[430px] mx-auto">
+        <Button 
+          onClick={handleBookAppointment}
+          disabled={!selectedService}
+          className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+        >
+          {selectedService ? `Book ${selectedService.name}` : 'Select a Service'}
+        </Button>
       </div>
+
+      {/* Standardized Footer */}
+      <StandardizedFooter
+        currentTab="bookings"
+        onTabChange={(tab) => {
+          if (tab === 'home') onBack();
+          else if (tab === 'bookings') onNavigate('my-bookings');
+          else if (tab === 'cart') onNavigate('cart');
+          else if (tab === 'profile') onNavigate('profile');
+        }}
+        maxWidth="max-w-[430px]"
+      />
     </div>
   );
 }

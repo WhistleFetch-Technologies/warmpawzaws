@@ -113,6 +113,41 @@ export function SmartTimeSlotSelection({
             )}
           </div>
         )}
+        
+        {/* Scheduling Policy Info Card */}
+        <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-10 h-10 bg-[#FF8C42] rounded-lg flex items-center justify-center flex-shrink-0">
+              <Clock className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-orange-900 mb-1">
+                {vendorName} Booking Info
+              </h3>
+              <p className="text-xs text-orange-700">Review the scheduling policy before booking</p>
+            </div>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-orange-800">
+              <span className="text-orange-600">📅</span>
+              <span className="font-medium">Booking Window:</span>
+              <span>Up to 30 days ahead</span>
+            </div>
+            
+            <div className="flex items-center gap-2 text-orange-800">
+              <span className="text-orange-600">❌</span>
+              <span className="font-medium">Cancellation:</span>
+              <span>Free up to 4 hours before</span>
+            </div>
+            
+            <div className="flex items-center gap-2 text-orange-800">
+              <span className="text-orange-600">✅</span>
+              <span className="font-medium">Confirmation:</span>
+              <span>Instant confirmation</span>
+            </div>
+          </div>
+        </div>
 
         {/* Date Selection */}
         <div>

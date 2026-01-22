@@ -80,9 +80,15 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             serviceStyle: service.serviceStyle
           }));
         setServices(clinicServices);
+      } else if (servicesRes && !servicesRes.success) {
+        // ✅ Handle gracefully - services not loading is fine, just set empty array
+        console.log('Clinic services not available or not loaded yet');
+        setServices([]);
       }
     } catch (error) {
-      console.error('Error loading clinic data:', error);
+      // ✅ Handle gracefully - services not loading is fine, just set empty array
+      console.log('Clinic services not available:', error);
+      setServices([]);
     } finally {
       setLoading(false);
     }
@@ -273,9 +279,39 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                 </div>
               </div>
 
-              <button className="w-full px-4 py-0 border-2 border-primary text-primary rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-3">
+              <button 
+                onClick={() => {
+                  if (facility?.latitude && facility?.longitude) {
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${facility.latitude},${facility.longitude}`;
+                    window.open(url, '_blank');
+                  } else if (facility?.address || center?.address) {
+                    const address = facility?.address || center?.address;
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+                    window.open(url, '_blank');
+                  } else {
+                    alert('Location not available');
+                  }
+                }}
+                className="w-full px-4 py-3 border-2 border-primary text-primary rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-3"
+              >
                 <Navigation className="w-4 h-4" />
                 Get Directions
+              </button>
+              
+              {/* Call Button */}
+              <button
+                onClick={() => {
+                  const phoneNumber = center?.phone || facility?.phone;
+                  if (phoneNumber) {
+                    window.location.href = `tel:${phoneNumber}`;
+                  } else {
+                    alert('Phone number not available');
+                  }
+                }}
+                className="w-full px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+              >
+                <Phone className="w-4 h-4" />
+                Call Now
               </button>
             </div>
           )}
@@ -313,7 +349,8 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               ) : (
                 <div className="text-center py-02">
                   <Stethoscope className="w-12 h-12 text-gray-300 mx-auto mb-0" />
-                  <p className="text-gray-500">No services available</p>
+                  <p className="text-gray-500">Services will be available soon</p>
+                  <p className="text-xs text-gray-400 mt-1">Please check back later or contact the clinic directly</p>
                 </div>
               )}
             </div>
