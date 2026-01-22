@@ -174,6 +174,9 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     } else if (screen === 'select_service') {
       // ✅ FIXED: Capture vendor data and pre-selected service when coming from clinic profile
       console.log('📦 [VET-ROUTER] Navigating to select_service with data:', data);
+      
+      const preSelectedService = data?.preSelectedService || data?.service;
+      
       if (data) {
         setBookingFlow(prev => ({
           ...prev,
@@ -181,11 +184,19 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
           vendorName: data?.vendorName || prev.vendorName,
           vendorAddress: data?.vendorAddress || prev.vendorAddress,
           serviceType: data?.serviceType || prev.serviceType || 'center',
-          // If preSelectedService is provided, use it
-          selectedService: data?.preSelectedService || data?.service || null
+          // If preSelectedService is provided, add it to services array
+          services: preSelectedService ? [preSelectedService] : prev.services,
+          selectedService: preSelectedService || null
         }));
       }
-      setCurrentView('select_service');
+      
+      // ✅ ISSUE #2 FIX: Skip service selection if service is already selected
+      if (preSelectedService) {
+        console.log('✅ [VET-ROUTER] Service already selected, skipping to pet selection:', preSelectedService);
+        setCurrentView('select_pet');
+      } else {
+        setCurrentView('select_service');
+      }
     } else if (screen === 'home_service_book') {
       setBookingFlow(prev => ({
         ...prev,
@@ -472,7 +483,16 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     return (
       <PetSelector
         phone={phone}
-        onBack={() => setCurrentView('select_service')}
+        onBack={() => {
+          // ✅ ISSUE #2 FIX: If service was pre-selected (skipped service selection), 
+          // go back to center_profile instead of select_service
+          if (bookingFlow.selectedService) {
+            console.log('✅ [VET-ROUTER] Service was pre-selected, going back to center_profile');
+            setCurrentView('center_profile');
+          } else {
+            setCurrentView('select_service');
+          }
+        }}
         onSelect={handlePetSelected}
       />
     );

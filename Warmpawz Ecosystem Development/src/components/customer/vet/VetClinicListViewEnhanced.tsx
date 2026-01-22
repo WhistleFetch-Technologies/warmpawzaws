@@ -16,11 +16,17 @@ import {
   X,
   Loader2,
   UserCircle2,
-  Building2
+  Building2,
+  Home as HomeIcon,
+  ShoppingCart,
+  Calendar,
+  User,
+  Heart
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../../ui/sheet';
 import { toast } from 'sonner@2.0.3';
+import { useCart } from '../../../context/CartContext';
 
 interface VetClinicListViewProps {
   phone: string;
@@ -72,6 +78,10 @@ interface ClinicData {
   latitude?: number;
   longitude?: number;
   distance?: number; // ✅ Distance in km
+  // ✅ NEW: Amenities for preview display
+  amenities?: string[];
+  specializations?: string[];
+  operatingHours?: string;
   doctors: Array<{
     id: string;
     name: string;
@@ -87,6 +97,7 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
   const [searchType, setSearchType] = useState<SearchType>('doctors');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const { itemCount } = useCart();
   
   // Results
   const [doctors, setDoctors] = useState<DoctorData[]>([]);
@@ -103,8 +114,60 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
   
   // ✅ NEW: User location for distance calculation
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
+  
+  // ✅ User data for consistent header
+  const [userName, setUserName] = useState('User');
+  const [userPhoto, setUserPhoto] = useState<string>('');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [pets, setPets] = useState<any[]>([]);
+  const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  
+  // ✅ Load user data for header
+  useEffect(() => {
+    loadUserData();
+  }, [phone]);
+  
+  const loadUserData = async () => {
+    try {
+      const [profileRes, petsRes, walletRes] = await Promise.all([
+        fetch(`${API_BASE}/customer/profile/${phone}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }),
+        fetch(`${API_BASE}/customer/pets/${phone}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }),
+        fetch(`${API_BASE}/customer/wallet/${phone}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        })
+      ]);
+
+      if (profileRes.ok) {
+        const data = await profileRes.json();
+        setUserName(data.profile?.firstName || 'User');
+        setUserPhoto(data.profile?.photo || '');
+      }
+
+      if (petsRes.ok) {
+        const data = await petsRes.json();
+        let petList = [];
+        if (Array.isArray(data)) petList = data;
+        else if (Array.isArray(data.pets)) petList = data.pets;
+        else if (data.pets?.pets) petList = data.pets.pets;
+        
+        setPets(petList);
+        if (petList.length > 0) setSelectedPetId(petList[0].id);
+      }
+
+      if (walletRes.ok) {
+        const data = await walletRes.json();
+        setWalletBalance(data.balance || data.wallet?.balance || 0);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
 
   // ✅ Get user location on mount
   useEffect(() => {
@@ -434,20 +497,85 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-[#FF8C42] text-white px-6 pt-12 pb-8">
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={onBack} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors">
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-white">Find Veterinarians</h1>
-            <p className="text-sm text-white/90">
-              {totalResults} {searchType === 'doctors' ? 'doctors' : 'clinics'} available
-            </p>
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-20">
+      {/* ✅ CONSISTENT HEADER - Matching Home Page */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-3 pb-2 flex justify-between items-center">
+        <span className="text-white text-sm font-medium">09:41</span>
+        <div className="flex gap-1.5 items-center">
+          <div className="flex gap-0.5">
+            {[1,2,3,4].map(i => <div key={i} className={`w-1 rounded-sm bg-white ${i < 4 ? 'h-2' : 'h-3'}`} style={{opacity: 0.4 + i * 0.2}} />)}
+          </div>
+          <div className="w-6 h-3 border border-white/40 rounded-sm relative">
+            <div className="absolute inset-0.5 bg-white rounded-sm" style={{width: '80%'}} />
           </div>
         </div>
+      </div>
+
+      {/* Main Header with User Info */}
+      <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white px-6 pb-6">
+        {/* Back + User Row */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button onClick={onBack} className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/30 flex items-center justify-center bg-white/20">
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+            <div className="flex items-center gap-2">
+              {userPhoto ? (
+                <img src={userPhoto} alt="Profile" className="w-8 h-8 rounded-full object-cover border-2 border-white/30" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white font-semibold text-sm">
+                  {userName.charAt(0)}
+                </div>
+              )}
+              <div>
+                <h1 className="text-white font-semibold text-sm">Hi, {userName}! 👋</h1>
+                <p className="text-white/80 text-xs">Find Veterinarians</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Right side icons */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => onNavigate('wallet')} className="flex items-center gap-1 bg-white/20 rounded-full px-2 py-1">
+              <span className="text-white text-sm">₹</span>
+              <span className="text-white font-semibold text-sm">{walletBalance}</span>
+            </button>
+            <button onClick={() => onNavigate('cart')} className="relative p-1.5">
+              <ShoppingCart className="w-5 h-5 text-white" />
+              {itemCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
+                  {itemCount}
+                </span>
+              )}
+            </button>
+            <button onClick={() => onNavigate('favorites')} className="p-1.5">
+              <Heart className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+        
+        {/* YOUR PETS - Compact */}
+        {pets.length > 0 && (
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-white/70 text-xs">PETS:</span>
+            {pets.slice(0, 3).map((pet) => (
+              <button
+                key={pet.id}
+                onClick={() => setSelectedPetId(pet.id)}
+                className={`w-8 h-8 rounded-full overflow-hidden border-2 ${selectedPetId === pet.id ? 'border-white' : 'border-white/40'} flex items-center justify-center bg-white/20`}
+              >
+                {pet.photo || pet.image ? (
+                  <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                ) : (
+                  <Heart className="w-4 h-4 text-white" />
+                )}
+              </button>
+            ))}
+            <button onClick={() => onNavigate('add-pet')} className="w-8 h-8 rounded-full border-2 border-white/40 border-dashed flex items-center justify-center">
+              <span className="text-white text-lg">+</span>
+            </button>
+          </div>
+        )}
 
         {/* Search Type Toggle */}
         <div className="flex gap-2 mb-4 p-1 bg-white/10 rounded-xl backdrop-blur-sm border border-white/10">
@@ -702,10 +830,64 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
                         </div>
                       </div>
 
+                      {/* Specializations Preview */}
+                      {clinic.specializations && clinic.specializations.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {clinic.specializations.slice(0, 3).map((spec, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                              {spec}
+                            </Badge>
+                          ))}
+                          {clinic.specializations.length > 3 && (
+                            <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-600">
+                              +{clinic.specializations.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Amenities Preview */}
+                      {clinic.amenities && clinic.amenities.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {clinic.amenities.slice(0, 4).map((amenity, idx) => {
+                            // Map amenities to icons
+                            const amenityIcons: Record<string, string> = {
+                              'parking': '🅿️',
+                              'wifi': '📶',
+                              '24x7': '🏥',
+                              'emergency': '🚨',
+                              'pharmacy': '💊',
+                              'lab': '🔬',
+                              'xray': '📷',
+                              'surgery': '🏨',
+                              'wheelchair': '♿',
+                              'pet_friendly': '🐕'
+                            };
+                            const icon = amenityIcons[amenity.toLowerCase()] || '✓';
+                            return (
+                              <span key={idx} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-full border border-green-200">
+                                {icon} {amenity}
+                              </span>
+                            );
+                          })}
+                          {clinic.amenities.length > 4 && (
+                            <span className="text-xs text-gray-500 px-2 py-1">
+                              +{clinic.amenities.length - 4} more
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between gap-4 text-sm text-gray-600">
                         <div className="flex items-center gap-4">
                           <span>🩺 {clinic.doctorCount} doctors</span>
                           <span>📋 {clinic.serviceCount} services</span>
+                          {clinic.operatingHours && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {clinic.operatingHours}
+                            </span>
+                          )}
                         </div>
                         {clinic.latitude && clinic.longitude && (
                           <button
@@ -866,6 +1048,51 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('bookings')}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
+      </div>
     </div>
   );
 }

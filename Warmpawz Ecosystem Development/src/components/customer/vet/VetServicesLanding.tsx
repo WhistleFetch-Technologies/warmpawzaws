@@ -16,10 +16,15 @@ import {
   Sparkles,
   ChevronRight,
   Stethoscope,
-  History
+  History,
+  ShoppingCart,
+  Calendar,
+  User,
+  Heart
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { ServiceBookingHistory } from '../ServiceBookingHistory';
+import { useCart } from '../../../context/CartContext';
 
 interface VetServicesLandingProps {
   phone: string;
@@ -34,10 +39,62 @@ export function VetServicesLanding({ phone, onNavigate, onBack, data }: VetServi
   const [featuredVets, setFeaturedVets] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [showBookingHistory, setShowBookingHistory] = useState(false);
+  const { itemCount } = useCart();
+  
+  // ✅ User data for consistent header
+  const [userName, setUserName] = useState('User');
+  const [userPhoto, setUserPhoto] = useState<string>('');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [pets, setPets] = useState<any[]>([]);
+  const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
 
   useEffect(() => {
     loadVetData();
+    loadUserData();
   }, []);
+  
+  // ✅ Load user data for header
+  const loadUserData = async () => {
+    try {
+      const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+      
+      const [profileRes, petsRes, walletRes] = await Promise.all([
+        fetch(`${API_BASE}/customer/profile/${phone}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }),
+        fetch(`${API_BASE}/customer/pets/${phone}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }),
+        fetch(`${API_BASE}/customer/wallet/${phone}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        })
+      ]);
+
+      if (profileRes.ok) {
+        const data = await profileRes.json();
+        setUserName(data.profile?.firstName || 'User');
+        setUserPhoto(data.profile?.photo || '');
+      }
+
+      if (petsRes.ok) {
+        const data = await petsRes.json();
+        let petList = [];
+        if (Array.isArray(data)) petList = data;
+        else if (Array.isArray(data.pets)) petList = data.pets;
+        else if (data.pets?.pets) petList = data.pets.pets;
+        
+        setPets(petList);
+        if (petList.length > 0) setSelectedPetId(petList[0].id);
+      }
+
+      if (walletRes.ok) {
+        const data = await walletRes.json();
+        setWalletBalance(data.balance || data.wallet?.balance || 0);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
 
   const loadVetData = async () => {
     try {
@@ -179,55 +236,108 @@ export function VetServicesLanding({ phone, onNavigate, onBack, data }: VetServi
   }
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
-      {/* Header with Concave Bottom Curve */}
-      <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-16 relative">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-20">
+      {/* ✅ CONSISTENT HEADER - Matching Home Page */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-3 pb-2 flex justify-between items-center">
+        <span className="text-white text-sm font-medium">09:41</span>
+        <div className="flex gap-1.5 items-center">
+          <div className="flex gap-0.5">
+            {[1,2,3,4].map(i => <div key={i} className={`w-1 rounded-sm bg-white ${i < 4 ? 'h-2' : 'h-3'}`} style={{opacity: 0.4 + i * 0.2}} />)}
+          </div>
+          <div className="w-6 h-3 border border-white/40 rounded-sm relative">
+            <div className="absolute inset-0.5 bg-white rounded-sm" style={{width: '80%'}} />
+          </div>
+        </div>
+      </div>
+
+      {/* Main Header */}
+      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pb-6">
+        {/* Back button */}
         <button 
           onClick={onBack}
-          className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+          className="mb-3 flex items-center gap-2 text-white/90 hover:text-white"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
+          <span className="text-sm">Back</span>
         </button>
         
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-            <Stethoscope className="w-6 h-6" />
+        {/* User Info Row - Matching Home */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => onNavigate('profile')}
+              className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/30"
+            >
+              {userPhoto ? (
+                <img src={userPhoto} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-semibold">
+                  {userName.charAt(0)}
+                </div>
+              )}
+            </button>
+            <div>
+              <h1 className="text-white font-semibold">Hi, {userName}! 👋</h1>
+              <p className="text-white/80 text-sm">Explore Vet Services</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Vet Services</h1>
-            <p className="text-white/80 text-sm">Complete pet healthcare</p>
+          
+          {/* Right side icons */}
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => onNavigate('wallet')}
+              className="flex items-center gap-1 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1.5"
+            >
+              <span className="text-white text-lg">₹</span>
+              <span className="text-white font-semibold">{walletBalance}</span>
+            </button>
+            <button onClick={() => onNavigate('cart')} className="relative p-2">
+              <ShoppingCart className="w-6 h-6 text-white" />
+              {itemCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </button>
+            <button onClick={() => onNavigate('favorites')} className="p-2">
+              <Heart className="w-6 h-6 text-white" />
+            </button>
           </div>
         </div>
 
-        {/* Quick Stats */}
-        {stats && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold">{stats.activeVets || 150}+</div>
-              <div className="text-white/80 text-xs">Active Vets</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold">{stats.consultations || '5K'}+</div>
-              <div className="text-white/80 text-xs">Consultations</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="flex items-center gap-1 text-2xl font-bold">
-                <Star className="w-4 h-4 fill-white" />
-                {stats.rating || '4.8'}
-              </div>
-              <div className="text-white/80 text-xs">Avg Rating</div>
+        {/* YOUR PETS Section - Matching Home */}
+        {pets.length > 0 && (
+          <div className="mb-2">
+            <p className="text-white/80 text-xs font-medium mb-2">YOUR PETS</p>
+            <div className="flex items-center gap-3">
+              {pets.slice(0, 3).map((pet) => (
+                <button
+                  key={pet.id}
+                  onClick={() => setSelectedPetId(pet.id)}
+                  className={`flex flex-col items-center ${selectedPetId === pet.id ? 'opacity-100' : 'opacity-70'}`}
+                >
+                  <div className={`w-12 h-12 rounded-full overflow-hidden border-2 ${
+                    selectedPetId === pet.id ? 'border-white' : 'border-white/40'
+                  } flex items-center justify-center bg-white/20`}>
+                    {pet.photo || pet.image ? (
+                      <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Heart className="w-5 h-5 text-white" />
+                    )}
+                  </div>
+                  <span className="text-white text-xs mt-1">{pet.name}</span>
+                  {selectedPetId === pet.id && <div className="w-1.5 h-1.5 rounded-full bg-white mt-1" />}
+                </button>
+              ))}
+              <button onClick={() => onNavigate('add-pet')} className="flex flex-col items-center opacity-70 hover:opacity-100">
+                <div className="w-12 h-12 rounded-full border-2 border-white/40 border-dashed flex items-center justify-center">
+                  <span className="text-white text-2xl">+</span>
+                </div>
+                <span className="text-white text-xs mt-1">Add</span>
+              </button>
             </div>
           </div>
         )}
-        
-        {/* Concave curve - curves inward */}
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white" 
-             style={{
-               borderTopLeftRadius: '50% 100%',
-               borderTopRightRadius: '50% 100%',
-             }}
-        />
       </div>
 
       {/* Main Content on White Background */}
@@ -344,8 +454,10 @@ export function VetServicesLanding({ phone, onNavigate, onBack, data }: VetServi
             {serviceTypes.map((service) => (
               <Card
                 key={service.id}
-                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
-                onClick={() => {
+                className="p-4 cursor-pointer hover:shadow-md active:scale-95 transition-all border-2 border-gray-100 bg-white shadow-sm hover:border-[#FF8C42]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   // Special handling for clinic visit - use new enhanced flow
                   if (service.id === 'clinic') {
                     onNavigate('vet-clinic-list');
@@ -353,6 +465,7 @@ export function VetServicesLanding({ phone, onNavigate, onBack, data }: VetServi
                     onNavigate('vet-booking', { serviceType: service.id });
                   }
                 }}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 <div className="flex flex-col h-full">
                   <div 
@@ -516,6 +629,51 @@ export function VetServicesLanding({ phone, onNavigate, onBack, data }: VetServi
           onClose={() => setShowBookingHistory(false)}
         />
       )}
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => setShowBookingHistory(true)}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
+      </div>
     </div>
   );
 }
