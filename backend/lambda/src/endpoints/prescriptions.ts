@@ -53,8 +53,71 @@ export function registerPrescriptionEndpoints(app: Hono) {
       } = prescriptionData;
 
       // Check if vendor has prescription capability (try both naming conventions)
-      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
-                                        await checkVendorCapability(vendorId, 'prescriptions');
+      let hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
+                                      await checkVendorCapability(vendorId, 'prescriptions');
+      
+      // ✅ FIX: If capability check fails, check if vendor has vet role (vets should be able to create prescriptions)
+      if (!hasPrescriptionCapability) {
+        let roleId: string | null = null;
+        
+        // First, try to get role_id from vendors table
+        const vendors = await select('vendors', { id: vendorId });
+        if (vendors.length > 0 && vendors[0].role_id) {
+          roleId = vendors[0].role_id;
+          console.log(`[Prescription] Found vendor in vendors table with role_id: ${roleId}`);
+        } else {
+          // If not in vendors table, check vendor_identity
+          const identities = await query(
+            `SELECT * FROM vendor_identity WHERE id = $1 OR vendor_id = $1`,
+            [vendorId]
+          );
+          if (identities.rows.length > 0 && identities.rows[0].selected_role_id) {
+            roleId = identities.rows[0].selected_role_id;
+            console.log(`[Prescription] Found vendor in vendor_identity with selected_role_id: ${roleId}`);
+          }
+        }
+        
+        if (roleId) {
+          // First, check role_permissions directly for this role
+          const rolePermissions = await query(
+            `SELECT * FROM role_permissions 
+             WHERE role_id = $1 
+             AND (permission_name = 'prescriptions' OR permission_name = 'prescription_create')`,
+            [roleId]
+          );
+          
+          if (rolePermissions.rows.length > 0) {
+            console.log(`[Prescription] Found prescription capability in role_permissions for role ${roleId} (vendor: ${vendorId})`);
+            hasPrescriptionCapability = true;
+          } else {
+            // Fallback: Check role name for vet patterns
+            const roles = await select('roles', { id: roleId });
+              if (roles.length > 0) {
+                const roleName = String(roles[0].name || '').toLowerCase();
+                // Allow prescriptions for all vet/veterinarian role variations
+                const vetRolePatterns = [
+                  'vet', 'veterinarian', 'doctor', 'clinic', 
+                  'vet_solo', 'vet_clinic', 'veterinary_clinic', 'solo_vet'
+                ];
+                const isVetRole = vetRolePatterns.some(pattern => roleName.includes(pattern));
+                
+                if (isVetRole) {
+                  console.log(`[Prescription] ✅ Allowing prescription creation for ${roleName} role (vendor: ${vendorId}, role_id: ${roleId})`);
+                  hasPrescriptionCapability = true;
+                } else {
+                  console.log(`[Prescription] ❌ Role ${roleName} (vendor: ${vendorId}, role_id: ${roleId}) does not match vet patterns`);
+                }
+              } else {
+                console.log(`[Prescription] ❌ No role found for role_id: ${roleId} (vendor: ${vendorId})`);
+              }
+          }
+        } else {
+          console.log(`[Prescription] ❌ No role_id found for vendor ${vendorId} (not in vendors or vendor_identity)`);
+        }
+      } else {
+        console.log(`[Prescription] Vendor ${vendorId} has prescription capability via role_permissions`);
+      }
+      
       if (!hasPrescriptionCapability) {
         return c.json({ error: 'Vendor does not have prescription capability' }, 403);
       }
@@ -65,84 +128,69 @@ export function registerPrescriptionEndpoints(app: Hono) {
         return c.json({ error: 'Validation failed', errors: validation.errors }, 400);
       }
 
-      // Build prescription data based on available columns
-      // Schema 057 uses: medication_name, dosage, frequency, duration, instructions
-      // Schema 034/007/008 use: medications JSONB array
-      const prescriptionRecords: any[] = [];
-      
-      // For schemas that use medications JSONB, create single record
-      // For schema 057, create multiple records (one per medication)
-      // Try with medications JSONB first, fallback to individual columns
+      // Use raw SQL INSERT so we explicitly include vendor_id. Run migration 309_add_prescriptions_vendor_id
+      // if the column is missing. Schema: 034-style (medications JSONB) + vendor_id.
       const meds = Array.isArray(medications) ? medications : [medications];
-      
+      const insertedPrescriptions: any[] = [];
+      const savedStatus = (prescriptionData as any).status || 'published';
+
       for (const med of meds) {
-        // Include diagnosis and doctor_name in instructions if not a separate column
         const combinedInstructions = [
           diagnosis ? `Diagnosis: ${diagnosis}` : '',
           med.instructions || instructions || ''
-        ].filter(Boolean).join('\n');
-        
-        const prescriptionRecord: Record<string, any> = {
-          booking_id: bookingId,
-          customer_id: customerId,
-          pet_id: petId || null,
-          vendor_id: vendorId,
-          prescription_date: new Date().toISOString().split('T')[0],
-          is_active: true,
-          // Schema 057 individual medication columns
-          medication_name: med.name || 'Prescription',
+        ].filter(Boolean).join('\n') || null;
+
+        const medsJson = JSON.stringify([{
+          name: med.name || 'Prescription',
           dosage: med.dosage || null,
           frequency: med.frequency || null,
           duration: med.duration || null,
-          instructions: combinedInstructions || null,
-          // ✅ Draft/Published state support
-          status: (prescriptionData as any).status || 'published', // 'draft' or 'published'
-          // Additional fields if provided
-          diagnosis: diagnosis || null,
-          doctor_name: (prescriptionData as any).vendorName || null,
-          follow_up_date: followUpDate || null,
-          follow_up_notes: (prescriptionData as any).followUpNotes || null,
-        };
-        
-        prescriptionRecords.push(prescriptionRecord);
-      }
-      
-      // Insert all prescriptions (one per medication for schema 057)
-      const insertedPrescriptions = [];
-      for (const record of prescriptionRecords) {
+          instructions: med.instructions || null,
+        }]);
+
         try {
-          const prescription = await insert('prescriptions', record);
-          insertedPrescriptions.push(prescription[0]);
-        } catch (insertError: any) {
-          // If insert fails due to unknown column, try with minimal columns
-          console.warn('Insert with all columns failed, trying minimal insert:', insertError.message);
-          
-          // Try with only the core columns that are guaranteed to exist
-          const minimalRecord: Record<string, any> = {
-            booking_id: record.booking_id,
-            customer_id: record.customer_id,
-            pet_id: record.pet_id,
-            vendor_id: record.vendor_id,
-            prescription_date: record.prescription_date,
-            is_active: record.is_active,
-            medication_name: record.medication_name,
-            dosage: record.dosage,
-            frequency: record.frequency,
-            duration: record.duration,
-            instructions: record.instructions,
-          };
-          
-          try {
-            const prescription = await insert('prescriptions', minimalRecord);
-            insertedPrescriptions.push(prescription[0]);
-          } catch (minimalError: any) {
-            console.error('Minimal insert also failed:', minimalError.message);
-            throw minimalError;
+          const result = await query(
+            `INSERT INTO prescriptions (
+              booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
+              diagnosis, follow_up_date, created_by, created_by_role, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::date, $10, $11, $12)
+            RETURNING *`,
+            [
+              bookingId,
+              customerId,
+              petId || null,
+              vendorId,
+              staffId || null,
+              medsJson,
+              combinedInstructions,
+              diagnosis || null,
+              followUpDate || null,
+              createdBy || vendorId,
+              createdByRole || 'vendor',
+              true,
+            ]
+          );
+          const row = result.rows?.[0];
+          if (row) insertedPrescriptions.push(row);
+        } catch (insertErr: any) {
+          if (insertErr.message?.includes('vendor_id') && insertErr.message?.includes('does not exist')) {
+            console.error('[prescriptions] vendor_id column missing. Run migration: db/migrations/309_add_prescriptions_vendor_id.sql');
+            return c.json({
+              error: 'Database schema outdated: vendor_id column missing. Please run migration 309_add_prescriptions_vendor_id.sql.',
+              code: 'PRESCRIPTION_SCHEMA_MIGRATION_REQUIRED',
+            }, 500);
           }
+          if (insertErr.message?.includes('staff_id') && insertErr.message?.includes('does not exist')) {
+            console.error('[prescriptions] staff_id column missing. Run migration: db/migrations/311_add_prescriptions_staff_id.sql');
+            return c.json({
+              error: 'Database schema outdated: staff_id column missing. Please run migration 311_add_prescriptions_staff_id.sql.',
+              code: 'PRESCRIPTION_STAFF_ID_MIGRATION_REQUIRED',
+            }, 500);
+          }
+          throw insertErr;
         }
       }
 
-      const savedStatus = (prescriptionData as any).status || 'published';
       return c.json({
         success: true,
         prescription: insertedPrescriptions[0],
@@ -402,8 +450,73 @@ export function registerPrescriptionEndpoints(app: Hono) {
       }
 
       // Check if vendor has prescription capability (try both naming conventions)
-      const hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
-                                        await checkVendorCapability(vendorId, 'prescriptions');
+      let hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
+                                      await checkVendorCapability(vendorId, 'prescriptions');
+      
+      // ✅ FIX: Comprehensive check for vet roles - check both vendors table and vendor_identity
+      if (!hasPrescriptionCapability) {
+        let roleId: string | null = null;
+        let roleName: string | null = null;
+        
+        // First, try to get role_id from vendors table
+        const vendors = await select('vendors', { id: vendorId });
+        if (vendors.length > 0 && vendors[0].role_id) {
+          roleId = vendors[0].role_id;
+          console.log(`[Prescription] Found vendor in vendors table with role_id: ${roleId}`);
+        } else {
+          // If not in vendors table, check vendor_identity
+          const identities = await query(
+            `SELECT * FROM vendor_identity WHERE id = $1 OR vendor_id = $1`,
+            [vendorId]
+          );
+          if (identities.rows.length > 0 && identities.rows[0].selected_role_id) {
+            roleId = identities.rows[0].selected_role_id;
+            console.log(`[Prescription] Found vendor in vendor_identity with selected_role_id: ${roleId}`);
+          }
+        }
+        
+        if (roleId) {
+          // First, check role_permissions directly for this role
+          const rolePermissions = await query(
+            `SELECT * FROM role_permissions 
+             WHERE role_id = $1 
+             AND (permission_name = 'prescriptions' OR permission_name = 'prescription_create')`,
+            [roleId]
+          );
+          
+          if (rolePermissions.rows.length > 0) {
+            console.log(`[Prescription] Found prescription capability in role_permissions for role ${roleId} (vendor: ${vendorId})`);
+            hasPrescriptionCapability = true;
+          } else {
+            // Fallback: Check role name for vet patterns
+            const roles = await select('roles', { id: roleId });
+            if (roles.length > 0) {
+              roleName = String(roles[0].name || '').toLowerCase();
+              // Allow prescriptions for all vet/veterinarian role variations
+              const vetRolePatterns = [
+                'vet', 'veterinarian', 'doctor', 'clinic', 
+                'vet_solo', 'vet_clinic', 'veterinary_clinic', 'solo_vet',
+                'veterinarian_solo', 'pet_clinic', 'animal_clinic'
+              ];
+              const isVetRole = vetRolePatterns.some(pattern => roleName.includes(pattern));
+              
+              if (isVetRole) {
+                console.log(`[Prescription] ✅ Allowing prescription access for ${roleName} role (vendor: ${vendorId}, role_id: ${roleId})`);
+                hasPrescriptionCapability = true;
+              } else {
+                console.log(`[Prescription] ❌ Role ${roleName} (vendor: ${vendorId}, role_id: ${roleId}) does not match vet patterns`);
+              }
+            } else {
+              console.log(`[Prescription] ❌ No role found for role_id: ${roleId} (vendor: ${vendorId})`);
+            }
+          }
+        } else {
+          console.log(`[Prescription] ❌ No role_id found for vendor ${vendorId} (not in vendors or vendor_identity)`);
+        }
+      } else {
+        console.log(`[Prescription] ✅ Vendor ${vendorId} has prescription capability via role_permissions`);
+      }
+      
       if (!hasPrescriptionCapability) {
         return c.json({ error: 'Vendor does not have prescription capability' }, 403);
       }

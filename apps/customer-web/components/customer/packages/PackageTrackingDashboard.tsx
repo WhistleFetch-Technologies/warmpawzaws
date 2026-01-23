@@ -209,20 +209,44 @@ export function PackageTrackingDashboard({
     }
   };
 
-  // Handle book with package
-  const handleBookWithPackage = (pkg: CustomerPackage) => {
-    // Navigate to booking with package context
-    const serviceType = pkg.includedServices[0]?.name?.toLowerCase().includes('walk') ? 'walking' :
-                       pkg.includedServices[0]?.name?.toLowerCase().includes('groom') ? 'grooming' :
-                       pkg.includedServices[0]?.name?.toLowerCase().includes('train') ? 'training' :
-                       pkg.includedServices[0]?.name?.toLowerCase().includes('vet') ? 'veterinary' : 'walking';
-    
-    onNavigate('home-service-booking', {
-      serviceType,
-      vendorId: pkg.vendorId,
-      packageId: pkg.id,
-      packageName: pkg.packageName
-    });
+  // ✅ FIX GAP-11.1: Handle book with package - checks subscription for zero payment
+  const handleBookWithPackage = async (pkg: CustomerPackage) => {
+    try {
+      // Check for active subscription first
+      const subscriptionCheck = await apiClient.get<any>(
+        `/customer/${phone}/subscriptions/active?serviceId=${pkg.includedServices[0]?.id || ''}`
+      );
+
+      const hasActiveSubscription = subscriptionCheck.hasActiveSubscription || false;
+      
+      // Navigate to booking with package context
+      const serviceType = pkg.includedServices[0]?.name?.toLowerCase().includes('walk') ? 'walking' :
+                         pkg.includedServices[0]?.name?.toLowerCase().includes('groom') ? 'grooming' :
+                         pkg.includedServices[0]?.name?.toLowerCase().includes('train') ? 'training' :
+                         pkg.includedServices[0]?.name?.toLowerCase().includes('vet') ? 'veterinary' : 'walking';
+      
+      onNavigate('home-service-booking', {
+        serviceType,
+        vendorId: pkg.vendorId,
+        packageId: pkg.id,
+        packageName: pkg.packageName,
+        hasActiveSubscription, // Pass subscription status for zero-payment booking
+      });
+    } catch (error: any) {
+      console.error('Error checking subscription:', error);
+      // Proceed with package booking anyway
+      const serviceType = pkg.includedServices[0]?.name?.toLowerCase().includes('walk') ? 'walking' :
+                         pkg.includedServices[0]?.name?.toLowerCase().includes('groom') ? 'grooming' :
+                         pkg.includedServices[0]?.name?.toLowerCase().includes('train') ? 'training' :
+                         pkg.includedServices[0]?.name?.toLowerCase().includes('vet') ? 'veterinary' : 'walking';
+      
+      onNavigate('home-service-booking', {
+        serviceType,
+        vendorId: pkg.vendorId,
+        packageId: pkg.id,
+        packageName: pkg.packageName,
+      });
+    }
   };
 
   // Handle package renewal

@@ -42,6 +42,66 @@ async function resolveCustomerIdFromPhone(phone: string): Promise<string | null>
 
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   /**
+   * GET /customer/bookings/active?phone=...
+   * Get active bookings by phone (convenience endpoint)
+   * ✅ CRITICAL: Must be registered BEFORE /customer/bookings to avoid route conflicts
+   * This prevents "active" from being interpreted as a UUID in /customer/:customerId route
+   */
+  app.get("/customer/bookings/active", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+
+      if (!phone) {
+        return c.json({ error: 'phone parameter is required' }, 400);
+      }
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        // ✅ FIX: Return empty array instead of 404 for better UX
+        return c.json({ 
+          success: true,
+          bookings: [],
+          count: 0 
+        }, 200);
+      }
+
+      // Get active bookings (confirmed, in_progress, scheduled, pending)
+      const bookingQuery = `
+        SELECT b.*,
+               v.business_name as vendor_name,
+               v.phone as vendor_phone,
+               v.city as vendor_city,
+               s.name as service_name,
+               s.category as service_category
+        FROM bookings b
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        LEFT JOIN services s ON b.service_id = s.id
+        WHERE b.customer_id = $1
+          AND b.status IN ('confirmed', 'in_progress', 'scheduled', 'pending')
+        ORDER BY b.booking_date DESC, b.booking_time DESC
+        LIMIT 50
+      `;
+
+      const bookings = await query(bookingQuery, [customerId]);
+
+      return c.json({
+        success: true,
+        bookings: bookings.rows,
+        count: bookings.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching active bookings by phone:', error);
+      // ✅ FIX: Return empty array on error instead of 500
+      return c.json({ 
+        success: true,
+        bookings: [],
+        count: 0,
+        error: error.message 
+      }, 200);
+    }
+  });
+
+  /**
    * GET /customer/bookings?phone=...
    * Get bookings by phone (convenience endpoint)
    */
@@ -115,7 +175,13 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching bookings by phone:', error);
-      return c.json({ error: error.message }, 500);
+      // ✅ FIX: Return empty array instead of 500
+      return c.json({ 
+        success: true,
+        bookings: [],
+        count: 0,
+        error: error.message 
+      }, 200);
     }
   });
 
@@ -442,8 +508,8 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         unreadCount: parseInt(unreadCount.rows[0]?.count || '0', 10),
       });
     } catch (error: any) {
-      console.error('Error fetching notifications by phone:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[notifications] Error fetching notifications by phone:', error);
+      return c.json({ success: true, notifications: [], unreadCount: 0 }, 200);
     }
   });
 

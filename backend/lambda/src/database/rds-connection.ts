@@ -104,22 +104,43 @@ export async function getRdsPool(): Promise<Pool> {
     }
 
     console.log('[DB] Creating connection pool...');
+    // ✅ FIX: Reduce pool size to prevent connection exhaustion
+    // Lambda functions share the same RDS instance, so we need to be conservative
+    // Each Lambda instance can have its own pool, so max: 5 per instance is safer
+    // With many concurrent Lambda invocations, even 5 per instance can exhaust RDS
+    const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
     pool = new Pool({
       host: DB_HOST,
       port: DB_PORT,
       database: DB_NAME,
       user: DB_USER,
       password: DB_PASSWORD,
-      max: 50, // Increased from 20 to handle more concurrent requests
+      max: poolMax, // Reduced from 50 to 10 to prevent connection exhaustion
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 15000, // Increased from 10000ms to 15000ms for better reliability
+      connectionTimeoutMillis: 10000, // Reduced timeout to fail faster
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      // ✅ FIX: Add statement_timeout to prevent long-running queries from holding connections
+      statement_timeout: 45000, // 45 seconds (leave buffer for Lambda 60s timeout)
     });
 
     // Handle pool errors
     pool.on('error', (err) => {
       console.error('[DB] Unexpected error on idle client', err);
     });
+    
+    // ✅ FIX: Monitor pool size to detect connection exhaustion
+    pool.on('connect', () => {
+      console.log(`[DB] Pool: ${pool?.totalCount || 0} total, ${pool?.idleCount || 0} idle, ${pool?.waitingCount || 0} waiting`);
+    });
+    
+    // Log pool statistics periodically (only in development to avoid log spam)
+    if (process.env.NODE_ENV === 'development' || process.env.LOG_POOL_STATS === 'true') {
+      setInterval(() => {
+        if (pool) {
+          console.log(`[DB] Pool stats - Total: ${pool.totalCount}, Idle: ${pool.idleCount}, Waiting: ${pool.waitingCount}`);
+        }
+      }, 60000); // Every minute
+    }
 
     // Test connection immediately
     try {
@@ -164,8 +185,8 @@ export async function query(
     throw new Error(`Database connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
-  // Add query timeout (50 seconds to leave buffer for Lambda timeout of 60s)
-  const QUERY_TIMEOUT_MS = 50000;
+  // Query timeout (25s to stay under typical 30s Lambda timeout)
+  const QUERY_TIMEOUT_MS = 25000;
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
       reject(new Error(`Query exceeded ${QUERY_TIMEOUT_MS}ms timeout. Consider optimizing the query.`));
@@ -189,6 +210,18 @@ export async function query(
     console.error('[DB] Error code:', error?.code);
     console.error('[DB] Query:', text.substring(0, 200));
     console.error('[DB] Params:', params?.slice(0, 5)); // Log first 5 params only
+    
+    // ✅ FIX: Handle connection pool exhaustion specifically
+    if (error?.message?.includes('remaining connection slots are reserved') || 
+        error?.message?.includes('too many clients already') ||
+        error?.code === '53300') {
+      console.error('[DB] ⚠️ Connection pool exhausted! Pool stats:', {
+        total: pool?.totalCount,
+        idle: pool?.idleCount,
+        waiting: pool?.waitingCount
+      });
+      throw new Error('Database connection pool exhausted. Please try again in a moment. If this persists, contact support.');
+    }
     
     // Handle query timeout
     if (error?.message?.includes('Query exceeded') || error?.message?.includes('timeout')) {

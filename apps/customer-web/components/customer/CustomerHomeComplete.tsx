@@ -25,6 +25,9 @@ import { LiveTrackingWidget } from './tracking/LiveTrackingWidget';
 import { RatingReviewPopup } from './RatingReviewPopup';
 import { VendorOnTheWayPopup } from './VendorOnTheWayPopup';
 import { UnifiedAppointmentTracker } from './booking/UnifiedAppointmentTracker'; // ✅ NEW: Appointment tracker widget
+import { TeleConsultationReminderNotification } from './TeleConsultationReminderNotification'; // ✅ FIX GAP-6.2: 5-minute notification
+import { ChatInterfaceFromNotification } from './ChatInterfaceFromNotification'; // ✅ FIX GAP-6.3: Chat from notification
+import { OrderTrackingWidget } from './OrderTrackingWidget'; // ✅ FIX GAP-8.4: Live tracking widget
 
 interface Pet {
   id: string;
@@ -126,6 +129,29 @@ export function CustomerHomeComplete({
   } | null>(null);
   const [customerId, setCustomerId] = useState<string>('');
   
+  // ✅ FIX GAP-6.2: 5-minute notification state
+  const [upcomingCall, setUpcomingCall] = useState<{
+    id: string;
+    vendorName: string;
+    vendorPhoto?: string;
+    serviceName: string;
+    petName?: string;
+    scheduledAt: string;
+    minutesUntil: number;
+    meetingId?: string;
+  } | null>(null);
+  
+  // ✅ FIX GAP-6.3: Chat from notification state
+  const [chatFromNotification, setChatFromNotification] = useState<{
+    isOpen: boolean;
+    bookingId: string;
+    vendorName: string;
+    vendorPhoto?: string;
+  } | null>(null);
+  
+  // ✅ FIX GAP-8.4: Active order tracking state
+  const [activeOrderTracking, setActiveOrderTracking] = useState<any | null>(null);
+  
   // Dynamic content from CMS
   const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
@@ -170,31 +196,59 @@ export function CustomerHomeComplete({
   // Load dynamic content (banners, articles, announcements)
   const loadDynamicContent = async () => {
     try {
-      // Fetch all content in parallel
-      const [bannersResp, articlesResp, announcementsResp, adoptionResp] = await Promise.all([
-        apiClient.get<any>('/customer/banners?position=home_top&limit=5').catch(() => null),
-        apiClient.get<any>('/customer/articles?limit=3&featured=true').catch(() => null),
-        apiClient.get<any>('/customer/announcements?limit=3').catch(() => null),
-        apiClient.get<any>('/customer/adoption-stats').catch(() => null),
+      // Fetch all content in parallel with better error handling
+      const [bannersResp, articlesResp, announcementsResp, adoptionResp] = await Promise.allSettled([
+        apiClient.get<any>('/customer/banners?position=home_top&limit=5'),
+        apiClient.get<any>('/customer/articles?limit=3&featured=true'),
+        apiClient.get<any>('/customer/announcements?limit=3'),
+        apiClient.get<any>('/customer/adoption-stats'),
       ]);
 
-      if (bannersResp?.banners && bannersResp.banners.length > 0) {
-        setDynamicBanners(bannersResp.banners);
+      // Handle banners
+      if (bannersResp.status === 'fulfilled' && bannersResp.value?.banners?.length > 0) {
+        setDynamicBanners(bannersResp.value.banners);
+      } else if (bannersResp.status === 'rejected') {
+        const error = bannersResp.reason;
+        // Only log non-CORS errors to reduce console noise
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load banners:', error.message);
+        }
       }
 
-      if (articlesResp?.articles && articlesResp.articles.length > 0) {
-        setDynamicArticles(articlesResp.articles);
+      // Handle articles
+      if (articlesResp.status === 'fulfilled' && articlesResp.value?.articles?.length > 0) {
+        setDynamicArticles(articlesResp.value.articles);
+      } else if (articlesResp.status === 'rejected') {
+        const error = articlesResp.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load articles:', error.message);
+        }
       }
 
-      if (announcementsResp?.announcements && announcementsResp.announcements.length > 0) {
-        setDynamicAnnouncements(announcementsResp.announcements);
+      // Handle announcements
+      if (announcementsResp.status === 'fulfilled' && announcementsResp.value?.announcements?.length > 0) {
+        setDynamicAnnouncements(announcementsResp.value.announcements);
+      } else if (announcementsResp.status === 'rejected') {
+        const error = announcementsResp.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load announcements:', error.message);
+        }
       }
 
-      if (adoptionResp?.stats) {
-        setAdoptionStats(adoptionResp.stats);
+      // Handle adoption stats
+      if (adoptionResp.status === 'fulfilled' && adoptionResp.value?.stats) {
+        setAdoptionStats(adoptionResp.value.stats);
+      } else if (adoptionResp.status === 'rejected') {
+        const error = adoptionResp.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load adoption stats:', error.message);
+        }
       }
-    } catch (error) {
-      console.error('Error loading dynamic content:', error);
+    } catch (error: any) {
+      // Only log if it's not a CORS error
+      if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        console.error('Error loading dynamic content:', error);
+      }
       // Fallback to defaults already set in state
     }
   };
@@ -204,54 +258,84 @@ export function CustomerHomeComplete({
     try {
       setServicesLoading(true);
       
-      // Fetch grooming services
-      const groomingResp = await apiClient.get<any>('/customer/discover-services?category=grooming').catch(() => null);
-      if (groomingResp?.services || groomingResp?.vendors) {
-        const services = groomingResp.services || groomingResp.vendors || [];
-        const mappedGrooming = services.slice(0, 3).map((s: any) => ({
-          id: s.id || s.vendorServiceId,
-          title: s.serviceName || s.name || 'Grooming Service',
-          price: `₹${s.price || s.basePrice || 999}`,
-          rating: s.rating || 4.8,
-          serviceStyle: s.serviceStyle || 'at_center',
-          description: s.description || 'Professional grooming service',
-          vendorId: s.vendorId
-        }));
-        if (mappedGrooming.length > 0) setGroomingServices(mappedGrooming);
+      // Use Promise.allSettled to handle failures gracefully
+      const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
+        apiClient.get<any>('/customer/discover-services?category=grooming'),
+        apiClient.get<any>('/customer/discover-services?category=vet&roleId=veterinarian'),
+        apiClient.get<any>('/products?featured=true&limit=3'),
+      ]);
+      
+      // Handle grooming services
+      if (groomingResult.status === 'fulfilled') {
+        const groomingResp = groomingResult.value;
+        if (groomingResp?.services || groomingResp?.vendors) {
+          const services = groomingResp.services || groomingResp.vendors || [];
+          const mappedGrooming = services.slice(0, 3).map((s: any) => ({
+            id: s.id || s.vendorServiceId,
+            title: s.serviceName || s.name || 'Grooming Service',
+            price: `₹${s.price || s.basePrice || 999}`,
+            rating: s.rating || 4.8,
+            serviceStyle: s.serviceStyle || 'at_center',
+            description: s.description || 'Professional grooming service',
+            vendorId: s.vendorId
+          }));
+          if (mappedGrooming.length > 0) setGroomingServices(mappedGrooming);
+        }
+      } else if (groomingResult.status === 'rejected') {
+        const error = groomingResult.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load grooming services:', error.message);
+        }
       }
       
-      // Fetch vet services
-      const vetResp = await apiClient.get<any>('/customer/discover-services?category=vet&roleId=veterinarian').catch(() => null);
-      if (vetResp?.services || vetResp?.vendors) {
-        const services = vetResp.services || vetResp.vendors || [];
-        const mappedVet = services.slice(0, 3).map((s: any) => ({
-          id: s.id || s.vendorServiceId,
-          title: s.serviceName || s.name || 'Vet Service',
-          price: `₹${s.price || s.basePrice || 499}`,
-          serviceStyle: s.serviceStyle || 'clinic',
-          description: s.description || 'Veterinary service',
-          type: s.serviceStyle === 'at_home' ? 'visit' : s.serviceStyle === 'tele' ? 'video' : 'clinic',
-          vendorId: s.vendorId
-        }));
-        if (mappedVet.length > 0) setVetServicesData(mappedVet);
+      // Handle vet services
+      if (vetResult.status === 'fulfilled') {
+        const vetResp = vetResult.value;
+        if (vetResp?.services || vetResp?.vendors) {
+          const services = vetResp.services || vetResp.vendors || [];
+          const mappedVet = services.slice(0, 3).map((s: any) => ({
+            id: s.id || s.vendorServiceId,
+            title: s.serviceName || s.name || 'Vet Service',
+            price: `₹${s.price || s.basePrice || 499}`,
+            serviceStyle: s.serviceStyle || 'clinic',
+            description: s.description || 'Veterinary service',
+            type: s.serviceStyle === 'at_home' ? 'visit' : s.serviceStyle === 'tele' ? 'video' : 'clinic',
+            vendorId: s.vendorId
+          }));
+          if (mappedVet.length > 0) setVetServicesData(mappedVet);
+        }
+      } else if (vetResult.status === 'rejected') {
+        const error = vetResult.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load vet services:', error.message);
+        }
       }
       
-      // Fetch products/deals
-      const productsResp = await apiClient.get<any>('/products?featured=true&limit=3').catch(() => null);
-      if (productsResp?.products && productsResp.products.length > 0) {
-        const mappedDeals = productsResp.products.map((p: any) => ({
-          id: p.id,
-          title: p.name || 'Pet Product',
-          price: `₹${p.salePrice || p.price || 999}`,
-          originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
-          discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
-          iconType: 'product',
-          rating: p.rating || 4.5
-        }));
-        setHotDeals(mappedDeals);
+      // Handle products/deals
+      if (productsResult.status === 'fulfilled') {
+        const productsResp = productsResult.value;
+        if (productsResp?.products && productsResp.products.length > 0) {
+          const mappedDeals = productsResp.products.map((p: any) => ({
+            id: p.id,
+            title: p.name || 'Pet Product',
+            price: `₹${p.salePrice || p.price || 999}`,
+            originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
+            discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
+            iconType: 'product',
+            rating: p.rating || 4.5
+          }));
+          setHotDeals(mappedDeals);
+        }
+      } else if (productsResult.status === 'rejected') {
+        const error = productsResult.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load products:', error.message);
+        }
       }
-    } catch (error) {
-      console.error('Error loading services:', error);
+    } catch (error: any) {
+      if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        console.error('Error loading services:', error);
+      }
     } finally {
       setServicesLoading(false);
     }
@@ -380,8 +464,12 @@ export function CustomerHomeComplete({
     if (phone) {
       loadActiveBookings();
       checkPendingReviews(); // ✅ Check for pending reviews on load
+      checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
+      checkActiveOrderTracking(); // ✅ FIX GAP-8.4: Check for active orders
       const interval = setInterval(() => {
         loadActiveBookings();
+        checkUpcomingCalls(); // Check every 30 seconds
+        checkActiveOrderTracking(); // Check every 30 seconds
       }, 30000); // Poll every 30 seconds
       return () => clearInterval(interval);
     }
@@ -424,6 +512,74 @@ export function CustomerHomeComplete({
     }
   };
   
+  // ✅ FIX GAP-6.2: Check for upcoming calls within 5 minutes
+  const checkUpcomingCalls = async () => {
+    try {
+      const response = await apiClient.get<any>(
+        `/customer/${phone}/bookings/upcoming-calls?minutes=5`
+      );
+      
+      if (response.success && response.bookings && response.bookings.length > 0) {
+        const nextCall = response.bookings[0];
+        const scheduledAt = new Date(nextCall.scheduledAt || nextCall.bookingDate);
+        const now = new Date();
+        const minutesUntil = Math.max(0, Math.round((scheduledAt.getTime() - now.getTime()) / 60000));
+        
+        if (minutesUntil <= 5 && minutesUntil > 0) {
+          setUpcomingCall({
+            id: nextCall.id || nextCall.bookingId,
+            vendorName: nextCall.vendorName || nextCall.staffName || 'Provider',
+            vendorPhoto: nextCall.vendorPhoto || nextCall.staffPhoto,
+            serviceName: nextCall.serviceName || 'Consultation',
+            petName: nextCall.petName,
+            scheduledAt: scheduledAt.toISOString(),
+            minutesUntil,
+            meetingId: nextCall.meetingId || nextCall.video_call_meeting_id,
+          });
+        } else if (minutesUntil <= 0) {
+          // Call has started or passed, dismiss notification
+          setUpcomingCall(null);
+        }
+      } else {
+        setUpcomingCall(null);
+      }
+    } catch (error) {
+      console.error('Error checking upcoming calls:', error);
+    }
+  };
+  
+  // ✅ FIX GAP-8.4: Check for active order tracking
+  const checkActiveOrderTracking = async () => {
+    try {
+      // Check for pharmacy orders
+      const pharmacyResponse = await apiClient.get<any>(
+        `/customer/${phone}/orders/pharmacy/active`
+      );
+      
+      // Check for meal orders
+      const mealResponse = await apiClient.get<any>(
+        `/customer/${phone}/orders/meals/active`
+      );
+      
+      const activeOrders = [
+        ...(pharmacyResponse.orders || []),
+        ...(mealResponse.orders || []),
+      ].filter((order: any) => 
+        order.status !== 'delivered' && 
+        order.status !== 'cancelled' &&
+        (order.tracking_status || order.status === 'preparing' || order.status === 'on_the_way')
+      );
+      
+      if (activeOrders.length > 0) {
+        setActiveOrderTracking(activeOrders[0]); // Show first active order
+      } else {
+        setActiveOrderTracking(null);
+      }
+    } catch (error) {
+      console.error('Error checking active order tracking:', error);
+    }
+  };
+  
   // ✅ Check for pending reviews on completed bookings
   const checkPendingReviews = async () => {
     try {
@@ -457,62 +613,109 @@ export function CustomerHomeComplete({
     try {
       setLoading(true);
       
-      // Load profile and pets in parallel using phone-based endpoints
-      const [profileResponse, petsResponse] = await Promise.all([
-        apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null),
-        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`).catch(() => null)
+      // Load profile and pets in parallel using phone-based endpoints with better error handling
+      const [profileResult, petsResult] = await Promise.allSettled([
+        apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`),
+        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`)
       ]);
 
-      const profileResp = profileResponse as any;
-      if (profileResp && (profileResp.success || profileResp.profile)) {
-        const profile = profileResp.profile || profileResp;
-        setUserData(prev => ({
-          ...prev,
-          name: profile.firstName || profile.name || 'User',
-          phone: phone,
-          journeyType: profile.journeyType || ''
-        }));
-        setUserProfilePhoto(profile.photo || profile.profile_photo_url || '');
-        
-        // Profile already includes pets if available
-        if (profile.pets && Array.isArray(profile.pets) && profile.pets.length > 0) {
+      // Handle profile response
+      if (profileResult.status === 'fulfilled') {
+        const profileResp = profileResult.value as any;
+        if (profileResp && (profileResp.success || profileResp.profile)) {
+          const profile = profileResp.profile || profileResp;
           setUserData(prev => ({
             ...prev,
-            pets: profile.pets
+            name: profile.firstName || profile.name || 'User',
+            phone: phone,
+            journeyType: profile.journeyType || ''
           }));
-          if (!selectedPet) {
-            setSelectedPet(profile.pets[0]);
+          setUserProfilePhoto(profile.photo || profile.profile_photo_url || '');
+          
+          // Profile already includes pets if available
+          if (profile.pets && Array.isArray(profile.pets) && profile.pets.length > 0) {
+            setUserData(prev => ({
+              ...prev,
+              pets: profile.pets
+            }));
+            if (!selectedPet) {
+              setSelectedPet(profile.pets[0]);
+            }
+          }
+        }
+      } else if (profileResult.status === 'rejected') {
+        const error = profileResult.reason;
+        // Only log non-CORS errors to reduce console noise
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load profile:', error.message);
+        }
+        // Try to use cached data if available
+        const cachedProfile = localStorage.getItem('customerData');
+        if (cachedProfile) {
+          try {
+            const profile = JSON.parse(cachedProfile);
+            setUserData(prev => ({
+              ...prev,
+              name: profile.firstName || profile.name || 'User',
+              phone: phone,
+            }));
+          } catch (e) {
+            // Ignore parse errors
           }
         }
       }
 
-      // Also try the dedicated pets endpoint
-      const petsResp = petsResponse as any;
-      if (petsResp && (petsResp.success || petsResp.pets)) {
-        // ✅ Robust response parsing
-        let pets: Pet[] = [];
-        if (Array.isArray(petsResp)) {
-          pets = petsResp;
-        } else if (Array.isArray(petsResp.pets)) {
-          pets = petsResp.pets;
-        } else if (petsResp.pets?.pets && Array.isArray(petsResp.pets.pets)) {
-          pets = petsResp.pets.pets;
-        } else if (petsResp.success && Array.isArray(petsResp.data)) {
-          pets = petsResp.data;
+      // Handle pets response
+      if (petsResult.status === 'fulfilled') {
+        const petsResp = petsResult.value as any;
+        if (petsResp && (petsResp.success || petsResp.pets)) {
+          // ✅ Robust response parsing
+          let pets: Pet[] = [];
+          if (Array.isArray(petsResp)) {
+            pets = petsResp;
+          } else if (Array.isArray(petsResp.pets)) {
+            pets = petsResp.pets;
+          } else if (petsResp.pets?.pets && Array.isArray(petsResp.pets.pets)) {
+            pets = petsResp.pets.pets;
+          } else if (petsResp.success && Array.isArray(petsResp.data)) {
+            pets = petsResp.data;
+          }
+          
+          if (pets.length > 0) {
+            setUserData(prev => ({
+              ...prev,
+              pets: pets
+            }));
+            if (!selectedPet) {
+              setSelectedPet(pets[0]);
+            }
+          }
         }
-        
-        if (pets.length > 0) {
-          setUserData(prev => ({
-            ...prev,
-            pets: pets
-          }));
-          if (!selectedPet) {
-            setSelectedPet(pets[0]);
+      } else if (petsResult.status === 'rejected') {
+        const error = petsResult.reason;
+        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.warn('Failed to load pets:', error.message);
+        }
+        // Try to use cached pets if available
+        const cachedPets = localStorage.getItem('customerPets');
+        if (cachedPets) {
+          try {
+            const pets = JSON.parse(cachedPets);
+            if (Array.isArray(pets) && pets.length > 0) {
+              setUserData(prev => ({
+                ...prev,
+                pets: pets
+              }));
+            }
+          } catch (e) {
+            // Ignore parse errors
           }
         }
       }
-    } catch (error) {
-      console.error('Error loading user data:', error);
+    } catch (error: any) {
+      if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        console.error('Error loading user data:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -1123,16 +1326,47 @@ export function CustomerHomeComplete({
               View All <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="px-6 grid grid-cols-3 gap-3">
+          
+          <div className="px-6 grid grid-cols-3 gap-3" data-testid="vet-services-grid" style={{ pointerEvents: 'auto' }}>
             <button
-              onClick={() => onNavigate?.('vet')}
-              className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow"
+              type="button"
+              data-testid="tele-consultation-button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('📞 [Tele Consultation] Button clicked, onNavigate:', !!onNavigate);
+                if (onNavigate) {
+                  try {
+                    onNavigate('vet-tele-consultation');
+                  } catch (error) {
+                    console.error('❌ [Tele Consultation] Navigation error:', error);
+                    // Fallback: try to navigate using window location
+                    if (typeof window !== 'undefined') {
+                      window.location.href = '/vet-tele-consultation';
+                    }
+                  }
+                } else {
+                  console.error('❌ [Tele Consultation] onNavigate is not defined');
+                  // Fallback: try to navigate using window location or router
+                  if (typeof window !== 'undefined') {
+                    window.location.href = '/vet-tele-consultation';
+                  }
+                }
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+              }}
+              className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 border border-blue-100 text-center hover:shadow-lg transition-shadow cursor-pointer active:scale-95 relative z-10"
+              style={{ pointerEvents: 'auto', touchAction: 'manipulation' }}
             >
-              <div className="w-10 h-10 mx-auto mb-2 bg-blue-100 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 mx-auto mb-2 bg-blue-100 rounded-xl flex items-center justify-center pointer-events-none">
                 <Video className="w-5 h-5 text-blue-600" />
               </div>
-              <h3 className="text-xs font-semibold text-gray-800 mb-1">Tele Consult</h3>
-              <p className="text-blue-600 font-medium text-sm">₹299</p>
+              <h3 className="text-xs font-semibold text-gray-800 mb-1 pointer-events-none">Tele Consult</h3>
+              <p className="text-blue-600 font-medium text-sm pointer-events-none">₹299</p>
             </button>
             <button
               onClick={() => onNavigate?.('vet')}
@@ -1746,6 +1980,66 @@ export function CustomerHomeComplete({
             setPendingReview(null);
             // Optionally refresh data
             loadActiveBookings();
+          }}
+        />
+      )}
+
+      {/* ✅ FIX GAP-6.2: 5-Minute Notification Before Scheduled Call */}
+      {upcomingCall && (
+        <TeleConsultationReminderNotification
+          booking={upcomingCall}
+          onOpenChat={(bookingId) => {
+            setChatFromNotification({
+              isOpen: true,
+              bookingId,
+              vendorName: upcomingCall.vendorName,
+              vendorPhoto: upcomingCall.vendorPhoto,
+            });
+          }}
+          onStartCall={(bookingId, meetingId) => {
+            if (onNavigate) {
+              onNavigate('video-call', { bookingId, meetingId });
+            } else {
+              window.location.href = `/video/${bookingId}`;
+            }
+            setUpcomingCall(null);
+          }}
+          onDismiss={() => setUpcomingCall(null)}
+        />
+      )}
+
+      {/* ✅ FIX GAP-6.3: Chat Interface Opening from Notification */}
+      {chatFromNotification && (
+        <ChatInterfaceFromNotification
+          isOpen={chatFromNotification.isOpen}
+          bookingId={chatFromNotification.bookingId}
+          vendorName={chatFromNotification.vendorName}
+          vendorPhoto={chatFromNotification.vendorPhoto}
+          onClose={() => setChatFromNotification(null)}
+          onStartVideoCall={(bookingId) => {
+            if (onNavigate) {
+              onNavigate('video-call', { bookingId });
+            } else {
+              window.location.href = `/video/${bookingId}`;
+            }
+            setChatFromNotification(null);
+          }}
+        />
+      )}
+
+      {/* ✅ FIX GAP-8.4: Live Tracking Widget (Zomato-like) on Customer Home Screen */}
+      {activeOrderTracking && (
+        <OrderTrackingWidget
+          orderId={activeOrderTracking.id || activeOrderTracking.orderId}
+          orderType={activeOrderTracking.orderType || 'pharmacy'}
+          onClose={() => setActiveOrderTracking(null)}
+          onTrackLive={() => {
+            const orderId = activeOrderTracking.id || activeOrderTracking.orderId;
+            if (onNavigate) {
+              onNavigate('order-tracking', { orderId, orderType: activeOrderTracking.orderType });
+            } else {
+              window.location.href = `/track/${orderId}`;
+            }
           }}
         />
       )}

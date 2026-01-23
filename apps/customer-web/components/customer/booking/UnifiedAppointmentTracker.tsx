@@ -75,14 +75,23 @@ export function UnifiedAppointmentTracker({
   const [loading, setLoading] = useState(true);
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const initialLoadDoneRef = useRef(false);
 
-  // Load appointments and active bookings
+  // Load appointments and active bookings. Poll every 30s — interval must live in effect
+  // only; never inside loadData to avoid interval explosion → ERR_INSUFFICIENT_RESOURCES.
   useEffect(() => {
-    loadData();
+    initialLoadDoneRef.current = false;
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    const poll = () => loadData();
+    poll();
+    const id = setInterval(poll, 30000);
+    pollingRef.current = id;
     return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
+      clearInterval(pollingRef.current!);
+      pollingRef.current = null;
     };
   }, [customerPhone]);
 
@@ -103,8 +112,9 @@ export function UnifiedAppointmentTracker({
   }, []);
 
   const loadData = async () => {
+    const isInitial = !initialLoadDoneRef.current;
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       
       // Fetch upcoming appointments (tele consultations)
       const appointmentsRes = await apiClient.get<any>(
@@ -183,13 +193,11 @@ export function UnifiedAppointmentTracker({
     } catch (error) {
       console.error('Error loading appointments:', error);
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        initialLoadDoneRef.current = true;
+        setLoading(false);
+      }
     }
-
-    // Poll for updates every 30 seconds
-    pollingRef.current = setInterval(() => {
-      loadData();
-    }, 30000);
   };
 
   const handleDismiss = (id: string) => {

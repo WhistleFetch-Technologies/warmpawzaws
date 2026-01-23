@@ -219,7 +219,10 @@ CREATE TABLE bookings (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled')),
     
     -- Location
-    service_type TEXT NOT NULL CHECK (service_type IN ('at_vendor', 'at_home', 'online')),
+    -- Note: Updated in migration 307 to accept both legacy and new values
+    -- Legacy: 'at_vendor' (center)
+    -- New: 'at_center' (center), 'tele' (tele/video) - 'tele' is already used in DB schema
+    service_type TEXT NOT NULL CHECK (service_type IN ('at_vendor', 'at_center', 'at_home', 'tele')),
     address TEXT,
     city TEXT,
     state TEXT,

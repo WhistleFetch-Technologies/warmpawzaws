@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useRouter } from 'next/navigation';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { StandardizedHeader } from './shared/StandardizedHeader';
+import { StandardizedFooter } from './shared/StandardizedFooter';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -35,12 +37,30 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [error, setError] = useState<string | null>(null);
   // ✅ FIX #13: Track all error states
   const [vetDataError, setVetDataError] = useState<string | null>(null);
+  
+  // User profile data for header
+  const [userName, setUserName] = useState('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     loadPets();
     loadVetData();
     loadDashboardConfig();
+    loadUserProfile();
   }, []);
+  
+  const loadUserProfile = async () => {
+    try {
+      const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+      if (profileResponse?.profile || profileResponse) {
+        const profile = profileResponse.profile || profileResponse;
+        setUserName(profile.name || profile.fullName || 'User');
+        setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
 
   const loadPets = async () => {
     try {
@@ -99,7 +119,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       servicesData.forEach((service: any) => {
         const vendorId = service.vendorId || service.id;
         const vendorType = (service.vendorType || '').toLowerCase();
-        const roleId = (service.vendorRoleId || service.roleId || '').toLowerCase();
+        const roleId = String(service.vendorRoleId || service.roleId || '').toLowerCase();
         const vendorName = service.vendorName || service.businessName || service.name || '';
         
         // Filter for veterinary vendors
@@ -167,8 +187,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         name: 'Tele Consultation',
         description: 'Video call with vets',
         icon: Video,
-        color: '#6B9FFF',
-        bgColor: 'bg-blue-50',
+        color: '#FF8C42',
+        bgColor: 'bg-orange-50',
         badge: '24/7 Available'
       },
       {
@@ -242,7 +262,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     try {
       onNavigate(screen, navData);
     } catch (err: any) {
-      console.error('Navigation error:', err);
       toast.error('Failed to navigate. Please try again.');
     }
   };
@@ -282,34 +301,46 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   }
 
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+    <div className="min-h-screen bg-gray-50">
+      {/* Standardized Header */}
+      <StandardizedHeader
+        userName={userName}
+        userProfilePhoto={userProfilePhoto}
+        title="Veterinary Services"
+        subtitle="Choose a service"
+        showBackButton={true}
+        showPets={false}
+        onBack={onBack}
+        onNavigate={onNavigate}
+        onProfileClick={() => onNavigate('profile')}
+        customerPhone={phone}
+      />
       
-      {/* Quick Stats - Moved below header */}
+      {/* Quick Stats - Compact row, same width as header/footer */}
       {stats && stats.activeVets > 0 && (
-        <div className="px-4 pt-4 pb-2 bg-white">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
-              <div className="text-lg font-bold text-orange-600">{stats.activeVets}+</div>
-              <div className="text-orange-700 text-xs">Vets</div>
+        <div className="w-full max-w-[430px] mx-auto px-6 py-2 bg-white/95 border-b border-orange-100/50">
+          <div className="grid grid-cols-3 gap-1.5">
+            <div className="bg-orange-50/80 rounded-lg py-1.5 px-2 text-center border border-orange-100">
+              <div className="text-sm font-bold text-orange-600">{stats.activeVets}+</div>
+              <div className="text-orange-600/80 text-[10px]">Vets</div>
             </div>
-            <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
-              <div className="text-lg font-bold text-orange-600">{stats.consultations}</div>
-              <div className="text-orange-700 text-xs">Consults</div>
+            <div className="bg-orange-50/80 rounded-lg py-1.5 px-2 text-center border border-orange-100">
+              <div className="text-sm font-bold text-orange-600">{stats.consultations}</div>
+              <div className="text-orange-600/80 text-[10px]">Consults</div>
             </div>
-            <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
-              <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
-                <Star className="w-3.5 h-3.5 fill-orange-500" />
+            <div className="bg-orange-50/80 rounded-lg py-1.5 px-2 text-center border border-orange-100">
+              <div className="flex items-center justify-center gap-0.5 text-sm font-bold text-orange-600">
+                <Star className="w-3 h-3 fill-orange-500" />
                 {stats.rating}
               </div>
-              <div className="text-orange-700 text-xs">Rating</div>
+              <div className="text-orange-600/80 text-[10px]">Rating</div>
             </div>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <div className="px-4 pt-6 pb-24">
+      <div className="max-w-[430px] mx-auto px-4 pt-6 pb-24">
         {/* Phase 0.1: Promotion Banner Component */}
         <div className="mb-6">
           <PromotionBanner service="vet" maxPromotions={3} />
@@ -529,8 +560,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           <div className="space-y-3">
             <Card className="p-4 bg-white border border-gray-100 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Video className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Video className="w-5 h-5 text-orange-600" />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">24/7 Tele Consultation</h3>
@@ -565,6 +596,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
         </div>
       </div>
-    </>
+      
+      {/* Standardized Footer */}
+      <StandardizedFooter
+        currentTab="home"
+        onTabChange={(tab) => {
+          if (tab === 'home') onBack();
+          else if (tab === 'bookings') onNavigate('my-bookings');
+          else if (tab === 'cart') onNavigate('cart');
+          else if (tab === 'profile') onNavigate('profile');
+        }}
+        maxWidth="max-w-[430px]"
+      />
+    </div>
   );
 }

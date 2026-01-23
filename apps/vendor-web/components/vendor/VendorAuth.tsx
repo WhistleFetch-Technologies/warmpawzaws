@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,29 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [showOtpScreen, setShowOtpScreen] = useState(false);
+  const [rateLimitCooldown, setRateLimitCooldown] = useState<number | null>(null);
+  const [lastOtpRequestTime, setLastOtpRequestTime] = useState<number>(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+  
+  // Update cooldown countdown timer
+  useEffect(() => {
+    if (!rateLimitCooldown || rateLimitCooldown <= Date.now()) {
+      setCooldownSeconds(0);
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((rateLimitCooldown - Date.now()) / 1000);
+      if (remaining > 0) {
+        setCooldownSeconds(remaining);
+      } else {
+        setCooldownSeconds(0);
+        setRateLimitCooldown(null);
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [rateLimitCooldown]);
   
   const [formData, setFormData] = useState({
     email: '',
@@ -112,14 +135,33 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
     
     if (!phoneNumber || phoneNumber.length < 10) {
       setError('Please enter a valid phone number');
-      setLoading(false);
       return;
     }
+    
+    // Debounce: Prevent rapid clicks (minimum 2 seconds between requests)
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastOtpRequestTime;
+    const minInterval = 2000; // 2 seconds
+    
+    if (timeSinceLastRequest < minInterval && lastOtpRequestTime > 0) {
+      const remainingTime = Math.ceil((minInterval - timeSinceLastRequest) / 1000);
+      setError(`Please wait ${remainingTime} second${remainingTime > 1 ? 's' : ''} before requesting another OTP.`);
+      return;
+    }
+    
+    // Check if we're in a rate limit cooldown period
+    if (rateLimitCooldown && rateLimitCooldown > Date.now()) {
+      const remainingSeconds = Math.ceil((rateLimitCooldown - Date.now()) / 1000);
+      setError(`Too many requests. Please wait ${remainingSeconds} second${remainingSeconds > 1 ? 's' : ''} before trying again.`);
+      return;
+    }
+    
+    setLoading(true);
+    setLastOtpRequestTime(now);
     
     try {
       console.log('📤 [VendorAuth] Sending OTP to:', phoneNumber);
@@ -132,13 +174,32 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       
       console.log('✅ [VendorAuth] OTP sent successfully:', sendOtpData);
       
+      // Clear any rate limit cooldown on success
+      setRateLimitCooldown(null);
+      
       // Show OTP screen
       setFormData({ ...formData, phone: phoneNumber });
       setShowOtpScreen(true);
       setLoading(false);
     } catch (error: any) {
       console.error('❌ [VendorAuth] Failed to send OTP:', error);
-      setError(error.message || 'Failed to send OTP. Please try again.');
+      
+      // Handle rate limiting specifically
+      if (error.statusCode === 429 || error.isRateLimit) {
+        const retryAfter = error.retryAfter || 5; // Default to 5 seconds if not provided
+        const cooldownUntil = Date.now() + (retryAfter * 1000);
+        setRateLimitCooldown(cooldownUntil);
+        
+        setError(`Too many requests. Please wait ${retryAfter} second${retryAfter > 1 ? 's' : ''} before trying again.`);
+        
+        // Clear cooldown after the period expires
+        setTimeout(() => {
+          setRateLimitCooldown(null);
+        }, retryAfter * 1000);
+      } else {
+        setError(error.message || 'Failed to send OTP. Please try again.');
+      }
+      
       setLoading(false);
     }
   };
@@ -456,10 +517,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             <button
               type="button"
               onClick={handleSendCode}
-              disabled={loading}
-              className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm underline disabled:opacity-50"
+              disabled={loading || cooldownSeconds > 0}
+              className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm underline disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Resend Code
+              {cooldownSeconds > 0
+                ? `Resend Code (Wait ${cooldownSeconds}s)`
+                : 'Resend Code'}
             </button>
 
             <div className="space-y-2">
@@ -562,10 +625,14 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
             <Button
               type="submit"
-              disabled={loading || phoneNumber.length !== 10}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base font-bold disabled:opacity-50"
+              disabled={loading || phoneNumber.length !== 10 || cooldownSeconds > 0}
+              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base font-bold disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Sending...' : 'Send Verification Code'}
+              {loading 
+                ? 'Sending...' 
+                : cooldownSeconds > 0
+                ? `Please wait ${cooldownSeconds}s`
+                : 'Send Verification Code'}
             </Button>
           </form>
 

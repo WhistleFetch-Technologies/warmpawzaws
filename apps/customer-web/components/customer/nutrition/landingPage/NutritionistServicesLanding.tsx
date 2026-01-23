@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
-import { NUTRITIONIST_NEEDS } from './ProblemGridSection';
+import { PromotionBanner } from '../../shared/PromotionBanner';
+import { NUTRITIONIST_NEEDS } from '../../ProblemGridSection';
 
 interface NutritionistServicesLandingProps {
   phone: string;

@@ -209,6 +209,22 @@ export class ApiClient {
         throw error;
       }
       
+      // Check for CORS errors in the error message
+      if (
+        error.message?.includes('CORS') ||
+        error.message?.includes('blocked by CORS policy') ||
+        error.message?.includes('preflight request') ||
+        error.message?.includes('ERR_FAILED') && error.message?.includes('fetch')
+      ) {
+        throw new ApiError(
+          'CORS error: API endpoint configuration issue',
+          'CORS_ERROR',
+          undefined,
+          false, // Not retryable
+          error
+        );
+      }
+      
       // Wrap other errors
       throw new ApiError(
         error.message || 'Unknown error',
@@ -374,7 +390,7 @@ export const bookingsApi = {
     serviceId: string;
     bookingDate: string;
     bookingTime: string;
-    serviceType?: 'at_vendor' | 'at_home' | 'online';
+    serviceType?: 'at_vendor' | 'at_center' | 'at_home' | 'tele';
     address?: string;
     staffId?: string;
     petId?: string;

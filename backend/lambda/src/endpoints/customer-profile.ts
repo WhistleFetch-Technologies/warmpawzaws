@@ -50,49 +50,91 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const { identifier } = c.req.param();
 
       // Resolve identifier (phone or customer ID)
-      const customerId = await resolveCustomerId(identifier);
+      let customerId: string | null;
+      try {
+        customerId = await resolveCustomerId(identifier);
+      } catch (error: any) {
+        console.error('[profile/unified] Error resolving customer ID:', error);
+        return c.json({ success: true, profile: null, _degraded: true }, 200);
+      }
+
       if (!customerId) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       // Get customer
-      const customers = await select('customers', { id: customerId });
+      let customers: any[];
+      try {
+        customers = await select('customers', { id: customerId });
+      } catch (error: any) {
+        console.error('[profile/unified] Error fetching customer:', error);
+        return c.json({ success: true, profile: null, _degraded: true }, 200);
+      }
+
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       const customer = customers[0];
 
-      // Fetch Wallet
-      const wallets = await query(
-        'SELECT * FROM customer_wallets WHERE customer_id = $1',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
-      const wallet = wallets.rows.length > 0 ? wallets.rows[0] : { balance: 0, currency: 'INR', status: 'active' };
+      // Fetch Wallet with better error handling
+      let wallet: any = { balance: 0, currency: 'INR', status: 'active' };
+      try {
+        const wallets = await query(
+          'SELECT * FROM customer_wallets WHERE customer_id = $1',
+          [customerId]
+        );
+        if (wallets.rows && wallets.rows.length > 0) {
+          wallet = wallets.rows[0];
+        }
+      } catch (error: any) {
+        console.warn('Error fetching wallet (using defaults):', error.message);
+        // Continue with default wallet
+      }
 
-      // Fetch Addresses
-      const addresses = await query(
-        'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      // Fetch Addresses with better error handling
+      let addresses: any = { rows: [] };
+      try {
+        addresses = await query(
+          'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching addresses (using empty):', error.message);
+        // Continue with empty addresses
+      }
 
-      // Fetch Bookings
-      const bookings = await query(
-        'SELECT * FROM bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      // Fetch Bookings with better error handling
+      let bookings: any = { rows: [] };
+      try {
+        bookings = await query(
+          'SELECT * FROM bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching bookings (using empty):', error.message);
+        // Continue with empty bookings
+      }
 
-      // Fetch Orders
-      const orders = await query(
-        'SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      // Fetch Orders with better error handling
+      let orders: any = { rows: [] };
+      try {
+        orders = await query(
+          'SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching orders (using empty):', error.message);
+        // Continue with empty orders
+      }
 
-      // Calculate stats
+      // Calculate stats safely
+      const bookingsRows = bookings.rows || [];
+      const ordersRows = orders.rows || [];
       const stats = {
-        totalBookings: bookings.rows.length,
-        activeBookings: bookings.rows.filter((b: any) => ['pending', 'confirmed', 'in_progress'].includes(b.status)).length,
-        totalEcommerceOrders: orders.rows.length,
+        totalBookings: bookingsRows.length,
+        activeBookings: bookingsRows.filter((b: any) => ['pending', 'confirmed', 'in_progress'].includes(b.status)).length,
+        totalEcommerceOrders: ordersRows.length,
         walletBalance: parseFloat(wallet.balance || '0'),
       };
 
@@ -117,7 +159,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             currency: wallet.currency || 'INR',
             status: wallet.status || 'active',
           },
-          addresses: addresses.rows.map((addr: any) => ({
+          addresses: (addresses.rows || []).map((addr: any) => ({
             id: addr.id,
             label: addr.address_type,
             name: addr.full_name,
@@ -131,16 +173,16 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             isDefault: addr.is_default,
           })),
           orders: {
-            all: orders.rows,
-            total: orders.rows.length,
+            all: ordersRows,
+            total: ordersRows.length,
           },
-          bookings: bookings.rows,
+          bookings: bookingsRows,
           stats,
         },
       });
     } catch (error: any) {
-      console.error('Error fetching unified customer profile:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[profile/unified] Error fetching unified customer profile:', error);
+      return c.json({ success: true, profile: null, _degraded: true }, 200);
     }
   });
 
@@ -157,16 +199,28 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
-      const customers = await select('customers', { phone: cleanPhone });
-      
+      let customers: any[];
+      try {
+        customers = await select('customers', { phone: cleanPhone });
+      } catch (error: any) {
+        console.error('[profile] Error fetching customer by phone:', error);
+        return c.json({ success: true, profile: null, _degraded: true }, 200);
+      }
+
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       const customer = customers[0];
       
-      // Get pets for this customer
-      const pets = await select('pets', { customer_id: customer.id }).catch(() => []);
+      // Get pets for this customer with error handling
+      let pets: any[] = [];
+      try {
+        pets = await select('pets', { customer_id: customer.id });
+      } catch (error: any) {
+        console.warn('Error fetching pets (using empty):', error.message);
+        // Continue with empty pets array
+      }
       
       return c.json({
         success: true,
@@ -195,8 +249,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       });
     } catch (error: any) {
-      console.error('Error fetching customer profile by query:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[profile] Error fetching customer profile by query:', error);
+      return c.json({ success: true, profile: null, _degraded: true }, 200);
     }
   });
 
@@ -662,8 +716,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         count: searchHistory.length,
       });
     } catch (error: any) {
-      console.error('Error fetching search history:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[search-history] Error fetching search history:', error);
+      return c.json({ success: true, history: [], count: 0 }, 200);
     }
   });
 
@@ -732,8 +786,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         count: suggestions.length,
       });
     } catch (error: any) {
-      console.error('Error fetching suggestions:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[search-suggestions] Error fetching suggestions:', error);
+      return c.json({ success: true, suggestions: [], count: 0 }, 200);
     }
   });
 

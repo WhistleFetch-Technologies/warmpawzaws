@@ -21,7 +21,7 @@ interface DoctorInfo {
   rating: number;
   review_count: number;
   languages: string[];
-  services: { id: string; name: string; price: number; duration: number; service_style: string }[];
+  services: { id: string; serviceId?: string; service_id?: string; name: string; price: number; duration: number; service_style: string }[];
   clinic_name?: string;
   clinic_address?: string;
   available_slots?: { date: string; slots: string[] }[];
@@ -43,67 +43,100 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
   const loadDoctorDetails = async () => {
     try {
       setLoading(true);
-      // Try to fetch from API, fallback to mock data
-      try {
-        const response = await apiClient.get(`/vendors/${doctorId}`);
-        const vendorData = response as any;
-        setDoctor({
-          id: vendorData.id || doctorId,
-          name: vendorData.business_name || vendorData.name || 'Dr. Expert Veterinarian',
-          specialization: vendorData.specialization || 'General Veterinarian',
-          qualification: vendorData.qualification || 'BVSc & AH, MVSc',
-          experience_years: vendorData.experience_years || 5,
-          rating: vendorData.rating || 4.5,
-          review_count: vendorData.review_count || 0,
-          languages: vendorData.languages || ['English', 'Hindi'],
-          services: vendorData.services || [
-            { id: 'tele', name: 'Tele Consultation', price: 299, duration: 15, service_style: 'tele' },
-            { id: 'home', name: 'Home Visit', price: 599, duration: 30, service_style: 'at_home' },
-            { id: 'clinic', name: 'Clinic Visit', price: 399, duration: 20, service_style: 'at_center' },
-          ],
-          clinic_name: vendorData.clinic_name,
-          clinic_address: vendorData.address,
-          photo_url: vendorData.photo_url,
-          is_verified: vendorData.is_verified || true,
-        });
-      } catch (err) {
-        // Use mock data for demonstration
-        setDoctor({
-          id: doctorId,
-          name: 'Dr. Priya Sharma',
-          specialization: 'General Veterinarian',
-          qualification: 'BVSc & AH, MVSc (Surgery)',
-          experience_years: 8,
-          rating: 4.8,
-          review_count: 156,
-          languages: ['English', 'Hindi', 'Marathi'],
-          services: [
-            { id: 'tele', name: 'Tele Consultation', price: 299, duration: 15, service_style: 'tele' },
-            { id: 'home', name: 'Home Visit', price: 599, duration: 30, service_style: 'at_home' },
-            { id: 'clinic', name: 'Clinic Visit', price: 399, duration: 20, service_style: 'at_center' },
-          ],
-          clinic_name: 'PetCare Veterinary Clinic',
-          clinic_address: 'Shop 12, Ground Floor, Linking Road, Bandra West, Mumbai - 400050',
-          is_verified: true,
-        });
+      
+      // ✅ CRITICAL: Load vendor profile and services from real API - NO MOCK DATA, NO FALLBACKS
+      const [vendorResponse, servicesResponse] = await Promise.all([
+        apiClient.get(`/customer/vendor/${doctorId}`),
+        apiClient.get(`/vendor/${doctorId}/services`)
+      ]);
+      
+      const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
+      
+      // ✅ CRITICAL: Load services from real API - extract from different response formats
+      let services: any[] = [];
+      if (servicesResponse) {
+        const servicesData = servicesResponse as any;
+        if (servicesData.services) {
+          // Handle servicesByStyle format
+          if (servicesData.services.at_home || servicesData.services.at_center || servicesData.services.tele) {
+            services = [
+              ...(servicesData.services.at_home?.services || []),
+              ...(servicesData.services.at_center?.services || []),
+              ...(servicesData.services.tele?.services || [])
+            ];
+          } else if (Array.isArray(servicesData.services)) {
+            services = servicesData.services;
+          }
+        } else if (servicesData.allServices) {
+          services = servicesData.allServices;
+        } else if (Array.isArray(servicesData)) {
+          services = servicesData;
+        }
       }
+      
+      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
+      const mappedServices = services.map((s: any) => ({
+        id: s.serviceId || s.service_id, // ✅ UUID from services table
+        serviceId: s.serviceId || s.service_id, // ✅ UUID
+        name: s.serviceName || s.name || s.service_name,
+        price: parseFloat(s.price || '0'),
+        duration: s.duration || s.duration_minutes || 30,
+        service_style: s.serviceStyle || s.service_style || 'at_center',
+      }));
+      
+      console.log('✅ Loaded doctor details:', {
+        doctorId: vendorData.id || doctorId,
+        servicesCount: mappedServices.length,
+        services: mappedServices
+      });
+      
+      setDoctor({
+        id: vendorData.id || doctorId,
+        name: vendorData.business_name || vendorData.name || 'Veterinarian',
+        specialization: vendorData.specialization || 'General Veterinarian',
+        qualification: vendorData.qualification || '',
+        experience_years: parseInt(vendorData.experience_years || '0', 10),
+        rating: parseFloat(vendorData.rating || '0'),
+        review_count: parseInt(vendorData.review_count || '0', 10),
+        languages: vendorData.languages || ['English', 'Hindi'],
+        services: mappedServices, // ✅ Real services with UUID
+        clinic_name: vendorData.clinic_name,
+        clinic_address: vendorData.address,
+        photo_url: vendorData.photo_url || vendorData.photo,
+        is_verified: vendorData.is_verified || false,
+      });
     } catch (error) {
-      console.error('Error loading doctor details:', error);
+      console.error('❌ Error loading doctor details:', error);
+      setDoctor(null);
     } finally {
       setLoading(false);
     }
   };
 
   const handleBookService = (serviceId: string, serviceStyle: string) => {
-    // ✅ FIX B4: Pass both serviceType and serviceStyle to preserve context
-    // Also pass service details if available from the services list
-    const service = doctor?.services?.find((s: any) => s.id === serviceId || s.serviceId === serviceId);
+    // ✅ CRITICAL: Find service and use service_id (UUID) not numeric id
+    const service = doctor?.services?.find((s: any) => 
+      s.id === serviceId || 
+      s.serviceId === serviceId ||
+      (s.serviceId || s.service_id) === serviceId
+    );
+    
+    // ✅ CRITICAL: Use service_id (UUID) from service object
+    const serviceObj = service as any;
+    const finalServiceId = serviceObj?.serviceId || serviceObj?.service_id || serviceId;
+    
+    console.log('✅ Booking service with UUID:', {
+      inputServiceId: serviceId,
+      finalServiceId,
+      service
+    });
+    
     onNavigate('vet-booking', {
       doctorId: doctor?.id,
       doctor: doctor,
-      serviceId,
+      serviceId: finalServiceId, // ✅ UUID from services table
       serviceType: serviceStyle,
-      serviceStyle: serviceStyle, // ✅ FIX: Explicitly pass serviceStyle
+      serviceStyle: serviceStyle,
       serviceName: service?.name,
       price: service?.price,
       duration: service?.duration,
@@ -236,7 +269,7 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                       service.service_style === 'tele' ? 'bg-blue-100 text-blue-600' :
                       service.service_style === 'at_home' ? 'bg-green-100 text-green-600' :
-                      'bg-purple-100 text-purple-600'
+                      'bg-orange-100 text-orange-600'
                     }`}>
                       {getServiceIcon(service.service_style)}
                     </div>

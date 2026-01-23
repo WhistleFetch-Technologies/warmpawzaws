@@ -571,45 +571,89 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         id: booking.id,
         bookingId: booking.id,
         status: booking.status,
+        // ✅ FIX: Schedule information - ensure all formats are included
         bookingDate: booking.booking_date,
+        booking_date: booking.booking_date,
         bookingTime: booking.booking_time,
+        booking_time: booking.booking_time,
+        scheduledDate: booking.booking_date, // Alias for frontend compatibility
+        scheduledTime: booking.booking_time, // Alias for frontend compatibility
+        schedule: booking.booking_time, // Alias for frontend compatibility
+        startDate: booking.booking_date, // Alias for frontend compatibility
         duration: booking.duration || 30,
         totalAmount: parseFloat(booking.total_amount || '0'),
-        serviceStyle: booking.service_style || 'at_clinic',
+        serviceStyle: booking.service_style || booking.service_type || 'at_clinic',
         notes: booking.notes,
         specialInstructions: booking.special_instructions,
         paymentStatus: booking.payment_status || 'pending',
         
-        // Customer details
+        // ✅ FIX: Ensure all IDs are at top level
         customerId: booking.customer_id,
+        customer_id: booking.customer_id,
+        vendorId: booking.vendor_id,
+        vendor_id: booking.vendor_id,
+        staffId: booking.staff_id || null,
+        staff_id: booking.staff_id || null,
+        petId: petIdToUse || booking.pet_id || null,
+        pet_id: petIdToUse || booking.pet_id || null,
+        serviceId: booking.service_id,
+        service_id: booking.service_id,
+        
+        // Customer details
         customerName: customer.length > 0 ? customer[0].full_name : 'Unknown Customer',
         customerPhone: customer.length > 0 ? customer[0].phone : null,
         customerEmail: customer.length > 0 ? customer[0].email : null,
         customerAddress: customer.length > 0 ? customer[0].address : null,
         
         // Pet details - use extracted petIdToUse
-        petId: petIdToUse || booking.pet_id,
         petName: pet.length > 0 ? pet[0].name : booking.pet_name || 'Unknown Pet',
         petType: pet.length > 0 ? pet[0].species : booking.pet_type || '',
         petBreed: pet.length > 0 ? pet[0].breed : booking.pet_breed || '',
         petAge: pet.length > 0 ? (pet[0].age_years || pet[0].age) : booking.pet_age || '',
         petWeight: pet.length > 0 ? (pet[0].weight_kg || pet[0].weight) : null,
         petPhoto: pet.length > 0 ? pet[0].profile_photo_url : null,
+        // Pet object for structured access
+        pet: pet.length > 0 ? {
+          id: pet[0].id || petIdToUse,
+          name: pet[0].name,
+          species: pet[0].species,
+          breed: pet[0].breed,
+          age: pet[0].age_years || pet[0].age,
+          weight: pet[0].weight_kg || pet[0].weight,
+          photo_url: pet[0].profile_photo_url,
+        } : null,
         
         // Service details
-        serviceId: booking.service_id,
         serviceName: service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service',
         serviceCategory: service.length > 0 ? service[0].category : null,
         serviceDescription: service.length > 0 ? service[0].description : null,
+        // Service object for structured access
+        service: service.length > 0 ? {
+          id: service[0].id || booking.service_id,
+          name: service[0].name,
+          category: service[0].category,
+          description: service[0].description,
+          duration: service[0].duration_minutes || booking.duration || 30,
+        } : null,
         
         // Vendor details
-        vendorId: booking.vendor_id,
         vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,
         vendorPhone: vendor.length > 0 ? vendor[0].phone : null,
         vendorAddress: vendor.length > 0 
           ? [vendor[0].address, vendor[0].city, vendor[0].state, vendor[0].pincode].filter(Boolean).join(', ')
           : null,
-        
+        // Vendor object for structured access
+        vendor: vendor.length > 0 ? {
+          id: vendor[0].id || booking.vendor_id,
+          businessName: vendor[0].business_name || vendor[0].full_name,
+          phone: vendor[0].phone,
+          email: vendor[0].email,
+          address: vendor[0].address,
+          city: vendor[0].city,
+          state: vendor[0].state,
+          pincode: vendor[0].pincode,
+        } : null,
+
         // OTP and session tracking
         otpCode: booking.otp_code,
         otpVerifiedAt: booking.otp_verified_at,

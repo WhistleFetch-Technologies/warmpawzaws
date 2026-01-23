@@ -193,6 +193,8 @@ export function registerMealPlanEndpoints(app: Hono) {
   /**
    * GET /meal-plans/search
    * Search meal plans (customer)
+   * ✅ FIX GAP-9.1: Added 10km radius filter support
+   * ✅ FIX GAP-9.2: Enhanced filtering with multiple diet types and filters parameter
    */
   app.get("/meal-plans/search", async (c) => {
     try {
@@ -201,13 +203,28 @@ export function registerMealPlanEndpoints(app: Hono) {
       const dietType = c.req.query('dietType');
       const mealType = c.req.query('mealType');
       const city = c.req.query('city');
-      const lat = c.req.query('lat');
-      const lng = c.req.query('lng');
+      const lat = parseFloat(c.req.query('lat') || '0');
+      const lng = parseFloat(c.req.query('lng') || '0');
+      const maxRadius = parseFloat(c.req.query('maxRadius') || '0'); // ✅ FIX GAP-9.1: 10km radius filter
+      const filters = c.req.query('filters'); // ✅ FIX GAP-9.2: Comma-separated filter list
+
+      // ✅ FIX GAP-9.1: Calculate distance using Haversine formula
+      const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+        const R = 6371; // Earth's radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      };
 
       let queryText = `
         SELECT mp.*, v.business_name as vendor_name, v.city, v.address,
                CAST(v.metadata->>'lat' AS NUMERIC) as vendor_lat,
-               CAST(v.metadata->>'lng' AS NUMERIC) as vendor_lng
+               CAST(v.metadata->>'lng' AS NUMERIC) as vendor_lng,
+               v.id as vendor_id
         FROM meal_plans mp
         JOIN vendors v ON mp.vendor_id = v.id
         WHERE mp.is_active = true
@@ -229,7 +246,16 @@ export function registerMealPlanEndpoints(app: Hono) {
         params.push(`%${petSize}%`);
       }
 
-      if (dietType) {
+      // ✅ FIX GAP-9.2: Support multiple diet types via filters parameter
+      if (filters) {
+        const filterList = filters.split(',').map(f => f.trim()).filter(f => f);
+        if (filterList.length > 0) {
+          paramCount++;
+          queryText += ` AND mp.diet_type && $${paramCount}`;
+          params.push(filterList);
+        }
+      } else if (dietType) {
+        // Single diet type (backward compatibility)
         paramCount++;
         queryText += ` AND $${paramCount} = ANY(mp.diet_type)`;
         params.push(dietType);
@@ -247,19 +273,37 @@ export function registerMealPlanEndpoints(app: Hono) {
         params.push(`%${city}%`);
       }
 
-      queryText += ` ORDER BY mp.avg_rating DESC, mp.total_orders DESC LIMIT 50`;
+      queryText += ` ORDER BY mp.avg_rating DESC, mp.total_orders DESC LIMIT 100`;
 
       const result = await query(queryText, params);
 
+      // ✅ FIX GAP-9.1: Filter by radius if lat/lng and maxRadius provided
+      let filteredPlans = result.rows;
+      if (lat && lng && maxRadius > 0) {
+        filteredPlans = result.rows.filter((mp: any) => {
+          if (!mp.vendor_lat || !mp.vendor_lng) return false;
+          const distance = calculateDistance(lat, lng, mp.vendor_lat, mp.vendor_lng);
+          mp.distance_km = Math.round(distance * 100) / 100; // Round to 2 decimal places
+          return distance <= maxRadius;
+        });
+        // Sort by distance after filtering
+        filteredPlans.sort((a: any, b: any) => (a.distance_km || 999) - (b.distance_km || 999));
+      }
+
       return c.json({
         success: true,
-        mealPlans: result.rows.map((mp: any) => ({
+        mealPlans: filteredPlans.map((mp: any) => ({
           ...mp,
           photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
           suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
           ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
           nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
+          distanceKm: mp.distance_km || null, // ✅ FIX GAP-9.1: Include distance in response
         })),
+        filters: {
+          maxRadius: maxRadius > 0 ? maxRadius : null,
+          appliedFilters: filters ? filters.split(',').map(f => f.trim()) : [],
+        },
       });
     } catch (error: any) {
       console.error('Error searching meal plans:', error);
@@ -828,6 +872,88 @@ export function registerMealPlanEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /meal-plans/search/filters
+   * Get available filter options for nutritionist meal plans
+   */
+  app.get("/meal-plans/search/filters", async (c) => {
+    try {
+      const filters = await query(`
+        SELECT DISTINCT
+          jsonb_array_elements_text(suitable_for->'species') as species,
+          jsonb_array_elements_text(suitable_for->'sizes') as size,
+          jsonb_array_elements_text(suitable_for->'ages') as age,
+          unnest(diet_type) as diet_type
+        FROM meal_plans
+        WHERE is_active = true
+      `);
+
+      const species = [...new Set(filters.rows.map((r: any) => r.species).filter(Boolean))];
+      const sizes = [...new Set(filters.rows.map((r: any) => r.size).filter(Boolean))];
+      const ages = [...new Set(filters.rows.map((r: any) => r.age).filter(Boolean))];
+      const dietTypes = [...new Set(filters.rows.map((r: any) => r.diet_type).filter(Boolean))];
+
+      return c.json({
+        success: true,
+        filters: {
+          species,
+          sizes,
+          ages,
+          dietTypes,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error getting filters:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /meal-orders/:orderId/update-preparation-eta
+   * Update preparation ETA for meal order
+   */
+  app.post("/meal-orders/:orderId/update-preparation-eta", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json();
+      const { preparationEtaMinutes } = body;
+
+      if (!preparationEtaMinutes || preparationEtaMinutes < 0) {
+        return c.json({ error: 'preparationEtaMinutes must be a positive number' }, 400);
+      }
+
+      await update('meal_orders', { id: orderId }, {
+        preparation_eta_minutes: preparationEtaMinutes,
+        estimated_preparation_time: new Date(Date.now() + preparationEtaMinutes * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      // Notify customer
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders.length > 0) {
+        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        await pushNotificationService.sendEventNotification({
+          eventType: 'meal_order_eta_updated',
+          recipientId: orders[0].customer_id,
+          recipientType: 'customer',
+          relatedId: orderId,
+          data: {
+            orderId,
+            preparationEtaMinutes,
+          },
+        });
+      }
+
+      return c.json({
+        success: true,
+        message: 'Preparation ETA updated',
+      });
+    } catch (error: any) {
+      console.error('Error updating preparation ETA:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 /**
@@ -876,3 +1002,4 @@ async function createMealSettlement(orderId: string) {
     console.error('Error creating meal settlement:', error);
   }
 }
+

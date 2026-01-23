@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -42,6 +43,8 @@ interface Provider {
     serviceId: string;
     name: string;
     price: number;
+    originalPrice?: number; // ✅ FIX GAP-7.1: Original price for discount calculation
+    vendorDiscount?: number; // ✅ FIX GAP-7.1: Vendor discount percentage
     duration: number;
     description?: string;
     category?: string;
@@ -155,6 +158,8 @@ export function VetServicesByStyle({
               serviceId: service.serviceId || service.id,
               name: service.serviceName || service.name || 'Vet Service',
               price: service.price || 499,
+              originalPrice: service.originalPrice || service.basePrice || service.price || 499, // ✅ FIX GAP-7.1
+              vendorDiscount: service.vendorDiscount || service.discount || service.discountPercentage, // ✅ FIX GAP-7.1
               duration: service.duration || 30,
               description: service.description,
               category: service.category
@@ -717,7 +722,12 @@ export function VetServicesByStyle({
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
-                              <div className="text-2xl font-bold text-[#FF8C42] mb-1">₹{service.price}</div>
+                              {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
+                              <ServicePricingDisplay
+                                basePrice={service.originalPrice || service.price}
+                                vendorDiscount={service.vendorDiscount}
+                                className="mb-1"
+                              />
                               {isSelected && (
                                 <div className="mt-1 flex justify-end">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
@@ -999,9 +1009,12 @@ export function VetServicesByStyle({
                             </div>
                           </div>
                           <div className="text-right ml-4">
-                            <div className="text-lg font-bold text-gray-900">
-                              ₹{service.price}
-                            </div>
+                            {/* ✅ FIX GAP-7.1: Use ServicePricingDisplay for vendor discount */}
+                            <ServicePricingDisplay
+                              basePrice={service.originalPrice || service.price}
+                              vendorDiscount={service.vendorDiscount}
+                              className="mb-2"
+                            />
                             <Button
                               size="sm"
                               className="mt-2 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
@@ -1026,7 +1039,14 @@ export function VetServicesByStyle({
                       {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
                       {provider.services[0] && (
                         <span className="text-gray-900 font-medium"> from ₹{
-                          Math.min(...provider.services.map(s => s.price))
+                          Math.min(...provider.services.map(s => {
+                            // ✅ FIX GAP-7.1: Use discounted price if available
+                            const basePrice = s.originalPrice || s.price;
+                            const finalPrice = s.vendorDiscount 
+                              ? basePrice * (1 - s.vendorDiscount / 100)
+                              : basePrice;
+                            return finalPrice;
+                          }))
                         }</span>
                       )}
                     </div>

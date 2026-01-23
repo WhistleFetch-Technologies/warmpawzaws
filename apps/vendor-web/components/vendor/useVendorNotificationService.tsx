@@ -14,6 +14,8 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
   const lastNotificationIdRef = useRef<string | null>(null);
   const isInitialLoadRef = useRef(true);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const retryCountRef = useRef(0);
+  const pollIntervalRef = useRef(5000); // Start with 5 seconds
 
   useEffect(() => {
     if (!enabled || !vendorId) return;
@@ -33,8 +35,12 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
           return;
         }
         
-        // Use apiClient instead of direct fetch
+        // ✅ FIX: Use apiClient with timeout handling
         const data = await apiClient.get(`/vendor/notifications/${vendorId}?limit=10`) as any;
+        
+        // ✅ FIX: Reset retry count and poll interval on success
+        retryCountRef.current = 0;
+        pollIntervalRef.current = 5000;
         const notifications = data?.notifications || [];
           
           console.log(`🔔 [VENDOR-NOTIFICATION-SERVICE] Polling - Found ${notifications.length} notifications`);
@@ -80,8 +86,23 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
             }
           }
       } catch (error) {
+        // ✅ FIX: Implement exponential backoff for 503 errors
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const is503 = errorMessage.includes('503') || errorMessage.includes('Service Unavailable');
+        
+        if (is503) {
+          retryCountRef.current += 1;
+          // Exponential backoff: 5s, 10s, 20s, 30s (max)
+          pollIntervalRef.current = Math.min(5000 * Math.pow(2, retryCountRef.current - 1), 30000);
+          console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] 503 error (retry ${retryCountRef.current}), backing off to ${pollIntervalRef.current}ms`);
+        } else {
+          // For other errors, use shorter backoff
+          retryCountRef.current = Math.min(retryCountRef.current + 1, 3);
+          pollIntervalRef.current = Math.min(5000 * retryCountRef.current, 15000);
+        }
+        
         // Silently log error without showing it prominently (this is normal for polling)
-        console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));
+        console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] Polling error (will retry in ${pollIntervalRef.current}ms):`, errorMessage);
         
         // Mark initial load as complete even on error to prevent infinite loops
         if (isInitialLoadRef.current) {
@@ -158,11 +179,27 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
     // Initial check
     checkForNewNotifications();
 
-    // Poll every 5 seconds for new notifications
-    const interval = setInterval(checkForNewNotifications, 5000);
+    // ✅ FIX: Use dynamic polling interval with exponential backoff
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    const scheduleNextPoll = () => {
+      if (intervalId) {
+        clearTimeout(intervalId);
+      }
+      intervalId = setTimeout(() => {
+        checkForNewNotifications().finally(() => {
+          scheduleNextPoll(); // Schedule next poll after current one completes
+        });
+      }, pollIntervalRef.current);
+    };
+    
+    // Start polling
+    scheduleNextPoll();
 
     return () => {
-      clearInterval(interval);
+      if (intervalId) {
+        clearTimeout(intervalId);
+      }
     };
   }, [vendorId, enabled, onNewNotification]);
 }

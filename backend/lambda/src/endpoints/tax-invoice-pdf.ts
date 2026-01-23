@@ -207,6 +207,190 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
   });
 
   // ============================================================================
+  // GET BOOKING INVOICE
+  // ============================================================================
+
+  app.get('/bookings/:bookingId/invoice', async (c) => {
+    try {
+      const bookingId = c.req.param('bookingId');
+
+      // Check if invoice already exists for this booking (stored in invoice_data JSONB)
+      const invoiceQuery = `
+        SELECT * FROM invoices 
+        WHERE invoice_data->>'booking_id' = $1 
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      let invoiceResult = await query(invoiceQuery, [bookingId]);
+
+      // If invoice doesn't exist, generate one from booking data
+      if (invoiceResult.rows.length === 0) {
+        // Get booking details
+        const bookingQuery = `
+          SELECT b.*,
+                 v.business_name as vendor_name,
+                 v.owner_name as vendor_owner,
+                 v.phone as vendor_phone,
+                 v.email as vendor_email,
+                 v.address as vendor_address,
+                 v.city as vendor_city,
+                 v.state as vendor_state,
+                 v.pincode as vendor_pincode,
+                 v.gst_number as vendor_gst,
+                 c.name as customer_name,
+                 c.phone as customer_phone,
+                 c.email as customer_email,
+                 c.address as customer_address,
+                 c.city as customer_city,
+                 c.state as customer_state,
+                 c.pincode as customer_pincode,
+                 s.name as service_name,
+                 s.description as service_description
+          FROM bookings b
+          LEFT JOIN vendors v ON b.vendor_id = v.id
+          LEFT JOIN customers c ON b.customer_id = c.id
+          LEFT JOIN services s ON b.service_id = s.id
+          WHERE b.id = $1
+        `;
+        const bookingResult = await query(bookingQuery, [bookingId]);
+
+        if (bookingResult.rows.length === 0) {
+          return c.json({ success: false, error: 'Booking not found' }, 404);
+        }
+
+        const booking = bookingResult.rows[0];
+
+        // Generate invoice number
+        const invoiceNumber = await generateInvoiceNumber(booking.vendor_id);
+
+        // Build invoice data from booking
+        const basePrice = parseFloat(booking.base_price || booking.total_amount || '0');
+        const taxAmount = parseFloat(booking.tax_amount || '0');
+        const discountAmount = parseFloat(booking.discount_amount || '0');
+        const totalAmount = parseFloat(booking.total_amount || '0');
+
+        // Calculate GST (assuming 18% if tax exists, otherwise 0)
+        const gstRate = taxAmount > 0 ? (taxAmount / basePrice) * 100 : 0;
+        const isInterState = booking.customer_state && booking.vendor_state && booking.customer_state !== booking.vendor_state;
+        
+        let cgst = 0, sgst = 0, igst = 0;
+        if (isInterState) {
+          igst = taxAmount;
+        } else {
+          cgst = taxAmount / 2;
+          sgst = taxAmount / 2;
+        }
+
+        const invoiceData = {
+          invoiceNumber,
+          invoiceDate: new Date(booking.created_at || new Date()).toLocaleDateString('en-IN'),
+          vendor: {
+            name: booking.vendor_name || 'Vendor',
+            owner: booking.vendor_owner || '',
+            address: booking.vendor_address || '',
+            city: booking.vendor_city || '',
+            state: booking.vendor_state || '',
+            pincode: booking.vendor_pincode || '',
+            phone: booking.vendor_phone || '',
+            email: booking.vendor_email || '',
+            gstin: booking.vendor_gst || '',
+          },
+          customer: {
+            name: booking.customer_name || 'Customer',
+            address: booking.customer_address || '',
+            city: booking.customer_city || '',
+            state: booking.customer_state || '',
+            pincode: booking.customer_pincode || '',
+            phone: booking.customer_phone || '',
+            email: booking.customer_email || '',
+          },
+          items: [{
+            name: booking.service_name || 'Service',
+            description: booking.service_description || '',
+            quantity: 1,
+            unitPrice: basePrice,
+            taxableValue: basePrice,
+            hsnCode: '998314', // Service HSN code
+            cgst: cgst,
+            sgst: sgst,
+            igst: igst,
+            taxRate: gstRate,
+            total: basePrice + taxAmount,
+          }],
+          subtotal: basePrice,
+          cgst: cgst,
+          sgst: sgst,
+          igst: igst,
+          totalTax: taxAmount,
+          discount: discountAmount,
+          total: totalAmount,
+          isInterState,
+          placeOfSupply: booking.customer_state || booking.vendor_state || '',
+        };
+
+        // Generate HTML invoice
+        const htmlContent = generateInvoiceHTML(invoiceData);
+
+        // Store invoice record (store booking_id in invoice_data since table doesn't have booking_id column)
+        try {
+          const invoiceDataWithBooking = {
+            ...invoiceData,
+            booking_id: bookingId,
+          };
+          
+          await insert('invoices', {
+            vendor_id: booking.vendor_id,
+            customer_id: booking.customer_id,
+            invoice_number: invoiceNumber,
+            invoice_type: 'tax_invoice',
+            invoice_date: new Date().toISOString(),
+            subtotal: invoiceData.subtotal,
+            tax_amount: invoiceData.totalTax,
+            cgst_amount: invoiceData.cgst,
+            sgst_amount: invoiceData.sgst,
+            igst_amount: invoiceData.igst,
+            discount_amount: invoiceData.discount,
+            total_amount: invoiceData.total,
+            is_inter_state: isInterState,
+            place_of_supply: invoiceData.placeOfSupply,
+            invoice_data: JSON.stringify(invoiceDataWithBooking),
+            status: 'generated',
+            created_at: new Date().toISOString(),
+          });
+        } catch (insertError: any) {
+          console.warn('Failed to store invoice in database:', insertError.message);
+          // Continue anyway - invoice generation succeeded
+        }
+
+        // Return HTML invoice for download
+        return c.html(htmlContent, 200, {
+          'Content-Type': 'text/html',
+          'Content-Disposition': `attachment; filename="invoice_${invoiceNumber}.html"`,
+        });
+      }
+
+      // Invoice exists, return it
+      const invoice = invoiceResult.rows[0];
+      const invoiceData = typeof invoice.invoice_data === 'string' 
+        ? JSON.parse(invoice.invoice_data) 
+        : invoice.invoice_data;
+
+      if (!invoiceData) {
+        return c.json({ success: false, error: 'Invoice data not available' }, 400);
+      }
+
+      const htmlContent = generateInvoiceHTML(invoiceData);
+      
+      return c.html(htmlContent, 200, {
+        'Content-Type': 'text/html',
+        'Content-Disposition': `attachment; filename="invoice_${invoice.invoice_number}.html"`,
+      });
+    } catch (error: any) {
+      console.error('Error fetching booking invoice:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
   // DOWNLOAD INVOICE
   // ============================================================================
 

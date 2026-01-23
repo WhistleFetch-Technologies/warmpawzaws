@@ -194,6 +194,10 @@ export function UniversalPaymentPage({
   const [selectedAddress, setSelectedAddress] = useState<any>(address);
   const [showAddressModal, setShowAddressModal] = useState(false);
   
+  // ✅ CRITICAL: Resolved serviceId (UUID) - resolved early to avoid issues
+  const [resolvedServiceId, setResolvedServiceId] = useState<string | undefined>(serviceId);
+  const [serviceIdResolving, setServiceIdResolving] = useState(false);
+  
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
@@ -245,6 +249,129 @@ export function UniversalPaymentPage({
       loadAddresses();
     }
   }, [showAddressSelection, customerPhone]);
+
+  // ✅ CRITICAL: Resolve serviceId early (before payment flow)
+  useEffect(() => {
+    const resolveServiceId = async () => {
+      if (!serviceId || !vendorId || type !== 'booking') {
+        return; // Only resolve for bookings with serviceId
+      }
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      
+      // If already a UUID, no need to resolve
+      if (uuidRegex.test(serviceId)) {
+        setResolvedServiceId(serviceId);
+        return;
+      }
+
+      // If numeric, try to resolve
+      console.log(`🔄 Resolving serviceId "${serviceId}" to UUID...`);
+      setServiceIdResolving(true);
+
+      try {
+        // Try multiple endpoints to get vendor services
+        let vendorServicesRes: any = null;
+        const endpoints = [
+          `/vendor/${vendorId}/services`,
+          `/vendor/services/${vendorId}`,
+          `/vendor-services?vendorId=${vendorId}`
+        ];
+        
+        for (const endpoint of endpoints) {
+          try {
+            vendorServicesRes = await apiClient.get<any>(endpoint);
+            // Check if response has services in any format
+            if (vendorServicesRes?.allServices || 
+                vendorServicesRes?.services || 
+                vendorServicesRes?.data?.services || 
+                Array.isArray(vendorServicesRes)) {
+              console.log(`✅ [SERVICE-RESOLUTION] Found services from endpoint: ${endpoint}`);
+              break;
+            }
+          } catch (e: any) {
+            console.warn(`⚠️ [SERVICE-RESOLUTION] Endpoint ${endpoint} failed:`, e.message);
+            continue; // Try next endpoint
+          }
+        }
+        
+        if (vendorServicesRes) {
+          // ✅ CRITICAL: Handle different API response formats
+          let services: any[] = [];
+          
+          // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
+          if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
+            services = vendorServicesRes.allServices;
+          }
+          // Format 2: { services: { at_home: { services: [...] }, ... } }
+          else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
+            // Flatten servicesByStyle object
+            services = Object.values(vendorServicesRes.services).flatMap((style: any) => 
+              (style?.services && Array.isArray(style.services)) ? style.services : []
+            );
+          }
+          // Format 3: { services: [...] } (direct array)
+          else if (vendorServicesRes.services && Array.isArray(vendorServicesRes.services)) {
+            services = vendorServicesRes.services;
+          }
+          // Format 4: { data: { services: [...] } }
+          else if (vendorServicesRes.data?.services && Array.isArray(vendorServicesRes.data.services)) {
+            services = vendorServicesRes.data.services;
+          }
+          // Format 5: Direct array response
+          else if (Array.isArray(vendorServicesRes)) {
+            services = vendorServicesRes;
+          }
+          
+          console.log('📦 [SERVICE-RESOLUTION-EARLY] Extracted services:', {
+            count: services.length,
+            sample: services[0],
+            responseKeys: Object.keys(vendorServicesRes),
+          });
+          
+          // Ensure services is an array before calling .find()
+          if (!Array.isArray(services)) {
+            console.error('❌ [SERVICE-RESOLUTION-EARLY] Services is not an array:', typeof services, services);
+            // Don't throw - will be caught during payment
+            return;
+          }
+          
+          // Look for service with matching numeric ID
+          const matchingService = services.find((s: any) => 
+            s.id === serviceId || 
+            s.serviceId === serviceId ||
+            s.service_id === serviceId ||
+            String(s.id) === String(serviceId) ||
+            String(s.serviceId) === String(serviceId) ||
+            String(s.service_id) === String(serviceId)
+          );
+          
+          if (matchingService) {
+            // Use service_id (UUID) from the vendor service
+            const resolved = matchingService.service_id || matchingService.serviceId;
+            if (uuidRegex.test(resolved)) {
+              setResolvedServiceId(resolved);
+              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
+            } else if (uuidRegex.test(matchingService.id)) {
+              setResolvedServiceId(matchingService.id);
+              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+            } else {
+              console.warn(`⚠️ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
+            }
+          } else {
+            console.warn(`⚠️ Service "${serviceId}" not found in vendor services`);
+          }
+        }
+      } catch (error: any) {
+        console.warn(`⚠️ Failed to resolve serviceId "${serviceId}":`, error.message);
+        // Don't set error - will be caught during booking creation
+      } finally {
+        setServiceIdResolving(false);
+      }
+    };
+
+    resolveServiceId();
+  }, [serviceId, vendorId, type]);
 
   const loadRazorpayScript = () => {
     if (typeof window !== 'undefined' && !window.Razorpay) {
@@ -630,6 +757,132 @@ export function UniversalPaymentPage({
           return;
         }
 
+        // ✅ CRITICAL: Resolve serviceId to UUID BEFORE creating booking
+        // This MUST happen synchronously here to ensure we have the UUID
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        let finalServiceId = resolvedServiceId || serviceId;
+        
+        // If not a UUID, resolve it NOW (synchronously)
+        if (!uuidRegex.test(finalServiceId)) {
+          console.log(`🔄 Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
+          
+          try {
+            // Try multiple endpoints to get vendor services
+            let vendorServicesRes: any = null;
+            const endpoints = [
+              `/vendor/${vendorId}/services`,
+              `/vendor/services/${vendorId}`,
+              `/vendor-services?vendorId=${vendorId}`
+            ];
+            
+            for (const endpoint of endpoints) {
+              try {
+                vendorServicesRes = await apiClient.get<any>(endpoint);
+                // Check if response has services in any format
+                if (vendorServicesRes?.allServices || 
+                    vendorServicesRes?.services || 
+                    vendorServicesRes?.data?.services || 
+                    Array.isArray(vendorServicesRes)) {
+                  console.log(`✅ [SERVICE-RESOLUTION-SYNC] Found services from endpoint: ${endpoint}`);
+                  break;
+                }
+              } catch (e: any) {
+                console.warn(`⚠️ [SERVICE-RESOLUTION-SYNC] Endpoint ${endpoint} failed:`, e.message);
+                continue; // Try next endpoint
+              }
+            }
+            
+            if (vendorServicesRes) {
+              // ✅ CRITICAL: Handle different API response formats
+              let services: any[] = [];
+              
+              // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
+              if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
+                services = vendorServicesRes.allServices;
+              }
+              // Format 2: { services: { at_home: { services: [...] }, ... } }
+              else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
+                // Flatten servicesByStyle object
+                services = Object.values(vendorServicesRes.services).flatMap((style: any) => 
+                  (style?.services && Array.isArray(style.services)) ? style.services : []
+                );
+              }
+              // Format 3: { services: [...] } (direct array)
+              else if (vendorServicesRes.services && Array.isArray(vendorServicesRes.services)) {
+                services = vendorServicesRes.services;
+              }
+              // Format 4: { data: { services: [...] } }
+              else if (vendorServicesRes.data?.services && Array.isArray(vendorServicesRes.data.services)) {
+                services = vendorServicesRes.data.services;
+              }
+              // Format 5: Direct array response
+              else if (Array.isArray(vendorServicesRes)) {
+                services = vendorServicesRes;
+              }
+              
+              console.log('📦 [SERVICE-RESOLUTION] Extracted services:', {
+                count: services.length,
+                sample: services[0],
+                responseKeys: Object.keys(vendorServicesRes),
+              });
+              
+              // Ensure services is an array before calling .find()
+              if (!Array.isArray(services)) {
+                console.error('❌ [SERVICE-RESOLUTION] Services is not an array:', typeof services, services);
+                throw new Error('Invalid services response format from API');
+              }
+              
+              // Look for service with matching numeric ID
+              const matchingService = services.find((s: any) => 
+                String(s.id) === String(finalServiceId) || 
+                String(s.serviceId) === String(finalServiceId) ||
+                String(s.service_id) === String(finalServiceId) ||
+                s.id === finalServiceId ||
+                s.serviceId === finalServiceId ||
+                s.service_id === finalServiceId
+              );
+              
+              if (matchingService) {
+                // Use service_id (UUID) from the vendor service
+                const resolved = matchingService.service_id || matchingService.serviceId;
+                if (uuidRegex.test(resolved)) {
+                  finalServiceId = resolved;
+                  setResolvedServiceId(resolved);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
+                } else if (uuidRegex.test(matchingService.id)) {
+                  finalServiceId = matchingService.id;
+                  setResolvedServiceId(matchingService.id);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+                } else {
+                  throw new Error(`Service found but no valid UUID available. Service ID: ${serviceId}`);
+                }
+              } else {
+                throw new Error(`Service "${serviceId}" not found in vendor services`);
+              }
+            } else {
+              throw new Error('Could not fetch vendor services');
+            }
+          } catch (resolveError: any) {
+            console.error('❌ Failed to resolve serviceId:', resolveError);
+            toast.error(
+              `Invalid service ID. Please go back and select the service again. ` +
+              `Error: ${resolveError.message || 'Service not found'}`
+            );
+            setProcessing(false);
+            return;
+          }
+        }
+        
+        // Final validation - MUST be UUID at this point
+        if (!uuidRegex.test(finalServiceId)) {
+          toast.error(
+            `Invalid service ID format. Please go back and select the service again. ` +
+            `Received: ${serviceId}, Resolved: ${finalServiceId}`
+          );
+          setProcessing(false);
+          return;
+        }
+
         // Format address for API (can be string or object with coordinates)
         let addressValue: string | undefined = undefined;
         if (serviceStyle === 'at_home' && (selectedAddress || address)) {
@@ -658,18 +911,43 @@ export function UniversalPaymentPage({
         // ✅ Try all possible booking creation endpoints
         // CRITICAL: Lambda may not be deployed with latest code, try all variations
         let bookingRes: any;
+        
+        // Get customer name from profile
+        let customerNameValue = '';
+        try {
+          const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
+          if (profileResponse?.profile || profileResponse) {
+            const profile = profileResponse.profile || profileResponse;
+            customerNameValue = profile.name || profile.fullName || '';
+          }
+        } catch (e) {
+          console.log('Could not fetch customer name for booking');
+        }
+        
+        // ✅ finalServiceId is already resolved and validated above
+
         const bookingPayload = {
           customerId: customerId, // ✅ Required UUID
           vendorId: vendorId, // ✅ Required UUID
-          serviceId: serviceId, // ✅ Required UUID
+          serviceId: finalServiceId, // ✅ Required UUID (resolved above)
+          serviceName: serviceName, // ✅ Service name for booking
           bookingDate: bookingDate, // ✅ Format: YYYY-MM-DD
           bookingTime: bookingTime, // ✅ Format: HH:MM
           serviceType: serviceTypeValue, // ✅ Required enum
           amount: taxBreakdown.total, // ✅ Number
           petId: petId || undefined, // ✅ Optional UUID
+          petName: petName || undefined, // ✅ Pet name for booking
+          customerPhone: customerPhone, // ✅ Customer phone
+          customerName: customerNameValue, // ✅ Customer name
           address: addressValue, // ✅ Optional string
           notes: '', // ✅ Optional string
         };
+        
+        console.log('📋 Creating booking with validated payload:', {
+          ...bookingPayload,
+          originalServiceId: serviceId, // Log original
+          resolvedServiceId: finalServiceId, // Log resolved UUID
+        });
         
         // ✅ Try all possible booking creation endpoints
         // CRITICAL: Lambda may not be deployed with latest code, try all variations
@@ -698,9 +976,23 @@ export function UniversalPaymentPage({
               console.warn(`⚠️ ${endpoint} returned 404, trying next endpoint...`);
               continue; // Try next endpoint
             } else {
-              // Not a 404, might be validation error - throw immediately
+              // Not a 404, might be validation error - log details and throw
               console.error(`❌ ${endpoint} failed with non-404 error:`, error);
-              throw error;
+              console.error('❌ Error response:', (error as any)?.response || (error as any)?.responseData);
+              console.error('❌ Error data:', (error as any)?.responseData);
+              console.error('❌ Error status:', (error as any)?.status || (error as any)?.statusCode);
+              console.error('❌ Error message:', error?.message);
+              
+              // Extract detailed error message
+              const errorResponse = (error as any)?.response || (error as any)?.responseData;
+              const errorMessage = 
+                errorResponse?.error?.message || 
+                errorResponse?.error || 
+                errorResponse?.message ||
+                error?.message || 
+                'Failed to create booking. Please check all required fields and try again.';
+              
+              throw new Error(errorMessage);
             }
           }
         }
@@ -730,8 +1022,7 @@ export function UniversalPaymentPage({
           throw new Error('Failed to create booking: No booking ID returned');
         }
         
-        // ✅ Validate bookingId is a UUID
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        // ✅ Validate bookingId is a UUID (reuse the regex defined above)
         if (!uuidRegex.test(bookingIdValue)) {
           console.error('❌ Invalid bookingId format from API:', bookingIdValue);
           throw new Error('Invalid booking ID format received from server');
@@ -996,51 +1287,77 @@ export function UniversalPaymentPage({
         order_id: orderRes.orderId,
         handler: async (response: any) => {
           try {
-            // Verify payment
-            await apiClient.post('/razorpay/verify-payment', {
+            console.log('✅ [RAZORPAY] Payment response received:', {
+              order_id: response.razorpay_order_id,
+              payment_id: response.razorpay_payment_id,
+              has_signature: !!response.razorpay_signature,
+            });
+
+            // ✅ Step 1: Verify payment with backend
+            console.log('🔄 [RAZORPAY] Verifying payment...');
+            const verifyRes = await apiClient.post('/razorpay/verify-payment', {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
             
-            // Apply coupon if used
+            console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
+            
+            // ✅ Step 2: Apply coupon if used
             if (appliedCoupon) {
-              await apiClient.post('/coupons/apply', {
-                couponCode: appliedCoupon.code,
-                bookingId: currentBookingId,
-                orderId: currentOrderId,
-                customerId,
-                amount: taxBreakdown.total,
-              });
+              try {
+                await apiClient.post('/coupons/apply', {
+                  couponCode: appliedCoupon.code,
+                  bookingId: currentBookingId,
+                  orderId: currentOrderId,
+                  customerId,
+                  amount: taxBreakdown.total,
+                });
+                console.log('✅ [COUPON] Applied successfully');
+              } catch (couponErr) {
+                console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
+                // Don't block payment success if coupon fails
+              }
             }
             
-            // Apply promotion if used
+            // ✅ Step 3: Apply promotion if used
             if (appliedPromotion) {
-              await apiClient.post('/promotions/apply', {
-                promotionId: appliedPromotion.id,
-                bookingId: currentBookingId,
-                orderId: currentOrderId,
-                customerId,
-                amount: taxBreakdown.total,
-              });
+              try {
+                await apiClient.post('/promotions/apply', {
+                  promotionId: appliedPromotion.id,
+                  bookingId: currentBookingId,
+                  orderId: currentOrderId,
+                  customerId,
+                  amount: taxBreakdown.total,
+                });
+                console.log('✅ [PROMOTION] Applied successfully');
+              } catch (promoErr) {
+                console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
+                // Don't block payment success if promotion fails
+              }
             }
             
-            // Save payment method if selected
-            if (selectedMethod === 'razorpay' && response.razorpay_payment_method_id) {
-              // Option to save payment method
-              // This would be handled by a modal or checkbox
+            // ✅ Step 4: Generate OTP for eligible bookings
+            let otpCode: string | undefined = undefined;
+            if (type === 'booking' && serviceStyle !== 'tele') {
+              try {
+                otpCode = await generateBookingOTP(currentBookingId || '');
+                console.log('✅ [OTP] Generated successfully');
+              } catch (otpErr) {
+                console.warn('⚠️ [OTP] Failed to generate:', otpErr);
+                // Don't block payment success if OTP fails
+              }
             }
             
-            // Generate OTP for eligible bookings
-            const otpCode = type === 'booking' && serviceStyle !== 'tele' 
-              ? await generateBookingOTP(currentBookingId || '') 
-              : undefined;
-            
-            toast.success('Payment successful!');
+            // ✅ Step 5: Success - booking is now confirmed
+            console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
+            toast.success('Payment successful! Booking confirmed.');
+            setProcessing(false);
             onSuccess(currentBookingId || '', currentOrderId, otpCode);
-          } catch (err) {
-            console.error('Payment verification failed:', err);
-            toast.error('Payment verification failed. Please contact support.');
+          } catch (err: any) {
+            console.error('❌ [PAYMENT] Verification failed:', err);
+            const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
+            toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
             setProcessing(false);
           }
         },
@@ -1135,7 +1452,7 @@ export function UniversalPaymentPage({
   const displayDescription = serviceDescription || '';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-32">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-48">
       {/* Header */}
       <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-lg sticky top-0 z-40">
         <div className="max-w-lg mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
@@ -1496,6 +1813,17 @@ export function UniversalPaymentPage({
               </>
             )}
             
+            {/* ✅ FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
+            {appliedPromotion && promotionDiscount > 0 && (
+              <div className="flex justify-between text-blue-600">
+                <span className="flex items-center gap-1">
+                  <Gift className="w-4 h-4" />
+                  Platform Discount
+                </span>
+                <span>-₹{promotionDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            
             {/* Platform Fees */}
             {platformFees.platformFee > 0 && (
               <div className="flex justify-between text-gray-600">
@@ -1678,17 +2006,18 @@ export function UniversalPaymentPage({
       </main>
 
       {/* Fixed Bottom Payment Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg">
+      {/* Increased z-index to ensure it's above footer navigation (footer typically uses z-50) */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-[100]">
         <div className="max-w-lg mx-auto">
           <Button
             onClick={handlePayment}
-            disabled={processing || (showAddressSelection && !selectedAddress)}
+            disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
             className="w-full py-4 bg-gradient-to-r from-[#FF8C42] to-[#FF7029] hover:from-[#E67A35] hover:to-[#D66A25] text-white rounded-xl font-bold text-lg disabled:opacity-50"
           >
-            {processing ? (
+            {processing || serviceIdResolving ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Processing...
+                {serviceIdResolving ? 'Preparing...' : 'Processing...'}
               </span>
             ) : (
               <>
@@ -1783,7 +2112,7 @@ export function UniversalPaymentPage({
         }}
         bookingType={type === 'booking' ? 'service' : 'order'}
         vendorId={vendorId}
-        serviceId={serviceId}
+        serviceId={resolvedServiceId || serviceId} // Use resolved serviceId if available
         customerId={customerId}
       />
     </div>

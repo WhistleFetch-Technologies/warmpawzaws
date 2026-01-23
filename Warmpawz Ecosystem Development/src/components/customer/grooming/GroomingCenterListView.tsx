@@ -9,7 +9,11 @@ import {
   MapPin,
   Star,
   Navigation,
-  Scissors
+  Scissors,
+  Home,
+  CalendarDays,
+  ShoppingBag,
+  User
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../../ui/sheet';
@@ -37,6 +41,9 @@ interface GroomingCenterData {
   operatingHours: string;
   isPremium: boolean;
   serviceCount: number;
+  // ✅ NEW: Amenities for preview display
+  amenities?: string[];
+  petTypes?: string[];
 }
 
 export function GroomingCenterListView({ phone, onBack, onNavigate }: GroomingCenterListViewProps) {
@@ -293,6 +300,52 @@ export function GroomingCenterListView({ phone, onBack, onNavigate }: GroomingCe
         )}
       </div>
 
+      {/* ✅ Fixed Bottom Navigation - Design Consistency */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto">
+        <div className="bg-white border-t border-gray-100 shadow-lg px-2 py-2">
+          <div className="flex items-center justify-around">
+            <button
+              onClick={() => onNavigate('home')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <Home className="w-5 h-5" />
+              <span className="text-[10px]">Home</span>
+            </button>
+            
+            <button
+              className="flex flex-col items-center gap-1 p-2 text-[#FF8C42]"
+            >
+              <Search className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Search</span>
+            </button>
+            
+            <button
+              onClick={() => onNavigate('my-bookings')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <CalendarDays className="w-5 h-5" />
+              <span className="text-[10px]">Bookings</span>
+            </button>
+            
+            <button
+              onClick={() => onNavigate('shop')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <ShoppingBag className="w-5 h-5" />
+              <span className="text-[10px]">Shop</span>
+            </button>
+            
+            <button
+              onClick={() => onNavigate('customer-profile')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <User className="w-5 h-5" />
+              <span className="text-[10px]">Profile</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Filters Sheet */}
       <Sheet open={showFilters} onOpenChange={setShowFilters}>
         <SheetContent side="bottom" className="max-w-[430px] mx-auto">
@@ -447,6 +500,50 @@ function GroomingCenterCard({ center, onClick }: { center: GroomingCenterData; o
             </div>
           </div>
         </div>
+
+        {/* ✅ Amenities Preview Row */}
+        {center.amenities && center.amenities.length > 0 && (
+          <div className="pt-3 mt-3 border-t border-gray-100">
+            <div className="flex flex-wrap gap-1.5">
+              {center.amenities.slice(0, 4).map((amenity, idx) => {
+                const amenityIcons: Record<string, string> = {
+                  'parking': '🅿️',
+                  'ac': '❄️',
+                  'wifi': '📶',
+                  'spa': '🧖',
+                  'pickup': '🚗',
+                  'boarding': '🏠',
+                  'organic': '🌿',
+                  'pet_friendly': '🐕'
+                };
+                const icon = amenityIcons[amenity.toLowerCase()] || '✓';
+                return (
+                  <span key={idx} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+                    {icon} {amenity}
+                  </span>
+                );
+              })}
+              {center.amenities.length > 4 && (
+                <span className="text-xs text-gray-400">+{center.amenities.length - 4} more</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Pet Types Served */}
+        {center.petTypes && center.petTypes.length > 0 && (
+          <div className="pt-2">
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <span>Serves:</span>
+              {center.petTypes.map((type, idx) => (
+                <span key={idx} className="text-gray-600">
+                  {type === 'dog' ? '🐕' : type === 'cat' ? '🐱' : '🐾'} {type}
+                  {idx < center.petTypes!.length - 1 && ','}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Card>
   );

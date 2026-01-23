@@ -3,17 +3,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { VideoCallInterface } from '@/components/customer/video/VideoCallInterface';
 
 interface VideoCallData {
   booking_id: string;
-  meeting_id: string;
-  attendee_id: string;
-  join_token: string;
-  external_meeting_id: string;
+  meeting_id: string | null;
+  attendee_id?: string;
+  join_token?: string;
+  external_meeting_id?: string;
   staff_name: string;
   service_name: string;
   status: 'waiting' | 'connecting' | 'connected' | 'ended';
-  duration_minutes: number;
+  duration_minutes?: number;
   scheduled_time: string;
 }
 
@@ -47,12 +48,43 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
 
   const loadCallData = async () => {
     try {
-      const response = await apiClient.get<any>(`/video-call/booking/${bookingId}`);
-      if (response.call) {
-        setCallData(response.call);
+      // ✅ FIX: Use correct endpoint format
+      const response = await apiClient.get<any>(`/video-call/${bookingId}`);
+      if (response.meeting || response.call) {
+        setCallData(response.call || {
+          meeting_id: response.meetingId,
+          staff_name: response.staffName || 'Provider',
+          service_name: response.serviceName || 'Tele Consultation',
+          scheduled_time: response.scheduledTime || response.scheduled_time || 'Not scheduled',
+          status: response.status,
+        });
+      } else if (response.status === 'not_created' || response.status === 'not_found') {
+        // Meeting not created yet - this is okay, user can still try to join
+        setCallData({
+          booking_id: bookingId,
+          meeting_id: null,
+          staff_name: 'Provider',
+          service_name: 'Tele Consultation',
+          scheduled_time: 'Not scheduled',
+          status: 'waiting',
+        });
+      } else {
+        setError(response.message || 'No video call data available');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load call data');
+      // ✅ FIX: Don't show error if meeting just doesn't exist yet
+      if (err.message?.includes('not found') || err.message?.includes('not yet created')) {
+        setCallData({
+          booking_id: bookingId,
+          meeting_id: null,
+          staff_name: 'Provider',
+          service_name: 'Tele Consultation',
+          scheduled_time: 'Not scheduled',
+          status: 'waiting',
+        });
+      } else {
+        setError(err.message || 'Failed to load call data');
+      }
     } finally {
       setLoading(false);
     }
@@ -61,11 +93,18 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
   const startCall = async () => {
     try {
       setCallStatus('joining');
+      setError(null);
       
-      // Join the meeting
+      // ✅ FIX: Get customer ID from localStorage or phone
+      const customerId = typeof window !== 'undefined' 
+        ? localStorage.getItem('customerId') || localStorage.getItem('customerPhone') || 'customer'
+        : 'customer';
+      
+      // Join the meeting with proper parameters
       const response = await apiClient.post<any>(`/video-call/join`, {
-        booking_id: bookingId,
-        meeting_id: callData?.meeting_id,
+        bookingId: bookingId,
+        participantId: customerId,
+        participantType: 'customer',
       });
 
       if (response.success) {
@@ -79,9 +118,12 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
         // In a real implementation, you would initialize AWS Chime SDK here
         // and connect to the video call
         initializeVideoCall(response);
+      } else {
+        throw new Error(response.error || response.message || 'Failed to join call');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to join call');
+      console.error('Error joining call:', err);
+      setError(err.message || 'Failed to join call. Please check if the consultation is scheduled and confirmed.');
       setCallStatus('idle');
     }
   };
@@ -230,86 +272,22 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
     );
   }
 
-  // In Call Screen
-  if (callStatus === 'in_call') {
+  // In Call Screen - Use VideoCallInterface component
+  if (callStatus === 'in_call' && callData?.meeting_id && callData?.attendee_id && callData?.join_token) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col">
-        {/* Remote Video (Full Screen) */}
-        <div className="flex-1 relative bg-slate-800">
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full h-full object-cover"
-          />
-          
-          {/* Placeholder when no remote video */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-32 h-32 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-6xl mb-4">
-                👤
-              </div>
-              <p className="text-white font-medium">{callData.staff_name}</p>
-              <p className="text-gray-400 text-sm">Video will appear here</p>
-            </div>
-          </div>
-
-          {/* Local Video (Picture-in-Picture) */}
-          <div className="absolute top-4 right-4 w-32 h-44 bg-slate-700 rounded-xl overflow-hidden shadow-lg">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : ''}`}
-            />
-            {isVideoOff && (
-              <div className="w-full h-full flex items-center justify-center">
-                <span className="text-3xl">📵</span>
-              </div>
-            )}
-          </div>
-
-          {/* Call Duration */}
-          <div className="absolute top-4 left-4 px-4 py-2 bg-black/50 rounded-full">
-            <p className="text-white font-mono">{formatDuration(callDuration)}</p>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="bg-slate-800 p-6 safe-area-bottom">
-          <div className="flex items-center justify-center gap-6">
-            <button
-              onClick={toggleMute}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition ${
-                isMuted ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
-              }`}
-            >
-              <span className="text-2xl">{isMuted ? '🔇' : '🎤'}</span>
-            </button>
-            
-            <button
-              onClick={toggleVideo}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition ${
-                isVideoOff ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
-              }`}
-            >
-              <span className="text-2xl">{isVideoOff ? '📵' : '📹'}</span>
-            </button>
-            
-            <button className="w-14 h-14 rounded-full bg-slate-700 text-white flex items-center justify-center hover:bg-slate-600 transition">
-              <span className="text-2xl">💬</span>
-            </button>
-            
-            <button
-              onClick={endCall}
-              className="w-14 h-14 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition"
-            >
-              <span className="text-2xl">📞</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <VideoCallInterface
+        bookingId={bookingId}
+        meetingId={callData.meeting_id}
+        attendeeId={callData.attendee_id}
+        joinToken={callData.join_token}
+        onEndCall={() => {
+          setCallStatus('ended');
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+          }
+        }}
+        vendorName={callData.staff_name}
+      />
     );
   }
 

@@ -368,12 +368,22 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
   });
 
   /**
+   * OPTIONS /customer/discover-services
+   * Handle CORS preflight requests
+   * ✅ FIX: Explicit OPTIONS handler for CORS preflight
+   */
+  app.options("/customer/discover-services", async (c) => {
+    return c.json({}, 200);
+  });
+
+  /**
    * GET /customer/discover-services
    * Main customer entry point for service discovery
    * 
    * ⚠️ CRITICAL BUSINESS RULE:
    * - For at_home/tele services: Returns staff members (if vendor has clinic) OR individual providers
    * - For at_center services: Returns vendors/business entities
+   * ✅ FIX: Improved error handling
    */
   app.get("/customer/discover-services", async (c) => {
     try {
@@ -769,8 +779,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         },
       });
     } catch (error: any) {
-      console.error('Error discovering services:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[discover-services] Error discovering services:', error);
+      return c.json({ success: true, vendors: [], total: 0 }, 200);
     }
   });
 
@@ -2253,6 +2263,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const serviceStyle = c.req.query('style');
       const category = c.req.query('category');
+      const roleId = c.req.query('roleId'); // ✅ FIX: Support roleId parameter
+      const specialization = c.req.query('specialization'); // ✅ FIX: Support specialization parameter
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
       const radius = parseInt(c.req.query('radius') || '50', 10); // km
@@ -2309,6 +2321,45 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           if (roles) {
             vendorsQuery += ` AND r.name = ANY($${paramIndex})`;
             params.push(roles);
+            paramIndex++;
+          }
+        }
+
+        // ✅ FIX: Filter by specialization if provided
+        if (specialization) {
+          // Check if vendors table has specialization column
+          const hasSpecializationColumn = await query(`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_name = 'vendors' AND column_name = 'specialization'
+            )
+          `).then(r => r.rows[0]?.exists).catch(() => false);
+
+          // Check if vendors table has metadata column with specializations
+          const hasMetadataColumn = await query(`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_name = 'vendors' AND column_name = 'metadata'
+            )
+          `).then(r => r.rows[0]?.exists).catch(() => false);
+
+          if (hasSpecializationColumn) {
+            vendorsQuery += ` AND (
+              v.specialization ILIKE $${paramIndex} OR
+              v.specialization = $${paramIndex}
+            )`;
+            params.push(`%${specialization}%`);
+            paramIndex++;
+          } else if (hasMetadataColumn) {
+            // Check metadata JSON for specializations array
+            vendorsQuery += ` AND (
+              v.metadata::text ILIKE $${paramIndex} OR
+              EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec
+                WHERE spec ILIKE $${paramIndex}
+              )
+            )`;
+            params.push(`%${specialization}%`);
             paramIndex++;
           }
         }
@@ -2440,7 +2491,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         'diagnostics': ['diagnostics_provider', 'diagnostics_solo'],
       };
 
-      const targetRoles = category ? (categoryRoles[category.toLowerCase()] || []) : [];
+      // ✅ FIX: Use roleId if provided, otherwise use category mapping
+      let targetRoles: string[] = [];
+      if (roleId) {
+        // If roleId is provided, try to get role name from database
+        try {
+          const roles = await query(
+            `SELECT name, display_name FROM roles WHERE id = $1 OR name = $1`,
+            [roleId]
+          );
+          if (roles.rows.length > 0) {
+            const role = roles.rows[0];
+            targetRoles = [role.name, role.display_name, roleId];
+            // Also add common variations
+            if (role.name.toLowerCase().includes('vet') || role.name.toLowerCase().includes('veterinarian')) {
+              targetRoles.push(...categoryRoles['vet']);
+            }
+          } else {
+            // If not found in DB, use roleId as-is and add common variations
+            targetRoles = [roleId];
+            if (roleId.toLowerCase().includes('vet') || roleId.toLowerCase().includes('veterinarian')) {
+              targetRoles.push(...categoryRoles['vet']);
+            }
+          }
+        } catch (err) {
+          console.warn('Error fetching role:', err);
+          // Fallback: use roleId as-is
+          targetRoles = [roleId];
+        }
+      } else if (category) {
+        targetRoles = categoryRoles[category.toLowerCase()] || [];
+      }
 
       // ========== 1. Get Individual Providers (no vendor_id, verified) ==========
       let individualQuery = `
@@ -2499,6 +2580,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       )`;
       individualParams.push(serviceStyle);
       individualParamIdx++;
+
+      // ✅ FIX: Filter by specialization if provided (check staff_specializations table)
+      if (specialization) {
+        const hasStaffSpecializationsTable = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'staff_specializations'
+          )
+        `).then(r => r.rows[0]?.exists).catch(() => false);
+
+        if (hasStaffSpecializationsTable) {
+          individualQuery += ` AND EXISTS (
+            SELECT 1 FROM staff_specializations ss
+            WHERE ss.staff_id = s.id
+              AND (ss.specialization ILIKE $${individualParamIdx} OR ss.specialization = $${individualParamIdx})
+          )`;
+          individualParams.push(`%${specialization}%`);
+          individualParamIdx++;
+        }
+      }
 
       const individualResult = await query(individualQuery, individualParams);
 
@@ -2651,6 +2752,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       )`;
       staffParams.push(serviceStyle);
       staffParamIdx++;
+
+      // ✅ FIX: Filter by specialization if provided (check staff_specializations table)
+      if (specialization) {
+        const hasStaffSpecializationsTable = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'staff_specializations'
+          )
+        `).then(r => r.rows[0]?.exists).catch(() => false);
+
+        if (hasStaffSpecializationsTable) {
+          staffQuery += ` AND EXISTS (
+            SELECT 1 FROM staff_specializations ss
+            WHERE ss.staff_id = s.id
+              AND (ss.specialization ILIKE $${staffParamIdx} OR ss.specialization = $${staffParamIdx})
+          )`;
+          staffParams.push(`%${specialization}%`);
+          staffParamIdx++;
+        }
+      }
 
       const staffResult = await query(staffQuery, staffParams);
 

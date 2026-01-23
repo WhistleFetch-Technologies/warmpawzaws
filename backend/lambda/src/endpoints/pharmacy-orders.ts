@@ -1281,4 +1281,180 @@ async function sendOrderStatusNotification(
   } catch (error) {
     console.warn('Failed to send order status notification:', error);
   }
+
+  /**
+   * POST /pharmacy/orders/:orderId/invoice
+   * Upload perfora invoice (S3 upload)
+   */
+  app.post("/pharmacy/orders/:orderId/invoice", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json();
+      const { invoiceUrl, invoiceAmount, items } = body;
+
+      if (!invoiceUrl) {
+        return c.json({ error: 'invoiceUrl is required' }, 400);
+      }
+
+      // Update order with invoice
+      await update('pharmacy_orders', { id: orderId }, {
+        perfora_invoice_url: invoiceUrl,
+        invoice_amount: invoiceAmount || null,
+        invoice_items: items ? JSON.stringify(items) : null,
+        invoice_uploaded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      // Notify customer about invoice
+      const orders = await select('pharmacy_orders', { id: orderId });
+      if (orders.length > 0) {
+        await sendOrderStatusNotification(orderId, 'invoice_uploaded', {
+          invoiceUrl,
+          invoiceAmount,
+        });
+      }
+
+      return c.json({
+        success: true,
+        message: 'Invoice uploaded successfully',
+      });
+    } catch (error: any) {
+      console.error('Error uploading invoice:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /pharmacy/orders/:orderId/assign-logistics
+   * Assign logistics partner to order
+   */
+  app.post("/pharmacy/orders/:orderId/assign-logistics", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json();
+      const { logisticsPartnerId, logisticsPartnerType } = body;
+
+      if (!logisticsPartnerId || !logisticsPartnerType) {
+        return c.json({ error: 'logisticsPartnerId and logisticsPartnerType are required' }, 400);
+      }
+
+      // Update order with logistics partner
+      await update('pharmacy_orders', { id: orderId }, {
+        logistics_partner_id: logisticsPartnerId,
+        logistics_type: logisticsPartnerType,
+        logistics_assigned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      // Notify customer
+      await sendOrderStatusNotification(orderId, 'logistics_assigned', {
+        logisticsPartnerId,
+        logisticsPartnerType,
+      });
+
+      return c.json({
+        success: true,
+        message: 'Logistics partner assigned',
+      });
+    } catch (error: any) {
+      console.error('Error assigning logistics:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /pharmacy/orders/:orderId/tracking
+   * Get order tracking information
+   */
+  app.get("/pharmacy/orders/:orderId/tracking", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+
+      // Get order
+      const orders = await select('pharmacy_orders', { id: orderId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+
+      const order = orders[0];
+
+      // Get tracking if exists
+      const trackingResult = await query(
+        `SELECT * FROM delivery_tracking WHERE pharmacy_order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [orderId]
+      );
+
+      const tracking = trackingResult.rows[0] || null;
+
+      return c.json({
+        success: true,
+        order: {
+          id: order.id,
+          status: order.status,
+          trackingStatus: tracking?.status || null,
+        },
+        tracking: tracking ? {
+          id: tracking.id,
+          status: tracking.status,
+          currentLocation: tracking.current_lat && tracking.current_lng ? {
+            lat: parseFloat(tracking.current_lat),
+            lng: parseFloat(tracking.current_lng),
+          } : null,
+          eta: tracking.eta_to_delivery_minutes,
+          deliveryPerson: tracking.delivery_person_name ? {
+            name: tracking.delivery_person_name,
+            phone: tracking.delivery_person_phone,
+            photo: tracking.delivery_person_photo,
+          } : null,
+        } : null,
+      });
+    } catch (error: any) {
+      console.error('Error getting tracking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /pharmacy/orders/:orderId/broadcast-status
+   * Get broadcast status (radius, expanded status)
+   */
+  app.get("/pharmacy/orders/:orderId/broadcast-status", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+
+      const broadcasts = await query(
+        `SELECT pb.*, v.business_name as pharmacy_name
+         FROM pharmacy_broadcasts pb
+         LEFT JOIN vendors v ON pb.pharmacy_id = v.id
+         WHERE pb.order_id = $1
+         ORDER BY pb.created_at DESC`,
+        [orderId]
+      );
+
+      const order = await select('pharmacy_orders', { id: orderId });
+      const currentRadius = order[0]?.broadcast_radius || 5;
+
+      return c.json({
+        success: true,
+        broadcastStatus: {
+          currentRadius,
+          expandedAt: order[0]?.broadcast_expanded_at || null,
+          totalBroadcasts: broadcasts.rows.length,
+          accepted: broadcasts.rows.filter((b: any) => b.status === 'accepted').length,
+          pending: broadcasts.rows.filter((b: any) => b.status === 'pending').length,
+          rejected: broadcasts.rows.filter((b: any) => b.status === 'rejected').length,
+        },
+        broadcasts: broadcasts.rows.map((b: any) => ({
+          id: b.id,
+          pharmacyId: b.pharmacy_id,
+          pharmacyName: b.pharmacy_name,
+          status: b.status,
+          respondedAt: b.response_time,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error getting broadcast status:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }

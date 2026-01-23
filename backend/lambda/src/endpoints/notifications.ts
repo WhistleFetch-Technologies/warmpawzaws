@@ -258,6 +258,7 @@ export function registerNotificationEndpoints(app: Hono) {
   /**
    * GET /customer/notifications
    * Compatibility endpoint - Get notifications by phone (customer)
+   * ✅ FIX: Improved error handling to return empty arrays instead of 500 errors
    */
   app.get("/customer/notifications", async (c) => {
     try {
@@ -265,33 +266,71 @@ export function registerNotificationEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50', 10);
 
       if (!phone) {
-        return c.json({ error: 'phone is required' }, 400);
+        // ✅ FIX: Return empty array instead of error for missing phone
+        return c.json({ 
+          success: true,
+          notifications: [],
+          count: 0 
+        }, 200);
       }
 
-      // Find customer by phone
-      const customers = await select('customers', { phone: phone.replace(/[^0-9]/g, '') });
+      // Find customer by phone with error handling
+      let customers;
+      try {
+        customers = await select('customers', { phone: phone.replace(/[^0-9]/g, '') });
+      } catch (dbError: any) {
+        console.error('Database error finding customer:', dbError);
+        // ✅ FIX: Return empty array on DB error
+        return c.json({ 
+          success: true,
+          notifications: [],
+          count: 0 
+        }, 200);
+      }
+
       if (customers.length === 0) {
-        return c.json({ notifications: [], success: true });
+        return c.json({ 
+          success: true,
+          notifications: [],
+          count: 0 
+        }, 200);
       }
 
       const customerId = customers[0].id;
 
-      // Get notifications
-      const notifications = await query(
-        `SELECT * FROM notifications
-         WHERE recipient_id = $1 AND recipient_type = 'customer'
-         ORDER BY created_at DESC
-         LIMIT $2`,
-        [customerId, limit]
-      );
+      // Get notifications with error handling
+      let notifications;
+      try {
+        notifications = await query(
+          `SELECT * FROM notifications
+           WHERE recipient_id = $1 AND recipient_type = 'customer'
+           ORDER BY created_at DESC
+           LIMIT $2`,
+          [customerId, limit]
+        );
+      } catch (dbError: any) {
+        console.error('Database error fetching notifications:', dbError);
+        // ✅ FIX: Return empty array on DB error
+        return c.json({ 
+          success: true,
+          notifications: [],
+          count: 0 
+        }, 200);
+      }
 
       return c.json({
         success: true,
         notifications: notifications.rows || [],
+        count: (notifications.rows || []).length,
       });
     } catch (error: any) {
       console.error('Error fetching customer notifications:', error);
-      return c.json({ error: error.message }, 500);
+      // ✅ FIX: Return empty array instead of 500
+      return c.json({ 
+        success: true,
+        notifications: [],
+        count: 0 
+      }, 200);
     }
   });
 

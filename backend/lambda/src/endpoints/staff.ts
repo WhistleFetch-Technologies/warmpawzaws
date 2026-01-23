@@ -543,19 +543,96 @@ export function registerStaffEndpoints(app: Hono) {
       
       const staffData = await c.req.json();
 
-      // ⚠️ BASIC VALIDATION - Only name and phone are truly required
+      // #region agent log
+      const fs = require('fs');
+      const logPath = '/Users/ketan/Documents/warmpawzecodev/.cursor/debug.log';
+      try {
+        const logEntry = JSON.stringify({
+          location: 'staff.ts:544',
+          message: 'Received staff data payload',
+          data: {
+            payloadKeys: Object.keys(staffData),
+            hasName: 'name' in staffData,
+            hasFullName: 'fullName' in staffData,
+            nameValue: staffData.name,
+            fullNameValue: staffData.fullName,
+            nameType: typeof staffData.name,
+            fullNameType: typeof staffData.fullName,
+            phone: staffData.phone
+          },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'pre-fix',
+          hypothesisId: 'A'
+        }) + '\n';
+        fs.appendFileSync(logPath, logEntry);
+      } catch (e) {}
+      // #endregion
+
+      // ✅ FIX: Trim and validate name and phone properly
+      // Only name and phone are truly required
       // Photo, qualifications, and specializations can be added later
-      if (!staffData.name || !staffData.phone) {
-        return c.json({ error: 'Name and phone are required' }, 400);
+      const trimmedName = staffData.name?.trim() || '';
+      const trimmedPhone = staffData.phone?.trim() || '';
+      
+      // #region agent log
+      try {
+        const logEntry = JSON.stringify({
+          location: 'staff.ts:549',
+          message: 'After trimming name field',
+          data: {
+            trimmedName,
+            trimmedNameLength: trimmedName.length,
+            checkingName: staffData.name,
+            checkingFullName: staffData.fullName
+          },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'pre-fix',
+          hypothesisId: 'A'
+        }) + '\n';
+        fs.appendFileSync(logPath, logEntry);
+      } catch (e) {}
+      // #endregion
+      
+      if (!trimmedName || trimmedName.length === 0) {
+        // #region agent log
+        try {
+          const logEntry = JSON.stringify({
+            location: 'staff.ts:552',
+            message: 'Name validation failed - returning error',
+            data: {
+              trimmedName,
+              staffDataName: staffData.name,
+              staffDataFullName: staffData.fullName
+            },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'pre-fix',
+            hypothesisId: 'A'
+          }) + '\n';
+          fs.appendFileSync(logPath, logEntry);
+        } catch (e) {}
+        // #endregion
+        return c.json({ error: 'Name is required' }, 400);
+      }
+      if (!trimmedPhone || trimmedPhone.length === 0) {
+        return c.json({ error: 'Phone number is required' }, 400);
+      }
+      
+      // Validate phone number format (should be 10 digits)
+      const phoneDigits = trimmedPhone.replace(/\D/g, '');
+      if (phoneDigits.length < 10) {
+        return c.json({ error: 'Phone number must be at least 10 digits' }, 400);
       }
 
       // ✅ Photo, qualifications, and specializations are now optional
       // Staff can complete their profile later through the mobile app
 
-      // ✅ FIX: Check for duplicate phone number for this vendor
+      // ✅ FIX: Check for duplicate phone number for this vendor (use phoneDigits for comparison)
       const existingStaff = await query(
         `SELECT id, name, phone, is_active FROM staff WHERE vendor_id = $1 AND phone = $2`,
-        [vendorId, staffData.phone]
+        [vendorId, phoneDigits]
       );
 
       if (existingStaff.rows.length > 0) {
@@ -596,15 +673,16 @@ export function registerStaffEndpoints(app: Hono) {
       const schema = schemaCheck.rows[0] || {};
       
       // Build insert data dynamically based on schema
+      // ✅ FIX: Use trimmed values
       const insertData: any = {
         vendor_id: vendorId,
-        name: staffData.name,
-        phone: staffData.phone,
-        email: staffData.email || null,
+        name: trimmedName,
+        phone: phoneDigits, // Store only digits
+        email: staffData.email?.trim() || null,
         role: roleName, // Staff table uses 'role' TEXT column, not 'role_id'
         experience_years: staffData.experienceYears || staffData.experience_years || null,
         is_active: staffData.isActive !== false,
-        mobile_verified: false, // ⚠️ New staff must verify mobile before going live
+        mobile_verified: false, // ⚠️ New staff must verify mobile before going live (but not required for creation)
       };
       
       // Only include photo if column exists
@@ -2333,8 +2411,19 @@ export function registerStaffEndpoints(app: Hono) {
 
       const staffMember = staff[0];
 
-      // Update last login
-      await update('staff', { id: staffMember.id }, { last_login_at: new Date() });
+      // ✅ FIX: If first-time login (mobile_verified = false), automatically verify mobile
+      const isFirstTimeLogin = !staffMember.mobile_verified;
+      if (isFirstTimeLogin) {
+        await update('staff', { id: staffMember.id }, {
+          mobile_verified: true,
+          mobile_verified_at: new Date(),
+          last_login_at: new Date(),
+        });
+        console.log(`[STAFF LOGIN] First-time login: Mobile verified for staff ${staffMember.id}`);
+      } else {
+        // Update last login only
+        await update('staff', { id: staffMember.id }, { last_login_at: new Date() });
+      }
 
       // Get vendor info if applicable
       let vendorInfo = null;
@@ -2362,8 +2451,12 @@ export function registerStaffEndpoints(app: Hono) {
           isIndividualProvider: staffMember.is_individual_provider,
           vendorId: staffMember.vendor_id,
           vendor: vendorInfo,
+          mobileVerified: isFirstTimeLogin ? true : staffMember.mobile_verified, // ✅ Include verification status
         },
-        message: 'Login successful',
+        message: isFirstTimeLogin 
+          ? 'Login successful! Your mobile number has been verified.' 
+          : 'Login successful',
+        firstTimeLogin: isFirstTimeLogin, // ✅ Indicate if this was first-time login
       });
     } catch (error: any) {
       console.error('Error verifying staff login OTP:', error);
@@ -3207,6 +3300,358 @@ export function registerStaffEndpoints(app: Hono) {
       }
     } catch (error: any) {
       console.error('Error marking as read:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // STAFF PROFILE MANAGEMENT
+  // ============================================
+
+  /**
+   * GET /staff/:staffId/profile
+   * Get staff profile information
+   */
+  app.get("/staff/:staffId/profile", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+
+      if (!isValidUUID(staffId)) {
+        return c.json({ error: 'Invalid staff ID' }, 400);
+      }
+
+      // Get staff data
+      const staffResult = await select('staff', { id: staffId });
+      if (staffResult.length === 0) {
+        return c.json({ error: 'Staff member not found' }, 404);
+      }
+
+      const staff = staffResult[0];
+
+      // Get specializations
+      let specializations: string[] = [];
+      try {
+        const specsResult = await query(
+          'SELECT specialization FROM staff_specializations WHERE staff_id = $1',
+          [staffId]
+        );
+        specializations = specsResult.rows.map((r: any) => r.specialization);
+      } catch (error) {
+        // staff_specializations table might not exist
+        console.warn('staff_specializations table not available:', error);
+      }
+
+      // Parse specializations if stored as JSON string
+      if (!specializations.length && staff.specializations) {
+        try {
+          if (typeof staff.specializations === 'string') {
+            const parsed = JSON.parse(staff.specializations);
+            if (Array.isArray(parsed)) {
+              specializations = parsed;
+            }
+          } else if (Array.isArray(staff.specializations)) {
+            specializations = staff.specializations;
+          }
+        } catch (error) {
+          // If not JSON, try comma-separated
+          if (typeof staff.specializations === 'string') {
+            specializations = staff.specializations.split(',').map((s: string) => s.trim()).filter(Boolean);
+          }
+        }
+      }
+
+      return c.json({
+        success: true,
+        staff: {
+          id: staff.id,
+          name: staff.name,
+          phone: staff.phone,
+          email: staff.email,
+          role: staff.role,
+          role_name: staff.role,
+          photo_url: staff.photo || staff.photo_url,
+          photo: staff.photo || staff.photo_url,
+          qualifications: staff.qualifications,
+          specializations: specializations,
+          experience_years: staff.experience_years,
+          address: staff.address,
+          city: staff.city,
+          state: staff.state,
+          pincode: staff.pincode,
+          description: staff.description,
+          service_area: staff.service_area,
+          operating_hours: staff.operating_hours,
+          is_active: staff.is_active,
+          mobile_verified: staff.mobile_verified,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching staff profile:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /staff/:staffId/profile
+   * Update staff profile information
+   */
+  app.put("/staff/:staffId/profile", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const profileData = await c.req.json();
+
+      if (!isValidUUID(staffId)) {
+        return c.json({ error: 'Invalid staff ID' }, 400);
+      }
+
+      // Verify staff exists
+      const staffResult = await select('staff', { id: staffId });
+      if (staffResult.length === 0) {
+        return c.json({ error: 'Staff member not found' }, 404);
+      }
+
+      // Build update data
+      const updateData: any = {};
+
+      if (profileData.name !== undefined) updateData.name = profileData.name.trim();
+      if (profileData.email !== undefined) updateData.email = profileData.email.trim() || null;
+      if (profileData.qualifications !== undefined) updateData.qualifications = profileData.qualifications.trim() || null;
+      if (profileData.experience_years !== undefined) updateData.experience_years = profileData.experience_years || null;
+      if (profileData.address !== undefined) updateData.address = profileData.address.trim() || null;
+      if (profileData.city !== undefined) updateData.city = profileData.city.trim() || null;
+      if (profileData.state !== undefined) updateData.state = profileData.state.trim() || null;
+      if (profileData.pincode !== undefined) updateData.pincode = profileData.pincode.trim() || null;
+      if (profileData.description !== undefined) updateData.description = profileData.description.trim() || null;
+      if (profileData.service_area !== undefined) updateData.service_area = profileData.service_area.trim() || null;
+      if (profileData.operating_hours !== undefined) updateData.operating_hours = profileData.operating_hours.trim() || null;
+
+      // Update staff record
+      if (Object.keys(updateData).length > 0) {
+        await update('staff', { id: staffId }, updateData);
+      }
+
+      // Update specializations if provided
+      if (profileData.specializations !== undefined) {
+        try {
+          // Delete existing specializations
+          await query('DELETE FROM staff_specializations WHERE staff_id = $1', [staffId]).catch(() => {
+            // Table might not exist
+          });
+
+          // Add new specializations
+          const specializations = Array.isArray(profileData.specializations)
+            ? profileData.specializations
+            : typeof profileData.specializations === 'string'
+            ? JSON.parse(profileData.specializations)
+            : [];
+
+          for (const spec of specializations) {
+            if (spec && typeof spec === 'string') {
+              await insert('staff_specializations', {
+                staff_id: staffId,
+                specialization: spec.trim(),
+              }).catch(() => {
+                // Ignore if table doesn't exist
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('Error updating specializations:', error);
+          // Continue even if specializations update fails
+        }
+      }
+
+      // Get updated staff data
+      const updatedStaff = await select('staff', { id: staffId });
+      const staff = updatedStaff[0];
+
+      // Get specializations
+      let specializations: string[] = [];
+      try {
+        const specsResult = await query(
+          'SELECT specialization FROM staff_specializations WHERE staff_id = $1',
+          [staffId]
+        );
+        specializations = specsResult.rows.map((r: any) => r.specialization);
+      } catch (error) {
+        // staff_specializations table might not exist
+      }
+
+      return c.json({
+        success: true,
+        staff: {
+          id: staff.id,
+          name: staff.name,
+          phone: staff.phone,
+          email: staff.email,
+          role: staff.role,
+          role_name: staff.role,
+          photo_url: staff.photo || staff.photo_url,
+          qualifications: staff.qualifications,
+          specializations: specializations,
+          experience_years: staff.experience_years,
+          address: staff.address,
+          city: staff.city,
+          state: staff.state,
+          pincode: staff.pincode,
+          description: staff.description,
+          service_area: staff.service_area,
+          operating_hours: staff.operating_hours,
+        },
+        message: 'Profile updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating staff profile:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /staff/:staffId/profile/photo
+   * Upload staff profile photo
+   */
+  app.post("/staff/:staffId/profile/photo", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+
+      if (!isValidUUID(staffId)) {
+        return c.json({ error: 'Invalid staff ID' }, 400);
+      }
+
+      // Verify staff exists
+      const staffResult = await select('staff', { id: staffId });
+      if (staffResult.length === 0) {
+        return c.json({ error: 'Staff member not found' }, 404);
+      }
+
+      // Get form data (photo file)
+      const formData = await c.req.formData();
+      const photoFile = formData.get('photo') as File;
+
+      if (!photoFile) {
+        return c.json({ error: 'Photo file is required' }, 400);
+      }
+
+      // Validate file type
+      if (!photoFile.type.startsWith('image/')) {
+        return c.json({ error: 'File must be an image' }, 400);
+      }
+
+      // Validate file size (5MB max)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (photoFile.size > maxSize) {
+        return c.json({ error: 'File size must be less than 5MB' }, 400);
+      }
+
+      // Convert file to base64 or upload to S3
+      // For now, we'll store as base64 URL (in production, upload to S3)
+      const arrayBuffer = await photoFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = buffer.toString('base64');
+      const dataUrl = `data:${photoFile.type};base64,${base64}`;
+
+      // Update staff photo
+      // Check which column exists: photo or photo_url
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo') as has_photo,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo_url') as has_photo_url
+      `);
+      const schema = schemaCheck.rows[0] || {};
+
+      const updateData: any = {};
+      if (schema.has_photo) {
+        updateData.photo = dataUrl;
+      }
+      if (schema.has_photo_url) {
+        updateData.photo_url = dataUrl;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return c.json({ error: 'Photo column not found in staff table' }, 500);
+      }
+
+      await update('staff', { id: staffId }, updateData);
+
+      return c.json({
+        success: true,
+        photo_url: dataUrl,
+        message: 'Photo uploaded successfully',
+      });
+    } catch (error: any) {
+      console.error('Error uploading staff photo:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/staff/bulk-activate
+   * Bulk activate multiple staff members at once
+   * Requires vendor to own the staff members
+   */
+  app.post("/vendor/:vendorId/staff/bulk-activate", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { staffIds, activate = true } = body;
+
+      if (!staffIds || !Array.isArray(staffIds) || staffIds.length === 0) {
+        return c.json({ error: 'staffIds array is required' }, 400);
+      }
+
+      // Verify all staff belong to this vendor
+      const placeholders = staffIds.map((_, i) => `$${i + 1}`).join(', ');
+      const checkParams = [...staffIds, vendorId];
+      const staffCheck = await query(
+        `SELECT id, name, mobile_verified, is_active 
+         FROM staff 
+         WHERE vendor_id = $${checkParams.length}
+           AND id IN (${placeholders})`,
+        checkParams
+      );
+
+      if (staffCheck.rows.length !== staffIds.length) {
+        return c.json({ error: 'Some staff members not found or do not belong to this vendor' }, 400);
+      }
+
+      // Check if staff are verified (required for activation)
+      if (activate) {
+        const unverifiedStaff = staffCheck.rows.filter((s: any) => !s.mobile_verified);
+        if (unverifiedStaff.length > 0) {
+          return c.json({ 
+            error: 'Some staff members are not mobile verified',
+            unverifiedStaff: unverifiedStaff.map((s: any) => ({ id: s.id, name: s.name }))
+          }, 400);
+        }
+      }
+
+      // Bulk update staff
+      const updateParams = [activate, ...staffIds, vendorId];
+      const updateResult = await query(
+        `UPDATE staff 
+         SET is_active = $1,
+             updated_at = NOW()
+         WHERE vendor_id = $${updateParams.length}
+           AND id IN (${placeholders})
+         RETURNING id, name, is_active, mobile_verified`,
+        updateParams
+      );
+
+      const updatedStaff = updateResult.rows.map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        isActive: row.is_active,
+        mobileVerified: row.mobile_verified,
+      }));
+
+      return c.json({
+        success: true,
+        message: `Successfully ${activate ? 'activated' : 'deactivated'} ${updatedStaff.length} staff member(s)`,
+        updatedStaff,
+        count: updatedStaff.length,
+      });
+    } catch (error: any) {
+      console.error('Error bulk activating staff:', error);
       return c.json({ error: error.message }, 500);
     }
   });

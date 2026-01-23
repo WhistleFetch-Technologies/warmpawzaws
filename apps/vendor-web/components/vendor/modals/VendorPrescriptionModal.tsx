@@ -24,6 +24,7 @@ interface VendorPrescriptionModalProps {
   customerPhone?: string;
   vendorId: string;
   vendorName: string;
+  staffId?: string;
   serviceName?: string;
   bookingDate?: string;
   onClose: () => void;
@@ -41,6 +42,7 @@ export function VendorPrescriptionModal({
   customerPhone,
   vendorId,
   vendorName,
+  staffId: staffIdProp,
   serviceName,
   bookingDate,
   onClose,
@@ -57,6 +59,19 @@ export function VendorPrescriptionModal({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saveMode, setSaveMode] = useState<'draft' | 'publish'>('publish');
+
+  // ✅ FIX: Properly resolve vendorId with comprehensive fallback chain
+  const resolvedVendorId = vendorId?.trim() || 
+                          (typeof window !== 'undefined' ? localStorage.getItem('vendorId')?.trim() || '' : '');
+  
+  // ✅ FIX: Only resolve staffId if provided (staff context) - don't auto-resolve from localStorage for vendors
+  // Staff should only be used when explicitly provided or when user is in staff context
+  const isStaffContext = typeof window !== 'undefined' && 
+                        (localStorage.getItem('staffId') || localStorage.getItem('staff_id') || staffIdProp);
+  const resolvedStaffId = isStaffContext ? 
+                          (staffIdProp?.trim() || 
+                           (typeof window !== 'undefined' ? localStorage.getItem('staffId')?.trim() || localStorage.getItem('staff_id')?.trim() || '' : '')) : 
+                          undefined;
 
   // Common medication suggestions
   const medicationSuggestions = [
@@ -104,11 +119,26 @@ export function VendorPrescriptionModal({
   };
 
   const handleSave = async (mode: 'draft' | 'publish' = 'publish') => {
-    // Validate
     const validMedications = medications.filter(m => m.name.trim());
     if (validMedications.length === 0) {
       setError('Please add at least one medication');
       return;
+    }
+
+    const vid = resolvedVendorId?.trim();
+    if (!vid) {
+      console.error('❌ [PRESCRIPTION] Vendor ID missing:', {
+        vendorId,
+        resolvedVendorId,
+        localStorage: typeof window !== 'undefined' ? localStorage.getItem('vendorId') : 'N/A'
+      });
+      setError('Vendor ID is missing. Please refresh the page or contact support.');
+      return;
+    }
+    
+    console.log('✅ [PRESCRIPTION] Using vendor ID:', vid);
+    if (resolvedStaffId) {
+      console.log('✅ [PRESCRIPTION] Using staff ID:', resolvedStaffId);
     }
 
     setSaving(true);
@@ -120,7 +150,8 @@ export function VendorPrescriptionModal({
         bookingId,
         customerId,
         petId,
-        vendorId,
+        vendorId: vid,
+        staffId: (resolvedStaffId && String(resolvedStaffId).trim()) || undefined,
         medications: validMedications.map(m => ({
           name: m.name,
           dosage: m.dosage,
@@ -132,10 +163,9 @@ export function VendorPrescriptionModal({
         instructions: generalInstructions,
         followUpDate: followUpDate || null,
         followUpNotes: followUpNotes || null,
-        createdBy: vendorId,
+        createdBy: vid,
         createdByRole: 'vendor',
-        // ✅ Draft/Publish status
-        status: mode,
+        status: mode === 'publish' ? 'published' : mode,
         // Additional context for history
         petName,
         petBreed,

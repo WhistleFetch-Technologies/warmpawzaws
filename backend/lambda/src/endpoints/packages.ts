@@ -537,5 +537,82 @@ export function registerPackageEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /packages/:packageId/tracking
+   * Get package progress tracking
+   */
+  app.get("/packages/:packageId/tracking", async (c) => {
+    try {
+      const { packageId } = c.req.param();
+      const customerId = c.req.query('customerId');
+
+      if (!customerId) {
+        return c.json({ error: 'customerId is required' }, 400);
+      }
+
+      // Get package purchase
+      const purchases = await select('package_purchases', {
+        id: packageId,
+        customer_id: customerId,
+      });
+
+      if (purchases.length === 0) {
+        return c.json({ error: 'Package purchase not found' }, 404);
+      }
+
+      const purchase = purchases[0];
+
+      // Get all bookings for this package
+      const bookings = await query(
+        `SELECT * FROM bookings 
+         WHERE package_purchase_id = $1 
+         ORDER BY scheduled_date ASC, scheduled_time ASC`,
+        [packageId]
+      );
+
+      // Calculate progress
+      const totalSessions = purchase.total_sessions || 0;
+      const remainingSessions = purchase.remaining_sessions || 0;
+      const usedSessions = totalSessions - remainingSessions;
+      const progressPercentage = totalSessions > 0 ? (usedSessions / totalSessions) * 100 : 0;
+
+      // Get upcoming sessions
+      const upcomingSessions = bookings.rows.filter((b: any) => {
+        const scheduledDateTime = new Date(`${b.scheduled_date}T${b.scheduled_time}`);
+        return scheduledDateTime > new Date() && b.status !== 'cancelled';
+      });
+
+      // Get completed sessions
+      const completedSessions = bookings.rows.filter((b: any) => b.status === 'completed');
+
+      return c.json({
+        success: true,
+        tracking: {
+          packageId: purchase.id,
+          packageName: purchase.package_name || 'Package',
+          totalSessions,
+          usedSessions,
+          remainingSessions,
+          progressPercentage: Math.round(progressPercentage),
+          upcomingSessions: upcomingSessions.length,
+          completedSessions: completedSessions.length,
+          nextSession: upcomingSessions[0] || null,
+          expiresAt: purchase.expires_at,
+          status: purchase.status,
+        },
+        sessions: bookings.rows.map((b: any) => ({
+          id: b.id,
+          scheduledDate: b.scheduled_date,
+          scheduledTime: b.scheduled_time,
+          status: b.status,
+          serviceName: b.service_name,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error getting package tracking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

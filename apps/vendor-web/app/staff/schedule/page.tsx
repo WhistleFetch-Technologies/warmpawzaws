@@ -46,6 +46,7 @@ interface AvailabilitySlot {
   notes?: string;
   services: SlotService[];
   breaks: SlotBreak[];
+  service_styles?: string[]; // ✅ Service styles this slot supports (at_center, at_home, tele)
 }
 
 interface SlotService {
@@ -76,14 +77,17 @@ export default function StaffSchedulePage() {
   const [staff, setStaff] = useState<any>(null);
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [holidays, setHolidays] = useState<{ id: string; date: string; name: string }[]>([]); // ✅ Holidays list
   const [loading, setLoading] = useState(true);
   const [showSlotDialog, setShowSlotDialog] = useState(false);
+  const [showHolidayDialog, setShowHolidayDialog] = useState(false); // ✅ Holiday dialog
   const [editingSlot, setEditingSlot] = useState<AvailabilitySlot | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationResults, setLocationResults] = useState<any[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<any>(null);
+  const [newHoliday, setNewHoliday] = useState({ date: '', name: '' }); // ✅ New holiday form
 
   const [slotForm, setSlotForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -93,6 +97,7 @@ export default function StaffSchedulePage() {
     isAvailable: true,
     notes: '',
     services: [] as string[],
+    serviceStyles: [] as string[], // ✅ Service styles for this slot
     breaks: [] as { startTime: string; endTime: string; reason: string }[],
   });
 
@@ -133,6 +138,12 @@ export default function StaffSchedulePage() {
       if (servicesResponse.success) {
         const enabledServices = (servicesResponse.services || []).filter((s: Service) => s.enabled_by_staff);
         setServices(enabledServices);
+      }
+
+      // ✅ Load holidays
+      const holidaysResponse = await apiClient.get<any>(`/staff/${staffId}/holidays`);
+      if (holidaysResponse.success) {
+        setHolidays(holidaysResponse.holidays || []);
       }
     } catch (error: any) {
       console.error('[SCHEDULE] Error:', error);
@@ -182,6 +193,7 @@ export default function StaffSchedulePage() {
       isAvailable: true,
       notes: '',
       services: [],
+      serviceStyles: [], // ✅ Initialize service styles
       breaks: [],
     });
     setSelectedLocation(null);
@@ -199,6 +211,7 @@ export default function StaffSchedulePage() {
       isAvailable: slot.is_available,
       notes: slot.notes || '',
       services: slot.services.map(s => s.service_id),
+      serviceStyles: slot.service_styles || [], // ✅ Include service styles
       breaks: slot.breaks.map(b => ({
         startTime: b.start_time,
         endTime: b.end_time,
@@ -223,6 +236,11 @@ export default function StaffSchedulePage() {
 
     if (slotForm.services.length === 0) {
       toast.error('Please select at least one service for this slot');
+      return;
+    }
+
+    if (slotForm.serviceStyles.length === 0) {
+      toast.error('Please select at least one service style for this slot');
       return;
     }
 
@@ -254,6 +272,7 @@ export default function StaffSchedulePage() {
           bufferTimeMinutes: 0,
           radiusKm: null,
         })),
+        serviceStyles: slotForm.serviceStyles, // ✅ Include service styles
         breaks: slotForm.breaks,
       };
 
@@ -330,6 +349,53 @@ export default function StaffSchedulePage() {
     }));
   };
 
+  // ✅ Holiday management functions
+  const handleAddHoliday = async () => {
+    if (!staff || !newHoliday.date) {
+      toast.error('Please select a date');
+      return;
+    }
+
+    try {
+      const response = await apiClient.post<any>(`/staff/${staff.id}/holidays`, {
+        date: newHoliday.date,
+        name: newHoliday.name || 'Day Off'
+      });
+
+      if (response.success) {
+        toast.success('Holiday added successfully');
+        setShowHolidayDialog(false);
+        setNewHoliday({ date: '', name: '' });
+        await loadData(staff.id);
+      } else {
+        throw new Error(response.error || 'Failed to add holiday');
+      }
+    } catch (error: any) {
+      console.error('[ADD HOLIDAY] Error:', error);
+      toast.error(error.message || 'Failed to add holiday');
+    }
+  };
+
+  const handleDeleteHoliday = async (holidayId: string) => {
+    if (!staff || !confirm('Are you sure you want to remove this holiday?')) return;
+
+    try {
+      const response = await apiClient.delete<any>(`/staff/${staff.id}/holidays/${holidayId}`);
+      if (response.success) {
+        toast.success('Holiday removed successfully');
+        await loadData(staff.id);
+      } else {
+        throw new Error(response.error || 'Failed to remove holiday');
+      }
+    } catch (error: any) {
+      console.error('[DELETE HOLIDAY] Error:', error);
+      toast.error(error.message || 'Failed to remove holiday');
+    }
+  };
+
+  // ✅ Check if selected date is a holiday
+  const isHoliday = holidays.some(h => h.date === selectedDate);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -392,8 +458,9 @@ export default function StaffSchedulePage() {
               <p className="font-semibold mb-1">Schedule Management:</p>
               <ul className="list-disc list-inside space-y-1 text-xs">
                 <li>Create availability slots with start/end time</li>
-                <li>Assign services to each slot</li>
+                <li>Assign services and specify service styles (at_center, at_home, tele) per slot</li>
                 <li>Add breaks within slots</li>
+                <li>Manage holidays and days off</li>
                 <li>Override location per slot (defaults to business location)</li>
                 <li>Only enabled services can be assigned to slots</li>
               </ul>
@@ -401,9 +468,79 @@ export default function StaffSchedulePage() {
           </div>
         </div>
 
+        {/* Holidays List */}
+        {holidays.length > 0 && (
+          <div className="p-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-red-500" />
+                  Holidays & Days Off
+                </h3>
+                <Button
+                  onClick={() => setShowHolidayDialog(true)}
+                  variant="outline"
+                  size="sm"
+                  className="border-red-500 text-red-600 hover:bg-red-50"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Add
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {holidays.map((holiday) => (
+                  <div
+                    key={holiday.id}
+                    className="flex items-center justify-between p-2 bg-white rounded-lg border border-red-200"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{holiday.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(holiday.date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteHoliday(holiday.id)}
+                      className="p-1.5 hover:bg-red-100 rounded text-red-600"
+                      title="Remove holiday"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Holiday Warning */}
+        {isHoliday && (
+          <div className="p-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <p className="text-sm text-amber-800">
+                <strong>Holiday:</strong> {holidays.find(h => h.date === selectedDate)?.name || 'Day Off'} - No slots available on this date
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Slots List */}
         <div className="p-4 space-y-3">
-          {slotsForDate.length === 0 ? (
+          {isHoliday ? (
+            <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
+              <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="font-semibold text-gray-900 mb-2">Holiday - No Slots</h3>
+              <p className="text-sm text-gray-600">
+                This date is marked as a holiday. You cannot create slots on holidays.
+              </p>
+            </div>
+          ) : slotsForDate.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
               <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-semibold text-gray-900 mb-2">No Slots for This Date</h3>
@@ -465,6 +602,24 @@ export default function StaffSchedulePage() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Service Styles */}
+                    {slot.service_styles && slot.service_styles.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-xs text-gray-500 mb-1">Service styles available:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {slot.service_styles.map((style) => {
+                            const Icon = style === 'at_center' ? Building : style === 'at_home' ? Home : Phone;
+                            return (
+                              <Badge key={style} variant="outline" className="text-xs">
+                                <Icon className="w-3 h-3 mr-1" />
+                                {style === 'at_center' ? 'Clinic' : style === 'at_home' ? 'Home' : 'Tele'}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Breaks */}
                     {slot.breaks.length > 0 && (
@@ -673,6 +828,56 @@ export default function StaffSchedulePage() {
               )}
             </div>
 
+            {/* Service Styles - Available for this slot */}
+            <div>
+              <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                Service Styles Available in This Slot <span className="text-red-500">*</span>
+              </Label>
+              <p className="text-xs text-gray-500 mb-2">Select which service delivery styles are available in this slot</p>
+              <div className="flex gap-2">
+                {(['at_center', 'at_home', 'tele'] as const).map((style) => {
+                  const isSelected = slotForm.serviceStyles.includes(style);
+                  const Icon = style === 'at_center' ? Building : style === 'at_home' ? Home : Phone;
+                  return (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setSlotForm(prev => ({
+                            ...prev,
+                            serviceStyles: prev.serviceStyles.filter(s => s !== style)
+                          }));
+                        } else {
+                          setSlotForm(prev => ({
+                            ...prev,
+                            serviceStyles: [...prev.serviceStyles, style]
+                          }));
+                        }
+                      }}
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                        isSelected
+                          ? style === 'at_center'
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : style === 'at_home'
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-purple-500 bg-purple-50 text-purple-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="text-sm font-medium capitalize">
+                        {style === 'at_center' ? 'Clinic' : style === 'at_home' ? 'Home' : 'Tele'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {slotForm.serviceStyles.length === 0 && (
+                <p className="text-xs text-red-500 mt-1">Please select at least one service style</p>
+              )}
+            </div>
+
             {/* Breaks */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -782,6 +987,69 @@ export default function StaffSchedulePage() {
                   {editingSlot ? 'Update Slot' : 'Create Slot'}
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Holiday Dialog */}
+      <Dialog open={showHolidayDialog} onOpenChange={setShowHolidayDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Holiday / Day Off</DialogTitle>
+            <DialogDescription>
+              Mark a date as a holiday. No slots can be created on holidays.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="holiday-date" className="text-sm font-medium text-gray-700 mb-1 block">
+                Date <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="holiday-date"
+                type="date"
+                value={newHoliday.date}
+                onChange={(e) => setNewHoliday({ ...newHoliday, date: e.target.value })}
+                min={new Date().toISOString().split('T')[0]}
+                className="h-10"
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="holiday-name" className="text-sm font-medium text-gray-700 mb-1 block">
+                Name (Optional)
+              </Label>
+              <Input
+                id="holiday-name"
+                type="text"
+                value={newHoliday.name}
+                onChange={(e) => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                placeholder="e.g., Personal Day, Public Holiday"
+                className="h-10"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowHolidayDialog(false);
+                setNewHoliday({ date: '', name: '' });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddHoliday}
+              disabled={!newHoliday.date}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              <Calendar className="w-4 h-4 mr-2" />
+              Add Holiday
             </Button>
           </DialogFooter>
         </DialogContent>

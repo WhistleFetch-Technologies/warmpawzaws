@@ -179,7 +179,8 @@ export function isServiceApplicableToRole(
   
   // Role name variations
   const roleVariations: Record<string, string[]> = {
-    'veterinarian': ['vet', 'veterinary', 'veterinary_clinic', 'vet_clinic', 'animal_hospital'],
+    'veterinarian': ['vet', 'veterinary', 'veterinary_clinic', 'vet_clinic', 'animal_hospital', 'vet_solo', 'solo_vet'],
+    'vet_solo': ['vet', 'veterinarian', 'veterinary', 'veterinary_clinic', 'vet_clinic', 'animal_hospital', 'solo_vet'],
     'pet_groomer': ['groomer', 'grooming', 'pet_grooming'],
     'pet_boarder': ['boarder', 'boarding', 'pet_boarding', 'kennel'],
     'pet_trainer': ['trainer', 'training', 'pet_training', 'dog_trainer'],

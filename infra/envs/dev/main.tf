@@ -275,8 +275,8 @@ module "api_gateway" {
   stage_name                  = "$default"
   auto_deploy                 = true
   cors_allowed_origins        = local.cors_allowed_origins
-  throttle_burst_limit        = 100
-  throttle_rate_limit         = 50
+  throttle_burst_limit        = 5000   # Increased to prevent OPTIONS preflight rate limiting
+  throttle_rate_limit         = 10000   # Increased to prevent OPTIONS preflight rate limiting
   cognito_user_pool_arn       = module.cognito.user_pool_arn
   cognito_user_pool_id        = module.cognito.user_pool_id
   cognito_user_pool_client_id = module.cognito.customer_web_client_id

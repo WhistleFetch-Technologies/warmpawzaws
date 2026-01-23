@@ -61,6 +61,10 @@ interface Booking {
   prescriptionNotes?: string;
   prescriptionUrl?: string;
   prescriptionUploadedAt?: string;
+
+  // Vendor (for prescription creation)
+  vendorId?: string;
+  staffId?: string;
 }
 
 interface Activity {
@@ -156,6 +160,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         metadata: rawBooking.metadata,
         specialInstructions: rawBooking.specialInstructions || rawBooking.notes,
         meetingLink: rawBooking.meetingLink,
+        // Vendor (from API – used for prescription creation)
+        vendorId: rawBooking.vendorId || rawBooking.vendor_id,
+        staffId: rawBooking.staffId || rawBooking.staff_id,
       };
       
       setBooking(mappedBooking);
@@ -373,7 +380,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   {/* ✅ ACTION BUTTONS based on status */}
                   {booking.status === 'confirmed' && (
                     // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
-                    booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' || booking.serviceType === 'online' ? (
+                    booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
                         onClick={async () => {
                           try {
@@ -424,7 +431,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   )}
                   {booking.status === 'in_progress' && (
                     // ✅ FIXED: For tele/video consultations, complete directly (no OTP needed)
-                    booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' || booking.serviceType === 'online' ? (
+                    booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
                         onClick={async () => {
                           try {
@@ -743,7 +750,41 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {/* TELE-CONSULTATION Actions */}
               {booking.serviceType === 'tele' && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <button
-                  onClick={() => setCommunicationMode('video')}
+                  onClick={async () => {
+                    try {
+                      // Create or join video call
+                      const customerId = booking.customerId || '';
+                      const vendorId = vendorData?.id || '';
+                      
+                      // First create meeting if needed
+                      const createResponse = await apiClient.post('/video-call/create-meeting', {
+                        bookingId: booking.id,
+                        customerId,
+                        vendorId,
+                      }) as any;
+                      
+                      if (createResponse?.success || createResponse?.meetingId) {
+                        // Join the meeting
+                        const joinResponse = await apiClient.post<any>('/video-call/join', {
+                          bookingId: booking.id,
+                          userId: vendorId,
+                          userType: 'vendor',
+                        });
+                        
+                        if (joinResponse?.success) {
+                          // Open video call page
+                          window.open(`/video/${booking.id}`, '_blank');
+                        } else {
+                          toast.error('Failed to join video call');
+                        }
+                      } else {
+                        toast.error('Failed to create video call');
+                      }
+                    } catch (err: any) {
+                      console.error('Error starting video call:', err);
+                      toast.error(err.message || 'Failed to start video call');
+                    }
+                  }}
                   className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                 >
                   <Video className="w-4 h-4" />
@@ -853,11 +894,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       )}
 
       {/* Add Vet Summary Modal */}
-      {showVetSummaryModal && (
+      {showVetSummaryModal && booking && (
         <AddVetSummaryModal
           appointmentId={bookingId}
-          petName={(booking as any).petName || 'Pet'}
-          vendorId={vendorData?.id || ''}
+          petName={booking.petName || 'Pet'}
+          vendorId={booking.vendorId || vendorData?.id || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '')}
+          staffId={booking.staffId || (typeof window !== 'undefined' ? localStorage.getItem('staffId') || localStorage.getItem('staff_id') || '' : '')}
           onClose={() => setShowVetSummaryModal(false)}
           onSuccess={() => {
             setShowVetSummaryModal(false);
@@ -894,8 +936,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           customerId={booking.customerId || ''}
           customerName={booking.customerName || 'Customer'}
           customerPhone={booking.customerPhone}
-          vendorId={vendorData?.id || ''}
+          vendorId={booking.vendorId || vendorData?.id || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '')}
           vendorName={vendorData?.fullName || vendorData?.businessName || ''}
+          staffId={booking.staffId || (typeof window !== 'undefined' ? localStorage.getItem('staffId') || localStorage.getItem('staff_id') || '' : '')}
           serviceName={booking.serviceName}
           bookingDate={booking.date}
           onClose={() => setShowPrescriptionModal(false)}

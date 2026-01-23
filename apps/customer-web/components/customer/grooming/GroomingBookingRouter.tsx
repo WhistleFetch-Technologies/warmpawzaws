@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
+import { StandardizedHeader } from '../shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -32,6 +33,7 @@ interface GroomingBookingRouterProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
+  onInternalBackReady?: (handleBack: () => void) => void; // ✅ NEW: Expose internal handleBack to parent
 }
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
@@ -69,7 +71,8 @@ export function GroomingBookingRouter({
   skipToPayment, // ✅ NEW: Flag to skip to payment
   onBack, 
   onNavigate, 
-  onViewBooking 
+  onViewBooking,
+  onInternalBackReady // ✅ NEW: Callback to expose internal handleBack
 }: GroomingBookingRouterProps) {
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from salon profile
@@ -139,6 +142,29 @@ export function GroomingBookingRouter({
   
   // Payment integration state
   const [showPaymentPage, setShowPaymentPage] = useState(false);
+  
+  // ✅ FIX: User profile data for consistent header
+  const [userName, setUserName] = useState('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
+  
+  // ✅ FIX: Load user profile for header display
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        if (profileResponse?.profile || profileResponse) {
+          const profile = profileResponse.profile || profileResponse;
+          setUserName(profile.name || profile.fullName || profile.full_name || 'User');
+          setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+        }
+      } catch (error) {
+        console.error('[GroomingBookingRouter] Error loading user profile:', error);
+      }
+    };
+    if (phone) {
+      loadUserProfile();
+    }
+  }, [phone]);
 
   // Default grooming service options (used when no specific services loaded)
   const defaultServiceTypeOptions = [
@@ -526,7 +552,7 @@ export function GroomingBookingRouter({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
@@ -553,7 +579,14 @@ export function GroomingBookingRouter({
     } else {
       onBack();
     }
-  };
+  }, [step, selectedServiceType, hasServiceContext, onBack]);
+
+  // ✅ NEW: Expose handleBack to parent for header navigation
+  useEffect(() => {
+    if (onInternalBackReady) {
+      onInternalBackReady(handleBack);
+    }
+  }, [handleBack, onInternalBackReady]);
 
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
@@ -674,8 +707,22 @@ export function GroomingBookingRouter({
   };
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
-      <div className="px-4 py-6">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      {/* ✅ FIX: Standardized Header for consistent UI with mobile-optimized container */}
+      <StandardizedHeader
+        userName={userName}
+        userProfilePhoto={userProfilePhoto}
+        title={step === 'confirmation' ? 'Booking Confirmed' : 'Book Grooming'}
+        subtitle={groomer?.name || groomer?.businessName || 'Premium grooming services'}
+        showBackButton={true}
+        showPets={false}
+        onBack={handleBack}
+        onNavigate={(screen: string) => onNavigate(screen)}
+        onProfileClick={() => onNavigate('profile')}
+        customerPhone={phone}
+      />
+      
+      <div className="max-w-[430px] mx-auto px-4 py-6 pb-32">
         {step !== 'confirmation' && renderStepIndicator()}
 
         {/* Service Selection */}
@@ -1080,7 +1127,7 @@ export function GroomingBookingRouter({
         {step === 'payment' && showPaymentPage && (
           <UniversalPaymentPage
             type="booking"
-            serviceId={selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
             serviceName={selectedServiceOption?.name || serviceName || 'Grooming Service'}
             serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
             serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}

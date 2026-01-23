@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
+import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
@@ -51,6 +52,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
   const [loadingMedicalRecords, setLoadingMedicalRecords] = useState(false);
   const [hasTracking, setHasTracking] = useState(false);
+  const [showPrescriptionHistory, setShowPrescriptionHistory] = useState(false);
 
   useEffect(() => {
     loadBookingDetails();
@@ -690,14 +692,14 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Prescription Button - Always visible */}
+              {/* Prescription History Button - Always visible */}
               <Button
-                onClick={() => setShowPrescription(true)}
+                onClick={() => setShowPrescriptionHistory(true)}
                 className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                 disabled={loadingPrescription}
               >
                 <FileText className="w-5 h-5" />
-                {prescription ? 'View Prescription' : 'Prescription'}
+                Prescription History
                 {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
               </Button>
 
@@ -788,6 +790,24 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             loadPrescription(bookingId); // Reload in case it was added
           }}
           onReorderMedicine={onReorderMedicine}
+        />
+      )}
+
+      {/* Prescription History Modal */}
+      {showPrescriptionHistory && (
+        <PrescriptionHistoryModal
+          bookingId={bookingId}
+          petId={petId}
+          customerPhone={phone}
+          onClose={() => {
+            setShowPrescriptionHistory(false);
+            loadPrescription(bookingId); // Reload prescriptions
+            loadMedicalRecords(bookingId); // Reload medical records
+          }}
+          onUploadSuccess={() => {
+            loadPrescription(bookingId);
+            loadMedicalRecords(bookingId);
+          }}
         />
       )}
 

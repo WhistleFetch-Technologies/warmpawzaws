@@ -7,6 +7,7 @@ import {
   Package, Truck, Store, Tag, X, Plus, Minus, ArrowRight,
   CreditCard, MapPin, Check, Clock, Gift, Percent
 } from 'lucide-react';
+import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 
 // ============================================================================
 // TYPES
@@ -72,6 +73,9 @@ export default function ShopPage() {
   const [checkoutStep, setCheckoutStep] = useState<'address' | 'payment' | 'confirm'>('address');
   const [processing, setProcessing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showPaymentPage, setShowPaymentPage] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   
   // Coupon
   const [couponCode, setCouponCode] = useState('');
@@ -95,7 +99,27 @@ export default function ShopPage() {
   useEffect(() => {
     loadData();
     loadCart();
+    loadCustomerData();
   }, [selectedCategory, sortBy]);
+
+  const loadCustomerData = () => {
+    if (typeof window !== 'undefined') {
+      // Try to get customer phone from localStorage or sessionStorage
+      const phone = localStorage.getItem('customer_phone') || 
+                   sessionStorage.getItem('customer_phone') ||
+                   localStorage.getItem('phone') ||
+                   sessionStorage.getItem('phone') ||
+                   '';
+      setCustomerPhone(phone);
+      
+      const id = localStorage.getItem('customer_id') || 
+                 sessionStorage.getItem('customer_id') ||
+                 localStorage.getItem('customerId') ||
+                 sessionStorage.getItem('customerId') ||
+                 undefined;
+      setCustomerId(id || undefined);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -222,35 +246,40 @@ export default function ShopPage() {
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     
-    setProcessing(true);
-    try {
-      const orderPayload = {
-        items: cart.map(item => ({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.product.price
-        })),
-        shipping_address: address,
-        coupon_code: appliedCoupon?.code,
-        payment_method: 'cod' // Can be extended for online payment
-      };
+    // Validate address before proceeding to payment
+    if (!address.name || !address.phone || !address.line1 || !address.city || !address.pincode) {
+      alert('Please fill in all address fields');
+      return;
+    }
+
+    // Validate customer phone
+    if (!customerPhone && !address.phone) {
+      alert('Please provide your phone number');
+      return;
+    }
+
+    // Proceed to payment page
+    setShowPaymentPage(true);
+  };
+
+  const handlePaymentSuccess = async (bookingId: string, orderId?: string) => {
+    // UniversalPaymentPage creates the order internally, so we just need to handle UI cleanup
+    if (orderId) {
+      // Clear cart
+      saveCart([]);
+      setAppliedCoupon(null);
+      setShowCheckout(false);
+      setShowPaymentPage(false);
+      setCheckoutStep('address');
       
-      const result = await apiClient.post<any>('/ecommerce/orders', orderPayload);
+      // Show success - could redirect to order success page
+      alert(`Order placed successfully! Order ID: ${orderId}`);
       
-      if ((result as any)?.order) {
-        // Clear cart
-        saveCart([]);
-        setAppliedCoupon(null);
-        setShowCheckout(false);
-        
-        // Show success
-        alert(`Order placed successfully! Order ID: ${(result as any).order.id}`);
-      }
-    } catch (err: any) {
-      console.error('Error placing order:', err);
-      alert('Failed to place order: ' + (err.message || 'Unknown error'));
-    } finally {
-      setProcessing(false);
+      // Optionally redirect to order details or order history
+      // window.location.href = `/orders/${orderId}`;
+    } else {
+      console.error('No order ID received from payment');
+      alert('Payment successful but order ID not received. Please check your order history.');
     }
   };
 
@@ -718,7 +747,7 @@ export default function ShopPage() {
                 </div>
               )}
 
-              {checkoutStep === 'payment' && (
+              {checkoutStep === 'payment' && !showPaymentPage && (
                 <div className="space-y-4">
                   <h3 className="font-semibold text-slate-900 flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-orange-500" />
@@ -732,11 +761,14 @@ export default function ShopPage() {
                         <p className="text-sm text-slate-500">Pay when you receive your order</p>
                       </div>
                     </label>
-                    <label className="flex items-center gap-4 p-4 border border-slate-200 rounded-xl cursor-pointer opacity-50">
-                      <input type="radio" name="payment" disabled className="w-5 h-5" />
+                    <label 
+                      onClick={() => setShowPaymentPage(true)}
+                      className="flex items-center gap-4 p-4 border-2 border-orange-500 rounded-xl cursor-pointer bg-orange-50 hover:bg-orange-100 transition"
+                    >
+                      <input type="radio" name="payment" className="w-5 h-5 text-orange-500" />
                       <div className="flex-1">
                         <p className="font-medium text-slate-900">Online Payment</p>
-                        <p className="text-sm text-slate-500">Pay with UPI, Cards, Net Banking (Coming Soon)</p>
+                        <p className="text-sm text-slate-500">Pay with UPI, Cards, Net Banking via Razorpay</p>
                       </div>
                     </label>
                   </div>
@@ -751,10 +783,37 @@ export default function ShopPage() {
                       onClick={() => setCheckoutStep('confirm')}
                       className="flex-1 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl"
                     >
-                      Review Order
+                      Review Order (COD)
                     </button>
                   </div>
                 </div>
+              )}
+
+              {/* Universal Payment Page */}
+              {checkoutStep === 'payment' && showPaymentPage && cart.length > 0 && (
+                <UniversalPaymentPage
+                  type="order"
+                  productId={cart[0]?.product_id}
+                  productName={`Order: ${cart.length} item(s)`}
+                  serviceStyle="ecom"
+                  category="ecommerce"
+                  vendorId={cart[0]?.product?.vendor_id || ''}
+                  vendorName={cart[0]?.product?.vendor_name || 'Warmpawz Store'}
+                  address={{
+                    label: address.name || 'Delivery Address',
+                    addressLine1: address.line1,
+                    city: address.city,
+                    state: address.state,
+                    pincode: address.pincode,
+                  }}
+                  showAddressSelection={false}
+                  baseAmount={cartTotal}
+                  quantity={cartItemCount}
+                  customerPhone={customerPhone || address.phone}
+                  customerId={customerId}
+                  onBack={() => setShowPaymentPage(false)}
+                  onSuccess={handlePaymentSuccess}
+                />
               )}
 
               {checkoutStep === 'confirm' && (
@@ -829,9 +888,24 @@ export default function ShopPage() {
                       ) : (
                         <>
                           <Check className="w-5 h-5" />
-                          Place Order
+                          Place Order (COD)
                         </>
                       )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!address.name || !address.phone || !address.line1 || !address.city || !address.pincode) {
+                          alert('Please fill in all address fields');
+                          return;
+                        }
+                        setCheckoutStep('payment');
+                        setShowPaymentPage(true);
+                      }}
+                      disabled={processing}
+                      className="w-full mt-2 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CreditCard className="w-5 h-5" />
+                      Pay Online (Razorpay)
                     </button>
                   </div>
                 </div>

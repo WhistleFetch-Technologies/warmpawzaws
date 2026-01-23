@@ -11,17 +11,16 @@
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 
-const app = new Hono();
-
 // ============================================================================
 // SPONSORED ADS ENDPOINTS
 // ============================================================================
 
-/**
- * GET /ads/sponsored-providers
- * Get sponsored providers for a category/listing page
- */
-app.get('/ads/sponsored-providers', async (c) => {
+export function registerAdsRecommendationEndpoints(app: Hono) {
+  /**
+   * GET /ads/sponsored-providers
+   * Get sponsored providers for a category/listing page
+   */
+  app.get('/ads/sponsored-providers', async (c) => {
   try {
     const category = c.req.query('category');
     const limit = parseInt(c.req.query('limit') || '3');
@@ -600,10 +599,5 @@ app.post('/promotions/calculate-cart', async (c) => {
     console.error('Error calculating cart promotions:', error);
     return c.json({ success: false, error: error.message });
   }
-});
-
-export function registerAdsRecommendationEndpoints(parentApp: Hono) {
-  parentApp.route('/', app);
+  });
 }
-
-export default app;

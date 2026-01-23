@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS Test</title>
+</head>
+<body>
+    <h1>CORS Test</h1>
+    <button onclick="testCors()">Test CORS</button>
+    <pre id="output"></pre>
+    <script>
+        async function testCors() {
+            const output = document.getElementById('output');
+            const endpoints = [
+                '/admin/catalog/categories',
+                '/admin/service-catalog?groupBy=subcategory',
+                '/admin/catalog/stats',
+                '/admin/roles',
+                '/service-catalog/categories'
+            ];
+            
+            output.textContent = 'Testing CORS...\n\n';
+            
+            for (const endpoint of endpoints) {
+                const url = `https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com${endpoint}`;
+                output.textContent += `Testing: ${endpoint}\n`;
+                
+                try {
+                    // Test OPTIONS first
+                    const optionsResponse = await fetch(url, {
+                        method: 'OPTIONS',
+                        headers: {
+                            'Origin': 'https://dfof7mguaa0a5.cloudfront.net',
+                            'Access-Control-Request-Method': 'GET',
+                            'Access-Control-Request-Headers': 'authorization,content-type'
+                        }
+                    });
+                    
+                    output.textContent += `  OPTIONS Status: ${optionsResponse.status} ${optionsResponse.statusText}\n`;
+                    output.textContent += `  OPTIONS OK: ${optionsResponse.ok}\n`;
+                    output.textContent += `  CORS Origin: ${optionsResponse.headers.get('access-control-allow-origin') || 'MISSING'}\n`;
+                    output.textContent += `  CORS Methods: ${optionsResponse.headers.get('access-control-allow-methods') || 'MISSING'}\n`;
+                    
+                    // Test GET
+                    const getResponse = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Origin': 'https://dfof7mguaa0a5.cloudfront.net',
+                            'X-UAT-Mode': 'true',
+                            'X-UAT-Token': 'uat-token-admin-123'
+                        }
+                    });
+                    
+                    output.textContent += `  GET Status: ${getResponse.status} ${getResponse.statusText}\n`;
+                    output.textContent += `  GET OK: ${getResponse.ok}\n\n`;
+                } catch (error) {
+                    output.textContent += `  ERROR: ${error.message}\n`;
+                    output.textContent += `  Type: ${error.name}\n\n`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>

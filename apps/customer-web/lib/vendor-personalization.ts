@@ -61,7 +61,7 @@ const PERSONALIZATION_MAP: Record<string, VendorPersonalization> = {
 };
 
 export function getVendorPersonalization(roleId: string | undefined, services?: any[]): VendorPersonalization {
-  const role = roleId?.toLowerCase() || 'general';
+  const role = roleId ? String(roleId).toLowerCase() : 'general';
   return PERSONALIZATION_MAP[role] || {
     roleName: 'Service Provider',
     primaryColor: '#6B7280', // gray-500

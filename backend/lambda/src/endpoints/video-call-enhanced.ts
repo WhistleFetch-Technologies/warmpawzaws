@@ -96,6 +96,44 @@ class CreateOrJoinMeetingHandler extends BaseHandler {
         return this.error('Video calling is only available for tele consultations', 400);
       }
 
+      // ✅ FIX: Check booking status - must be confirmed or in_progress
+      const bookingStatus = booking.status?.toLowerCase();
+      if (!['confirmed', 'in_progress', 'active'].includes(bookingStatus)) {
+        return this.error(
+          `Video call is not available. Booking status: ${booking.status}. Please wait for confirmation.`,
+          400
+        );
+      }
+
+      // ✅ FIX: Check scheduled time - allow joining if:
+      // 1. Scheduled time has passed (with 5 minute grace period before)
+      // 2. Or booking is already in_progress
+      const scheduledDate = booking.scheduled_date || booking.scheduledDate;
+      const scheduledTime = booking.scheduled_time || booking.scheduledTime;
+      
+      if (scheduledDate && scheduledTime && bookingStatus === 'confirmed') {
+        try {
+          // Parse scheduled datetime
+          const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}:00`);
+          const now = new Date();
+          
+          // Allow joining 5 minutes before scheduled time
+          const gracePeriodMinutes = 5;
+          const earliestJoinTime = new Date(scheduledDateTime.getTime() - gracePeriodMinutes * 60 * 1000);
+          
+          if (now < earliestJoinTime) {
+            const minutesUntilJoin = Math.ceil((earliestJoinTime.getTime() - now.getTime()) / (1000 * 60));
+            return this.error(
+              `Video consultation will be available ${minutesUntilJoin} minute${minutesUntilJoin > 1 ? 's' : ''} before the scheduled time (${scheduledTime}).`,
+              400
+            );
+          }
+        } catch (timeError) {
+          console.warn('Error parsing scheduled time:', timeError);
+          // Continue if time parsing fails - don't block joining
+        }
+      }
+
       // Check if meeting already exists for this booking
       const existingSessions = await select('video_call_sessions', { 
         booking_id: bookingId,

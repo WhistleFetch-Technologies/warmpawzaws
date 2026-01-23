@@ -342,22 +342,75 @@ export function EnhancedPaymentPage({
       
       if (type === 'booking' && !currentBookingId && items.length === 1) {
         const item = items[0];
-        const bookingRes = await apiClient.post<any>('/bookings/create', {
+        
+        // Validate required fields before making API call
+        if (!customerId) {
+          throw new Error('Customer ID is required. Please log in again.');
+        }
+        if (!item.vendorId) {
+          throw new Error('Vendor information is missing. Please try again.');
+        }
+        if (!item.id) {
+          throw new Error('Service information is missing. Please try again.');
+        }
+        if (!bookingDate || !bookingTime) {
+          throw new Error('Booking date and time are required.');
+        }
+        
+        // Map serviceStyle to backend serviceType
+        // Backend expects: 'at_vendor', 'at_home', 'tele' (or 'online' which maps to 'tele')
+        const serviceTypeMap: Record<string, string> = {
+          'at_center': 'at_vendor',
+          'at_home': 'at_home',
+          'tele': 'tele',
+          'online': 'tele',
+          'delivery': 'at_home', // Delivery is similar to at_home
+        };
+        const mappedServiceType = serviceTypeMap[item.serviceStyle || 'at_center'] || 'at_vendor';
+        
+        const bookingPayload = {
           customerId,
           vendorId: item.vendorId,
           serviceId: item.id,
           bookingDate,
           bookingTime,
-          serviceType: item.serviceStyle || 'at_center',
+          serviceType: mappedServiceType,
           amount: finalAmount,
-          petId,
-          address: address?.addressLine1,
+          petId: petId || undefined,
+          address: address?.addressLine1 || undefined,
           notes: '',
-        });
+        };
         
-        currentBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking?.id;
-        if (!currentBookingId) {
-          throw new Error('Failed to create booking');
+        console.log('📋 Creating booking with payload:', bookingPayload);
+        
+        try {
+          const bookingRes = await apiClient.post<any>('/bookings/create', bookingPayload);
+          
+          currentBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking?.id || bookingRes.id;
+          if (!currentBookingId) {
+            console.error('❌ Booking response:', bookingRes);
+            throw new Error('Failed to create booking: No booking ID returned');
+          }
+          console.log('✅ Booking created successfully:', currentBookingId);
+        } catch (bookingError: any) {
+          // Enhanced error logging
+          console.error('❌ /bookings/create failed with non-404 error:', bookingError);
+          console.error('❌ Payment error:', bookingError);
+          console.error('❌ Error response:', (bookingError as any)?.response || (bookingError as any)?.responseData);
+          console.error('❌ Error data:', (bookingError as any)?.responseData);
+          console.error('❌ Error status:', (bookingError as any)?.status || (bookingError as any)?.statusCode);
+          console.error('❌ Error message:', bookingError?.message);
+          
+          // Extract detailed error message
+          const errorResponse = (bookingError as any)?.response || (bookingError as any)?.responseData;
+          const errorMessage = 
+            errorResponse?.error?.message || 
+            errorResponse?.error || 
+            errorResponse?.message ||
+            bookingError?.message || 
+            'Failed to create booking. Please check all required fields and try again.';
+          
+          throw new Error(errorMessage);
         }
       }
       
@@ -487,8 +540,23 @@ export function EnhancedPaymentPage({
       }
       
     } catch (error: any) {
-      console.error('Payment error:', error);
-      toast.error(error.message || 'Payment failed');
+      // Enhanced error logging
+      console.error('❌ Payment error:', error);
+      console.error('❌ Error response:', (error as any)?.response || (error as any)?.responseData);
+      console.error('❌ Error data:', (error as any)?.responseData);
+      console.error('❌ Error status:', (error as any)?.status || (error as any)?.statusCode);
+      console.error('❌ Error message:', error?.message);
+      
+      // Extract detailed error message from API response
+      const errorResponse = (error as any)?.response || (error as any)?.responseData;
+      const errorMessage = 
+        errorResponse?.error?.message || 
+        errorResponse?.error || 
+        errorResponse?.message ||
+        error?.message || 
+        'Payment failed. Please try again or contact support.';
+      
+      toast.error(errorMessage);
       setProcessing(false);
     }
   };
@@ -509,7 +577,7 @@ export function EnhancedPaymentPage({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 via-white to-orange-50/30 pb-36">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 via-white to-orange-50/30 pb-48">
       {/* Header - Sleek & Modern */}
       <header className="bg-gradient-to-r from-orange-500 via-orange-400 to-amber-500 text-white sticky top-0 z-50 shadow-lg">
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
@@ -994,8 +1062,9 @@ export function EnhancedPaymentPage({
       </main>
 
       {/* Fixed Bottom CTA - Premium Design */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-200 shadow-2xl">
-        <div className="max-w-lg mx-auto p-4 space-y-3">
+      {/* Increased z-index to ensure it's above footer navigation (footer typically uses z-50) */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-200 shadow-2xl z-[100]">
+        <div className="max-w-lg mx-auto p-4 space-y-3 pb-safe">
           {/* Savings Banner */}
           {totalSavings > 0 && (
             <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-3 flex items-center justify-center gap-2">

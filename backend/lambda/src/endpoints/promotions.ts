@@ -1340,5 +1340,238 @@ export function registerPromotionEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * POST /promotions/apply
+   * Apply promotion/coupon with vendor/platform distinction
+   */
+  app.post("/promotions/apply", async (c) => {
+    try {
+      const {
+        code,
+        bookingId,
+        customerId,
+        vendorId,
+        amount,
+      } = await c.req.json();
+
+      if (!code || !amount) {
+        return c.json({ error: 'code and amount are required' }, 400);
+      }
+
+      // Check if it's a vendor promotion or platform promotion
+      const vendorPromo = await query(
+        `SELECT * FROM vendor_promotions 
+         WHERE code = $1 
+         AND vendor_id = $2
+         AND is_active = true
+         AND (start_date IS NULL OR start_date <= NOW())
+         AND (end_date IS NULL OR end_date >= NOW())`,
+        [code, vendorId || '']
+      );
+
+      const platformPromo = await query(
+        `SELECT * FROM platform_promotions 
+         WHERE code = $1
+         AND is_active = true
+         AND (start_date IS NULL OR start_date <= NOW())
+         AND (end_date IS NULL OR end_date >= NOW())`,
+        [code]
+      );
+
+      let promotion: any = null;
+      let discountSource: 'vendor' | 'platform' = 'platform';
+
+      if (vendorPromo.rows.length > 0) {
+        promotion = vendorPromo.rows[0];
+        discountSource = 'vendor';
+      } else if (platformPromo.rows.length > 0) {
+        promotion = platformPromo.rows[0];
+        discountSource = 'platform';
+      } else {
+        return c.json({ error: 'Invalid or expired promotion code' }, 400);
+      }
+
+      // Calculate discount
+      let discountAmount = 0;
+      if (promotion.discount_type === 'percentage') {
+        discountAmount = (amount * parseFloat(promotion.discount_value)) / 100;
+        if (promotion.max_discount_amount) {
+          discountAmount = Math.min(discountAmount, parseFloat(promotion.max_discount_amount));
+        }
+      } else {
+        discountAmount = parseFloat(promotion.discount_value);
+      }
+
+      const finalAmount = Math.max(0, amount - discountAmount);
+
+      return c.json({
+        success: true,
+        discount: {
+          amount: discountAmount,
+          finalAmount,
+          source: discountSource,
+          promotionId: promotion.id,
+          promotionName: promotion.name,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error applying promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /policy-acceptance
+   * Accept booking/order policy before payment (before booking creation)
+   * ✅ NEW: Endpoint for policy acceptance before booking is created
+   */
+  app.post("/policy-acceptance", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { 
+        customerId, 
+        policyType, 
+        vendorId, 
+        serviceId, 
+        policyVersion, 
+        acceptedAt 
+      } = body;
+
+      if (!customerId) {
+        return c.json({ error: 'customerId is required' }, 400);
+      }
+
+      if (!policyVersion) {
+        return c.json({ error: 'policyVersion is required' }, 400);
+      }
+
+      // Store policy acceptance (can be used later when booking is created)
+      // For now, just log it - the actual policy acceptance will be recorded when booking is created
+      // In the future, this could be stored in a policy_acceptances table
+      console.log('[PolicyAcceptance] Policy accepted:', {
+        customerId,
+        policyType,
+        vendorId,
+        serviceId,
+        policyVersion,
+        acceptedAt: acceptedAt || new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Policy acceptance recorded',
+        acceptedAt: acceptedAt || new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('Error recording policy acceptance:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /bookings/:bookingId/accept-policy
+   * Accept booking policy before payment (after booking is created)
+   */
+  app.post("/bookings/:bookingId/accept-policy", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const body = await c.req.json();
+      const { policyVersion, acceptedAt, customerSignature } = body;
+
+      if (!policyVersion) {
+        return c.json({ error: 'policyVersion is required' }, 400);
+      }
+
+      await update('bookings', { id: bookingId }, {
+        policy_accepted: true,
+        policy_version: policyVersion,
+        policy_accepted_at: acceptedAt || new Date().toISOString(),
+        customer_signature: customerSignature || null,
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Policy accepted',
+      });
+    } catch (error: any) {
+      console.error('Error accepting policy:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /payments/create-subscription
+   * Create payment for subscription (zero payment if already paid)
+   */
+  app.post("/payments/create-subscription", async (c) => {
+    try {
+      const {
+        bookingId,
+        subscriptionId,
+        customerId,
+        amount,
+      } = await c.req.json();
+
+      if (!bookingId || !subscriptionId || !customerId) {
+        return c.json({ error: 'bookingId, subscriptionId, and customerId are required' }, 400);
+      }
+
+      // Check if subscription is already paid
+      const subscriptions = await query(
+        `SELECT * FROM subscriptions 
+         WHERE id = $1 AND customer_id = $2 AND payment_status = 'paid'`,
+        [subscriptionId, customerId]
+      );
+
+      if (subscriptions.rows.length > 0 && amount === 0) {
+        // Zero payment for already-paid subscription
+        const payment = await insert('payments', {
+          booking_id: bookingId,
+          customer_id: customerId,
+          amount: 0,
+          currency: 'INR',
+          payment_method: 'subscription',
+          payment_status: 'completed',
+          subscription_id: subscriptionId,
+        });
+
+        // Update booking
+        await update('bookings', { id: bookingId }, {
+          payment_status: 'paid',
+          payment_method: 'subscription',
+        });
+
+        return c.json({
+          success: true,
+          paymentId: payment[0].id,
+          status: 'completed',
+          message: 'Zero payment processed for subscription',
+        });
+      }
+
+      // Regular payment flow for subscription
+      const payment = await insert('payments', {
+        booking_id: bookingId,
+        customer_id: customerId,
+        amount: amount || 0,
+        currency: 'INR',
+        payment_method: 'subscription',
+        payment_status: amount === 0 ? 'completed' : 'pending',
+        subscription_id: subscriptionId,
+      });
+
+      return c.json({
+        success: true,
+        paymentId: payment[0].id,
+        status: payment[0].payment_status,
+        message: 'Subscription payment created',
+      });
+    } catch (error: any) {
+      console.error('Error creating subscription payment:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 

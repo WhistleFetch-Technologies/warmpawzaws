@@ -38,13 +38,26 @@ export class ApiError extends Error {
  * Check if error is retryable
  */
 function isRetryableError(error: any, config: RetryConfig): boolean {
-  // Network errors
+  // CORS errors are NOT retryable - they indicate a configuration issue
+  if (
+    error.message?.includes('CORS') ||
+    error.message?.includes('blocked by CORS policy') ||
+    error.message?.includes('preflight request') ||
+    error.code === 'CORS_ERROR'
+  ) {
+    return false;
+  }
+
+  // Network errors (excluding CORS)
   if (
     error.message?.includes('Failed to fetch') ||
     error.message?.includes('NetworkError') ||
     config.retryableErrors.some(e => error.message?.includes(e))
   ) {
-    return true;
+    // Double-check it's not a CORS error
+    if (!error.message?.includes('CORS') && !error.message?.includes('preflight')) {
+      return true;
+    }
   }
 
   // HTTP status codes
@@ -93,7 +106,10 @@ export async function withRetry<T>(
       const jitter = delay * 0.25 * (Math.random() * 2 - 1);
       const totalDelay = delay + jitter;
 
-      console.log(`[RETRY] Attempt ${attempt + 1}/${retryConfig.maxRetries} failed, retrying in ${Math.round(totalDelay)}ms...`);
+      // Only log retry attempts in development/UAT mode to reduce console noise
+      if (typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || window.location.hostname.includes('uat'))) {
+        console.log(`[RETRY] Attempt ${attempt + 1}/${retryConfig.maxRetries} failed, retrying in ${Math.round(totalDelay)}ms...`);
+      }
       await sleep(totalDelay);
     }
   }
@@ -150,19 +166,45 @@ export async function resilientFetch(
         throw error;
       }
 
-      // Handle network errors
+      // Handle CORS errors specifically (not retryable)
+      if (
+        error.message?.includes('CORS') ||
+        error.message?.includes('blocked by CORS policy') ||
+        error.message?.includes('preflight request')
+      ) {
+        throw new ApiError(
+          'CORS error: API endpoint configuration issue',
+          'CORS_ERROR',
+          undefined,
+          false, // Not retryable
+          error
+        );
+      }
+
+      // Handle network errors (excluding CORS)
       if (
         error.message?.includes('Failed to fetch') ||
         error.message?.includes('NetworkError') ||
         retryConfig.retryableErrors.some(e => error.message?.includes(e))
       ) {
-        throw new ApiError(
-          error.message || 'Network error',
-          'network_error',
-          undefined,
-          true,
-          error
-        );
+        // Check if it's actually a CORS error
+        if (!error.message?.includes('CORS') && !error.message?.includes('preflight')) {
+          throw new ApiError(
+            error.message || 'Network error',
+            'network_error',
+            undefined,
+            true,
+            error
+          );
+        } else {
+          throw new ApiError(
+            'CORS error: API endpoint configuration issue',
+            'CORS_ERROR',
+            undefined,
+            false,
+            error
+          );
+        }
       }
 
       throw error;

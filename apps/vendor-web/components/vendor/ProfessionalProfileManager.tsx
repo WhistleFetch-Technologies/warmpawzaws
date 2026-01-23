@@ -13,7 +13,7 @@
  * - Service area and availability
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle } from 'lucide-react';
@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { PhotoUpload } from '@/components/shared/PhotoUpload';
 
 // Specializations by role type (same as staff creation)
 const SPECIALIZATIONS_BY_ROLE: Record<string, string[]> = {
@@ -75,7 +76,6 @@ interface ProfessionalProfileManagerProps {
 
 export function ProfessionalProfileManager({ vendorId, profile: initialProfile, onBack }: ProfessionalProfileManagerProps) {
   const router = useRouter();
-  const photoInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -190,37 +190,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !vendorId) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Photo must be less than 5MB');
-      return;
-    }
-
-    try {
-      setUploading(true);
-      const formData = new FormData();
-      formData.append('photo', file);
-
-      const response = await apiClient.post<{ success?: boolean; photo_url?: string }>(
-        `/vendor/${vendorId}/profile/photo`,
-        formData
-      );
-      if (response.success && response.photo_url) {
-        setProfile(prev => ({ ...prev, photo_url: response.photo_url }));
-        toast.success('Photo uploaded successfully');
-        setHasChanges(true);
-        setFormErrors(prev => ({ ...prev, photo_url: '' }));
-      }
-    } catch (err: any) {
-      console.error('Error uploading photo:', err);
-      toast.error(err.message || 'Failed to upload photo');
-    } finally {
-      setUploading(false);
-    }
-  };
+  // Photo upload is now handled by PhotoUpload component
 
   // Validate form before saving
   const validateForm = (): boolean => {
@@ -378,59 +348,48 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           </div>
         </div>
 
-        {/* Profile Photo Section */}
+        {/* Profile Photo Section - Using shared PhotoUpload component */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Camera className="w-5 h-5 text-blue-500" />
-            <Label className="text-lg font-semibold">Profile Photo *</Label>
-          </div>
-          <div className="flex items-start gap-6">
-            <div className="relative">
-              <div className={`w-32 h-32 rounded-2xl flex items-center justify-center overflow-hidden border-2 ${
-                formErrors.photo_url ? 'border-amber-400 bg-amber-50' : 'border-blue-200 bg-gradient-to-br from-blue-100 to-indigo-100'
-              }`}>
-                {profile.photo_url ? (
-                  <img src={profile.photo_url} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <User className="w-16 h-16 text-blue-400" />
-                )}
-              </div>
-              <input
-                type="file"
-                ref={photoInputRef}
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-                disabled={uploading}
-              />
-              <button
-                onClick={() => photoInputRef.current?.click()}
-                disabled={uploading}
-                className="absolute bottom-0 right-0 bg-blue-500 text-white p-2 rounded-full cursor-pointer hover:bg-blue-600 transition disabled:opacity-50"
-              >
-                <Camera className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm text-gray-600 mb-3">
-                Upload a professional photo of yourself. This helps customers recognize and trust you.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => photoInputRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? 'Uploading...' : profile.photo_url ? 'Change Photo' : 'Upload Photo'}
-              </Button>
-              {formErrors.photo_url && (
-                <p className="text-amber-600 text-xs mt-2 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  {formErrors.photo_url}
-                </p>
-              )}
-            </div>
-          </div>
+          <PhotoUpload
+            photoUrl={profile.photo_url}
+            onUpload={async (file) => {
+              try {
+                setUploading(true);
+                const formData = new FormData();
+                formData.append('photo', file);
+
+                const response = await apiClient.post<{ success?: boolean; photo_url?: string }>(
+                  `/vendor/${vendorId}/profile/photo`,
+                  formData
+                );
+                
+                if (response.success && response.photo_url) {
+                  setProfile(prev => ({ ...prev, photo_url: response.photo_url }));
+                  setHasChanges(true);
+                  setFormErrors(prev => ({ ...prev, photo_url: '' }));
+                  return { success: true, photo_url: response.photo_url };
+                }
+                throw new Error('Upload failed');
+              } catch (err: any) {
+                console.error('Error uploading photo:', err);
+                throw err;
+              } finally {
+                setUploading(false);
+              }
+            }}
+            size="lg"
+            label="Profile Photo"
+            required={false}
+            maxSizeMB={5}
+            disabled={uploading}
+            className="mb-4"
+          />
+          {formErrors.photo_url && (
+            <p className="text-amber-600 text-xs mt-2 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" />
+              {formErrors.photo_url}
+            </p>
+          )}
         </div>
 
         {/* Personal Information */}

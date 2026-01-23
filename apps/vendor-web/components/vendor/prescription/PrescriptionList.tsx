@@ -85,9 +85,9 @@ export function PrescriptionList({ vendorId, onSelect, onEdit }: PrescriptionLis
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
-      p.medication_name?.toLowerCase().includes(term) ||
-      p.customer_id?.toLowerCase().includes(term) ||
-      p.instructions?.toLowerCase().includes(term)
+      (p.medication_name && typeof p.medication_name === 'string' && p.medication_name.toLowerCase().includes(term)) ||
+      (p.customer_id && String(p.customer_id).toLowerCase().includes(term)) ||
+      (p.instructions && typeof p.instructions === 'string' && p.instructions.toLowerCase().includes(term))
     );
   });
 

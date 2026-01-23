@@ -12,6 +12,7 @@ interface AddVetSummaryModalProps {
   appointmentId: string;
   petName: string;
   vendorId: string;
+  staffId?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -23,8 +24,10 @@ interface Prescription {
   duration: string;
 }
 
-export function AddVetSummaryModal({ appointmentId, petName, vendorId, onClose, onSuccess }: AddVetSummaryModalProps) {
+export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: staffIdProp, onClose, onSuccess }: AddVetSummaryModalProps) {
   const [saving, setSaving] = useState(false);
+  const resolvedVendorId = vendorId || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '');
+  const resolvedStaffId = (staffIdProp || (typeof window !== 'undefined' ? localStorage.getItem('staffId') || localStorage.getItem('staff_id') || '' : ''))?.trim() || undefined;
   const [summary, setSummary] = useState({
     diagnosis: '',
     symptoms: '',
@@ -65,12 +68,17 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, onClose, 
       toast.error('Please enter diagnosis');
       return;
     }
+    if (!resolvedVendorId.trim()) {
+      toast.error('Vendor session missing. Please refresh or log in again.');
+      return;
+    }
 
     try {
       setSaving(true);
       await apiClient.post(`/prescriptions`, {
         bookingId: appointmentId,
-        vendorId,
+        vendorId: resolvedVendorId.trim(),
+        staffId: resolvedStaffId,
         diagnosis: summary.diagnosis,
         notes: summary.notes,
         medications: summary.prescriptions.map(p => ({

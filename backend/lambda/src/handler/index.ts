@@ -24,6 +24,7 @@ import { registerVendorOnboardingFixes } from '../endpoints/vendor-onboarding-fi
 import { registerBookingEndpointsEnhanced, registerBookingOTPEndpoint } from '../endpoints/bookings-enhanced';
 import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced';
 import { registerCustomerEndpointsEnhanced } from '../endpoints/customer-enhanced';
+import { registerTrackingEndpoints } from '../endpoints/tracking';
 
 // Legacy handlers (to be migrated gradually)
 import { registerAuthEndpoints } from '../endpoints/auth';
@@ -147,6 +148,7 @@ import { registerPharmacyOrderEndpoints } from '../endpoints/pharmacy-orders';
 import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
+import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor-bank-accounts';
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
 import { registerInstantTeleQueueEndpoints } from '../endpoints/instant-tele-queue';
@@ -211,6 +213,11 @@ app.use('*', cors({
   credentials: true,
   maxAge: 86400,
 }));
+
+// Request tracking middleware (debug ingest disabled in production - set DEBUG_AGENT_INGEST=true to enable)
+app.use('*', async (c, next) => {
+  await next();
+});
 
 // Initialize CloudWatch error tracking (India data residency compliant)
 const environment = process.env.NODE_ENV || process.env.ENVIRONMENT || 'development';
@@ -298,7 +305,10 @@ registerNotificationEndpoints(app); // /customer/notifications - before /custome
 registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/discover-services, /customer/services, /customer/autocomplete, /customer/radar/providers, /customer/vendors/discover-by-problem, /vendor/:vendorId/facility - before /customer/:customerId
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
-registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
+// ✅ CRITICAL ROUTE ORDERING: Specific routes MUST come before parameterized routes
+// /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
+// This ensures "active" is not interpreted as a UUID in /customer/:customerId route
+registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings/active, /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
 registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 // Now register parameterized routes
@@ -317,12 +327,14 @@ registerStaffEndpoints(app);
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
 registerRoomsEndpoints(app); // Consultation rooms management (Phase 1.1)
 registerReviewEndpoints(app);
+registerTrackingEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerPrescriptionEndpoints(app);
 registerPharmacyOrderEndpoints(app);
 registerPharmacyInventoryEndpoints(app);
 registerDeliveryPartnerAutomationEndpoints(app);
 registerMealPlanEndpoints(app);
+registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
 registerVendorBankAccountEndpoints(app);
 registerDeliveryTrackingEndpoints(app);
 registerMedicalRecordsEndpoints(app);
@@ -559,6 +571,9 @@ export const handler = async (
   event: APIGatewayProxyEventV2,
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:561',message:'Handler entry',data:{method:event.requestContext?.http?.method,path:event.rawPath,hasOrigin:!!event.headers?.origin,origin:event.headers?.origin||event.headers?.Origin||'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     // UAT Mode: Check if request has UAT header and bypass authorizer validation
     // This allows UAT tokens to pass through even though they're not valid Cognito JWTs
@@ -588,55 +603,145 @@ export const handler = async (
       }
     }
     
-    // Handle OPTIONS (CORS preflight) requests early - before processing
-    const httpMethod = event.requestContext?.http?.method || 'GET';
+    // Check HTTP method
+    // Note: When API Gateway HTTP API v2 has CORS configured, it handles OPTIONS automatically
+    // before routing to Lambda. However, if OPTIONS somehow reaches Lambda (e.g., via ANY route),
+    // we should return early to avoid conflicts.
+    const httpMethod = event.requestContext?.http?.method || 
+                      (event as any).requestContext?.httpMethod || 
+                      (event as any).httpMethod || 
+                      event.requestContext?.httpMethod ||
+                      'GET';
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:600',message:'Method check',data:{httpMethod,isOptions:httpMethod==='OPTIONS',requestContextMethod:event.requestContext?.http?.method,rawPath:event.rawPath},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
+    // If OPTIONS request reaches Lambda (shouldn't happen when CORS is configured on API Gateway),
+    // return early with CORS headers as fallback. API Gateway should handle OPTIONS automatically.
     if (httpMethod === 'OPTIONS') {
-      const origin = event.headers?.origin || 
-                     event.headers?.Origin || 
-                     'https://dfof7mguaa0a5.cloudfront.net';
-      
-      // Use the same allowedOrigins array defined at module level for consistency
-      // OFFICIAL CloudFront distributions only
-      const allowedOrigins = [
-        // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
-        'https://dfof7mguaa0a5.cloudfront.net',
-        // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
-        'https://d2aoyjj8ine0wk.cloudfront.net',
-        // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
-        'https://d1s6ykkj381k58.cloudfront.net',
-        // Local development
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
-        'http://localhost:3003',
-        'http://localhost:5173',
-        // Dev domains
-        'https://dev.admin.warmpawz.com',
-        'https://dev.vendor.warmpawz.com',
-        'https://dev.customer.warmpawz.com',
-        // Production domains (for prod environment)
-        'https://admin.warmpawz.com',
-        'https://vendor.warmpawz.com',
-        'https://customer.warmpawz.com',
-        'https://warmpawz.com',
-        'https://www.warmpawz.com',
-      ];
-      
-      const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-      
-      return {
-        statusCode: 204, // 204 No Content is standard for successful preflight
-        body: '',
-        headers: {
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token',
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-        },
-      };
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:610',message:'OPTIONS reached Lambda (unexpected)',data:{rawPath:event.rawPath,origin:event.headers?.origin||event.headers?.Origin||'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      try {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:602',message:'OPTIONS handler entered',data:{rawPath:event.rawPath,allHeaders:Object.keys(event.headers||{}),origin:event.headers?.origin||event.headers?.Origin||'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        // Get origin from headers (case-insensitive)
+        const origin = event.headers?.origin || 
+                       event.headers?.Origin || 
+                       event.headers?.['origin'] ||
+                       event.headers?.['Origin'] ||
+                       'https://dfof7mguaa0a5.cloudfront.net';
+        
+        // Use the same allowedOrigins array defined at module level for consistency
+        // OFFICIAL CloudFront distributions only
+        const allowedOrigins = [
+          // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
+          'https://dfof7mguaa0a5.cloudfront.net',
+          // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
+          'https://d2aoyjj8ine0wk.cloudfront.net',
+          // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
+          'https://d1s6ykkj381k58.cloudfront.net',
+          // Local development
+          'http://localhost:3000',
+          'http://localhost:3001',
+          'http://localhost:3002',
+          'http://localhost:3003',
+          'http://localhost:5173',
+          // Dev domains
+          'https://dev.admin.warmpawz.com',
+          'https://dev.vendor.warmpawz.com',
+          'https://dev.customer.warmpawz.com',
+          // Production domains (for prod environment)
+          'https://admin.warmpawz.com',
+          'https://vendor.warmpawz.com',
+          'https://customer.warmpawz.com',
+          'https://warmpawz.com',
+          'https://www.warmpawz.com',
+        ];
+        
+        // Normalize origin for comparison (lowercase)
+        const normalizedOrigin = origin.toLowerCase();
+        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+        const allowedOrigin = normalizedAllowedOrigins.includes(normalizedOrigin) 
+          ? origin 
+          : allowedOrigins[0];
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:640',message:'Origin validation',data:{origin,allowedOrigin,isAllowed:normalizedAllowedOrigins.includes(normalizedOrigin)},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C1'})}).catch(()=>{});
+        // #endregion
+        
+        // Get requested headers and methods from preflight request
+        const requestedHeaders = event.headers?.['access-control-request-headers'] || 
+                                 event.headers?.['Access-Control-Request-Headers'] ||
+                                 '';
+        const requestedMethod = event.headers?.['access-control-request-method'] || 
+                               event.headers?.['Access-Control-Request-Method'] ||
+                               '';
+        
+        // Build allowed headers list - include requested headers if they're safe
+        const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
+        const allowedHeaders = requestedHeaders 
+          ? `${baseAllowedHeaders},${requestedHeaders.split(',').map(h => h.trim()).join(',')}`
+          : baseAllowedHeaders;
+        
+        // Return 200 OK for OPTIONS (browsers expect 200, not 204 for CORS preflight)
+        // API Gateway HTTP API v2 accepts both 200 and 204, but 200 is more compatible
+        const optionsResponse: APIGatewayProxyResultV2 = {
+          statusCode: 200,
+          body: '',  // Empty body for OPTIONS response
+          headers: {
+            'Access-Control-Allow-Origin': allowedOrigin,
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+            'Access-Control-Allow-Headers': allowedHeaders,
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '86400',
+          },
+        };
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:665',message:'OPTIONS response prepared',data:{statusCode:optionsResponse.statusCode,allowedOrigin,allowedHeaders,headerCount:Object.keys(optionsResponse.headers).length},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:677',message:'OPTIONS response returning',data:{statusCode:optionsResponse.statusCode},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D1'})}).catch(()=>{});
+        // #endregion
+        return optionsResponse;
+      } catch (optionsError) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:680',message:'OPTIONS handler error',data:{error:optionsError instanceof Error?optionsError.message:String(optionsError),stack:optionsError instanceof Error?optionsError.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
+        // Return error response with CORS headers
+        const origin = event.headers?.origin || 
+                       event.headers?.Origin || 
+                       event.headers?.['origin'] ||
+                       event.headers?.['Origin'] ||
+                       'https://d1s6ykkj381k58.cloudfront.net';
+        const allowedOrigins = [
+          'https://d1s6ykkj381k58.cloudfront.net',
+          'https://dfof7mguaa0a5.cloudfront.net',
+          'https://d2aoyjj8ine0wk.cloudfront.net',
+        ];
+        const normalizedOrigin = origin.toLowerCase();
+        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+        const allowedOrigin = normalizedAllowedOrigins.includes(normalizedOrigin) 
+          ? origin 
+          : allowedOrigins[0];
+        return {
+          statusCode: 500,
+          body: JSON.stringify({ error: 'CORS preflight failed' }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': allowedOrigin,
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+            'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+            'Access-Control-Allow-Credentials': 'true',
+          },
+        };
+      }
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:720',message:'POST request processing',data:{method:httpMethod,rawPath:event.rawPath,path:event.requestContext?.http?.path},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     // Convert API Gateway HTTP API (v2) event to Request
     // domainName is only present when using custom domains
     // For default endpoints, construct from apiId or use relative URL
@@ -708,7 +813,13 @@ export const handler = async (
         event: event,
         parsedBody: parsedBody,
       } as HonoFetchOptions & Record<string, unknown>);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:790',message:'After Hono fetch',data:{status:response.status,statusText:response.statusText,hasBody:!!response.body},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E2'})}).catch(()=>{});
+      // #endregion
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:793',message:'Hono fetch error',data:{error:error instanceof Error?error.message:String(error),stack:error instanceof Error?error.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       // Log error but don't expose internal details
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('[HANDLER] Error processing request:', errorMessage);
@@ -724,7 +835,9 @@ export const handler = async (
 
     // Ensure CORS headers are present in all responses
     const origin = event.headers?.origin || 
-                   event.headers?.Origin;
+                   event.headers?.Origin ||
+                   event.headers?.['origin'] ||
+                   event.headers?.['Origin'];
     
     // Use the same allowedOrigins array defined at module level for consistency
     // OFFICIAL CloudFront distributions only
@@ -753,7 +866,12 @@ export const handler = async (
       'https://www.warmpawz.com',
     ];
     
-    const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    // Normalize origin for comparison (lowercase)
+    const normalizedOrigin = origin ? origin.toLowerCase() : '';
+    const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+    const allowedOrigin = normalizedOrigin && normalizedAllowedOrigins.includes(normalizedOrigin)
+      ? origin
+      : allowedOrigins[0];
     
     // Check if Hono CORS middleware already set CORS headers
     const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['Access-Control-Allow-Origin'];
@@ -767,14 +885,15 @@ export const handler = async (
       finalHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
       finalHeaders['Access-Control-Allow-Credentials'] = 'true';
       finalHeaders['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD';
-      finalHeaders['Access-Control-Allow-Headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token';
+      finalHeaders['Access-Control-Allow-Headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
     }
     
-    return {
+    const finalResponse = {
       statusCode: response.status,
       body: responseBody,
       headers: finalHeaders,
     };
+    return finalResponse;
   } catch (error) {
     console.error('Lambda handler error:', error);
     
@@ -789,6 +908,8 @@ export const handler = async (
     // Ensure CORS headers in error responses too
     const origin = event.headers?.origin || 
                    event.headers?.Origin || 
+                   event.headers?.['origin'] ||
+                   event.headers?.['Origin'] ||
                    'https://dfof7mguaa0a5.cloudfront.net';
     
     const allowedOrigins = [
@@ -816,7 +937,12 @@ export const handler = async (
       'https://www.warmpawz.com',
     ];
     
-    const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    // Normalize origin for comparison (lowercase)
+    const normalizedOrigin = origin.toLowerCase();
+    const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+    const allowedOrigin = normalizedAllowedOrigins.includes(normalizedOrigin) 
+      ? origin 
+      : allowedOrigins[0];
     
     // Ensure CORS headers in error responses (Hono middleware won't run for errors)
     return {
@@ -826,7 +952,7 @@ export const handler = async (
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
         'Access-Control-Allow-Credentials': 'true',
       },
     };

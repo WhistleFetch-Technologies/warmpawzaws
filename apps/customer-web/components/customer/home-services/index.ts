@@ -12,6 +12,12 @@
 export { HomeServiceRouter } from './HomeServiceRouter';
 export type { HomeServiceType } from './HomeServiceRouter';
 
+// ✅ NEW: Universal Home Service Router with consistent booking flow
+export { UniversalHomeServiceRouter, SERVICE_CONFIGS } from './UniversalHomeServiceRouter';
+export { HomeServiceProviderListView } from './HomeServiceProviderListView';
+export { HomeServiceProviderProfile } from './HomeServiceProviderProfile';
+export { HomeServiceLanding } from './HomeServiceLanding';
+
 // Service-specific configurations
 export const HOME_SERVICE_CONFIGS = {
   walking: {

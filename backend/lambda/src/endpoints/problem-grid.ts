@@ -1102,32 +1102,43 @@ export function registerProblemGridEndpoints(app: Hono) {
 
       // Get trending problems from search_index or booking activity
       // For now, return problems with most vendor specializations
-      const trendingResult = await query(
-        `SELECT 
-          pgm.problem_id,
-          pgm.problem_name,
-          pgm.problem_display_name,
-          pgm.role_id,
-          pgm.sub_category_name,
-          COUNT(DISTINCT vs.vendor_id) as vendor_count,
-          COALESCE(COUNT(DISTINCT b.id), 0) as booking_count
-        FROM problem_grid_mappings pgm
-        LEFT JOIN vendor_specializations vs ON vs.specialization = pgm.problem_id
-        LEFT JOIN bookings b ON b.service_id IN (
-          SELECT id FROM vendor_services WHERE vendor_id = vs.vendor_id
-        ) AND b.status = 'completed'
-        WHERE pgm.problem_id IS NOT NULL
-          AND pgm.problem_name IS NOT NULL
-          AND TRIM(pgm.problem_name) != ''
-        GROUP BY pgm.problem_id, pgm.problem_name, pgm.problem_display_name, pgm.role_id, pgm.sub_category_name
-        HAVING COUNT(DISTINCT vs.vendor_id) > 0 OR COUNT(DISTINCT b.id) > 0
-        ORDER BY booking_count DESC, vendor_count DESC
-        LIMIT $1`,
-        [limit]
-      );
+      let trendingResult: any;
+      try {
+        trendingResult = await query(
+          `SELECT 
+            pgm.problem_id,
+            pgm.problem_name,
+            pgm.problem_display_name,
+            pgm.role_id,
+            pgm.sub_category_name,
+            COUNT(DISTINCT vs.vendor_id) as vendor_count,
+            COALESCE(COUNT(DISTINCT b.id), 0) as booking_count
+          FROM problem_grid_mappings pgm
+          LEFT JOIN vendor_specializations vs ON vs.specialization = pgm.problem_id
+          LEFT JOIN bookings b ON b.service_id IN (
+            SELECT id FROM vendor_services WHERE vendor_id = vs.vendor_id
+          ) AND b.status = 'completed'
+          WHERE pgm.problem_id IS NOT NULL
+            AND pgm.problem_name IS NOT NULL
+            AND TRIM(pgm.problem_name) != ''
+          GROUP BY pgm.problem_id, pgm.problem_name, pgm.problem_display_name, pgm.role_id, pgm.sub_category_name
+          HAVING COUNT(DISTINCT vs.vendor_id) > 0 OR COUNT(DISTINCT b.id) > 0
+          ORDER BY booking_count DESC, vendor_count DESC
+          LIMIT $1`,
+          [limit]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching trending problems (returning empty):', error.message);
+        // Return empty array if query fails (table might not exist or schema issue)
+        return c.json({
+          success: true,
+          trending: [],
+          total: 0,
+        });
+      }
 
       // Return properly structured objects for frontend
-      const trending = trendingResult.rows.map((row: any, index: number) => ({
+      const trending = ((trendingResult as any)?.rows || []).map((row: any, index: number) => ({
         problemId: row.problem_id,
         title: row.problem_display_name || row.problem_name || '',
         description: row.sub_category_name || '',
@@ -1151,6 +1162,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         success: true,
         trending: [],
         total: 0,
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   });

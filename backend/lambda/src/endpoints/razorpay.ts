@@ -157,7 +157,7 @@ class VerifyPaymentHandler extends BaseHandler {
       // ✅ SQL: Update payment status
       const payments = await select('payments', { razorpay_order_id });
       if (payments.length === 0) {
-        console.error('[PAYMENT-VERIFY] Payment not found for order:', razorpay_order_id);
+        console.error('[PAYMENT-VERIFY] Payment record not found for order:', razorpay_order_id);('[PAYMENT-VERIFY] Payment not found for order:', razorpay_order_id);
         return this.error('Payment record not found. Please contact support with your order ID.', 404);
       }
 
@@ -171,12 +171,16 @@ class VerifyPaymentHandler extends BaseHandler {
         }
       );
 
-      // ✅ SQL: Update booking payment status
+      // ✅ SQL: Update booking payment status and confirm booking
       const payment = payments[0];
       await update(
         'bookings',
         { id: payment.booking_id },
-        { payment_status: 'paid' }
+        { 
+          payment_status: 'paid',
+          status: 'confirmed', // ✅ CRITICAL: Confirm booking after payment
+          updated_at: new Date().toISOString(),
+        }
       );
 
       // ✅ Trigger automatic settlement if marketplace mode is enabled

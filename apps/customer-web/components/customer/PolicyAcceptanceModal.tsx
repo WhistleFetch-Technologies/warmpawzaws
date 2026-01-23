@@ -168,6 +168,7 @@ export function PolicyAcceptanceModal({
     if (customerId) {
       try {
         // Record policy acceptance
+        // Try the policy-acceptance endpoint, but don't fail if it doesn't exist
         await apiClient.post('/policy-acceptance', {
           customerId,
           policyType: bookingType === 'service' ? 'booking' : bookingType,
@@ -175,9 +176,14 @@ export function PolicyAcceptanceModal({
           serviceId,
           acceptedAt: new Date().toISOString(),
           policyVersion: '1.0',
-        }).catch((error) => {
-          // Non-blocking - acceptance recording is optional
-          console.log('Policy acceptance recording skipped', error);
+        }).catch((error: any) => {
+          // Non-blocking - acceptance recording is optional (endpoint may not exist)
+          // Only log if it's not a 404 (expected)
+          if (error?.statusCode !== 404 && error?.status !== 404) {
+            console.warn('Policy acceptance recording failed (non-blocking):', error);
+          } else {
+            console.log('Policy acceptance endpoint not available (404) - skipping');
+          }
         });
       } catch (e) {
         // Non-blocking - don't let API errors prevent acceptance
@@ -203,6 +209,10 @@ export function PolicyAcceptanceModal({
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Loading Policies</DialogTitle>
+            <DialogDescription>Please wait while we load the booking policies...</DialogDescription>
+          </DialogHeader>
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#FF8C42] border-t-transparent"></div>
           </div>

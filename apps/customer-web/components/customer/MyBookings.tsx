@@ -14,6 +14,7 @@ import { copyTextToClipboard } from '@/lib/shareUtils';
 
 import { BookingDetailModal } from './BookingDetailModal';
 import { RateServiceModal } from './RateServiceModal'; // ✅ FIX: Import RateServiceModal
+import { StandardizedHeader } from './shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
 
 interface BookingOccurrence {
   occurrenceId: string;
@@ -98,9 +99,29 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
   const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
+  
+  // ✅ FIX: User profile data for consistent header
+  const [userName, setUserName] = useState('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     loadBookings();
+    // ✅ FIX: Load user profile for header display
+    const loadUserProfile = async () => {
+      try {
+        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        if (profileResponse?.profile || profileResponse) {
+          const profile = profileResponse.profile || profileResponse;
+          setUserName(profile.name || profile.fullName || profile.full_name || 'User');
+          setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+        }
+      } catch (error) {
+        console.error('[MyBookings] Error loading user profile:', error);
+      }
+    };
+    if (phone) {
+      loadUserProfile();
+    }
   }, [phone]);
 
   useEffect(() => {
@@ -334,21 +355,22 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
   }
 
   return (
-    <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
-      {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-10">
-        <div className="flex items-center justify-between p-4 max-w-[430px] mx-auto">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <h1 className="font-semibold">My Bookings</h1>
-          <button onClick={loadBookings} className="p-2 hover:bg-gray-100 rounded-lg">
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      {/* ✅ FIX: Standardized Header for consistent UI with mobile-optimized container */}
+      <StandardizedHeader
+        userName={userName}
+        userProfilePhoto={userProfilePhoto}
+        title="My Bookings"
+        subtitle="View and manage your appointments"
+        showBackButton={true}
+        showPets={false}
+        onBack={onBack}
+        customerPhone={phone}
+      />
+      
+      <div className="max-w-[430px] mx-auto">
         {/* Filter Tabs */}
-        <div className="flex gap-2 px-4 pb-3 max-w-[430px] mx-auto">
+        <div className="flex gap-2 px-4 py-3 bg-white border-b border-gray-100">
           {[
             { id: 'all', label: 'All' },
             { id: 'upcoming', label: 'Upcoming' },

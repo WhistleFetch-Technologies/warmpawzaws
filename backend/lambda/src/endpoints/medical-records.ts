@@ -563,4 +563,329 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       types,
     });
   });
+
+  /**
+   * POST /medical-records/booking/:bookingId/upload-prescription
+   * Upload handwritten prescription (photo/PDF) with mandatory date field
+   * Available for both customer and vendor
+   */
+  app.post("/medical-records/booking/:bookingId/upload-prescription", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      
+      // Get booking details to verify access
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+      const formData = await c.req.formData();
+      const file = formData.get('file') as File;
+      const recordDate = formData.get('recordDate') as string; // Mandatory date field
+      const uploadedBy = formData.get('uploadedBy') as string; // 'customer' or 'vendor'
+      const userId = formData.get('userId') as string; // customer phone or vendor ID
+
+      if (!file || !recordDate) {
+        return c.json({ error: 'file and recordDate are required' }, 400);
+      }
+
+      if (!uploadedBy || !['customer', 'vendor'].includes(uploadedBy)) {
+        return c.json({ error: 'uploadedBy must be "customer" or "vendor"' }, 400);
+      }
+
+      // Validate date format
+      const dateObj = new Date(recordDate);
+      if (isNaN(dateObj.getTime())) {
+        return c.json({ error: 'Invalid date format for recordDate' }, 400);
+      }
+
+      // Upload file to S3
+      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+      
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop() || 'pdf';
+      const fileKey = `prescriptions/${bookingId}/${timestamp}_${file.name}`;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+        Body: uint8Array,
+        ContentType: file.type || (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+      }));
+
+      // Generate presigned URL for viewing
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 604800 } // 7 days
+      );
+
+      // Create medical record entry
+      const record = await insert('medical_records', {
+        pet_id: booking.pet_id,
+        customer_id: booking.customer_id,
+        vendor_id: booking.vendor_id,
+        booking_id: bookingId,
+        record_type: 'prescription',
+        title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
+        description: `Handwritten prescription uploaded by ${uploadedBy}`,
+        file_url: signedUrl,
+        record_date: recordDate, // Mandatory date field
+        created_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        record: record[0],
+        fileUrl: signedUrl,
+        message: 'Handwritten prescription uploaded successfully',
+      });
+
+    } catch (error: any) {
+      console.error('Error uploading handwritten prescription:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /medical-records/booking/:bookingId/prescription
+   * Create prescription by doctor (auto-updates with latest date)
+   * Latest prescription date comes first and keeps updating
+   */
+  app.post("/medical-records/booking/:bookingId/prescription", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const body = await c.req.json();
+      
+      const {
+        medications,
+        diagnosis,
+        notes,
+        followUpDate,
+        vendorId,
+        staffId,
+      } = body;
+
+      // Get booking details
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Get prescriber name
+      let prescriberName = 'Doctor';
+      if (staffId) {
+        const staff = await select('staff', { id: staffId });
+        prescriberName = staff[0]?.name || 'Doctor';
+      } else if (vendorId) {
+        const vendors = await select('vendors', { id: vendorId });
+        prescriberName = vendors[0]?.business_name || 'Doctor';
+      }
+
+      // Auto-update prescription_date with current timestamp (latest date)
+      const prescriptionDate = new Date().toISOString();
+
+      // Create or update prescription record
+      // Check if prescription already exists for this booking
+      const existingRecords = await query(
+        `SELECT * FROM medical_records 
+         WHERE booking_id = $1 
+         AND record_type = 'prescription' 
+         AND prescription_date IS NOT NULL
+         ORDER BY prescription_date DESC
+         LIMIT 1`,
+        [bookingId]
+      );
+
+      let record;
+      if ((existingRecords as any).rows && (existingRecords as any).rows.length > 0) {
+        // Update existing prescription with latest date
+        const existingRecord = (existingRecords as any).rows[0];
+        await update('medical_records', { id: existingRecord.id }, {
+          prescription_date: prescriptionDate,
+          content_data: JSON.stringify({
+            medications,
+            diagnosis,
+            notes,
+            followUpDate,
+          }),
+          updated_at: new Date().toISOString(),
+        });
+        record = await select('medical_records', { id: existingRecord.id });
+        record = record[0];
+      } else {
+        // Create new prescription record
+        const newRecord = await insert('medical_records', {
+          pet_id: booking.pet_id,
+          customer_id: booking.customer_id,
+          vendor_id: vendorId || booking.vendor_id,
+          staff_id: staffId,
+          booking_id: bookingId,
+          record_type: 'prescription',
+          title: `Prescription - ${new Date().toLocaleDateString()}`,
+          description: diagnosis || notes,
+          content_data: JSON.stringify({
+            medications,
+            diagnosis,
+            notes,
+            followUpDate,
+          }),
+          prescribed_by: staffId || vendorId || booking.vendor_id,
+          prescribed_by_name: prescriberName,
+          prescription_date: prescriptionDate, // Auto-updated with latest date
+          created_at: new Date().toISOString(),
+        });
+        record = newRecord[0];
+      }
+
+      return c.json({
+        success: true,
+        record,
+        prescriptionDate,
+        message: 'Prescription created/updated successfully',
+      });
+
+    } catch (error: any) {
+      console.error('Error creating prescription:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /medical-records/booking/:bookingId/prescriptions
+   * Get all prescriptions for a booking (handwritten + doctor-created)
+   * Shows both uploaded files and doctor prescriptions, sorted by latest date first
+   */
+  app.get("/medical-records/booking/:bookingId/prescriptions", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+
+      // Get booking details
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      // Get all prescription records for this booking
+      const records = await query(
+        `SELECT mr.*, 
+                v.business_name as vendor_name,
+                s.name as staff_name,
+                p.name as pet_name
+         FROM medical_records mr
+         LEFT JOIN vendors v ON mr.vendor_id = v.id
+         LEFT JOIN staff s ON mr.staff_id = s.id
+         LEFT JOIN pets p ON mr.pet_id = p.id
+         WHERE mr.booking_id = $1
+         AND mr.record_type = 'prescription'
+         ORDER BY 
+           COALESCE(mr.prescription_date, mr.record_date::timestamp, mr.created_at) DESC,
+           mr.created_at DESC`,
+        [bookingId]
+      );
+
+      const prescriptions = (records as any).rows || [];
+
+      const booking = bookings[0];
+
+      return c.json({
+        success: true,
+        prescriptions,
+        total: prescriptions.length,
+        booking: {
+          id: booking.id,
+          petId: booking.pet_id,
+          customerId: booking.customer_id,
+        },
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching prescriptions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /medical-records/booking/:bookingId/view/:recordId
+   * View specific prescription file (PDF/photo) or prescription details
+   * Returns file URL or prescription content
+   */
+  app.get("/medical-records/booking/:bookingId/view/:recordId", async (c) => {
+    try {
+      const { bookingId, recordId } = c.req.param();
+
+      // Get record
+      const records = await select('medical_records', { id: recordId, booking_id: bookingId });
+      if (records.length === 0) {
+        return c.json({ error: 'Record not found' }, 404);
+      }
+
+      const record = records[0];
+
+      // If it's a file-based prescription (handwritten), return file URL
+      if (record.file_url) {
+        // Generate fresh presigned URL if needed
+        if (record.file_url.includes('amazonaws.com')) {
+          // It's already a presigned URL or public URL
+          return c.json({
+            success: true,
+            record,
+            fileUrl: record.file_url,
+            type: 'file',
+          });
+        } else {
+          // Generate presigned URL from S3 key
+          const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+          const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+          
+          const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+          const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+          
+          // Extract key from file_url if it's a path
+          const key = record.file_url.replace(`https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/`, '');
+          
+          const signedUrl = await getSignedUrl(
+            s3Client,
+            new GetObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: key,
+            }),
+            { expiresIn: 3600 } // 1 hour
+          );
+
+          return c.json({
+            success: true,
+            record,
+            fileUrl: signedUrl,
+            type: 'file',
+          });
+        }
+      }
+
+      // If it's a doctor-created prescription, return content data
+      return c.json({
+        success: true,
+        record,
+        contentData: record.content_data ? JSON.parse(record.content_data) : null,
+        type: 'prescription',
+      });
+
+    } catch (error: any) {
+      console.error('Error viewing prescription:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }

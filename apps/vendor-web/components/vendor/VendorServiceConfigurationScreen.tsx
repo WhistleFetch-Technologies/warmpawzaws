@@ -82,6 +82,7 @@ export function VendorServiceConfigurationScreen({
   const [viewMode, setViewMode] = useState<'all' | 'enabled' | 'published'>('all'); // ✅ NEW: View mode filter
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ NEW: Service being edited
   const [showDeleteDialog, setShowDeleteDialog] = useState<Service | null>(null); // ✅ NEW: Delete confirmation
+  const [staffCount, setStaffCount] = useState<number>(0); // ✅ NEW: Track staff count for solo vendor check
   
   // Custom service form
   const [customServiceForm, setCustomServiceForm] = useState({
@@ -122,7 +123,21 @@ export function VendorServiceConfigurationScreen({
       return;
     }
     loadServices();
+    loadStaffCount(); // ✅ Load staff count to check if vendor is solo
   }, [vendorId, serviceStyle, roleId, isSoloProvider]);
+
+  // ✅ Load staff count to determine if vendor is solo
+  const loadStaffCount = async () => {
+    try {
+      const response = await apiClient.get<{ staff: any[] }>(`/vendor/${vendorId}/staff`);
+      const staffList = response.staff || [];
+      setStaffCount(staffList.length);
+    } catch (error) {
+      console.error('Error loading staff count:', error);
+      // If error, assume solo vendor (no staff)
+      setStaffCount(0);
+    }
+  };
 
   const loadServices = async () => {
     try {
@@ -167,6 +182,8 @@ export function VendorServiceConfigurationScreen({
         if (vendorData?.services) {
           vendorServices = vendorData.services;
           console.log(`🏪 Vendor services loaded: ${vendorServices.length}`);
+          // ✅ No need to filter here - backend endpoint /vendor/:vendorId/services/:serviceStyle
+          // already validates that serviceStyle is allowed before returning services
         }
         // ✅ FIX: Check for error message from API
         if (vendorData?.error && vendorData?.success === false) {
@@ -978,7 +995,7 @@ export function VendorServiceConfigurationScreen({
           {/* ✅ NEW: Staff Assignment & Bulk Actions */}
           {services.length > 0 && (
             <div className="mt-3 space-y-2">
-              {/* Staff Assignment Button */}
+              {/* Staff Assignment Button - Disabled for solo vendors */}
               {enabledCount > 0 && (
                 <Button
                   onClick={() => {
@@ -989,10 +1006,13 @@ export function VendorServiceConfigurationScreen({
                       toast.info('Please go to Staff Management to assign services to your team');
                     }
                   }}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                  disabled={staffCount === 0 || isSoloProvider}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm disabled:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={staffCount === 0 || isSoloProvider ? 'Add staff members first to assign services' : 'Assign services to your staff members'}
                 >
                   <Users className="w-4 h-4 mr-2" />
                   Assign Services to Staff
+                  {staffCount === 0 && <span className="ml-2 text-xs">(No staff)</span>}
                 </Button>
               )}
 

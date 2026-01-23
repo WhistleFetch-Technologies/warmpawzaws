@@ -52,7 +52,6 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       // ✅ FIXED: For tele/video consultations, no OTP required - completed via prescription upload or video call end
       const isTeleConsultation = booking.service_type === 'tele' || 
-                                  booking.service_type === 'online' || 
                                   booking.service_type === 'video_consultation' ||
                                   booking.service_style === 'tele';
       

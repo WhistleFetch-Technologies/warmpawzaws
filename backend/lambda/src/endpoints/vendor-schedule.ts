@@ -17,7 +17,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../database/rds-connection';
+import { select, query, insert, update } from '../database/rds-connection';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -536,6 +536,403 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error setting vacation mode:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // VENDOR AVAILABILITY SLOTS (for solo providers)
+  // Similar to staff availability slots but for vendors
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/availability-slots
+   * Get all availability slots for a vendor (solo provider)
+   */
+  app.get("/vendor/:vendorId/availability-slots", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const startDate = c.req.query('startDate') || new Date().toISOString().split('T')[0];
+      const endDate = c.req.query('endDate');
+
+      // Handle test IDs
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({ success: true, slots: [] });
+      }
+
+      // Check if vendor_availability_slots table exists
+      let slotsQuery = `
+        SELECT vas.*
+        FROM vendor_availability_slots vas
+        WHERE vas.vendor_id = $1
+        AND vas.date >= $2
+      `;
+      const params: any[] = [vendorId, startDate];
+
+      if (endDate) {
+        slotsQuery += ` AND vas.date <= $3`;
+        params.push(endDate);
+      }
+
+      slotsQuery += ` ORDER BY vas.date, vas.start_time`;
+
+      const slotsResult = await query(slotsQuery, params).catch(() => ({ rows: [] }));
+      const slots = slotsResult.rows;
+
+      // Enrich with services and breaks
+      const enrichedSlots = await Promise.all(
+        slots.map(async (slot: any) => {
+          // Get services for this slot
+          const servicesResult = await query(
+            `SELECT vss.*, vs.service_name, vs.service_style
+             FROM vendor_slot_services vss
+             INNER JOIN vendor_services vs ON vss.service_id = vs.id
+             WHERE vss.slot_id = $1`,
+            [slot.id]
+          ).catch(() => ({ rows: [] }));
+
+          // Get breaks for this slot
+          const breaksResult = await query(
+            `SELECT * FROM vendor_slot_breaks
+             WHERE slot_id = $1`,
+            [slot.id]
+          ).catch(() => ({ rows: [] }));
+
+          return {
+            ...slot,
+            services: servicesResult.rows,
+            breaks: breaksResult.rows,
+            service_styles: slot.service_styles || (servicesResult.rows.length > 0 
+              ? [...new Set(servicesResult.rows.map((s: any) => s.service_style).filter(Boolean))]
+              : []),
+          };
+        })
+      );
+
+      return c.json({ success: true, slots: enrichedSlots });
+    } catch (error: any) {
+      console.error('Error fetching vendor availability slots:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/availability-slots
+   * Create a new availability slot for vendor (solo provider)
+   */
+  app.post("/vendor/:vendorId/availability-slots", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const slotData = await c.req.json();
+
+      // Validate required fields
+      if (!slotData.date || !slotData.startTime || !slotData.endTime) {
+        return c.json({ error: 'date, startTime, and endTime are required' }, 400);
+      }
+
+      // Check for overlapping slots
+      const overlappingCheck = await query(
+        `SELECT id FROM vendor_availability_slots
+         WHERE vendor_id = $1
+         AND date = $2
+         AND is_available = true
+         AND (
+           (start_time <= $3 AND end_time > $3) OR
+           (start_time < $4 AND end_time >= $4) OR
+           (start_time >= $3 AND end_time <= $4)
+         )`,
+        [vendorId, slotData.date, slotData.startTime, slotData.endTime]
+      ).catch(() => ({ rows: [] }));
+
+      if (overlappingCheck.rows.length > 0) {
+        return c.json({ error: 'Slot overlaps with existing availability' }, 400);
+      }
+
+      // Create slot - check if table exists, create if not
+      let slot;
+      try {
+        slot = await insert('vendor_availability_slots', {
+          vendor_id: vendorId,
+          date: slotData.date,
+          start_time: slotData.startTime,
+          end_time: slotData.endTime,
+          location_override: slotData.locationOverride || null,
+          is_available: slotData.isAvailable !== false,
+          notes: slotData.notes || null,
+          service_styles: slotData.serviceStyles || [],
+        });
+      } catch (insertError: any) {
+        // Table might not exist - create it
+        if (insertError.message?.includes('does not exist') || insertError.message?.includes('relation')) {
+          console.log('[VENDOR SLOTS] Creating vendor_availability_slots table...');
+          await query(`
+            CREATE TABLE IF NOT EXISTS vendor_availability_slots (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              vendor_id UUID NOT NULL REFERENCES vendors(id),
+              date DATE NOT NULL,
+              start_time TIME NOT NULL,
+              end_time TIME NOT NULL,
+              location_override JSONB,
+              is_available BOOLEAN DEFAULT true,
+              notes TEXT,
+              service_styles TEXT[],
+              created_at TIMESTAMP DEFAULT NOW(),
+              updated_at TIMESTAMP DEFAULT NOW()
+            )
+          `).catch(() => {});
+          
+          await query(`
+            CREATE TABLE IF NOT EXISTS vendor_slot_services (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              slot_id UUID NOT NULL REFERENCES vendor_availability_slots(id) ON DELETE CASCADE,
+              service_id UUID NOT NULL,
+              lead_time_minutes INTEGER DEFAULT 0,
+              buffer_time_minutes INTEGER DEFAULT 0,
+              radius_km NUMERIC,
+              created_at TIMESTAMP DEFAULT NOW()
+            )
+          `).catch(() => {});
+          
+          await query(`
+            CREATE TABLE IF NOT EXISTS vendor_slot_breaks (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              slot_id UUID NOT NULL REFERENCES vendor_availability_slots(id) ON DELETE CASCADE,
+              start_time TIME NOT NULL,
+              end_time TIME NOT NULL,
+              reason TEXT,
+              created_at TIMESTAMP DEFAULT NOW()
+            )
+          `).catch(() => {});
+
+          // Retry insert
+          slot = await insert('vendor_availability_slots', {
+            vendor_id: vendorId,
+            date: slotData.date,
+            start_time: slotData.startTime,
+            end_time: slotData.endTime,
+            location_override: slotData.locationOverride || null,
+            is_available: slotData.isAvailable !== false,
+            notes: slotData.notes || null,
+            service_styles: slotData.serviceStyles || [],
+          });
+        } else {
+          throw insertError;
+        }
+      }
+
+      const slotId = slot[0].id;
+
+      // Add services to slot
+      if (slotData.services && Array.isArray(slotData.services)) {
+        for (const service of slotData.services) {
+          await insert('vendor_slot_services', {
+            slot_id: slotId,
+            service_id: service.serviceId,
+            lead_time_minutes: service.leadTimeMinutes || 0,
+            buffer_time_minutes: service.bufferTimeMinutes || 0,
+            radius_km: service.radiusKm || null,
+          }).catch((err) => {
+            console.error('Error inserting slot service:', err);
+          });
+        }
+      }
+
+      // Add breaks to slot
+      if (slotData.breaks && Array.isArray(slotData.breaks)) {
+        for (const breakItem of slotData.breaks) {
+          await insert('vendor_slot_breaks', {
+            slot_id: slotId,
+            start_time: breakItem.startTime,
+            end_time: breakItem.endTime,
+            reason: breakItem.reason || null,
+          }).catch((err) => {
+            console.error('Error inserting slot break:', err);
+          });
+        }
+      }
+
+      return c.json({ success: true, slot: slot[0], message: 'Availability slot created successfully' });
+    } catch (error: any) {
+      console.error('Error creating vendor availability slot:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/availability-slots/:slotId
+   * Update an availability slot for vendor (solo provider)
+   */
+  app.put("/vendor/:vendorId/availability-slots/:slotId", async (c) => {
+    try {
+      const { vendorId, slotId } = c.req.param();
+      const slotData = await c.req.json();
+
+      // Update slot
+      const updated = await update('vendor_availability_slots',
+        { id: slotId, vendor_id: vendorId },
+        {
+          date: slotData.date,
+          start_time: slotData.startTime,
+          end_time: slotData.endTime,
+          location_override: slotData.locationOverride,
+          is_available: slotData.isAvailable,
+          notes: slotData.notes,
+          service_styles: slotData.serviceStyles || [],
+        }
+      ).catch(() => []);
+
+      if (updated.length === 0) {
+        return c.json({ error: 'Slot not found' }, 404);
+      }
+
+      // Update services (delete and recreate)
+      if (slotData.services !== undefined) {
+        await query('DELETE FROM vendor_slot_services WHERE slot_id = $1', [slotId]).catch(() => {});
+        if (Array.isArray(slotData.services)) {
+          for (const service of slotData.services) {
+            await insert('vendor_slot_services', {
+              slot_id: slotId,
+              service_id: service.serviceId,
+              lead_time_minutes: service.leadTimeMinutes || 0,
+              buffer_time_minutes: service.bufferTimeMinutes || 0,
+              radius_km: service.radiusKm || null,
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // Update breaks (delete and recreate)
+      if (slotData.breaks !== undefined) {
+        await query('DELETE FROM vendor_slot_breaks WHERE slot_id = $1', [slotId]).catch(() => {});
+        if (Array.isArray(slotData.breaks)) {
+          for (const breakItem of slotData.breaks) {
+            await insert('vendor_slot_breaks', {
+              slot_id: slotId,
+              start_time: breakItem.startTime,
+              end_time: breakItem.endTime,
+              reason: breakItem.reason || null,
+            }).catch(() => {});
+          }
+        }
+      }
+
+      return c.json({ success: true, slot: updated[0], message: 'Slot updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating vendor availability slot:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/availability-slots/:slotId
+   * Delete an availability slot for vendor (solo provider)
+   */
+  app.delete("/vendor/:vendorId/availability-slots/:slotId", async (c) => {
+    try {
+      const { vendorId, slotId } = c.req.param();
+
+      // Delete related records first
+      await query('DELETE FROM vendor_slot_services WHERE slot_id = $1', [slotId]).catch(() => {});
+      await query('DELETE FROM vendor_slot_breaks WHERE slot_id = $1', [slotId]).catch(() => {});
+      await query('DELETE FROM vendor_availability_slots WHERE id = $1 AND vendor_id = $2', [slotId, vendorId]).catch(() => {});
+
+      return c.json({ success: true, message: 'Slot deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting vendor availability slot:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/holidays
+   * Get holidays for vendor (solo provider)
+   */
+  app.get("/vendor/:vendorId/holidays", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Check if vendor_holidays table exists
+      const holidays = await query(
+        `SELECT * FROM vendor_holidays
+         WHERE vendor_id = $1
+         AND date >= CURRENT_DATE
+         ORDER BY date ASC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({ success: true, holidays: holidays.rows });
+    } catch (error: any) {
+      console.error('Error fetching vendor holidays:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/holidays
+   * Add holiday for vendor (solo provider)
+   */
+  app.post("/vendor/:vendorId/holidays", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { date, name } = await c.req.json();
+
+      if (!date) {
+        return c.json({ error: 'date is required' }, 400);
+      }
+
+      // Check if table exists, create if not
+      try {
+        await insert('vendor_holidays', {
+          vendor_id: vendorId,
+          date: date,
+          name: name || 'Day Off',
+        });
+      } catch (insertError: any) {
+        if (insertError.message?.includes('does not exist') || insertError.message?.includes('relation')) {
+          await query(`
+            CREATE TABLE IF NOT EXISTS vendor_holidays (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              vendor_id UUID NOT NULL REFERENCES vendors(id),
+              date DATE NOT NULL,
+              name TEXT,
+              created_at TIMESTAMP DEFAULT NOW(),
+              UNIQUE(vendor_id, date)
+            )
+          `).catch(() => {});
+          
+          await insert('vendor_holidays', {
+            vendor_id: vendorId,
+            date: date,
+            name: name || 'Day Off',
+          });
+        } else {
+          throw insertError;
+        }
+      }
+
+      return c.json({ success: true, message: 'Holiday added successfully' });
+    } catch (error: any) {
+      console.error('Error adding vendor holiday:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/holidays/:holidayId
+   * Delete holiday for vendor (solo provider)
+   */
+  app.delete("/vendor/:vendorId/holidays/:holidayId", async (c) => {
+    try {
+      const { vendorId, holidayId } = c.req.param();
+
+      await query(
+        'DELETE FROM vendor_holidays WHERE id = $1 AND vendor_id = $2',
+        [holidayId, vendorId]
+      ).catch(() => {});
+
+      return c.json({ success: true, message: 'Holiday removed successfully' });
+    } catch (error: any) {
+      console.error('Error deleting vendor holiday:', error);
       return c.json({ error: error.message }, 500);
     }
   });

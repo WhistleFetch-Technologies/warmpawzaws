@@ -77,7 +77,7 @@ class CreateMeetingHandler extends BaseHandler {
       })
     );
 
-    // ✅ SQL: Store meeting info
+    // ✅ SQL: Store meeting info in video_call_sessions
     await insert('video_call_sessions', {
       booking_id: bookingId,
       meeting_id: meetingId,
@@ -87,6 +87,12 @@ class CreateMeetingHandler extends BaseHandler {
       vendor_attendee_id: vendorAttendee.Attendee?.AttendeeId,
       status: 'active',
       started_at: new Date(),
+    });
+
+    // ✅ SQL: Update booking with video call meeting ID
+    await update('bookings', { id: bookingId }, {
+      video_call_meeting_id: meetingId,
+      video_call_started_at: new Date().toISOString(),
     });
 
     return this.success({
@@ -150,6 +156,80 @@ class GetMeetingInfoHandler extends BaseHandler {
   }
 }
 
+class JoinMeetingHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event);
+    const { bookingId, userId, userType } = body; // userType: 'customer' | 'vendor'
+
+    if (!bookingId || !userId || !userType) {
+      return this.error('bookingId, userId, and userType are required', 400);
+    }
+
+    // ✅ SQL: Get meeting session
+    const sessions = await select('video_call_sessions', {
+      booking_id: bookingId,
+      status: 'active',
+    });
+
+    if (sessions.length === 0) {
+      return this.error('Active meeting not found', 404);
+    }
+
+    const session = sessions[0];
+
+    // ✅ AWS Chime: Create attendee if not exists
+    const chimeClient = new ChimeSDKMeetingsClient({
+      region: process.env.AWS_REGION || 'ap-south-1',
+    });
+
+    let attendee;
+    if (userType === 'customer' && session.customer_attendee_id) {
+      // Attendee already exists
+      attendee = {
+        AttendeeId: session.customer_attendee_id,
+        JoinToken: session.customer_join_token || null,
+      };
+    } else if (userType === 'vendor' && session.vendor_attendee_id) {
+      // Attendee already exists
+      attendee = {
+        AttendeeId: session.vendor_attendee_id,
+        JoinToken: session.vendor_join_token || null,
+      };
+    } else {
+      // Create new attendee
+      const attendeeResponse = await chimeClient.send(
+        new CreateAttendeeCommand({
+          MeetingId: session.meeting_id,
+          ExternalUserId: userId,
+        })
+      );
+
+      attendee = {
+        AttendeeId: attendeeResponse.Attendee?.AttendeeId,
+        JoinToken: attendeeResponse.Attendee?.JoinToken,
+      };
+
+      // Update session with attendee info
+      if (userType === 'customer') {
+        await update('video_call_sessions', { id: session.id }, {
+          customer_attendee_id: attendee.AttendeeId,
+          customer_join_token: attendee.JoinToken,
+        });
+      } else {
+        await update('video_call_sessions', { id: session.id }, {
+          vendor_attendee_id: attendee.AttendeeId,
+          vendor_join_token: attendee.JoinToken,
+        });
+      }
+    }
+
+    return this.success({
+      meetingId: session.meeting_id,
+      attendee,
+    });
+  }
+}
+
 class EndMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const bookingId = context.event.pathParameters?.bookingId;
@@ -165,14 +245,25 @@ class EndMeetingHandler extends BaseHandler {
     });
 
     if (sessions.length > 0) {
+      const session = sessions[0];
+      const startedAt = session.started_at ? new Date(session.started_at) : new Date();
+      const endedAt = new Date();
+      const duration = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000); // Duration in seconds
+
       await update(
         'video_call_sessions',
-        { id: sessions[0].id },
+        { id: session.id },
         {
           status: 'completed',
-          ended_at: new Date(),
+          ended_at: endedAt,
         }
       );
+
+      // ✅ SQL: Update booking with video call end info
+      await update('bookings', { id: bookingId }, {
+        video_call_ended_at: endedAt.toISOString(),
+        video_call_duration: duration,
+      });
     }
 
     return this.success({ message: 'Meeting ended' });
@@ -186,12 +277,28 @@ class EndMeetingHandler extends BaseHandler {
 export function registerVideoCallEndpoints(app: Hono) {
   const createHandler = new CreateMeetingHandler();
   const getInfoHandler = new GetMeetingInfoHandler();
+  const joinHandler = new JoinMeetingHandler();
   const endHandler = new EndMeetingHandler();
 
-  app.post('/video-call/create', async (c) => {
+  app.post('/video-call/create-meeting', async (c) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await createHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/video-call/join', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await joinHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/video-call/end', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { bookingId: c.req.param('bookingId') || (await c.req.json()).bookingId };
+    const context = createLambdaContext();
+    const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
@@ -200,6 +307,14 @@ export function registerVideoCallEndpoints(app: Hono) {
     event.pathParameters = { bookingId: c.req.param('bookingId') };
     const context = createLambdaContext();
     const result = await getInfoHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Legacy endpoints for backward compatibility
+  app.post('/video-call/create', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 

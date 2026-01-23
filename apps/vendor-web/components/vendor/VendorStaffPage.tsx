@@ -418,6 +418,13 @@ function StaffModal({
       return;
     }
     
+    // ✅ FIX: Extract phone digits and validate length
+    const phoneDigits = formData.phone.trim().replace(/\D/g, '');
+    if (phoneDigits.length < 10) {
+      toast.error('Phone number must be at least 10 digits');
+      return;
+    }
+    
     // For new staff, photo is required
     if (!staff && !photoFile && !photoPreview) {
       toast.error('Please upload a photo for the staff member');
@@ -456,13 +463,14 @@ function StaffModal({
         }
       }
 
+      // ✅ FIX: Trim name and normalize phone (extract digits only) before sending to backend
       const staffData = {
-        name: formData.name,
-        phone: formData.phone,
-        email: formData.email || undefined,
+        name: formData.name.trim(),
+        phone: phoneDigits, // Send only digits for consistency
+        email: formData.email?.trim() || undefined,
         role: formData.role,
         experienceYears: formData.experience_years,
-        qualifications: formData.qualifications,
+        qualifications: formData.qualifications?.trim() || undefined,
         specializations: formData.specializations,
         photo: photoUrl,
       };
@@ -477,7 +485,9 @@ function StaffModal({
       onSave();
     } catch (err: any) {
       console.error('Error saving staff:', err);
-      toast.error(err.message || 'Failed to save staff member');
+      // ✅ FIX: Handle both error.message and error.error formats from backend
+      const errorMessage = err.error || err.message || 'Failed to save staff member';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -577,11 +587,17 @@ function StaffModal({
               <input
                 type="tel"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => {
+                  // ✅ FIX: Allow any input but store as-is (backend will extract digits)
+                  setFormData({ ...formData, phone: e.target.value });
+                }}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] outline-none"
-                placeholder="Phone number"
+                placeholder="Enter 10-digit phone number"
                 required
               />
+              {formData.phone && formData.phone.replace(/\D/g, '').length < 10 && (
+                <p className="text-xs text-red-500 mt-1">Phone number must be at least 10 digits</p>
+              )}
             </div>
 
             <div>

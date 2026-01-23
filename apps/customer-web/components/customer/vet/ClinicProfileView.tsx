@@ -66,66 +66,74 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   const loadClinicData = async () => {
     try {
       setLoading(true);
-      // Try API first, fallback to mock
-      try {
-        const response = await apiClient.get(`/vendors/${clinicId}`);
-        const data = response as any;
-        setClinic({
-          id: data.id || clinicId,
-          name: data.business_name || data.name || 'PetCare Veterinary Clinic',
-          description: data.description || 'A full-service veterinary clinic providing comprehensive care for your pets.',
-          address: data.address || 'Shop 12, Ground Floor, Linking Road',
-          city: data.city || 'Mumbai',
-          pincode: data.pincode || '400050',
-          phone: data.phone || '+91 98765 43210',
-          email: data.email,
-          website: data.website,
-          rating: data.rating || 4.5,
-          review_count: data.review_count || 120,
-          timing: data.timing || '9:00 AM - 8:00 PM',
-          services: data.services || [
-            { id: '1', name: 'General Consultation', price: 399 },
-            { id: '2', name: 'Vaccination', price: 599 },
-            { id: '3', name: 'Health Checkup', price: 999 },
-            { id: '4', name: 'Surgery', price: 2999 },
-          ],
-          doctors: data.doctors || [
-            { id: '1', name: 'Dr. Priya Sharma', specialization: 'General Veterinarian', rating: 4.8 },
-            { id: '2', name: 'Dr. Rahul Mehta', specialization: 'Surgery Specialist', rating: 4.7 },
-          ],
-          photos: data.photos || [],
-          amenities: data.amenities || ['Parking', 'AC', 'Emergency 24/7', 'Lab', 'Pharmacy'],
-        });
-      } catch (err) {
-        // Mock data
-        setClinic({
-          id: clinicId,
-          name: 'PetCare Veterinary Clinic',
-          description: 'A full-service veterinary clinic providing comprehensive care for your beloved pets. We offer state-of-the-art facilities and experienced veterinarians.',
-          address: 'Shop 12, Ground Floor, Linking Road, Bandra West',
-          city: 'Mumbai',
-          pincode: '400050',
-          phone: '+91 98765 43210',
-          rating: 4.6,
-          review_count: 156,
-          timing: '9:00 AM - 8:00 PM',
-          services: [
-            { id: '1', name: 'General Consultation', price: 399 },
-            { id: '2', name: 'Vaccination', price: 599 },
-            { id: '3', name: 'Health Checkup', price: 999 },
-            { id: '4', name: 'Dental Care', price: 1499 },
-            { id: '5', name: 'Surgery', price: 2999 },
-          ],
-          doctors: [
-            { id: '1', name: 'Dr. Priya Sharma', specialization: 'General Veterinarian', rating: 4.8 },
-            { id: '2', name: 'Dr. Rahul Mehta', specialization: 'Surgery Specialist', rating: 4.7 },
-          ],
-          photos: [],
-          amenities: ['Parking', 'Air Conditioning', 'Emergency 24/7', 'In-house Lab', 'Pharmacy'],
-        });
+      
+      // ✅ CRITICAL: Load vendor profile from real API - NO MOCK DATA, NO FALLBACKS
+      const [vendorResponse, servicesResponse] = await Promise.all([
+        apiClient.get(`/customer/vendor/${clinicId}`),
+        apiClient.get(`/vendor/${clinicId}/services`)
+      ]);
+      
+      const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
+      
+      // ✅ CRITICAL: Load services from real API - extract from different response formats
+      let services: any[] = [];
+      if (servicesResponse) {
+        const servicesData = servicesResponse as any;
+        if (servicesData.services) {
+          // Handle servicesByStyle format
+          if (servicesData.services.at_home || servicesData.services.at_center || servicesData.services.tele) {
+            services = [
+              ...(servicesData.services.at_home?.services || []),
+              ...(servicesData.services.at_center?.services || []),
+              ...(servicesData.services.tele?.services || [])
+            ];
+          } else if (Array.isArray(servicesData.services)) {
+            services = servicesData.services;
+          }
+        } else if (servicesData.allServices) {
+          services = servicesData.allServices;
+        } else if (Array.isArray(servicesData)) {
+          services = servicesData;
+        }
       }
+      
+      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
+      const mappedServices = services.map((s: any) => ({
+        id: s.serviceId || s.service_id, // ✅ UUID from services table
+        serviceId: s.serviceId || s.service_id, // ✅ UUID
+        vendorServiceId: s.id, // Numeric vendor_services.id (for reference)
+        name: s.serviceName || s.name || s.service_name,
+        price: parseFloat(s.price || '0'),
+        duration: s.duration || s.duration_minutes || 30,
+      }));
+      
+      console.log('✅ Loaded clinic data:', {
+        vendorId: vendorData.id || clinicId,
+        servicesCount: mappedServices.length,
+        services: mappedServices
+      });
+      
+      setClinic({
+        id: vendorData.id || clinicId,
+        name: vendorData.business_name || vendorData.name || 'Veterinary Clinic',
+        description: vendorData.description || '',
+        address: vendorData.address || '',
+        city: vendorData.city || '',
+        pincode: vendorData.pincode || '',
+        phone: vendorData.phone || '',
+        email: vendorData.email,
+        website: vendorData.website,
+        rating: parseFloat(vendorData.rating || '0'),
+        review_count: parseInt(vendorData.review_count || '0', 10),
+        timing: vendorData.timing || vendorData.businessHours || '9:00 AM - 8:00 PM',
+        services: mappedServices, // ✅ Real services with UUID
+        doctors: vendorData.doctors || vendorData.staff || [],
+        photos: vendorData.photos || vendorData.gallery || [],
+        amenities: vendorData.amenities || [],
+      });
     } catch (error) {
-      console.error('Error loading clinic data:', error);
+      console.error('❌ Error loading clinic data:', error);
+      setClinic(null);
     } finally {
       setLoading(false);
     }
@@ -140,12 +148,16 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       }
       return;
     }
+    
+    // ✅ CRITICAL: Use service_id (UUID) not numeric id
+    const serviceId = (selectedService as any).serviceId || selectedService.id;
+    
     // Navigate with service data - use 'appointment' to match CustomerHomeWrapper expectation
     onNavigate('appointment', { 
       clinicId: clinic?.id, 
       vendorId: clinic?.id,
       service: selectedService,
-      serviceId: selectedService.id,
+      serviceId: serviceId, // ✅ UUID from services table
       serviceName: selectedService.name,
       price: selectedService.price,
       duration: selectedService.duration || 20,

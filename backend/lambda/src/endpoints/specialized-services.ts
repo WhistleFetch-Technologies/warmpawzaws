@@ -841,17 +841,82 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/nutrition/meal-plans
    * Get meal plans (alternative endpoint for customer app)
+   * ✅ FIX GAP-9.1 & 9.2: Supports maxRadius and filters
    */
   app.get("/vendor/:vendorId/nutrition/meal-plans", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const lat = parseFloat(c.req.query('lat') || '0');
+      const lng = parseFloat(c.req.query('lng') || '0');
+      const maxRadius = parseFloat(c.req.query('maxRadius') || '10'); // Default 10km
+      const filters = c.req.query('filters')?.split(',') || [];
       
-      const mealPlans = await select('meal_plans',
-        { vendor_id: vendorId, is_active: true },
-        { orderBy: 'created_at', orderDirection: 'DESC' }
-      );
+      // Base query
+      let queryStr = `
+        SELECT mp.*, v.latitude, v.longitude, v.business_name as vendor_name
+        FROM meal_plans mp
+        LEFT JOIN vendors v ON mp.vendor_id = v.id
+        WHERE mp.is_active = true
+      `;
+      const params: any[] = [];
+      let paramIndex = 1;
       
-      return c.json({ success: true, plans: mealPlans, mealPlans, total: mealPlans.length });
+      // Filter by vendor if specified
+      if (vendorId) {
+        queryStr += ` AND mp.vendor_id = $${paramIndex}`;
+        params.push(vendorId);
+        paramIndex++;
+      }
+      
+      // ✅ FIX GAP-9.1: Filter by 10km radius if location provided
+      if (lat && lng && maxRadius) {
+        queryStr += `
+          AND (
+            6371 * acos(
+              cos(radians($${paramIndex})) * 
+              cos(radians(COALESCE(v.latitude, 0))) * 
+              cos(radians(COALESCE(v.longitude, 0)) - radians($${paramIndex + 1})) + 
+              sin(radians($${paramIndex})) * 
+              sin(radians(COALESCE(v.latitude, 0)))
+            )
+          ) <= $${paramIndex + 2}
+        `;
+        params.push(lat, lng, maxRadius);
+        paramIndex += 3;
+      }
+      
+      // ✅ FIX GAP-9.2: Apply filters (weight_management, daily_nutrition, fresh_food, frozen_food)
+      if (filters.length > 0) {
+        const filterConditions: string[] = [];
+        filters.forEach((filter) => {
+          if (filter === 'weight_management') {
+            filterConditions.push(`(mp.diet_type::text LIKE '%weight_loss%' OR mp.diet_type::text LIKE '%weight_management%')`);
+          } else if (filter === 'daily_nutrition') {
+            filterConditions.push(`(mp.diet_type::text LIKE '%daily%' OR mp.diet_type::text LIKE '%nutrition%')`);
+          } else if (filter === 'fresh_food') {
+            filterConditions.push(`mp.meal_type = 'fresh_daily' OR mp.meal_type = 'fresh_weekly'`);
+          } else if (filter === 'frozen_food') {
+            filterConditions.push(`mp.meal_type = 'frozen'`);
+          }
+        });
+        if (filterConditions.length > 0) {
+          queryStr += ` AND (${filterConditions.join(' OR ')})`;
+        }
+      }
+      
+      queryStr += ` ORDER BY mp.created_at DESC`;
+      
+      const result = await query(queryStr, params);
+      const mealPlans = result.rows || [];
+      
+      return c.json({ 
+        success: true, 
+        plans: mealPlans, 
+        mealPlans, 
+        total: mealPlans.length,
+        filters: filters,
+        maxRadius: maxRadius,
+      });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
       return c.json({ error: error.message }, 500);

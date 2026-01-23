@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -31,6 +31,7 @@ interface TrainingBookingRouterProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
+  onInternalBackReady?: (handleBack: () => void) => void; // ✅ NEW: Expose internal handleBack to parent
 }
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
@@ -68,7 +69,8 @@ export function TrainingBookingRouter({
   skipToPayment, // ✅ NEW: Flag to skip to payment
   onBack, 
   onNavigate, 
-  onViewBooking 
+  onViewBooking,
+  onInternalBackReady // ✅ NEW: Callback to expose internal handleBack
 }: TrainingBookingRouterProps) {
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // ✅ NEW: Also skip if multiple services are already selected from center profile
@@ -417,7 +419,7 @@ export function TrainingBookingRouter({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
@@ -432,7 +434,14 @@ export function TrainingBookingRouter({
     } else {
       onBack();
     }
-  };
+  }, [step, selectedServiceType, onBack]);
+
+  // ✅ NEW: Expose handleBack to parent for header navigation
+  useEffect(() => {
+    if (onInternalBackReady) {
+      onInternalBackReady(handleBack);
+    }
+  }, [handleBack, onInternalBackReady]);
 
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
@@ -533,8 +542,7 @@ export function TrainingBookingRouter({
   };
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
-      <div className="px-4 py-6">
+    <div className="px-4 py-6">
         {step !== 'confirmation' && renderStepIndicator()}
 
         {/* Service Selection */}
@@ -941,7 +949,7 @@ export function TrainingBookingRouter({
         {step === 'payment' && showPaymentPage && (
           <UniversalPaymentPage
             type="booking"
-            serviceId={selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
             serviceName={selectedServiceOption?.name || serviceName || 'Training Session'}
             serviceDescription={`Training session with ${trainer?.name || 'trainer'}`}
             serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
@@ -1161,7 +1169,6 @@ export function TrainingBookingRouter({
             }}
           />
         )}
-      </div>
     </div>
   );
 }

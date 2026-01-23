@@ -53,6 +53,10 @@ import { CommunicationHub } from '../../communication/CommunicationHub';
 import { AppointmentDetailModal } from '../AppointmentDetailModal';
 import { AIChatBot } from '../../customer/AIChatBot';
 import { CapabilityDebugOverlay } from '../CapabilityDebugOverlay';
+import { DashboardStats } from '../../shared/DashboardStats';
+import { AppointmentCard } from '../../shared/AppointmentCard';
+import { toast } from 'sonner';
+import { Navigation, Map, Radio } from 'lucide-react';
 
 interface SoloProviderDashboardProps {
   session: {
@@ -143,6 +147,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [processingOtp, setProcessingOtp] = useState(false);
+  const [otpAction, setOtpAction] = useState<'start' | 'complete'>('complete');
+  
+  // GPS tracking state
+  const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
+  const [trackingLocation, setTrackingLocation] = useState<{ [key: string]: { lat: number; lng: number; updated: string } }>({});
   
   // Dashboard warnings state
   const [warnings, setWarnings] = useState({
@@ -299,8 +308,131 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     }
   }, [vendorId, activeTab, capsLoading, fetchDashboardData]);
 
-  // OTP handler for completing appointments
-  const handleCompleteWithOtp = async () => {
+  // GPS tracking functions
+  const startLocationTracking = async (bookingId: string, customerLat: string, customerLng: string) => {
+    if (!vendorId) return;
+
+    try {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const location = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            };
+
+            // Start location sharing
+            const appointment = todaySchedule.find(a => a.bookingId === bookingId);
+            await apiClient.post<any>('/location/start-sharing', {
+              bookingId,
+              vendorId: vendorId,
+              customerId: (appointment as any)?.customerId || 'unknown',
+              location,
+            });
+
+            setIsTracking(prev => ({ ...prev, [bookingId]: true }));
+            setTrackingLocation(prev => ({
+              ...prev,
+              [bookingId]: {
+                lat: location.latitude,
+                lng: location.longitude,
+                updated: new Date().toISOString(),
+              },
+            }));
+
+            // Update location every 30 seconds
+            const interval = setInterval(async () => {
+              if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                  async (pos) => {
+                    const loc = {
+                      latitude: pos.coords.latitude,
+                      longitude: pos.coords.longitude,
+                    };
+
+                    try {
+                      await apiClient.post<any>('/location/update', {
+                        bookingId,
+                        location: loc,
+                      });
+
+                      setTrackingLocation(prev => ({
+                        ...prev,
+                        [bookingId]: {
+                          lat: loc.latitude,
+                          lng: loc.longitude,
+                          updated: new Date().toISOString(),
+                        },
+                      }));
+                    } catch (error) {
+                      console.error('Error updating location:', error);
+                    }
+                  },
+                  (error) => {
+                    console.error('Error getting location:', error);
+                  }
+                );
+              }
+            }, 30000);
+
+            // Store interval ID for cleanup
+            (window as any)[`tracking_${bookingId}`] = interval;
+          },
+          (error) => {
+            console.error('Error getting location:', error);
+            toast.error('Location permission denied. GPS tracking disabled.');
+          }
+        );
+      }
+    } catch (error: any) {
+      console.error('Error starting location tracking:', error);
+      toast.error('Failed to start GPS tracking');
+    }
+  };
+
+  const stopLocationTracking = async (bookingId: string) => {
+    try {
+      await apiClient.post<any>('/location/stop-sharing', { bookingId });
+      
+      // Clear interval
+      const interval = (window as any)[`tracking_${bookingId}`];
+      if (interval) {
+        clearInterval(interval);
+        delete (window as any)[`tracking_${bookingId}`];
+      }
+
+      setIsTracking(prev => {
+        const newState = { ...prev };
+        delete newState[bookingId];
+        return newState;
+      });
+      
+      setTrackingLocation(prev => {
+        const newState = { ...prev };
+        delete newState[bookingId];
+        return newState;
+      });
+
+      toast.success('GPS tracking stopped');
+    } catch (error: any) {
+      console.error('Error stopping location tracking:', error);
+    }
+  };
+
+  // Cleanup tracking on unmount
+  useEffect(() => {
+    return () => {
+      Object.keys(isTracking).forEach(bookingId => {
+        const interval = (window as any)[`tracking_${bookingId}`];
+        if (interval) {
+          clearInterval(interval);
+        }
+      });
+    };
+  }, []);
+
+  // OTP handler for starting/completing appointments
+  const handleOtpAction = async () => {
     if (!selectedAppointment) return;
     if (otp.length !== 6) {
       setOtpError('Please enter a valid 6-digit OTP');
@@ -313,18 +445,35 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     try {
       const data = await apiClient.post<any>(`/vendor/bookings/${selectedAppointment.bookingId}/otp/verify`, {
         otp,
-        action: 'complete'
+        action: otpAction
       });
+      
+      if (otpAction === 'start') {
+        // Start GPS tracking for at_home services
+        const serviceType = selectedAppointment.serviceType?.toLowerCase();
+        if (serviceType === 'at_home' || serviceType === 'home') {
+          const lat = (selectedAppointment as any).customerLat || (selectedAppointment as any).customer_lat;
+          const lng = (selectedAppointment as any).customerLng || (selectedAppointment as any).customer_lng;
+          if (lat && lng) {
+            await startLocationTracking(selectedAppointment.bookingId, lat, lng);
+          }
+        }
+      } else if (otpAction === 'complete') {
+        // Stop GPS tracking if active
+        if (isTracking[selectedAppointment.bookingId]) {
+          await stopLocationTracking(selectedAppointment.bookingId);
+        }
+      }
       
       setShowOtpModal(false);
       setOtp('');
       setOtpError(null);
       setSelectedAppointment(null);
       fetchDashboardData(true);
-      alert(data.message || 'Service completed successfully!');
+      toast.success(data.message || (otpAction === 'start' ? 'Service started successfully!' : 'Service completed successfully!'));
     } catch (error: any) {
-      console.error('Error completing service:', error);
-      setOtpError(error.message || 'OTP verification failed. Please try again.');
+      console.error(`Error ${otpAction === 'start' ? 'starting' : 'completing'} service:`, error);
+      setOtpError(error.message || `OTP verification failed. Please try again.`);
     } finally {
       setProcessingOtp(false);
     }
@@ -451,6 +600,17 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <User className="w-6 h-6 mb-2" />
               <span className="font-semibold text-sm">My Profile</span>
             </button>
+            
+            {/* Schedule Management - NEW */}
+            {capabilities.booking && (
+              <button
+                onClick={() => router.push('/solo/schedule')}
+                className="flex-1 min-w-[140px] bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
+              >
+                <Calendar className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Schedule</span>
+              </button>
+            )}
             
             {/* Custom Services - Only show if capability is enabled */}
             {hasCustomServices && (
@@ -618,41 +778,24 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             >Month</button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            {/* Appointments */}
-            {capabilities.booking && (
-              <button
-                onClick={() => {
-                  setActiveBottomTab('bookings');
-                  router.push('/bookings');
-                }}
-                className={`text-center p-3 ${colorScheme.secondary} rounded-lg hover:shadow-md transition-all cursor-pointer border-2 border-transparent hover:border-[#FF8C42]`}
-              >
-                <Calendar className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
-                <div className="text-xs text-gray-500">Appointments</div>
-              </button>
-            )}
-
-            {/* Consultations */}
-            {capabilities.tele && (
-              <button
-                onClick={() => router.push('/bookings?type=tele')}
-                className={`text-center p-3 ${colorScheme.secondary} rounded-lg hover:shadow-md transition-all cursor-pointer border-2 border-transparent hover:border-[#FF8C42]`}
-              >
-                <Video className={`w-5 h-5 ${colorScheme.primary} mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
-                <div className="text-xs text-gray-500">Tele Sessions</div>
-              </button>
-            )}
-
-            {/* Earnings */}
-            <div className="text-center p-3 bg-green-50 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-green-600 mx-auto mb-1" />
-              <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
-              <div className="text-xs text-gray-500">Earnings</div>
-            </div>
-          </div>
+          {/* Use shared DashboardStats component */}
+          <DashboardStats
+            stats={{
+              appointments: stats.appointments,
+              consultations: stats.consultations,
+              earnings: stats.earnings,
+              completedServices: stats.completedServices,
+              rating: stats.rating,
+              totalReviews: stats.totalReviews,
+            }}
+            onStatClick={(statType) => {
+              if (statType === 'appointments' || statType === 'consultations') {
+                router.push('/bookings');
+              } else if (statType === 'earnings') {
+                setActiveBottomTab('reporting');
+              }
+            }}
+          />
         </div>
 
         {/* Today's Schedule - Service Style Filter (No at_center for solo) */}
@@ -730,108 +873,71 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                       return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
                     })
                     .map(appointment => {
-                      const serviceType = appointment.serviceType?.toLowerCase();
-                      let typeIcon = Home;
-                      let typeColor = 'bg-green-100';
-                      let typeTextColor = 'text-green-700';
-                      let typeLabel = 'Home Visit';
-
-                      if (serviceType === 'tele' || serviceType === 'teleconsultation') {
-                        typeIcon = Monitor;
-                        typeColor = 'bg-purple-100';
-                        typeTextColor = 'text-purple-700';
-                        typeLabel = 'Tele';
-                      }
-
-                      const TypeIcon = typeIcon;
-
+                      // Get customer location from appointment data
+                      const customerLat = (appointment as any).customerLat || (appointment as any).customer_lat;
+                      const customerLng = (appointment as any).customerLng || (appointment as any).customer_lng;
+                      
                       return (
-                        <div key={appointment.id} className="bg-white border-2 border-gray-200 rounded-xl p-3 hover:border-[#FF8C42] transition-colors">
-                          <div className="flex items-start gap-3">
-                            <div className="flex flex-col items-center gap-1">
-                              <div className={`w-12 h-12 ${typeColor} rounded-xl flex items-center justify-center`}>
-                                <TypeIcon className={`w-6 h-6 ${typeTextColor}`} />
-                              </div>
-                              <span className={`text-xs font-medium ${typeTextColor}`}>{typeLabel}</span>
-                            </div>
-                            
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2">
-                                  <Clock className="w-4 h-4 text-gray-400" />
-                                  <span className="text-sm font-semibold text-gray-900">{appointment.time}</span>
-                                </div>
-                                <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">{appointment.status}</span>
-                              </div>
-                              <div className="flex items-center gap-1 mb-1">
-                                <User className="w-3 h-3 text-gray-400" />
-                                <span className="text-xs text-gray-500">Customer:</span>
-                                <span className="text-sm font-medium text-gray-900">{appointment.customerName}</span>
-                              </div>
-                              <div className="text-sm font-medium text-gray-900 mb-1">{appointment.petName} {appointment.petBreed ? `(${appointment.petBreed})` : ''}</div>
-                              <div className="flex items-center gap-1 mb-2">
-                                <span className="text-xs text-gray-500">Service:</span>
-                                <span className="text-xs font-medium text-[#FF8C42]">{appointment.serviceName}</span>
-                              </div>
-                              
-                              <div className="flex gap-2 flex-wrap">
-                                <button 
-                                  onClick={() => {
-                                    setSelectedAppointment(appointment);
-                                    setAppointmentDetailModalOpen(true);
-                                  }}
-                                  className="flex-1 min-w-[80px] py-1.5 px-3 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                                >
-                                  Details
-                                </button>
-                                <button 
-                                  onClick={() => window.location.href = `tel:${appointment.customerPhone}`}
-                                  className="flex-1 min-w-[80px] py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                                >
-                                  <Phone className="w-3.5 h-3.5" /> Call
-                                </button>
-                                {(appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'arrived') && (
-                                  <button 
-                                    onClick={() => {
-                                      setSelectedAppointment(appointment);
-                                      setShowOtpModal(true);
-                                      setOtp('');
-                                      setOtpError(null);
-                                    }}
-                                    className="flex-1 min-w-[100px] py-1.5 px-3 bg-green-500 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-green-600"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Complete
-                                  </button>
-                                )}
-                                {capabilities.chat && (
-                                  <button 
-                                    onClick={() => {
-                                      setSelectedAppointment(appointment);
-                                      setCommunicationMode('chat');
-                                    }}
-                                    className="relative flex-1 min-w-[80px] py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                                  >
-                                    <MessageSquare className="w-3.5 h-3.5" /> Chat
-                                    {appointment.hasUnreadMessages && (
-                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                                    )}
-                                  </button>
-                                )}
-                                {(serviceType === 'tele' || serviceType === 'teleconsultation') && (
-                                  <a
-                                    href={`https://meet.jit.si/warmpawz-${appointment.bookingId}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                                    onClick={(e) => e.stopPropagation()} 
-                                  >
-                                    <Video className="w-3.5 h-3.5" /> Join
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        <AppointmentCard
+                          key={appointment.id}
+                          appointment={{
+                            ...appointment,
+                            customerLat,
+                            customerLng,
+                          }}
+                          onViewDetails={(bookingId) => {
+                            const apt = todaySchedule.find(a => a.bookingId === bookingId);
+                            if (apt) {
+                              setSelectedAppointment(apt);
+                              setAppointmentDetailModalOpen(true);
+                            }
+                          }}
+                          onCall={(phone) => window.location.href = `tel:${phone}`}
+                          onChat={(bookingId) => {
+                            const apt = todaySchedule.find(a => a.bookingId === bookingId);
+                            if (apt) {
+                              setSelectedAppointment(apt);
+                              setCommunicationMode('chat');
+                            }
+                          }}
+                          onStart={(bookingId) => {
+                            const apt = todaySchedule.find(a => a.bookingId === bookingId);
+                            if (apt) {
+                              setSelectedAppointment(apt);
+                              setOtpAction('start');
+                              setShowOtpModal(true);
+                              setOtp('');
+                              setOtpError(null);
+                            }
+                          }}
+                          onComplete={(bookingId) => {
+                            const apt = todaySchedule.find(a => a.bookingId === bookingId);
+                            if (apt) {
+                              setSelectedAppointment(apt);
+                              setOtpAction('complete');
+                              setShowOtpModal(true);
+                              setOtp('');
+                              setOtpError(null);
+                            }
+                          }}
+                          onNavigate={(lat, lng) => {
+                            const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+                            window.open(url, '_blank');
+                          }}
+                          onStartGPS={(bookingId) => {
+                            const apt = todaySchedule.find(a => a.bookingId === bookingId);
+                            if (apt && apt.address) {
+                              const lat = (apt as any).customerLat || (apt as any).customer_lat;
+                              const lng = (apt as any).customerLng || (apt as any).customer_lng;
+                              if (lat && lng) {
+                                startLocationTracking(bookingId, lat, lng);
+                              }
+                            }
+                          }}
+                          onStopGPS={(bookingId) => stopLocationTracking(bookingId)}
+                          isTracking={isTracking[appointment.bookingId] || false}
+                          showActions={true}
+                        />
                       );
                     })}
                 </div>
@@ -967,7 +1073,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Complete Service</h3>
+              <h3 className="text-lg font-bold text-gray-900">
+                {otpAction === 'start' ? 'Start Service' : 'Complete Service'}
+              </h3>
               <button
                 onClick={() => {
                   setShowOtpModal(false);
@@ -981,7 +1089,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Ask the customer for the 6-digit OTP sent to their phone to complete the service.
+              Ask the customer for the 6-digit OTP sent to their phone to {otpAction === 'start' ? 'start' : 'complete'} the service.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -994,6 +1102,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 placeholder="Enter 6-digit OTP"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                 maxLength={6}
+                autoFocus
               />
               {otpError && (
                 <p className="text-sm text-red-600 mt-2">{otpError}</p>
@@ -1005,6 +1114,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   setShowOtpModal(false);
                   setOtp('');
                   setOtpError(null);
+                  setSelectedAppointment(null);
                 }}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 disabled={processingOtp}
@@ -1012,9 +1122,13 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 Cancel
               </button>
               <button
-                onClick={handleCompleteWithOtp}
+                onClick={handleOtpAction}
                 disabled={otp.length !== 6 || processingOtp}
-                className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                  otpAction === 'start' 
+                    ? 'bg-blue-500 hover:bg-blue-600' 
+                    : 'bg-green-500 hover:bg-green-600'
+                }`}
               >
                 {processingOtp ? (
                   <>
@@ -1024,7 +1138,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    Verify & Complete
+                    Verify & {otpAction === 'start' ? 'Start' : 'Complete'}
                   </>
                 )}
               </button>

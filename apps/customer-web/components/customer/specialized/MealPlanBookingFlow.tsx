@@ -55,11 +55,42 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
     loadData();
   }, [vendorId, customerPhone]);
 
+  // ✅ FIX GAP-9.1: Get customer location for 10km radius filter
+  const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedFilters, setSelectedFilters] = useState<string[]>([]); // ✅ FIX GAP-9.2: Meal plan filters
+
+  useEffect(() => {
+    // Get customer location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCustomerLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn('Geolocation error:', error);
+        }
+      );
+    }
+  }, []);
+
   const loadData = async () => {
     try {
       setLoading(true);
+      
+      // ✅ FIX GAP-9.1: Build URL with maxRadius=10 and location
+      let mealPlansUrl = `/vendor/${vendorId}/nutrition/meal-plans`;
+      if (customerLocation) {
+        mealPlansUrl += `?lat=${customerLocation.lat}&lng=${customerLocation.lng}&maxRadius=10`;
+      }
+      if (selectedFilters.length > 0) {
+        mealPlansUrl += `${customerLocation ? '&' : '?'}filters=${selectedFilters.join(',')}`;
+      }
+      
       const [plansRes, customerRes] = await Promise.all([
-        apiClient.get<any>(`/vendor/${vendorId}/nutrition/meal-plans`).catch(() => 
+        apiClient.get<any>(mealPlansUrl).catch(() => 
           apiClient.get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`)
         ),
         apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`),
@@ -259,12 +290,53 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* ✅ FIX GAP-9.1: 10KM Max Radius Filter Badge */}
+        {customerLocation && (
+          <div className="bg-teal-100 text-teal-700 rounded-full px-3 py-1 text-sm font-medium w-fit mb-4">
+            Within 10km radius
+          </div>
+        )}
+
+        {/* ✅ FIX GAP-9.2: Meal Plan Filtering Widgets */}
+        <div className="bg-white rounded-xl p-4 shadow-sm">
+          <h3 className="font-semibold text-gray-900 mb-3">Filter Plans</h3>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {[
+              { id: 'weight_management', label: 'Weight Management', color: 'bg-purple-100 text-purple-700' },
+              { id: 'daily_nutrition', label: 'Daily Nutrition', color: 'bg-green-100 text-green-700' },
+              { id: 'fresh_food', label: 'Fresh Food', color: 'bg-blue-100 text-blue-700' },
+              { id: 'frozen_food', label: 'Frozen Food', color: 'bg-gray-100 text-gray-700' },
+            ].map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => {
+                  setSelectedFilters(prev =>
+                    prev.includes(filter.id)
+                      ? prev.filter(f => f !== filter.id)
+                      : [...prev, filter.id]
+                  );
+                  // Reload data with new filters
+                  setTimeout(() => loadData(), 100);
+                }}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                  selectedFilters.includes(filter.id)
+                    ? filter.color + ' ring-2 ring-offset-2 ring-[#FF8C42]'
+                    : filter.color + ' opacity-60 hover:opacity-100'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Meal Plan Selection */}
         <div className="bg-white rounded-xl p-6 shadow-sm">
           <h3 className="font-semibold text-gray-900 mb-4">Select Meal Plan</h3>
           {mealPlans.length === 0 ? (
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700">
-              No meal plans available
+              No meal plans available {customerLocation ? 'within 10km radius' : ''}
             </div>
           ) : (
             <div className="space-y-3">

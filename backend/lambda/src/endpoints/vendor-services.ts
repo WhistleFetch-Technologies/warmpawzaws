@@ -162,6 +162,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
             };
             allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
             
+            // ✅ CRITICAL FIX: Solo providers cannot use at_center - filter it out from allowedServiceStyles
+            const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+            if (vendorConfiguration === 'solo') {
+              allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+              console.log(`[Vendor Services] Solo provider detected - filtered out at_center. Allowed styles: ${allowedServiceStyles.join(', ')}`);
+            }
+            
             // Get capabilities from DB
             try {
               const allPermissions = await query(
@@ -181,48 +188,65 @@ export function registerVendorServicesEndpoints(app: Hono) {
           // Continue with default service styles
         }
       }
+      
+      // ✅ CRITICAL FIX: Also check vendor table for solo configuration as fallback
+      if (vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo') {
+        allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+        console.log(`[Vendor Services] Solo provider detected from vendor table - filtered out at_center. Allowed styles: ${allowedServiceStyles.join(', ')}`);
+      }
 
       const serviceStyles = ['at_home', 'at_center', 'tele'];
       const servicesByStyle: Record<string, any> = {};
 
-      for (const style of serviceStyles) {
-        // Only fetch services for allowed styles
-        if (!allowedServiceStyles.includes(style)) {
-          servicesByStyle[style] = { services: [], count: 0 };
-          continue;
-        }
-
-        // ✅ FIX: Return ALL services for this style (enabled and disabled) for management
-        // Only filter by publish_status for public-facing endpoints, not management
-        const services = await query(
+      // ✅ FIX: Batch all service queries into a single query to reduce connection usage
+      // Instead of 3 separate queries (one per style), use one query with ANY()
+      if (allowedServiceStyles.length > 0) {
+        // Single query to get all services for all allowed styles at once
+        const allServices = await query(
           `SELECT vs.*, s.name as base_service_name, s.description as base_description
            FROM vendor_services vs
            LEFT JOIN services s ON vs.service_id = s.id
            WHERE vs.vendor_id = $1
-           AND vs.service_style = $2
-           ORDER BY vs.created_at DESC`,
-          [vendorId, style]
+           AND vs.service_style = ANY($2::text[])
+           ORDER BY vs.service_style, vs.created_at DESC`,
+          [vendorId, allowedServiceStyles]
         );
 
-        servicesByStyle[style] = {
-          services: services.rows.map((s: any) => ({
-            id: s.id,
-            serviceId: s.service_id,
-            serviceName: s.service_name || s.base_service_name,
-            name: s.service_name || s.base_service_name,
-            description: s.description || s.base_description,
-            category: s.category,
-            subCategory: s.sub_category,
-            price: parseFloat(s.price || s.custom_price || '0'),
-            duration: s.duration_minutes || s.custom_duration || 30,
-            serviceStyle: s.service_style,
-            publishStatus: s.publish_status,
-            isEnabled: s.is_enabled,
-            isCustomService: s.is_custom_service,
-            metadata: s.metadata || {},
-          })),
-          count: services.rows.length,
-        };
+        // Group services by style
+        for (const style of serviceStyles) {
+          if (!allowedServiceStyles.includes(style)) {
+            servicesByStyle[style] = { services: [], count: 0 };
+            continue;
+          }
+          
+          const styleServices = allServices.rows.filter((s: any) => s.service_style === style);
+          servicesByStyle[style] = {
+            services: styleServices.map((s: any) => ({
+              id: s.id,
+              serviceId: s.service_id,
+              serviceName: s.service_name || s.base_service_name,
+              name: s.service_name || s.base_service_name,
+              description: s.description || s.base_description,
+              category: s.category,
+              subCategory: s.sub_category,
+              price: parseFloat(s.price || s.custom_price || '0'),
+              duration: s.duration_minutes || s.custom_duration || 30,
+              serviceStyle: s.service_style,
+              publishStatus: s.publish_status,
+              isEnabled: s.is_enabled,
+              isCustomService: s.is_custom_service || false,
+              metadata: s.metadata || {},
+              createdAt: s.created_at,
+              updatedAt: s.updated_at,
+            })),
+            count: styleServices.length,
+          };
+        }
+      } else {
+        // No allowed styles, return empty
+        for (const style of serviceStyles) {
+          servicesByStyle[style] = { services: [], count: 0 };
+        }
       }
 
       const allServices = Object.values(servicesByStyle).flatMap((style: any) => style.services);
@@ -341,6 +365,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       // ✅ FIX: Return ALL services (enabled and disabled) for management
       // Remove is_enabled filter so vendors can see and manage all their services
+      // Note: serviceStyle is already validated above, so all returned services will match allowed styles
       const services = await query(
         `SELECT vs.*, s.name as base_service_name, s.description as base_description
          FROM vendor_services vs
@@ -355,6 +380,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         success: true,
         services: services.rows,
         total: services.rows.length,
+        allowedServiceStyles, // ✅ Include in response so frontend knows what's allowed
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);
@@ -785,9 +811,59 @@ export function registerVendorServicesEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // Check if vendor has services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
-                                     await checkVendorCapability(vendorId, 'custom_services');
+      // ✅ CRITICAL FIX: Ensure vendor exists in vendors table before inserting
+      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
+      let actualVendorId = vendorId;
+      const existingVendor = await select('vendors', { id: vendorId });
+      if (existingVendor.length === 0) {
+        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select('vendor_identity', { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+            // Check if vendor exists by phone (there might be an existing vendor with different ID)
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
+            } else {
+              // Get application data for vendor details
+              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              
+              // Create vendors record
+              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert('vendors', {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '000000',
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: 'Vendor not approved or activated' }, 403);
+          }
+        } else {
+          return c.json({ error: 'Vendor identity not found' }, 404);
+        }
+      }
+      
+      // Check if vendor has services capability (use actualVendorId)
+      const hasServicesCapability = await checkVendorCapability(actualVendorId, 'services') || 
+                                     await checkVendorCapability(actualVendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
@@ -808,7 +884,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         return c.json({ error: 'catalogServiceId or serviceId is required' }, 400);
       }
       
-      console.log(`➕ Adding catalog service ${finalCatalogServiceId} to vendor ${vendorId}...`);
+      console.log(`➕ Adding catalog service ${finalCatalogServiceId} to vendor ${actualVendorId}...`);
       
       // Check if catalogServiceId is UUID or text identifier
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalCatalogServiceId);
@@ -836,13 +912,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
       
       const finalServiceStyle = serviceStyle || catalogService.service_style || 'at_home';
       
-      // Check if vendor already has this service
+      // Check if vendor already has this service (use actualVendorId)
       const existingServices = await query(
         `SELECT * FROM vendor_services 
          WHERE vendor_id = $1 
          AND (service_id = $2 OR service_name = $3)
          AND service_style = $4`,
-        [vendorId, catalogService.id, catalogService.service_name, finalServiceStyle]
+        [actualVendorId, catalogService.id, catalogService.service_name, finalServiceStyle]
       );
       
       if (existingServices.rows.length > 0) {
@@ -865,12 +941,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
         });
       }
       
-      // Create new vendor_services record
+      // Create new vendor_services record (use actualVendorId)
       const vendorServiceId = crypto.randomUUID();
       
       const newService = await insert('vendor_services', {
         id: vendorServiceId,
-        vendor_id: vendorId,
+        vendor_id: actualVendorId,
         service_id: catalogService.id,
         service_name: catalogService.service_name || catalogService.display_name,
         category: catalogService.category_id || catalogService.category_name,
@@ -885,7 +961,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         custom_duration: customDuration,
       });
       
-      console.log(`✅ Created vendor service ${vendorServiceId} for vendor ${vendorId}`);
+      console.log(`✅ Created vendor service ${vendorServiceId} for vendor ${actualVendorId}`);
       
       return c.json({
         success: true,
@@ -1393,6 +1469,67 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error adding catalog service to vendor:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/services/bulk-publish
+   * Bulk publish multiple services at once
+   * Requires 'services' capability
+   */
+  app.post("/vendor/:vendorId/services/bulk-publish", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { serviceIds, publishStatus = 'published' } = body;
+
+      if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+        return c.json({ error: 'serviceIds array is required' }, 400);
+      }
+
+      // Check if vendor has services capability
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+
+      // Validate publishStatus
+      const validStatuses = ['draft', 'published', 'pending_approval'];
+      if (!validStatuses.includes(publishStatus)) {
+        return c.json({ error: `Invalid publishStatus. Must be one of: ${validStatuses.join(', ')}` }, 400);
+      }
+
+      // Bulk update services
+      const placeholders = serviceIds.map((_, i) => `$${i + 2}`).join(', ');
+      const params = [publishStatus, ...serviceIds, vendorId];
+      const updateResult = await query(
+        `UPDATE vendor_services 
+         SET publish_status = $1, 
+             is_enabled = CASE WHEN $1 = 'published' THEN true ELSE is_enabled END,
+             updated_at = NOW()
+         WHERE vendor_id = $${params.length}
+           AND id IN (${placeholders})
+         RETURNING id, service_name, publish_status, is_enabled`,
+        params
+      );
+
+      const updatedServices = updateResult.rows.map((row: any) => ({
+        id: row.id,
+        serviceName: row.service_name,
+        publishStatus: row.publish_status,
+        isEnabled: row.is_enabled,
+      }));
+
+      return c.json({
+        success: true,
+        message: `Successfully updated ${updatedServices.length} service(s)`,
+        updatedServices,
+        count: updatedServices.length,
+      });
+    } catch (error: any) {
+      console.error('Error bulk publishing services:', error);
       return c.json({ error: error.message }, 500);
     }
   });

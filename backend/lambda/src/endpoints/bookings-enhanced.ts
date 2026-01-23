@@ -139,12 +139,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       staffId,
       bookingDate,
       bookingTime,
-      serviceType,
+      serviceType: rawServiceType,
       address,
       petId,
       amount,
       idempotencyKey,
     } = validationResult.data;
+
+    // ✅ Map legacy 'online' to 'tele' for backward compatibility
+    // Note: 'tele' is already used in DB schema (vendor_services.service_style, vendor_availability_v2.service_style)
+    const serviceType = rawServiceType === 'online' ? 'tele' : (rawServiceType || 'at_vendor');
 
     // ✅ Phase 2.3: Extract roomId and promotionId from raw body (may not be in schema)
     const roomId = body.roomId || body.room_id;
@@ -699,7 +703,7 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Booking ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
-    // ✅ FIX: Get enriched booking data with service, vendor, customer, and pet info
+    // ✅ SECURITY FIX: Get enriched booking data with service, vendor, customer, and pet info
     const bookingResult = await query(
       `SELECT b.*,
               s.name as service_name,
@@ -719,11 +723,26 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
               c.full_name as customer_name,
               c.phone as customer_phone,
               c.email as customer_email,
-              c.address as customer_address
+              c.address as customer_address,
+              p.id as pet_id_from_table,
+              p.name as pet_name_from_table,
+              p.species as pet_species_from_table,
+              p.breed as pet_breed_from_table,
+              p.age_years as pet_age_from_table,
+              p.weight_kg as pet_weight_from_table,
+              p.profile_photo_url as pet_photo_from_table
        FROM bookings b
        LEFT JOIN services s ON b.service_id = s.id
        LEFT JOIN vendors v ON b.vendor_id = v.id
        LEFT JOIN customers c ON b.customer_id = c.id
+       LEFT JOIN LATERAL (
+         SELECT id, name, species, breed, age_years, weight_kg, profile_photo_url
+         FROM pets
+         WHERE (
+           (b.notes IS NOT NULL AND b.notes LIKE '%Pet ID:%' AND id::text = SUBSTRING(b.notes FROM 'Pet ID:\\s*([a-f0-9-]+)'))
+         )
+         LIMIT 1
+       ) p ON true
        WHERE b.id = $1`,
       [bookingId]
     );
@@ -733,16 +752,87 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     const booking = bookingResult.rows[0];
+
+    // ✅ SECURITY FIX: Verify authorization - only customer or vendor who owns the booking can access it
+    const authenticatedUserId = context.userId;
+    const authenticatedUserRole = context.userRole;
+    const queryParams = context.event.queryStringParameters || {};
+    const body = this.parseBody(context.event);
     
-    // Try to get pet info from notes field (format: "Pet ID: uuid")
-    let petInfo = null;
-    if (booking.notes && booking.notes.includes('Pet ID:')) {
-      const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]+)/i);
+    // Get customerId/vendorId from various sources (query params, body, or authenticated user)
+    let requestCustomerId = queryParams.customerId || body.customerId || 
+                           (authenticatedUserRole === 'customer' ? authenticatedUserId : null);
+    const requestVendorId = queryParams.vendorId || body.vendorId || 
+                           (authenticatedUserRole === 'vendor' ? authenticatedUserId : null);
+    
+    // ✅ Support phone-based access: resolve phone to customerId if phone is provided
+    if (!requestCustomerId && (queryParams.phone || body.phone)) {
+      try {
+        const phone = (queryParams.phone || body.phone) as string;
+        const cleanPhone = phone.replace(/[^0-9]/g, '');
+        if (cleanPhone && cleanPhone.length >= 10) {
+          const customers = await select('customers', { phone: cleanPhone });
+          if (customers.length > 0) {
+            requestCustomerId = customers[0].id;
+          }
+        }
+      } catch (error) {
+        console.warn('[GetBooking] Error resolving customer from phone:', error);
+      }
+    }
+    
+    // Check if requester is authorized (must be either the customer or vendor who owns the booking)
+    const isAuthorized = 
+      (requestCustomerId && booking.customer_id === requestCustomerId) ||
+      (requestVendorId && booking.vendor_id === requestVendorId) ||
+      (authenticatedUserId && authenticatedUserId === booking.customer_id) ||
+      (authenticatedUserId && authenticatedUserId === booking.vendor_id);
+    
+    if (!isAuthorized) {
+      // Return 404 instead of 403 to avoid information leakage about booking existence
+      return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
+    }
+    
+    // ✅ FIX: Extract pet_id from multiple sources (column, notes, special_instructions)
+    let petIdToUse = booking.pet_id || booking.pet_id_from_table;
+    
+    // Try to extract from notes if not in column
+    if (!petIdToUse && booking.notes) {
+      const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]{36})/i);
       if (petIdMatch) {
-        const petId = petIdMatch[1];
+        petIdToUse = petIdMatch[1];
+        console.log(`[GetBooking] Extracted pet_id from notes: ${petIdToUse}`);
+      }
+    }
+    
+    // Try to extract from special_instructions if still not found
+    if (!petIdToUse && booking.special_instructions) {
+      const petIdMatch = booking.special_instructions.match(/Pet ID:\s*([a-f0-9-]{36})/i);
+      if (petIdMatch) {
+        petIdToUse = petIdMatch[1];
+        console.log(`[GetBooking] Extracted pet_id from special_instructions: ${petIdToUse}`);
+      }
+    }
+    
+    // Build pet info from JOIN result or fetch separately
+    let petInfo = null;
+    if (petIdToUse) {
+      // Use data from JOIN if available
+      if (booking.pet_id_from_table || booking.pet_name_from_table) {
+        petInfo = {
+          id: booking.pet_id_from_table || petIdToUse,
+          name: booking.pet_name_from_table,
+          species: booking.pet_species_from_table,
+          breed: booking.pet_breed_from_table,
+          age: booking.pet_age_from_table,
+          weight: booking.pet_weight_from_table,
+          photo_url: booking.pet_photo_from_table,
+        };
+      } else {
+        // Fallback: fetch separately if JOIN didn't return data
         const petResult = await query(
           `SELECT id, name, species, breed, age_years as age, weight_kg as weight, profile_photo_url as photo_url FROM pets WHERE id = $1`,
-          [petId]
+          [petIdToUse]
         ).catch(() => ({ rows: [] }));
         if (petResult.rows.length > 0) {
           petInfo = petResult.rows[0];
@@ -753,6 +843,26 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Build enriched response
     const enrichedBooking = {
       ...booking,
+      // ✅ FIX: Ensure all IDs are always at top level for easy access
+      vendorId: booking.vendor_id,
+      vendor_id: booking.vendor_id,
+      staffId: booking.staff_id,
+      staff_id: booking.staff_id,
+      petId: petIdToUse || null,
+      pet_id: petIdToUse || null,
+      customerId: booking.customer_id,
+      customer_id: booking.customer_id,
+      serviceId: booking.service_id,
+      service_id: booking.service_id,
+      // ✅ FIX: Schedule information - ensure booking_date and booking_time are properly formatted
+      bookingDate: booking.booking_date,
+      booking_date: booking.booking_date,
+      bookingTime: booking.booking_time,
+      booking_time: booking.booking_time,
+      scheduledDate: booking.booking_date, // Alias for frontend compatibility
+      scheduledTime: booking.booking_time, // Alias for frontend compatibility
+      schedule: booking.booking_time, // Alias for frontend compatibility
+      startDate: booking.booking_date, // Alias for frontend compatibility
       // Service info
       service: booking.service_name ? {
         id: booking.service_id,
@@ -783,13 +893,25 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
         email: booking.customer_email,
         address: booking.customer_address,
       } : null,
-      // Pet info
-      pet: petInfo,
+      // Pet info - full object
+      pet: petInfo ? {
+        id: petInfo.id || petIdToUse,
+        name: petInfo.name,
+        species: petInfo.species,
+        breed: petInfo.breed,
+        age: petInfo.age,
+        weight: petInfo.weight,
+        photo_url: petInfo.photo_url,
+      } : null,
       // Computed fields for convenience
       serviceName: booking.service_name,
       vendorName: booking.vendor_name,
       customerName: booking.customer_name,
       petName: petInfo?.name || null,
+      petBreed: petInfo?.breed || null,
+      petType: petInfo?.species || null,
+      petAge: petInfo?.age || null,
+      petPhoto: petInfo?.photo_url || null,
       amount: parseFloat(booking.total_amount || '0'),
     };
 
@@ -1868,6 +1990,117 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
+  /**
+   * POST /bookings/:bookingId/calculate-refund
+   * ✅ FIX GAP-12.3: Calculate refund amount for booking cancellation
+   * Returns refund preview without actually cancelling
+   */
+  app.post('/bookings/:bookingId/calculate-refund', async (c) => {
+    try {
+      const bookingId = c.req.param('bookingId');
+      const body = await c.req.json().catch(() => ({}));
+      const cancellationReason = body.cancellationReason || 'customer_request';
+
+      // Get booking
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Check if booking can be cancelled
+      if (booking.status === 'cancelled' || booking.status === 'completed') {
+        return c.json({ 
+          error: `Booking is already ${booking.status}`,
+          refundAmount: 0,
+          refundPercentage: 0,
+        }, 400);
+      }
+
+      // Get cancellation policy
+      const policyQuery = `
+        SELECT * FROM booking_policies
+        WHERE vendor_id = $1
+          AND service_type = $2
+          AND policy_type = 'cancellation'
+          AND is_active = true
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const policyResult = await query(policyQuery, [booking.vendor_id, booking.service_type || 'general']);
+      const policy = (policyResult as any).rows[0];
+
+      // Calculate time until booking
+      const bookingDate = new Date(booking.booking_date || booking.scheduled_at || booking.created_at);
+      const now = new Date();
+      const hoursUntilBooking = (bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+      // Determine refund percentage based on policy
+      let refundPercentage = 100; // Default: full refund
+      let cancellationFee = 0;
+
+      if (policy) {
+        const policyRules = typeof policy.rules === 'string' 
+          ? JSON.parse(policy.rules) 
+          : policy.rules || {};
+
+        // Check time-based refund rules
+        if (policyRules.timeBased) {
+          for (const rule of policyRules.timeBased) {
+            const hoursThreshold = parseFloat(rule.hoursBefore || '0');
+            if (hoursUntilBooking >= hoursThreshold) {
+              refundPercentage = parseFloat(rule.refundPercentage || '100');
+              cancellationFee = parseFloat(rule.cancellationFee || '0');
+              break;
+            }
+          }
+        }
+
+        // Check reason-based rules
+        if (policyRules.reasonBased && policyRules.reasonBased[cancellationReason]) {
+          const reasonRule = policyRules.reasonBased[cancellationReason];
+          refundPercentage = parseFloat(reasonRule.refundPercentage || refundPercentage.toString());
+          cancellationFee = parseFloat(reasonRule.cancellationFee || cancellationFee.toString());
+        }
+      } else {
+        // Default policy: 100% refund if > 24h, 50% if < 24h
+        if (hoursUntilBooking < 24) {
+          refundPercentage = 50;
+        }
+      }
+
+      // Calculate refund amount
+      const totalAmount = parseFloat(booking.total_amount || booking.amount || '0');
+      const refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100 - cancellationFee);
+      const platformFeeRefund = booking.platform_fee ? parseFloat(booking.platform_fee) * (refundPercentage / 100) : 0;
+      const convenienceFeeRefund = booking.convenience_fee ? parseFloat(booking.convenience_fee) * (refundPercentage / 100) : 0;
+
+      return c.json({
+        success: true,
+        refund: {
+          refundAmount: Math.round(refundAmount * 100) / 100,
+          refundPercentage,
+          cancellationFee,
+          platformFeeRefund: Math.round(platformFeeRefund * 100) / 100,
+          convenienceFeeRefund: Math.round(convenienceFeeRefund * 100) / 100,
+          totalRefund: Math.round((refundAmount + platformFeeRefund + convenienceFeeRefund) * 100) / 100,
+          hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
+          policyApplied: !!policy,
+        },
+        booking: {
+          id: booking.id,
+          status: booking.status,
+          totalAmount,
+          bookingDate: booking.booking_date || booking.scheduled_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error calculating refund:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.post('/bookings/:bookingId/cancel', async (c) => {
     const event = await createApiGatewayEvent(c);
     event.pathParameters = { bookingId: c.req.param('bookingId') };
@@ -1979,7 +2212,7 @@ export function registerBookingOTPEndpoint(app: Hono) {
       }
 
       // Skip OTP for tele services
-      if (serviceStyle === 'tele' || serviceStyle === 'online') {
+      if (serviceStyle === 'tele') {
         return c.json({ 
           success: true, 
           otp: null, 

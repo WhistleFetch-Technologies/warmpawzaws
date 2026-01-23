@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { LogisticsPartnerAssignment } from './LogisticsPartnerAssignment'; // ✅ FIX GAP-8.3: Logistics partner integration
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -533,6 +534,37 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
                         </div>
                       ))}
                     </div>
+
+                    {/* ✅ FIX GAP-8.3: Logistics Partner Assignment */}
+                    {(order.status === 'payment_confirmed' || order.status === 'preparing' || order.status === 'dispatched') && (
+                      <div className="mb-4 pt-4 border-t border-slate-100">
+                        <LogisticsPartnerAssignment
+                          orderId={order.id}
+                          pickupAddress={{
+                            addressLine1: (order as any).pharmacy_address?.addressLine1 || (order as any).pickup_address?.addressLine1 || 'Pharmacy Address',
+                            city: (order as any).pharmacy_address?.city || (order as any).pickup_address?.city || '',
+                            pincode: (order as any).pharmacy_address?.pincode || (order as any).pickup_address?.pincode || '',
+                            latitude: (order as any).pharmacy_latitude || (order as any).pickup_latitude || 0,
+                            longitude: (order as any).pharmacy_longitude || (order as any).pickup_longitude || 0,
+                          }}
+                          deliveryAddress={{
+                            addressLine1: (order as any).delivery_address?.addressLine1 || (order as any).customer_address?.addressLine1 || (order as any).deliveryAddress?.addressLine1 || 'Customer Address',
+                            city: (order as any).delivery_address?.city || (order as any).customer_address?.city || (order as any).deliveryAddress?.city || '',
+                            pincode: (order as any).delivery_address?.pincode || (order as any).customer_address?.pincode || (order as any).deliveryAddress?.pincode || '',
+                            latitude: (order as any).delivery_latitude || (order as any).customer_latitude || (order as any).deliveryAddress?.latitude || 0,
+                            longitude: (order as any).delivery_longitude || (order as any).customer_longitude || (order as any).deliveryAddress?.longitude || 0,
+                          }}
+                          items={order.items.map((item: any) => ({
+                            name: item.product_name,
+                            quantity: item.quantity || 1,
+                          }))}
+                          onPartnerAssigned={(partnerId) => {
+                            console.log('Partner assigned:', partnerId);
+                            fetchActiveOrders(); // Refresh orders
+                          }}
+                        />
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                       <div className="text-lg font-semibold text-slate-800">

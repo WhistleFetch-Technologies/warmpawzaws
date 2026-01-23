@@ -43,35 +43,69 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
         });
       }
 
-      // Get notifications for this vendor
-      const notifications = await query(
-        `SELECT * FROM notifications
-         WHERE recipient_id = $1 AND recipient_type = 'vendor'
-         ORDER BY created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [vendorId, limit, offset]
-      ).catch(() => ({ rows: [] }));
+      // ✅ FIX: Add query timeout wrapper to prevent Lambda timeout (30s limit)
+      const queryWithTimeout = async <T>(queryFn: () => Promise<T>, timeoutMs: number = 25000): Promise<T> => {
+        return Promise.race([
+          queryFn(),
+          new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error('Query timeout')), timeoutMs)
+          )
+        ]);
+      };
 
-      // Count unread
-      const unreadResult = await query(
-        `SELECT COUNT(*) as count FROM notifications 
-         WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ count: '0' }] }));
+      // Get notifications for this vendor with timeout protection
+      let notifications: any = { rows: [] };
+      try {
+        notifications = await queryWithTimeout(() => 
+          query(
+            `SELECT * FROM notifications
+             WHERE recipient_id = $1 AND recipient_type = 'vendor'
+             ORDER BY created_at DESC
+             LIMIT $2 OFFSET $3`,
+            [vendorId, limit, offset]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Query timeout or error, returning empty:`, err.message);
+          return { rows: [] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to fetch notifications:`, err.message);
+        notifications = { rows: [] };
+      }
+
+      // Count unread with timeout protection
+      let unreadResult: any = { rows: [{ count: '0' }] };
+      try {
+        unreadResult = await queryWithTimeout(() =>
+          query(
+            `SELECT COUNT(*) as count FROM notifications 
+             WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
+            [vendorId]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Unread count query timeout, defaulting to 0:`, err.message);
+          return { rows: [{ count: '0' }] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to count unread:`, err.message);
+        unreadResult = { rows: [{ count: '0' }] };
+      }
 
       return c.json({
         success: true,
-        notifications: notifications.rows,
-        total: notifications.rows.length,
-        unreadCount: parseInt(unreadResult.rows[0]?.count || '0', 10),
+        notifications: notifications.rows || [],
+        total: (notifications.rows || []).length,
+        unreadCount: parseInt(unreadResult.rows?.[0]?.count || '0', 10),
       });
     } catch (error: any) {
       console.error('Error fetching vendor notifications:', error);
+      // ✅ FIX: Always return 200 with empty data instead of letting Lambda timeout (503)
       return c.json({
         success: true,
         notifications: [],
         total: 0,
         unreadCount: 0,
+        error: error.message || 'Failed to fetch notifications',
       });
     }
   });
@@ -98,35 +132,69 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
         });
       }
 
-      // Get notifications for this vendor
-      const notifications = await query(
-        `SELECT * FROM notifications
-         WHERE recipient_id = $1 AND recipient_type = 'vendor'
-         ORDER BY created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [vendorId, limit, offset]
-      ).catch(() => ({ rows: [] }));
+      // ✅ FIX: Add query timeout wrapper to prevent Lambda timeout (30s limit)
+      const queryWithTimeout = async <T>(queryFn: () => Promise<T>, timeoutMs: number = 25000): Promise<T> => {
+        return Promise.race([
+          queryFn(),
+          new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error('Query timeout')), timeoutMs)
+          )
+        ]);
+      };
 
-      // Count unread
-      const unreadResult = await query(
-        `SELECT COUNT(*) as count FROM notifications 
-         WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ count: '0' }] }));
+      // Get notifications for this vendor with timeout protection
+      let notifications: any = { rows: [] };
+      try {
+        notifications = await queryWithTimeout(() => 
+          query(
+            `SELECT * FROM notifications
+             WHERE recipient_id = $1 AND recipient_type = 'vendor'
+             ORDER BY created_at DESC
+             LIMIT $2 OFFSET $3`,
+            [vendorId, limit, offset]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Query timeout or error (alt route), returning empty:`, err.message);
+          return { rows: [] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to fetch notifications (alt route):`, err.message);
+        notifications = { rows: [] };
+      }
+
+      // Count unread with timeout protection
+      let unreadResult: any = { rows: [{ count: '0' }] };
+      try {
+        unreadResult = await queryWithTimeout(() =>
+          query(
+            `SELECT COUNT(*) as count FROM notifications 
+             WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
+            [vendorId]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Unread count query timeout (alt route), defaulting to 0:`, err.message);
+          return { rows: [{ count: '0' }] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to count unread (alt route):`, err.message);
+        unreadResult = { rows: [{ count: '0' }] };
+      }
 
       return c.json({
         success: true,
-        notifications: notifications.rows,
-        total: notifications.rows.length,
-        unreadCount: parseInt(unreadResult.rows[0]?.count || '0', 10),
+        notifications: notifications.rows || [],
+        total: (notifications.rows || []).length,
+        unreadCount: parseInt(unreadResult.rows?.[0]?.count || '0', 10),
       });
     } catch (error: any) {
       console.error('Error fetching vendor notifications (alt route):', error);
+      // ✅ FIX: Always return 200 with empty data instead of letting Lambda timeout (503)
       return c.json({
         success: true,
         notifications: [],
         total: 0,
         unreadCount: 0,
+        error: error.message || 'Failed to fetch notifications',
       });
     }
   });

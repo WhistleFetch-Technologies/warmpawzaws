@@ -89,13 +89,20 @@ export function StaffManagementScreen({ vendorId, onBack }: StaffManagementScree
       console.log('Creating staff member:', newStaff);
       
       // ✅ FIX: Include vendorId in staff creation endpoint
+      // Extract only digits from phone number for consistency
+      const phoneDigits = newStaff.phone.trim().replace(/\D/g, '');
+      if (phoneDigits.length < 10) {
+        toast.error('Phone number must be at least 10 digits');
+        return;
+      }
+      
       const response = await apiClient.post<{
         success?: boolean;
         staff?: StaffMember;
         message?: string;
       }>(`/vendor/${vendorId}/staff`, {
         name: newStaff.name.trim(),
-        phone: newStaff.phone.trim(),
+        phone: phoneDigits,
         email: newStaff.email.trim() || undefined,
         role: newStaff.role.trim()
       });
@@ -110,7 +117,9 @@ export function StaffManagementScreen({ vendorId, onBack }: StaffManagementScree
       }
     } catch (error: any) {
       console.error('[StaffManagementScreen] Failed to create staff', error);
-      toast.error(error.message || 'Failed to create staff member. Please check if the phone number is already registered.');
+      // ✅ FIX: Handle both error.message and error.error formats from backend
+      const errorMessage = error.error || error.message || 'Failed to create staff member. Please check if the phone number is already registered.';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

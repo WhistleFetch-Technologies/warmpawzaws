@@ -128,7 +128,9 @@ provider:
   
   # API Gateway Configuration
   # Using existing API Gateway (z0b3obweb6) that frontend is pointing to
-  # CORS is already configured on the API Gateway, so we don't configure it here
+  # Note: CORS is handled by Lambda handler to ensure proper OPTIONS handling
+  # If API Gateway CORS is configured, it may handle OPTIONS automatically
+  # The Lambda handler also handles OPTIONS as a fallback
   httpApi:
     id: z0b3obweb6  # Use existing API Gateway that frontend is pointing to
 

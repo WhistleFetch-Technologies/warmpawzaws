@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Plus, X, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,7 @@ export function VendorServiceManagementComplete({
   const { capabilities } = useVendorCapabilities(vendorData?.roleId);
   
   // ✅ NEW: Check if vendor is solo provider
-  const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendor_configuration || null;
+  const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendor_configuration || roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration || null;
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
 
   useEffect(() => {
@@ -69,13 +69,41 @@ export function VendorServiceManagementComplete({
   const isHealthcare = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
   const supportsHomeService = !isCafe && !isResort && !isBoarding && !isRetail && !isPharmacy; // Cafe, Resort, Boarding, Retail, Pharmacy don't do home services
 
-  const loadRoleConfiguration = async () => {
+  // ✅ FIX: Add ref to prevent multiple simultaneous calls
+  const loadingRef = useRef(false);
+  const lastCallTimeRef = useRef(0);
+  
+  const loadRoleConfiguration = async (retryCount = 0) => {
+    // ✅ FIX: Prevent multiple simultaneous calls
+    if (loadingRef.current) {
+      console.log('🔧 [ROLE-CONFIG] Already loading, skipping duplicate call');
+      return;
+    }
+    
+    // ✅ FIX: Debounce rapid successive calls (wait at least 500ms between calls)
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCallTimeRef.current;
+    if (timeSinceLastCall < 500 && lastCallTimeRef.current > 0) {
+      console.log('🔧 [ROLE-CONFIG] Debouncing rapid call, waiting...');
+      return;
+    }
+    lastCallTimeRef.current = now;
+    
     try {
+      loadingRef.current = true;
       setLoadingRoleConfig(true);
       console.log('🔧 [ROLE-CONFIG] Loading allowed service styles for vendor:', vendorId);
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VendorServiceManagementComplete.tsx:78',message:'Starting role config API call',data:{vendorId,endpoint:`/vendor/${vendorId}/services`,retryCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
       // ✅ FIX: Use /vendor/:vendorId/services endpoint (now includes role config and allowedServiceStyles)
       const data = await apiClient.get(`/vendor/${vendorId}/services`) as any;
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VendorServiceManagementComplete.tsx:81',message:'Role config API call completed',data:{success:data?.success,hasData:!!data,error:data?.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
 
       if (data && data.success) {
         console.log('✅ [ROLE-CONFIG] API Response:', data);
@@ -83,17 +111,19 @@ export function VendorServiceManagementComplete({
         // ✅ FIX: Extract allowedServiceStyles and role config from services endpoint response
         let allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || ['at_home', 'at_center', 'tele'];
         
-        // ✅ FIX: Ensure veterinarian roles always have at_home, at_center, and tele options
+        const roleConfig = data.role?.config || data.roleConfig || {};
+        const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+        
+        // ✅ FIX: Ensure veterinarian roles always have at_home, at_center, and tele options (unless solo provider)
         const roleId = data.role?.id || data.roleId || '';
         const roleName = data.role?.name || data.roleName || '';
         if ((roleId?.toLowerCase().includes('veterinarian') || roleName?.toLowerCase().includes('veterinarian')) 
-            && Array.isArray(allowedStyles)) {
-          // Ensure all three service styles are available for veterinarians
+            && Array.isArray(allowedStyles)
+            && vendorConfiguration !== 'solo') { // ✅ Don't override for solo providers
+          // Ensure all three service styles are available for veterinarians (non-solo)
           const requiredStyles = ['at_home', 'at_center', 'tele'];
           allowedStyles = [...new Set([...allowedStyles, ...requiredStyles])];
         }
-        
-        const roleConfig = data.role?.config || data.roleConfig || {};
         
         // ✅ NEW: Extract service counts per style
         const counts: Record<ServiceStyle, number> = {
@@ -136,6 +166,15 @@ export function VendorServiceManagementComplete({
           console.log('✅ [ROLE-CONFIG] Setting allowed styles:', allowedStyles);
           setAllowedServiceStyles(allowedStyles);
           setRoleConfig(roleConfig);
+          
+          // ✅ FIX: Also check if solo provider from role config and filter out at_center if not already filtered
+          const vendorConfig = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+          if (vendorConfig === 'solo' && allowedStyles.includes('at_center')) {
+            console.warn('⚠️ [ROLE-CONFIG] Solo provider detected but at_center still in allowedStyles - backend should have filtered this');
+            // Frontend fallback: filter out at_center as safety measure
+            const filteredStyles = allowedStyles.filter(style => style !== 'at_center');
+            setAllowedServiceStyles(filteredStyles);
+          }
         } else {
           console.error('❌ [ROLE-CONFIG] Invalid response format - allowedServiceStyles is not an array:', data);
           setAllowedServiceStyles(['at_home', 'at_center', 'tele']); // Default fallback
@@ -147,11 +186,43 @@ export function VendorServiceManagementComplete({
         setAllowedServiceStyles(['at_home', 'at_center', 'tele']); // Default fallback
         setRoleConfig({});
       }
-    } catch (error) {
-      console.error('❌ [ROLE-CONFIG] Exception during role config load:', error);
-      toast.error('Error loading role configuration');
-      setAllowedServiceStyles([]);
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VendorServiceManagementComplete.tsx:162',message:'Role config API call failed',data:{errorType:error?.name,errorMessage:error?.message,isCorsError:error?.message?.includes('CORS'),isRateLimit:error?.isRateLimit || error?.statusCode===429,statusCode:error?.statusCode || error?.response?.status,retryCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
+      // ✅ FIX: Handle rate limiting with retry logic
+      if (error?.isRateLimit || error?.statusCode === 429) {
+        const retryAfter = error?.retryAfter || 5;
+        const maxRetries = 3;
+        
+        if (retryCount < maxRetries) {
+          console.log(`⏳ [ROLE-CONFIG] Rate limited, retrying in ${retryAfter}s (attempt ${retryCount + 1}/${maxRetries})`);
+          // Wait for retryAfter seconds, then retry with exponential backoff
+          const delay = retryAfter * 1000 * Math.pow(2, retryCount);
+          setTimeout(() => {
+            loadRoleConfiguration(retryCount + 1);
+          }, delay);
+          return; // Don't set error state, will retry
+        } else {
+          console.error('❌ [ROLE-CONFIG] Rate limit exceeded after retries');
+          toast.error(`Too many requests. Please wait ${retryAfter} seconds and refresh the page.`);
+        }
+      } else if (error?.message?.includes('CORS') || error?.message?.includes('Failed to fetch')) {
+        // ✅ FIX: Handle CORS errors gracefully
+        console.error('❌ [ROLE-CONFIG] CORS or network error:', error);
+        toast.error('Network error. Please check your connection and try again.');
+      } else {
+        console.error('❌ [ROLE-CONFIG] Exception during role config load:', error);
+        toast.error('Error loading role configuration');
+      }
+      
+      // Only set empty styles if we're not retrying
+      if (retryCount >= 3 || (!error?.isRateLimit && error?.statusCode !== 429)) {
+        setAllowedServiceStyles([]);
+      }
     } finally {
+      loadingRef.current = false;
       setLoadingRoleConfig(false);
     }
   };

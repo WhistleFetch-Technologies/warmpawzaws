@@ -5,36 +5,36 @@
  */
 import { z } from 'zod';
 export declare const SubmitVendorApplicationRequestSchema: z.ZodObject<{
-    phone: z.ZodString;
+    phone: z.ZodEffects<z.ZodString, string, string>;
     application_payload: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    uploaded_documents: z.ZodOptional<z.ZodArray<z.ZodObject<{
+    uploaded_documents: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodObject<{
         type: z.ZodString;
-        url: z.ZodString;
-        name: z.ZodString;
+        url: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+        name: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     }, "strip", z.ZodTypeAny, {
         type: string;
         name: string;
         url: string;
     }, {
         type: string;
-        name: string;
-        url: string;
-    }>, "many">>;
+        name?: string | undefined;
+        url?: string | undefined;
+    }>, "many">>>;
 }, "strip", z.ZodTypeAny, {
     phone: string;
     application_payload: Record<string, unknown>;
-    uploaded_documents?: {
+    uploaded_documents: {
         type: string;
         name: string;
         url: string;
-    }[] | undefined;
+    }[];
 }, {
     phone: string;
     application_payload: Record<string, unknown>;
     uploaded_documents?: {
         type: string;
-        name: string;
-        url: string;
+        name?: string | undefined;
+        url?: string | undefined;
     }[] | undefined;
 }>;
 export declare const SelectVendorRoleRequestSchema: z.ZodObject<{

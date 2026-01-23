@@ -622,6 +622,278 @@ export function registerVendorSetupEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  /**
+   * GET /vendor/:vendorId/go-live/checklist
+   * Get go-live prerequisites checklist
+   */
+  app.get('/vendor/:vendorId/go-live/checklist', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Get vendor details
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Check prerequisites
+      const checklist = [];
+
+      // 1. Profile Complete
+      const profileComplete = !!(vendor.business_name && vendor.address && vendor.phone);
+      checklist.push({
+        id: 'profile',
+        label: 'Profile Complete',
+        status: profileComplete ? 'complete' : 'pending',
+        description: profileComplete ? 'Business details added' : 'Add business name, address, and contact',
+        actionUrl: profileComplete ? null : '/vendor/profile',
+      });
+
+      // 2. Bank Account Added & Verified
+      const bankAccountResult = await query(
+        `SELECT COUNT(*) as count FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const bankAccountCount = parseInt(bankAccountResult.rows[0]?.count || '0', 10);
+      const bankAccountComplete = bankAccountCount > 0;
+      checklist.push({
+        id: 'bank_account',
+        label: 'Bank Account Verified',
+        status: bankAccountComplete ? 'complete' : 'pending',
+        description: bankAccountComplete ? `Account ending in ${vendor.bank_account_last4 || '****'}` : 'Add and verify bank account',
+        actionUrl: bankAccountComplete ? null : '/vendor/bank-account',
+      });
+
+      // 3. At least 1 Service Published
+      const servicesResult = await query(
+        `SELECT COUNT(*) as count FROM vendor_services 
+         WHERE vendor_id = $1 AND publish_status = 'published' AND is_enabled = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const servicesCount = parseInt(servicesResult.rows[0]?.count || '0', 10);
+      const servicesComplete = servicesCount > 0;
+      checklist.push({
+        id: 'services',
+        label: 'Services Published',
+        status: servicesComplete ? 'complete' : 'pending',
+        description: servicesComplete ? `${servicesCount} service(s) published` : 'Publish at least 1 service',
+        actionUrl: servicesComplete ? null : '/vendor/services',
+      });
+
+      // 4. At least 1 Staff Added (for center) OR Solo Profile Complete
+      const vendorType = vendor.vendor_type || vendor.vendor_configuration || 'center';
+      const isSolo = vendorType === 'solo' || vendor.is_solo_provider;
+      
+      let staffComplete = false;
+      if (isSolo) {
+        // For solo, check if profile is complete
+        staffComplete = profileComplete;
+      } else {
+        // For center, check if staff exists
+        const staffResult = await query(
+          `SELECT COUNT(*) as count FROM staff WHERE vendor_id = $1 AND is_active = true`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ count: 0 }] }));
+        const staffCount = parseInt(staffResult.rows[0]?.count || '0', 10);
+        staffComplete = staffCount > 0;
+      }
+      
+      checklist.push({
+        id: 'staff',
+        label: isSolo ? 'Profile Complete' : 'Staff Added',
+        status: staffComplete ? 'complete' : 'pending',
+        description: isSolo 
+          ? (staffComplete ? 'Solo profile complete' : 'Complete your profile')
+          : (staffComplete ? 'Staff members added' : 'Add at least 1 staff member'),
+        actionUrl: staffComplete ? null : (isSolo ? '/vendor/profile' : '/vendor/staff'),
+      });
+
+      // 5. Availability Configured
+      const availabilityComplete = !!(vendor.availability_configured || vendor.operating_hours);
+      checklist.push({
+        id: 'availability',
+        label: 'Availability Configured',
+        status: availabilityComplete ? 'complete' : 'pending',
+        description: availabilityComplete ? 'Operating hours set' : 'Configure availability and operating hours',
+        actionUrl: availabilityComplete ? null : '/vendor/availability',
+      });
+
+      // 6. Center Timing Set (for centers)
+      const timingComplete = isSolo || !!(vendor.operating_hours || vendor.metadata?.operating_hours);
+      checklist.push({
+        id: 'timing',
+        label: isSolo ? 'Profile Complete' : 'Center Timing Set',
+        status: timingComplete ? 'complete' : 'pending',
+        description: timingComplete ? 'Timing configured' : 'Set center operating hours',
+        actionUrl: timingComplete ? null : '/vendor/availability',
+      });
+
+      const canGoLive = checklist.every((item) => item.status === 'complete');
+
+      return c.json({
+        success: true,
+        checklist,
+        canGoLive,
+        vendorType: isSolo ? 'solo' : 'center',
+      });
+    } catch (error: any) {
+      console.error('Error getting go-live checklist:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/go-live
+   * Activate center/vendor (go live)
+   */
+  app.post('/vendor/:vendorId/go-live', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { centerId } = body;
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Verify vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Check prerequisites directly
+      // 1. Profile complete
+      const profileComplete = !!(vendor.business_name && vendor.address && vendor.phone);
+      
+      // 2. Bank account verified
+      const bankAccountResult = await query(
+        `SELECT COUNT(*) as count FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const bankAccountComplete = parseInt(bankAccountResult.rows[0]?.count || '0', 10) > 0;
+      
+      // 3. Services published
+      const servicesResult = await query(
+        `SELECT COUNT(*) as count FROM vendor_services 
+         WHERE vendor_id = $1 AND publish_status = 'published' AND is_enabled = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const servicesComplete = parseInt(servicesResult.rows[0]?.count || '0', 10) > 0;
+      
+      // 4. Staff/Profile complete
+      const vendorType = vendor.vendor_type || vendor.vendor_configuration || 'center';
+      const isSolo = vendorType === 'solo' || vendor.is_solo_provider;
+      let staffComplete = false;
+      if (isSolo) {
+        staffComplete = profileComplete;
+      } else {
+        const staffResult = await query(
+          `SELECT COUNT(*) as count FROM staff WHERE vendor_id = $1 AND is_active = true`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ count: 0 }] }));
+        staffComplete = parseInt(staffResult.rows[0]?.count || '0', 10) > 0;
+      }
+      
+      // 5. Availability configured
+      const availabilityComplete = !!(vendor.availability_configured || vendor.operating_hours);
+      
+      // 6. Timing set
+      const timingComplete = isSolo || !!(vendor.operating_hours || vendor.metadata?.operating_hours);
+      
+      const canGoLive = profileComplete && bankAccountComplete && servicesComplete && staffComplete && availabilityComplete && timingComplete;
+
+      if (!canGoLive) {
+        return c.json({ 
+          error: 'Cannot go live. Please complete all prerequisites.',
+          checklistUrl: `/vendor/${vendorId}/go-live/checklist`
+        }, 400);
+      }
+
+      // Update vendor to go live
+      const updateData: any = {
+        is_active: true,
+        go_live_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (centerId) {
+        updateData.center_id = centerId;
+      }
+
+      await update('vendors', { id: vendorId }, updateData);
+
+      return c.json({
+        success: true,
+        message: 'Vendor is now live!',
+        goLiveAt: updateData.go_live_at,
+      });
+    } catch (error: any) {
+      console.error('Error going live:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/center/status
+   * Get center status
+   */
+  app.get('/vendor/:vendorId/center/status', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Get vendor details
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Get service count
+      const servicesResult = await query(
+        `SELECT COUNT(*) as count FROM vendor_services 
+         WHERE vendor_id = $1 AND publish_status = 'published' AND is_enabled = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const servicesCount = parseInt(servicesResult.rows[0]?.count || '0', 10);
+
+      // Get staff count
+      const staffResult = await query(
+        `SELECT COUNT(*) as count FROM staff WHERE vendor_id = $1 AND is_active = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const staffCount = parseInt(staffResult.rows[0]?.count || '0', 10);
+
+      return c.json({
+        success: true,
+        status: {
+          isActive: vendor.is_active || false,
+          goLiveAt: vendor.go_live_at || null,
+          servicesCount,
+          staffCount,
+          availabilityConfigured: vendor.availability_configured || false,
+          setupCompleted: vendor.setup_completed || false,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error getting center status:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 }
 
 // Helper functions

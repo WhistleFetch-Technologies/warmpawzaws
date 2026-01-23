@@ -811,7 +811,8 @@ export const DEFAULT_LABELS: RoleLabels = {
 export function getRoleLabels(roleId: string | undefined): RoleLabels {
   if (!roleId) return DEFAULT_LABELS;
   
-  const normalized = roleId.toLowerCase().trim();
+  // ✅ FIX: Ensure roleId is a string before calling toLowerCase
+  const normalized = String(roleId).toLowerCase().trim();
   return ROLE_LABELS[normalized] || DEFAULT_LABELS;
 }
 

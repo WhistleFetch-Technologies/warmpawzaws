@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -22,6 +22,7 @@ interface WalkerBookingRouterProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
+  onInternalBackReady?: (handleBack: () => void) => void; // ✅ NEW: Expose internal handleBack to parent
 }
 
 type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';
@@ -51,7 +52,8 @@ export function WalkerBookingRouter({
   duration,
   onBack, 
   onNavigate, 
-  onViewBooking 
+  onViewBooking,
+  onInternalBackReady // ✅ NEW: Callback to expose internal handleBack
 }: WalkerBookingRouterProps) {
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to datetime
   // This preserves the service-style context when coming from service listing
@@ -367,7 +369,7 @@ export function WalkerBookingRouter({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
@@ -382,7 +384,14 @@ export function WalkerBookingRouter({
     } else {
       onBack();
     }
-  };
+  }, [step, selectedServiceType, onBack]);
+
+  // ✅ NEW: Expose handleBack to parent for header navigation
+  useEffect(() => {
+    if (onInternalBackReady) {
+      onInternalBackReady(handleBack);
+    }
+  }, [handleBack, onInternalBackReady]);
 
   // ✅ Proceed to UniversalPaymentPage
   const handleProceedToPayment = () => {
@@ -467,8 +476,7 @@ export function WalkerBookingRouter({
   };
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
-      <div className="px-4 py-6">
+    <div className="px-4 py-6">
         {step !== 'confirmation' && renderStepIndicator()}
 
         {/* Service Selection */}
@@ -869,7 +877,7 @@ export function WalkerBookingRouter({
         {step === 'payment' && showPaymentPage && (
           <UniversalPaymentPage
             type="booking"
-            serviceId={selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
             serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
             serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
             serviceStyle="at_home"
@@ -1089,7 +1097,6 @@ export function WalkerBookingRouter({
             }}
           />
         )}
-      </div>
     </div>
   );
 }

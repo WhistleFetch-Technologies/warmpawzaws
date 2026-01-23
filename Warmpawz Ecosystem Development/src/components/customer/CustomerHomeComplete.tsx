@@ -3,7 +3,8 @@ import {
   Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock, 
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users, 
   GraduationCap, Coffee, Bike, Shield, Sparkles, TrendingUp,
-  Phone, Video, Building, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree
+  Phone, Video, Building, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree,
+  Brain, BedDouble, FlaskConical // ✅ Added icons for new home services
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useCart } from '../../context/CartContext';
@@ -202,6 +203,11 @@ export function CustomerHome({
     { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort' },
     { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday' },
     { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset' },
+    
+    // ✅ NEW HOME SERVICES - Unified booking flow
+    { icon: BedDouble, label: 'Pet Sitting', color: 'bg-pink-100 text-pink-600', screen: 'sitter' },
+    { icon: Brain, label: 'Behaviourist', color: 'bg-amber-100 text-amber-600', screen: 'behaviourist' },
+    { icon: FlaskConical, label: 'Diagnostics', color: 'bg-cyan-100 text-cyan-600', screen: 'diagnostics' },
   ];
 
   const groomingServices = [

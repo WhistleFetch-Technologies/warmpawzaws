@@ -44,6 +44,10 @@ interface Provider {
     serviceId: string;
     name: string;
     price: number;
+    originalPrice?: number; // ✅ NEW: Original price before discount
+    discountPercentage?: number; // ✅ NEW: Discount percentage
+    discountAmount?: number; // ✅ NEW: Discount amount
+    promotionId?: string; // ✅ NEW: Active promotion ID
     duration: number;
     description?: string;
     category?: string;
@@ -75,6 +79,9 @@ export function GroomingServicesByStyle({
   const [sortBy, setSortBy] = useState<'price' | 'name' | 'popular'>('popular');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   
+  // ✅ NEW: Promotions state
+  const [promotions, setPromotions] = useState<any[]>([]);
+  
   // ✅ NEW: Filter and sort state for provider listing
   const [providerSortBy, setProviderSortBy] = useState<'distance' | 'rating' | 'relevance' | 'reviews'>('relevance');
   const [providerFilter, setProviderFilter] = useState<{
@@ -95,6 +102,24 @@ export function GroomingServicesByStyle({
       loadVendorProfile();
     }
   }, [serviceStyle, vendorId]);
+
+  // ✅ NEW: Load active promotions for discount display
+  useEffect(() => {
+    loadPromotions();
+  }, []);
+
+  const loadPromotions = async () => {
+    try {
+      const response = await apiClient.get('/promotions/active') as any;
+      if (response.success && response.promotions) {
+        setPromotions(response.promotions || []);
+        console.log(`✅ [Grooming] Loaded ${response.promotions.length} active promotions`);
+      }
+    } catch (error) {
+      console.error('Error loading promotions:', error);
+      // Don't block UI if promotions fail to load
+    }
+  };
 
   const loadServicesByStyle = async () => {
     // Get customer location from localStorage for distance-based sorting
@@ -137,8 +162,75 @@ export function GroomingServicesByStyle({
           );
         }
         
-        setProviders(providerData);
-        console.log(`✅ [Grooming] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+        // ✅ NEW: Apply promotions to services in providerData
+        const enrichedProviders = await Promise.all(
+          providerData.map(async (p: any) => {
+            if (p.services && Array.isArray(p.services)) {
+              const enrichedServices = await Promise.all(
+                p.services.map(async (s: any) => {
+                  const basePrice = s.price || 0;
+                  let finalPrice = basePrice;
+                  let originalPrice = basePrice;
+                  let discountPercentage: number | undefined;
+                  let discountAmount: number | undefined;
+                  let promotionId: string | undefined;
+
+                  // Check for applicable promotions
+                  if (promotions.length > 0) {
+                    const applicablePromo = promotions.find((promo: any) => {
+                      const appliesToService = !promo.applicable_services || 
+                        promo.applicable_services.length === 0 ||
+                        promo.applicable_services.includes(s.id || s.serviceId);
+                      
+                      const appliesToCategory = !promo.applicable_roles || 
+                        promo.applicable_roles.length === 0 ||
+                        promo.applicable_roles.includes(category);
+                      
+                      const now = new Date();
+                      const startDate = new Date(promo.start_date);
+                      const endDate = promo.end_date ? new Date(promo.end_date) : null;
+                      const isActive = now >= startDate && (!endDate || now <= endDate);
+                      
+                      return appliesToService && appliesToCategory && isActive && promo.is_active;
+                    });
+
+                    if (applicablePromo) {
+                      originalPrice = basePrice;
+                      promotionId = applicablePromo.id;
+                      
+                      if (applicablePromo.discount_type === 'percentage') {
+                        discountPercentage = parseFloat(applicablePromo.discount_value || '0');
+                        discountAmount = (basePrice * discountPercentage) / 100;
+                        if (applicablePromo.max_discount_amount) {
+                          discountAmount = Math.min(discountAmount, parseFloat(applicablePromo.max_discount_amount));
+                        }
+                        finalPrice = Math.max(0, basePrice - discountAmount);
+                      } else if (applicablePromo.discount_type === 'fixed') {
+                        discountAmount = parseFloat(applicablePromo.discount_value || '0');
+                        finalPrice = Math.max(0, basePrice - discountAmount);
+                        discountPercentage = Math.round((discountAmount / basePrice) * 100);
+                      }
+                    }
+                  }
+
+                  return {
+                    ...s,
+                    price: finalPrice,
+                    originalPrice: originalPrice !== finalPrice ? originalPrice : undefined,
+                    discountPercentage,
+                    discountAmount,
+                    promotionId,
+                  };
+                })
+              );
+              return { ...p, services: enrichedServices };
+            }
+            return p;
+          })
+        );
+
+        setProviders(enrichedProviders);
+        console.log(`✅ [Grooming] Loaded ${enrichedProviders.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
       } else {
         console.warn('⚠️ [Grooming] API returned success=false');
         setProviders([]);
@@ -1190,6 +1282,28 @@ export function GroomingServicesByStyle({
                                 </p>
                               )}
                               <div className="flex items-center gap-3 mt-2">
+                                {/* ✅ NEW: Price with discount display */}
+                                <div className="flex items-center gap-2">
+                                  {service.originalPrice && service.originalPrice > service.price ? (
+                                    <>
+                                      <span className="text-lg font-bold text-[#FF8C42]">
+                                        ₹{service.price}
+                                      </span>
+                                      <span className="text-sm text-gray-400 line-through">
+                                        ₹{service.originalPrice}
+                                      </span>
+                                      {service.discountPercentage && (
+                                        <Badge className="bg-green-500 text-white text-xs">
+                                          {service.discountPercentage}% OFF
+                                        </Badge>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-lg font-bold text-[#FF8C42]">
+                                      ₹{service.price}
+                                    </span>
+                                  )}
+                                </div>
                                 <Badge variant="outline" className="text-xs">
                                   <Clock className="w-3 h-3 mr-1" />
                                   {service.duration} mins
@@ -1202,9 +1316,26 @@ export function GroomingServicesByStyle({
                               </div>
                             </div>
                             <div className="text-right ml-4">
-                              <div className="text-lg font-bold text-gray-900">
-                                ₹{service.price}
-                              </div>
+                              {/* ✅ NEW: Price with discount display */}
+                              {service.originalPrice && service.originalPrice > service.price ? (
+                                <div className="mb-2">
+                                  <div className="text-lg font-bold text-[#FF8C42]">
+                                    ₹{service.price}
+                                  </div>
+                                  <div className="text-sm text-gray-400 line-through">
+                                    ₹{service.originalPrice}
+                                  </div>
+                                  {service.discountPercentage && (
+                                    <Badge className="bg-green-500 text-white text-xs mt-1">
+                                      {service.discountPercentage}% OFF
+                                    </Badge>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-lg font-bold text-gray-900 mb-2">
+                                  ₹{service.price}
+                                </div>
+                              )}
                               <Button
                                 size="sm"
                                 className="mt-2 bg-[#FF8C42] hover:bg-[#E67A35] text-white"

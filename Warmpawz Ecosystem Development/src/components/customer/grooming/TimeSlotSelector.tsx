@@ -2,26 +2,81 @@ import { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
-import { ArrowLeft, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Info, Building2, XCircle, CheckCircle2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+
+interface SchedulingPolicy {
+  advanceBookingDays: number;
+  cancellationHours: number;
+  operatingHours: string;
+  workingDays: string[];
+  autoConfirm: boolean;
+  maxBookingsPerSlot: number;
+}
 
 interface TimeSlotSelectorProps {
   vendorId: string;
   serviceDuration?: number; // Kept for display
   serviceStyle?: string;    // ✅ NEW: Required for V2 slots (default: 'at_center')
+  vendorName?: string;      // ✅ NEW: For display
   onBack: () => void;
   onSelect: (date: string, time: string) => void;
 }
 
-export function TimeSlotSelector({ vendorId, serviceDuration = 60, serviceStyle = 'at_center', onBack, onSelect }: TimeSlotSelectorProps) {
+export function TimeSlotSelector({ vendorId, serviceDuration = 60, serviceStyle = 'at_center', vendorName, onBack, onSelect }: TimeSlotSelectorProps) {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(new Date());
   const [slots, setSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [vendorOffline, setVendorOffline] = useState(false);
+  const [showPolicy, setShowPolicy] = useState(true);
+  
+  // ✅ NEW: Scheduling policy state
+  const [schedulingPolicy, setSchedulingPolicy] = useState<SchedulingPolicy>({
+    advanceBookingDays: 7,
+    cancellationHours: 4,
+    operatingHours: 'Mon-Sat: 9:00 AM - 7:00 PM',
+    workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    autoConfirm: true,
+    maxBookingsPerSlot: 1
+  });
+  const [loadingPolicy, setLoadingPolicy] = useState(false);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  
+  // ✅ NEW: Load vendor scheduling policy
+  useEffect(() => {
+    loadSchedulingPolicy();
+  }, [vendorId]);
+  
+  const loadSchedulingPolicy = async () => {
+    try {
+      setLoadingPolicy(true);
+      const response = await fetch(
+        `${API_BASE}/vendor/${vendorId}/scheduling-policy`,
+        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.policy) {
+          setSchedulingPolicy({
+            advanceBookingDays: data.policy.advanceBookingDays || 7,
+            cancellationHours: data.policy.cancellationHours || 4,
+            operatingHours: data.policy.operatingHours || 'Mon-Sat: 9:00 AM - 7:00 PM',
+            workingDays: data.policy.workingDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+            autoConfirm: data.policy.autoConfirm !== false,
+            maxBookingsPerSlot: data.policy.maxBookingsPerSlot || 1
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Using default scheduling policy');
+    } finally {
+      setLoadingPolicy(false);
+    }
+  };
 
   // Generate next 7 days
   const getDatesForWeek = () => {
@@ -188,6 +243,90 @@ export function TimeSlotSelector({ vendorId, serviceDuration = 60, serviceStyle 
 
       {/* Content */}
       <div className="px-6 py-6">
+        {/* ✅ NEW: Scheduling Policy Info Card */}
+        {showPolicy && (
+          <Card className="p-4 mb-6 bg-blue-50 border-blue-200 relative">
+            <button
+              onClick={() => setShowPolicy(false)}
+              className="absolute top-2 right-2 p-1 hover:bg-blue-100 rounded-full transition-colors"
+            >
+              <XCircle className="w-4 h-4 text-blue-400" />
+            </button>
+            
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-900 mb-1">
+                  {vendorName || 'Center'} Booking Info
+                </h3>
+                <p className="text-xs text-blue-700">Review the scheduling policy before booking</p>
+              </div>
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2 text-blue-800">
+                <Clock className="w-4 h-4 text-blue-600" />
+                <span className="font-medium">Operating Hours:</span>
+                <span>{schedulingPolicy.operatingHours}</span>
+              </div>
+              
+              <div className="flex items-center gap-2 text-blue-800">
+                <Calendar className="w-4 h-4 text-blue-600" />
+                <span className="font-medium">Advance Booking:</span>
+                <span>Up to {schedulingPolicy.advanceBookingDays} days ahead</span>
+              </div>
+              
+              <div className="flex items-center gap-2 text-blue-800">
+                <Info className="w-4 h-4 text-blue-600" />
+                <span className="font-medium">Cancellation:</span>
+                <span>Free up to {schedulingPolicy.cancellationHours} hours before</span>
+              </div>
+              
+              <div className="flex items-center gap-2 text-blue-800">
+                <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                <span className="font-medium">Confirmation:</span>
+                <span>{schedulingPolicy.autoConfirm ? 'Instant confirmation' : 'Requires approval'}</span>
+              </div>
+            </div>
+            
+            {/* Working Days Pills */}
+            <div className="mt-3 pt-3 border-t border-blue-200">
+              <p className="text-xs text-blue-700 mb-2">Working Days:</p>
+              <div className="flex flex-wrap gap-1">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => {
+                  const fullDay = day === 'Mon' ? 'Monday' : day === 'Tue' ? 'Tuesday' : day === 'Wed' ? 'Wednesday' : day === 'Thu' ? 'Thursday' : day === 'Fri' ? 'Friday' : day === 'Sat' ? 'Saturday' : 'Sunday';
+                  const isWorking = schedulingPolicy.workingDays.includes(fullDay);
+                  return (
+                    <Badge 
+                      key={day}
+                      className={`text-xs ${
+                        isWorking 
+                          ? 'bg-green-100 text-green-700 border-green-200' 
+                          : 'bg-gray-100 text-gray-400 border-gray-200'
+                      }`}
+                    >
+                      {day}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+        )}
+        
+        {/* Show Policy Button (when hidden) */}
+        {!showPolicy && (
+          <button
+            onClick={() => setShowPolicy(true)}
+            className="mb-4 text-sm text-blue-600 flex items-center gap-1 hover:underline"
+          >
+            <Info className="w-4 h-4" />
+            View booking policy
+          </button>
+        )}
+
         {/* Date Selection */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">

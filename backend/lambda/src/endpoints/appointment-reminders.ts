@@ -48,12 +48,12 @@ class GetUpcomingAppointmentsHandler extends BaseHandler {
     const serviceStyle = context.event.queryStringParameters?.serviceStyle;
 
     try {
-      // Get appointments within the specified time window
+      // ✅ FIX: Use customer phone from customers table (b.customer_phone column doesn't exist)
       let queryStr = `
         SELECT 
           b.id,
           b.customer_id,
-          b.customer_phone,
+          c.phone as customer_phone,
           c.full_name as customer_name,
           b.vendor_id,
           v.business_name as vendor_name,
@@ -75,13 +75,16 @@ class GetUpcomingAppointmentsHandler extends BaseHandler {
           AND b.booking_date + b.booking_time::time <= NOW() + INTERVAL '${withinMinutes} minutes'
       `;
 
+      const params: any[] = [];
       if (serviceStyle) {
-        queryStr += ` AND b.service_type = '${serviceStyle}'`;
+        // ✅ FIX: Use parameterized query for security
+        queryStr += ` AND b.service_type = $1`;
+        params.push(serviceStyle);
       }
 
       queryStr += ` ORDER BY scheduled_at ASC`;
 
-      const { rows } = await query(queryStr);
+      const { rows } = await query(queryStr, params.length > 0 ? params : undefined);
 
       const appointments: UpcomingAppointment[] = rows.map(row => ({
         id: row.id,
@@ -131,11 +134,12 @@ class SendPreAppointmentNotificationsHandler extends BaseHandler {
       const windowStart = reminderMinutes - 1;
       const windowEnd = reminderMinutes + 1;
 
+      // ✅ FIX: Use customer phone from customers table (b.customer_phone column doesn't exist)
       const { rows: appointments } = await query(
         `SELECT 
           b.id,
           b.customer_id,
-          b.customer_phone,
+          c.phone as customer_phone,
           c.full_name as customer_name,
           c.fcm_token as customer_fcm_token,
           b.vendor_id,
@@ -325,12 +329,13 @@ class ManualTriggerReminderHandler extends BaseHandler {
     }
 
     try {
+      // ✅ FIX: Use customer phone from customers table (b.customer_phone column doesn't exist)
       // Get booking details
       const { rows: bookings } = await query(
         `SELECT 
           b.id,
           b.customer_id,
-          b.customer_phone,
+          c.phone as customer_phone,
           c.full_name as customer_name,
           b.vendor_id,
           v.business_name as vendor_name,
@@ -405,18 +410,23 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
 
   // Get upcoming appointments
   app.get('/reminders/upcoming', async (c) => {
-    const event = {
-      httpMethod: 'GET',
-      path: '/reminders/upcoming',
-      headers: {},
-      body: '',
-      pathParameters: {},
-      queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
-    };
-    const context = { requestId: crypto.randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
-    const result = await getUpcomingHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const event = {
+        httpMethod: 'GET',
+        path: '/reminders/upcoming',
+        headers: {},
+        body: '',
+        pathParameters: {},
+        queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
+        requestContext: { requestId: crypto.randomUUID() },
+      };
+      const context = { requestId: crypto.randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
+      const result = await getUpcomingHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[reminders/upcoming] Error:', error);
+      return c.json({ success: true, reminders: [] }, 200);
+    }
   });
 
   // Send pre-appointment notifications

@@ -55,6 +55,84 @@ async function incrementFormVersion(roleId: string) {
   await query('UPDATE onboarding_forms SET version = $1, updated_at = NOW() WHERE role_id = $2', [version + 1, roleId]);
 }
 
+/**
+ * Role name aliases/mappings for common variations
+ */
+const ROLE_NAME_ALIASES: Record<string, string[]> = {
+  'veterinarian': ['veterinarian', 'vet', 'Veterinarian', 'vet_solo', 'vet_clinic', 'veterinary_clinic'],
+  'vet_solo': ['vet_solo', 'veterinarian', 'vet', 'Veterinarian'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'veterinarian', 'vet'],
+  'veterinary_clinic': ['veterinary_clinic', 'vet_clinic', 'veterinarian', 'vet'],
+  'pet_walker': ['pet_walker', 'walker', 'Pet Walker'],
+  'pet_groomer': ['pet_groomer', 'groomer', 'Pet Grooming Salon'],
+  'diagnostics_center': ['diagnostics_center', 'diagnostic_center', 'diagnostics'],
+};
+
+/**
+ * Get role by name with case-insensitive fallback and alias support
+ * Only returns active roles
+ * Tries: exact match -> case-insensitive -> aliases -> partial match
+ */
+async function getRoleByName(roleId: string): Promise<any | null> {
+  console.log(`[getRoleByName] Looking up role: "${roleId}"`);
+  
+  // Try exact match first (only active roles)
+  let roles = await select('roles', { name: roleId, is_active: true });
+  console.log(`[getRoleByName] Exact match for "${roleId}": ${roles.length} results`);
+  
+  // If exact match fails, try case-insensitive lookup (only active roles)
+  if (roles.length === 0) {
+    console.log(`[getRoleByName] Trying case-insensitive lookup for "${roleId}"`);
+    const caseInsensitiveResult = await query(
+      'SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1',
+      [roleId]
+    );
+    roles = caseInsensitiveResult.rows || [];
+    console.log(`[getRoleByName] Case-insensitive match: ${roles.length} results`);
+  }
+  
+  // If still no match, try aliases (only active roles)
+  if (roles.length === 0) {
+    const normalizedRoleId = roleId.toLowerCase();
+    const aliases = ROLE_NAME_ALIASES[normalizedRoleId] || ROLE_NAME_ALIASES[roleId] || [];
+    
+    if (aliases.length > 0) {
+      console.log(`[getRoleByName] Trying aliases for "${roleId}":`, aliases);
+      for (const alias of aliases) {
+        const aliasResult = await query(
+          'SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1',
+          [alias]
+        );
+        if (aliasResult.rows && aliasResult.rows.length > 0) {
+          roles = aliasResult.rows;
+          console.log(`[getRoleByName] Found role via alias "${alias}": ${roles[0].name}`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // If still no match, try partial match (contains) - only active roles
+  if (roles.length === 0) {
+    console.log(`[getRoleByName] Trying partial match for "${roleId}"`);
+    const partialResult = await query(
+      'SELECT * FROM roles WHERE LOWER(name) LIKE LOWER($1) AND is_active = true LIMIT 1',
+      [`%${roleId}%`]
+    );
+    roles = partialResult.rows || [];
+    console.log(`[getRoleByName] Partial match: ${roles.length} results`);
+  }
+  
+  // If still no match, log all available active roles for debugging
+  if (roles.length === 0) {
+    const activeRoles = await select('roles', { is_active: true }, { limit: 100 });
+    const roleNames = activeRoles.map((r: any) => r.name).join(', ');
+    console.log(`[getRoleByName] Active role "${roleId}" not found. Available active roles:`, roleNames);
+  }
+  
+  return roles.length > 0 ? roles[0] : null;
+}
+
 function getSectionsFromFields(fields: any[]) {
   const sections: Record<string, any> = {};
   
@@ -94,12 +172,232 @@ function formatTitle(str: string) {
 
 export function registerOnboardingFormManagementEndpoints(app: Hono) {
   /**
+   * POST /admin/onboarding-fields/migrate
+   * Migrate onboarding forms for all active roles
+   * MUST be registered BEFORE parameterized routes to avoid route conflicts
+   */
+  app.post('/admin/onboarding-fields/migrate', async (c) => {
+    try {
+      console.log('[MIGRATE] Migration endpoint called');
+      
+      // This endpoint doesn't require a body
+      // Check if body exists before trying to parse
+      const hasBody = c.req.header('content-length') && parseInt(c.req.header('content-length') || '0') > 0;
+      if (hasBody) {
+        try {
+          await c.req.json().catch(() => ({}));
+        } catch {
+          // Ignore body parsing errors
+        }
+      }
+      
+      // Get all active roles
+      console.log('[MIGRATE] Querying active roles...');
+      const activeRoles = await select('roles', { is_active: true }, {
+        orderBy: 'name',
+        orderDirection: 'ASC',
+      });
+      
+      console.log(`[MIGRATE] Found ${activeRoles.length} active roles`);
+      
+      if (activeRoles.length === 0) {
+        return c.json({
+          success: false,
+          message: 'No active roles found',
+          summary: { totalRoles: 0, created: 0, updated: 0, skipped: 0, errors: 0 },
+          results: [],
+        });
+      }
+      
+      const results: any[] = [];
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      // Standard onboarding fields (same as role-seeding.ts)
+      const STANDARD_ONBOARDING_FIELDS = [
+        {
+          fieldName: 'businessName',
+          label: 'Business Name',
+          type: 'text',
+          section: 'business_information',
+          isMandatory: true,
+          displayOrder: 1,
+        },
+        {
+          fieldName: 'fullName',
+          label: 'Contact Person Name',
+          type: 'text',
+          section: 'business_information',
+          isMandatory: true,
+          displayOrder: 2,
+        },
+        {
+          fieldName: 'phone',
+          label: 'Phone Number',
+          type: 'phone',
+          section: 'business_information',
+          isMandatory: true,
+          displayOrder: 3,
+        },
+        {
+          fieldName: 'email',
+          label: 'Email',
+          type: 'email',
+          section: 'business_information',
+          isMandatory: true,
+          displayOrder: 4,
+        },
+        {
+          fieldName: 'businessType',
+          label: 'Business Type',
+          type: 'dropdown',
+          section: 'business_information',
+          isMandatory: true,
+          options: ['Solo Practitioner', 'Clinic', 'Home Service', 'Mobile Unit'],
+          displayOrder: 5,
+        },
+        {
+          fieldName: 'address',
+          label: 'Address',
+          type: 'textarea',
+          section: 'location_information',
+          isMandatory: true,
+          displayOrder: 6,
+        },
+        {
+          fieldName: 'city',
+          label: 'City',
+          type: 'text',
+          section: 'location_information',
+          isMandatory: true,
+          displayOrder: 7,
+        },
+        {
+          fieldName: 'state',
+          label: 'State',
+          type: 'text',
+          section: 'location_information',
+          isMandatory: true,
+          displayOrder: 8,
+        },
+        {
+          fieldName: 'pin',
+          label: 'PIN Code',
+          type: 'text',
+          section: 'location_information',
+          isMandatory: true,
+          displayOrder: 9,
+        },
+        {
+          fieldName: 'gstNumber',
+          label: 'GST Number',
+          type: 'text',
+          section: 'business_information',
+          isMandatory: false,
+          displayOrder: 10,
+        },
+      ];
+
+      for (const role of activeRoles) {
+        try {
+          const roleName = role.name;
+          
+          // Check if form exists
+          const existingForms = await select('onboarding_forms', { role_id: roleName });
+          
+          // Create fields array
+          const fields = STANDARD_ONBOARDING_FIELDS.map((f, idx) => ({
+            id: `field_${roleName}_${idx + 1}`,
+            fieldName: f.fieldName,
+            label: f.label,
+            type: f.type,
+            section: f.section,
+            isMandatory: f.isMandatory,
+            requiresDocument: false,
+            placeholder: '',
+            helpText: '',
+            options: f.options || [],
+            validation: {},
+            displayOrder: f.displayOrder || idx + 1,
+            isActive: true,
+            defaultValue: '',
+            dependsOn: null,
+          }));
+
+          if (existingForms.length > 0) {
+            // Form exists - update it to ensure it has standard fields
+            await update('onboarding_forms', { role_id: roleName }, {
+              fields: JSON.stringify(fields),
+              status: 'active',
+              updated_at: new Date().toISOString(),
+            });
+            updated++;
+            results.push({
+              roleId: roleName,
+              roleName: role.display_name || roleName,
+              status: 'updated',
+              fieldsCount: fields.length,
+            });
+          } else {
+            // Form doesn't exist - create it
+            await insert('onboarding_forms', {
+              role_id: roleName,
+              fields: JSON.stringify(fields),
+              status: 'active',
+              version: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            created++;
+            results.push({
+              roleId: roleName,
+              roleName: role.display_name || roleName,
+              status: 'created',
+              fieldsCount: fields.length,
+            });
+          }
+        } catch (error: any) {
+          errors++;
+          console.error(`[MIGRATE] Error processing role ${role.name}:`, error);
+          results.push({
+            roleId: role.name,
+            roleName: role.display_name || role.name,
+            status: 'error',
+            error: error.message,
+          });
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: `Migration completed: ${created} created, ${updated} updated, ${errors} errors`,
+        summary: {
+          totalRoles: activeRoles.length,
+          created,
+          updated,
+          skipped,
+          errors,
+        },
+        results,
+      });
+    } catch (error: any) {
+      console.error('Error migrating onboarding fields:', error);
+      return c.json({ error: error.message || 'Failed to migrate onboarding fields' }, 500);
+    }
+  });
+
+  /**
    * GET /admin/onboarding-fields/:roleId
    * Get all onboarding fields for a specific role
    */
   app.get('/admin/onboarding-fields/:roleId', async (c) => {
     try {
       const { roleId } = c.req.param();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboarding-form-management.ts:102',message:'Route matched - roleId extracted',data:{roleId,rawPath:c.req.path,method:c.req.method},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       // Ensure onboarding_forms table exists
       await query(`
@@ -114,15 +412,40 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
         )
       `).catch(() => {});
 
-      // Get role configuration
-      const roles = await select('roles', { name: roleId });
-      if (roles.length === 0) {
-        return c.json({ error: 'Role not found' }, 404);
+      // Get role configuration with case-insensitive fallback
+      // Only check active roles
+      console.log(`[GET /admin/onboarding-fields/:roleId] Looking up active role: "${roleId}"`);
+      const role = await getRoleByName(roleId);
+      
+      if (!role) {
+        console.error(`[GET /admin/onboarding-fields/:roleId] Active role "${roleId}" not found`);
+        // Get all active roles for better error message
+        const activeRoles = await select('roles', { is_active: true }, { limit: 100 });
+        const roleNames = activeRoles.map((r: any) => r.name).join(', ');
+        return c.json({ 
+          error: 'Role not found',
+          requestedRole: roleId,
+          availableRoles: roleNames ? roleNames.split(', ') : [],
+          hint: 'Only active roles are available. Available active roles listed above.'
+        }, 404);
       }
-      const role = roles[0];
+      
+      // Verify role is active
+      if (!role.is_active) {
+        console.error(`[GET /admin/onboarding-fields/:roleId] Role "${roleId}" is not active`);
+        return c.json({ 
+          error: 'Role is not active',
+          requestedRole: roleId,
+          hint: 'Only active roles can have onboarding forms.'
+        }, 404);
+      }
+      
+      console.log(`[GET /admin/onboarding-fields/:roleId] Found active role: ${role.name} (display: ${role.display_name})`);
 
       // Get custom onboarding fields configuration
-      const forms = await select('onboarding_forms', { role_id: roleId });
+      // Use the actual role.name from database, not the roleId parameter (which might be an alias)
+      const actualRoleName = role.name;
+      const forms = await select('onboarding_forms', { role_id: actualRoleName });
       let fields: any[] = [];
 
       if (forms.length > 0) {
@@ -133,11 +456,13 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       }
 
       // If no fields found, return empty array (frontend will use default)
+      // This is NOT an error - the form just hasn't been created yet
       if (fields.length === 0) {
+        console.log(`[GET /admin/onboarding-fields/:roleId] No form found for role "${actualRoleName}", returning empty form`);
         return c.json({
           success: true,
-          roleId,
-          roleName: role.display_name || role.name,
+          roleId: actualRoleName,
+          roleName: role.display_name || actualRoleName,
           fields: [],
           sections: [],
           version: 1,
@@ -149,11 +474,11 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        roleId,
-        roleName: role.display_name || role.name,
+        roleId: actualRoleName,
+        roleName: role.display_name || actualRoleName,
         fields,
         sections,
-        version: await getFormVersion(roleId),
+        version: await getFormVersion(actualRoleName),
       });
     } catch (error: any) {
       console.error('Error fetching onboarding fields:', error);
@@ -170,9 +495,9 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       const { roleId } = c.req.param();
       const fieldData = await c.req.json();
 
-      // Validate role exists
-      const roles = await select('roles', { name: roleId });
-      if (roles.length === 0) {
+      // Validate role exists with case-insensitive fallback
+      const role = await getRoleByName(roleId);
+      if (!role) {
         return c.json({ error: 'Role not found' }, 404);
       }
 
@@ -397,12 +722,11 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
     try {
       const { roleId } = c.req.param();
 
-      // Get role configuration
-      const roles = await select('roles', { name: roleId });
-      if (roles.length === 0) {
+      // Get role configuration with case-insensitive fallback
+      const role = await getRoleByName(roleId);
+      if (!role) {
         return c.json({ error: 'Role not found' }, 404);
       }
-      const role = roles[0];
 
       // Get active onboarding fields
       const forms = await select('onboarding_forms', { role_id: roleId });
@@ -478,10 +802,11 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
   /**
    * POST /admin/onboarding-fields/sync
    * Sync onboarding fields from role configs (healing/migration endpoint)
+   * @deprecated Use /admin/onboarding-fields/migrate instead
    */
   app.post('/admin/onboarding-fields/sync', async (c) => {
     try {
-      // Get all roles
+      // Get all active roles
       const roles = await select('roles', { is_active: true });
       const results: any[] = [];
 
@@ -496,7 +821,7 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
             results.push({
               roleId: role.name,
               status: 'skipped',
-              reason: 'Use /admin/roles/seed to create forms',
+              reason: 'Use /admin/onboarding-fields/migrate to create forms',
             });
             continue;
           }

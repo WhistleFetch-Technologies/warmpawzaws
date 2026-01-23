@@ -45,21 +45,27 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
   const loadAnalytics = async () => {
     try {
       setLoading(true);
+      setStaffPerformance([]);
 
       // Load vendor analytics
-      const analyticsRes = await apiClient.get<{ data?: { analytics?: any } }>(`/vendor/${vendorId}/analytics?period=${period}`) as { data?: { analytics?: any } };
+      const analyticsRes = await apiClient.get<{ data?: { analytics?: any }; analytics?: any }>(`/vendor/${vendorId}/analytics?period=${period}`) as { data?: { analytics?: any }; analytics?: any };
 
       if (analyticsRes?.data?.analytics) {
         setAnalytics(analyticsRes.data.analytics);
+      } else if (analyticsRes?.analytics) {
+        setAnalytics(analyticsRes.analytics);
       }
 
-      // Load staff performance
-      const staffRes = await apiClient.get<{ data?: { staffPerformance?: any[] } }>(`/vendor/${vendorId}/staff-performance?period=${period}`);
-
-      if (staffRes.data?.staffPerformance) {
-        setStaffPerformance(staffRes.data.staffPerformance || []);
+      // Load staff performance (non-blocking; 404 or failure leaves list empty)
+      try {
+        const staffRes = await apiClient.get<{ data?: { staffPerformance?: any[] }; staffPerformance?: any[] }>(`/vendor/${vendorId}/staff-performance?period=${period}`);
+        const list = staffRes?.data?.staffPerformance ?? staffRes?.staffPerformance;
+        if (Array.isArray(list)) {
+          setStaffPerformance(list);
+        }
+      } catch (e) {
+        console.warn('Staff performance unavailable:', e);
       }
-
     } catch (error) {
       console.error('Error loading analytics:', error);
       toast.error('Failed to load analytics');

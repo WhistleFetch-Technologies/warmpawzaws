@@ -388,6 +388,7 @@ export function GroomingServiceRouter({ onBack, phone, onNavigate, onViewBooking
     return (
       <TimeSlotSelector
         vendorId={bookingFlow.vendorId}
+        vendorName={bookingFlow.vendorName || 'Grooming Center'} // ✅ Pass vendorName for scheduling policy display
         serviceDuration={bookingFlow.services[0].duration || 60}
         serviceStyle={bookingFlow.serviceType === 'home' ? 'at_home' : 'at_center'} // ✅ Pass serviceStyle for V2 slots
         onBack={() => setCurrentView('select_pet')}

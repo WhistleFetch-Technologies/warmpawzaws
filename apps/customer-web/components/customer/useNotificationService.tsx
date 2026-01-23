@@ -80,9 +80,21 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
               isInitialLoadRef.current = false;
             }
           }
-      } catch (error) {
-        // Silently log error without showing it prominently (this is normal for polling)
-        console.log(`⚠️ [NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));
+      } catch (error: any) {
+        // Only log non-CORS errors to reduce console noise
+        // CORS errors indicate configuration issues and shouldn't be retried
+        if (error?.code !== 'CORS_ERROR') {
+          // Only log in development/UAT mode
+          if (typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || window.location.hostname.includes('uat'))) {
+            console.log(`⚠️ [NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));
+          }
+        } else {
+          // CORS errors are configuration issues - stop polling to avoid spam
+          if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            console.warn(`🚫 [NOTIFICATION-SERVICE] CORS error detected - notification polling disabled`);
+          }
+          return; // Exit early for CORS errors
+        }
         
         // Mark initial load as complete even on error to prevent infinite loops
         if (isInitialLoadRef.current) {

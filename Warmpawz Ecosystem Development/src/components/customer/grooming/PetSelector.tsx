@@ -2,20 +2,23 @@ import { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
-import { ArrowLeft, Plus, Check } from 'lucide-react';
+import { ArrowLeft, Plus, Check, Home as HomeIcon, ShoppingCart, Calendar, User } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { useCart } from '../../../context/CartContext';
 
 interface PetSelectorProps {
   phone: string;
   onBack: () => void;
   onSelect: (pet: any) => void;
   preSelectedPetId?: string;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
-export function PetSelector({ phone, onBack, onSelect, preSelectedPetId }: PetSelectorProps) {
+export function PetSelector({ phone, onBack, onSelect, preSelectedPetId, onNavigate }: PetSelectorProps) {
   const [loading, setLoading] = useState(true);
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any>(null);
+  const { itemCount } = useCart();
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -89,14 +92,14 @@ export function PetSelector({ phone, onBack, onSelect, preSelectedPetId }: PetSe
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
+    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto pb-20">
       {/* Header */}
       <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-6">
         <button 
@@ -198,6 +201,51 @@ export function PetSelector({ phone, onBack, onSelect, preSelectedPetId }: PetSe
             </Button>
           </>
         )}
+      </div>
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('bookings')}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
       </div>
     </div>
   );

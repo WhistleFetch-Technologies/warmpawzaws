@@ -74,8 +74,12 @@ export default function HomePage() {
                 isNewUser: !storedOnboarding
               });
             }
-          } catch (apiError) {
-            console.error('Error fetching customer profile:', apiError);
+          } catch (apiError: any) {
+            // Only log non-CORS errors to reduce console noise
+            if (apiError?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+              console.error('Error fetching customer profile:', apiError);
+            }
+            // Fallback to cached data
             const storedCustomer = localStorage.getItem('customerData');
             const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
             const customerData = storedCustomer ? JSON.parse(storedCustomer) : null;

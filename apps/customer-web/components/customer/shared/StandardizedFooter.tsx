@@ -24,7 +24,8 @@ export function StandardizedFooter({
   const isActive = (tab: string) => currentTab === tab;
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 ${maxWidth} mx-auto z-50`}>
+    <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 ${maxWidth} mx-auto`}>
+      <div className="px-6 py-3">
       <div className="flex items-center justify-around">
         {/* Home Tab */}
         <button 
@@ -77,10 +78,6 @@ export function StandardizedFooter({
           </span>
         </button>
       </div>
-      
-      {/* Home Indicator */}
-      <div className="flex justify-center mt-2">
-        <div className="w-32 h-1 bg-black rounded-full"></div>
       </div>
     </div>
   );

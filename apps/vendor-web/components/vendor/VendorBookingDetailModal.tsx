@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, Calendar, Clock, User, Phone, FileText, MessageCircle, History, AlertCircle, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { VendorPrescriptionModal } from './modals/VendorPrescriptionModal';
+import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { VendorChatModal } from './VendorChatModal';
 import { PetMedicalHistoryModal } from './PetMedicalHistoryModal';
 
@@ -30,6 +32,7 @@ export function VendorBookingDetailModal({
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [hasPrescription, setHasPrescription] = useState(false);
   const [copiedOtp, setCopiedOtp] = useState(false);
+  const [showPrescriptionHistory, setShowPrescriptionHistory] = useState(false);
 
   useEffect(() => {
     loadBookingDetails();
@@ -44,8 +47,75 @@ export function VendorBookingDetailModal({
 
       if (data && data.success) {
         const result = data;
-        console.log('✅ [VENDOR-BOOKING-DETAIL] Loaded:', result.booking);
-        setBooking(result.booking);
+        const rawBooking = result.booking;
+        console.log('✅ [VENDOR-BOOKING-DETAIL] Loaded:', rawBooking);
+        
+        // ✅ FIX: Get vendorId from multiple sources with comprehensive fallback
+        const getVendorId = (): string => {
+          // 1. Try from booking data (direct fields)
+          if (rawBooking.vendor_id) return rawBooking.vendor_id;
+          if (rawBooking.vendorId) return rawBooking.vendorId;
+          
+          // 2. Try from nested vendor object
+          if (rawBooking.vendor?.id) return rawBooking.vendor.id;
+          
+          // 3. Try from localStorage (vendorData or vendorId)
+          if (typeof window !== 'undefined') {
+            const vendorDataStr = localStorage.getItem('vendorData');
+            if (vendorDataStr) {
+              try {
+                const vendorData = JSON.parse(vendorDataStr);
+                if (vendorData.id) return vendorData.id;
+              } catch (e) {
+                console.warn('Failed to parse vendorData:', e);
+              }
+            }
+            const storedVendorId = localStorage.getItem('vendorId');
+            if (storedVendorId) return storedVendorId;
+          }
+          
+          return '';
+        };
+        
+        const getStaffId = (): string | undefined => {
+          // Only return staffId if user is actually in staff context
+          if (typeof window === 'undefined') return undefined;
+          
+          const hasStaffContext = localStorage.getItem('staffId') || localStorage.getItem('staff_id');
+          if (!hasStaffContext) return undefined;
+          
+          // Try from booking data
+          if (rawBooking.staff_id) return rawBooking.staff_id;
+          if (rawBooking.staffId) return rawBooking.staffId;
+          if (rawBooking.staff?.id) return rawBooking.staff.id;
+          
+          // Try from localStorage
+          return localStorage.getItem('staffId') || localStorage.getItem('staff_id') || undefined;
+        };
+        
+        // ✅ FIX: Ensure vendor_id is properly extracted from booking data
+        const resolvedVendorId = getVendorId();
+        const resolvedStaffId = getStaffId();
+        
+        console.log('🔍 [VENDOR-BOOKING-DETAIL] Resolved IDs:', {
+          vendorId: resolvedVendorId,
+          staffId: resolvedStaffId,
+          fromBooking: {
+            vendor_id: rawBooking.vendor_id,
+            vendorId: rawBooking.vendorId,
+            vendor_id_from_vendor: rawBooking.vendor?.id,
+          }
+        });
+        
+        const enrichedBooking = {
+          ...rawBooking,
+          vendorId: resolvedVendorId,
+          vendor_id: resolvedVendorId,
+          staffId: resolvedStaffId,
+          staff_id: resolvedStaffId,
+        };
+        
+        setBooking(enrichedBooking);
         
         // Check if prescription exists
         checkPrescription(bookingId);
@@ -332,15 +402,25 @@ export function VendorBookingDetailModal({
 
               {/* Action Buttons */}
               <div className="space-y-3">
+                {/* Prescription History Button - Always visible */}
+                <Button
+                  onClick={() => setShowPrescriptionHistory(true)}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  <FileText className="w-5 h-5" />
+                  Prescription History
+                  {hasPrescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
+                </Button>
+
                 {/* Add/View Prescription Button - Only for completed bookings */}
                 {booking.status === 'completed' && (
                   <Button
                     onClick={() => setShowPrescriptionForm(true)}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                    className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                   >
                     <FileText className="w-5 h-5" />
                     {hasPrescription ? 'View/Edit Service Notes' : 'Add Service Notes'}
-                    {hasPrescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Added</span>}
+                    {hasPrescription && <span className="ml-auto bg-green-700 px-2 py-0.5 rounded-full text-xs">Added</span>}
                   </Button>
                 )}
 
@@ -393,25 +473,49 @@ export function VendorBookingDetailModal({
       </div>
 
       {/* Prescription Form Modal */}
-      {showPrescriptionForm && booking && (
-        <VendorPrescriptionModal
-          bookingId={bookingId}
-          petName={booking.petName || 'Pet'}
-          customerId={booking.customerId || booking.customer_id || ''}
-          customerName={booking.customerName || 'Customer'}
-          vendorId={booking.vendorId || ''}
-          vendorName={booking.vendorName || 'Vendor'}
-          onClose={() => {
-            setShowPrescriptionForm(false);
-            checkPrescription(bookingId); // Refresh prescription status
-          }}
-          onSuccess={() => {
-            setShowPrescriptionForm(false);
-            setHasPrescription(true);
-            onRefresh();
-          }}
-        />
-      )}
+      {showPrescriptionForm && booking && (() => {
+        // ✅ FIX: Properly resolve vendorId with fallback chain
+        const resolvedVendorId = booking.vendorId || booking.vendor_id || booking.vendor?.id || 
+                                 (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '');
+        
+        // ✅ FIX: Only use staffId if user is actually staff (check localStorage for staff context)
+        const isStaff = typeof window !== 'undefined' && (localStorage.getItem('staffId') || localStorage.getItem('staff_id'));
+        const resolvedStaffId = isStaff ? (booking.staffId || booking.staff_id || booking.staff?.id || 
+                                           (typeof window !== 'undefined' ? localStorage.getItem('staffId') || localStorage.getItem('staff_id') || '' : '')) : undefined;
+        
+        if (!resolvedVendorId) {
+          console.error('❌ [VENDOR-BOOKING-DETAIL] Vendor ID missing - cannot create prescription');
+          toast.error('Vendor ID is missing. Please refresh the page.');
+          return null;
+        }
+        
+        return (
+          <VendorPrescriptionModal
+            bookingId={bookingId}
+            petId={booking.petId || booking.pet_id || ''}
+            petName={booking.petName || 'Pet'}
+            petBreed={booking.petBreed}
+            petSpecies={booking.petSpecies}
+            customerId={booking.customerId || booking.customer_id || ''}
+            customerName={booking.customerName || 'Customer'}
+            customerPhone={booking.customerPhone || booking.customer_phone}
+            vendorId={resolvedVendorId}
+            vendorName={booking.vendorName || booking.vendor?.businessName || 'Vendor'}
+            staffId={resolvedStaffId}
+            serviceName={booking.serviceName || booking.service?.name}
+            bookingDate={booking.bookingDate || booking.booking_date || booking.scheduledDate}
+            onClose={() => {
+              setShowPrescriptionForm(false);
+              checkPrescription(bookingId); // Refresh prescription status
+            }}
+            onSuccess={() => {
+              setShowPrescriptionForm(false);
+              setHasPrescription(true);
+              onRefresh();
+            }}
+          />
+        );
+      })()}
 
       {/* Chat Modal */}
       {showChat && booking && (
@@ -433,6 +537,60 @@ export function VendorBookingDetailModal({
           onClose={() => setShowMedicalHistory(false)}
         />
       )}
+
+      {/* Prescription History Modal */}
+      {showPrescriptionHistory && booking && (() => {
+        // ✅ FIX: Resolve vendorId with comprehensive fallback (same logic as prescription modal)
+        const getVendorId = (): string => {
+          // 1. Try from booking data (direct fields)
+          if (booking.vendor_id) return booking.vendor_id;
+          if (booking.vendorId) return booking.vendorId;
+          
+          // 2. Try from nested vendor object
+          if (booking.vendor?.id) return booking.vendor.id;
+          
+          // 3. Try from localStorage (vendorData or vendorId)
+          if (typeof window !== 'undefined') {
+            const vendorDataStr = localStorage.getItem('vendorData');
+            if (vendorDataStr) {
+              try {
+                const vendorData = JSON.parse(vendorDataStr);
+                if (vendorData.id) return vendorData.id;
+              } catch (e) {
+                console.warn('Failed to parse vendorData:', e);
+              }
+            }
+            const storedVendorId = localStorage.getItem('vendorId');
+            if (storedVendorId) return storedVendorId;
+          }
+          
+          return '';
+        };
+        
+        const resolvedVendorId = getVendorId();
+        
+        if (!resolvedVendorId) {
+          console.error('❌ [PRESCRIPTION-HISTORY] Vendor ID missing');
+          toast.error('Vendor ID is missing. Please refresh the page.');
+          return null;
+        }
+        
+        return (
+          <PrescriptionHistoryModal
+            bookingId={bookingId}
+            vendorId={resolvedVendorId}
+            vendorPhone={vendorPhone}
+            onClose={() => {
+              setShowPrescriptionHistory(false);
+              checkPrescription(bookingId); // Refresh prescription status
+            }}
+            onUploadSuccess={() => {
+              checkPrescription(bookingId);
+              onRefresh();
+            }}
+          />
+        );
+      })()}
     </>
   );
 }

@@ -10,6 +10,7 @@
  */
 
 import { query, select } from '../database/rds-connection';
+import { getSecretJson } from './secrets-manager';
 
 export interface RazorpayConfig {
   keyId: string;
@@ -18,23 +19,57 @@ export interface RazorpayConfig {
 }
 
 /**
- * Get Razorpay configuration from database
+ * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback)
  */
 export async function getRazorpayConfig(): Promise<RazorpayConfig> {
-  const integrations = await select('platform_integrations', {
-    integration_name: 'razorpay',
-  });
-
-  if (integrations.length === 0 || !integrations[0].integration_config) {
-    // Fallback to environment variables
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-
-    if (!keyId || !keySecret) {
-      throw new Error('Razorpay not configured. Please configure in Platform Settings.');
+  // ✅ PRIMARY: Try AWS Secrets Manager first
+  try {
+    const secretConfig = await getSecretJson<{
+      keyId: string;
+      keySecret: string;
+      webhookSecret?: string;
+    }>('razorpay');
+    
+    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
+      console.log('[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager');
+      return {
+        keyId: secretConfig.keyId,
+        keySecret: secretConfig.keySecret,
+        webhookSecret: secretConfig.webhookSecret || '',
+      };
     }
+  } catch (error: any) {
+    console.warn('[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:', error.message);
+  }
 
+  // ✅ FALLBACK 1: Try database
+  try {
+    const integrations = await select('platform_integrations', {
+      integration_name: 'razorpay',
+    });
+
+    if (integrations.length > 0 && integrations[0].integration_config) {
+      const config = integrations[0].integration_config as any;
+      if (config.keyId && config.keySecret) {
+        console.log('[RAZORPAY-CONFIG] Loaded from database');
+        return {
+          keyId: config.keyId,
+          keySecret: config.keySecret,
+          webhookSecret: config.webhookSecret || '',
+        };
+      }
+    }
+  } catch (error: any) {
+    console.warn('[RAZORPAY-CONFIG] Failed to load from database, trying env vars:', error.message);
+  }
+
+  // ✅ FALLBACK 2: Try environment variables
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  if (keyId && keySecret) {
+    console.log('[RAZORPAY-CONFIG] Loaded from environment variables');
     return {
       keyId,
       keySecret,
@@ -42,12 +77,7 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
     };
   }
 
-  const config = integrations[0].integration_config as any;
-  return {
-    keyId: config.keyId,
-    keySecret: config.keySecret,
-    webhookSecret: config.webhookSecret,
-  };
+  throw new Error('Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.');
 }
 
 /**

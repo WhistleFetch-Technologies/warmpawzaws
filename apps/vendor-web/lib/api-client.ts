@@ -112,6 +112,34 @@ export class ApiClient {
         }
       }
       
+      // Handle 429 (Rate Limiting) with retry-after information
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 5;
+        
+        // Create a more informative error message
+        let errorMessage = 'Too many requests. Please wait a moment before trying again.';
+        if (retryAfterSeconds > 0) {
+          errorMessage = `Too many requests. Please wait ${retryAfterSeconds} second${retryAfterSeconds > 1 ? 's' : ''} before trying again.`;
+        }
+        
+        // Log rate limit error with details
+        if (UAT_MODE && typeof window !== 'undefined') {
+          console.error('❌ [UAT] Rate Limit Error (429):', {
+            endpoint,
+            retryAfter: retryAfterSeconds,
+            errorData
+          });
+        }
+        
+        // Create error with retry information
+        const rateLimitError = new Error(errorMessage);
+        (rateLimitError as any).statusCode = 429;
+        (rateLimitError as any).retryAfter = retryAfterSeconds;
+        (rateLimitError as any).isRateLimit = true;
+        throw rateLimitError;
+      }
+      
       // ✅ FIX: Ensure error message is always a string, not [object Object]
       let errorMessage = `HTTP ${response.status}`;
       if (typeof errorData.error === 'string') {

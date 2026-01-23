@@ -162,11 +162,26 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                 s.category as service_category,
                 s.duration_minutes as service_duration,
                 st.name as staff_name,
-                st.phone as staff_phone
+                st.phone as staff_phone,
+                p.id as pet_id_from_table,
+                p.name as pet_name_from_table,
+                p.species as pet_species_from_table,
+                p.breed as pet_breed_from_table,
+                p.age_years as pet_age_from_table,
+                p.weight_kg as pet_weight_from_table,
+                p.profile_photo_url as pet_photo_from_table
          FROM bookings b
          LEFT JOIN vendors v ON b.vendor_id = v.id
          LEFT JOIN services s ON b.service_id = s.id
          LEFT JOIN staff st ON b.staff_id = st.id
+         LEFT JOIN LATERAL (
+           SELECT id, name, species, breed, age_years, weight_kg, profile_photo_url
+           FROM pets
+           WHERE (
+             (b.notes IS NOT NULL AND b.notes LIKE '%Pet ID:%' AND id::text = SUBSTRING(b.notes FROM 'Pet ID:\\s*([a-f0-9-]+)'))
+           )
+           LIMIT 1
+         ) p ON true
          WHERE b.id = $1`,
         [bookingId]
       );
@@ -176,6 +191,15 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
       }
 
       const booking = bookingQuery.rows[0];
+
+      // ✅ FIX: Extract pet_id from multiple sources
+      let petIdToUse = booking.pet_id || booking.pet_id_from_table;
+      if (!petIdToUse && booking.notes) {
+        const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]{36})/i);
+        if (petIdMatch) {
+          petIdToUse = petIdMatch[1];
+        }
+      }
 
       // Get prescription if exists
       const prescriptions = await query(
@@ -193,7 +217,17 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         success: true,
         booking: {
           id: booking.id,
+          // ✅ FIX: Ensure all IDs are at top level
           customerId: booking.customer_id,
+          customer_id: booking.customer_id,
+          vendorId: booking.vendor_id,
+          vendor_id: booking.vendor_id,
+          staffId: booking.staff_id || null,
+          staff_id: booking.staff_id || null,
+          petId: petIdToUse || null,
+          pet_id: petIdToUse || null,
+          serviceId: booking.service_id,
+          service_id: booking.service_id,
           vendor: {
             id: booking.vendor_id,
             businessName: booking.vendor_name,
@@ -217,10 +251,32 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
             name: booking.staff_name,
             phone: booking.staff_phone,
           } : null,
+          // ✅ FIX: Pet information
+          pet: (booking.pet_id_from_table || petIdToUse) ? {
+            id: booking.pet_id_from_table || petIdToUse,
+            name: booking.pet_name_from_table,
+            species: booking.pet_species_from_table,
+            breed: booking.pet_breed_from_table,
+            age: booking.pet_age_from_table,
+            weight: booking.pet_weight_from_table,
+            photo_url: booking.pet_photo_from_table,
+          } : null,
+          petName: booking.pet_name_from_table || null,
+          petBreed: booking.pet_breed_from_table || null,
+          petType: booking.pet_species_from_table || null,
+          petAge: booking.pet_age_from_table || null,
+          petPhoto: booking.pet_photo_from_table || null,
           status: booking.status,
           paymentStatus: booking.payment_status,
+          // ✅ FIX: Schedule information - ensure all formats are included
           bookingDate: booking.booking_date,
+          booking_date: booking.booking_date,
           bookingTime: booking.booking_time,
+          booking_time: booking.booking_time,
+          scheduledDate: booking.booking_date, // Alias for frontend compatibility
+          scheduledTime: booking.booking_time, // Alias for frontend compatibility
+          schedule: booking.booking_time, // Alias for frontend compatibility
+          startDate: booking.booking_date, // Alias for frontend compatibility
           address: booking.address,
           city: booking.city,
           state: booking.state,
@@ -261,11 +317,26 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
                 s.category as service_category,
                 s.duration_minutes as service_duration,
                 st.name as staff_name,
-                st.phone as staff_phone
+                st.phone as staff_phone,
+                p.id as pet_id_from_table,
+                p.name as pet_name_from_table,
+                p.species as pet_species_from_table,
+                p.breed as pet_breed_from_table,
+                p.age_years as pet_age_from_table,
+                p.weight_kg as pet_weight_from_table,
+                p.profile_photo_url as pet_photo_from_table
          FROM bookings b
          LEFT JOIN vendors v ON b.vendor_id = v.id
          LEFT JOIN services s ON b.service_id = s.id
          LEFT JOIN staff st ON b.staff_id = st.id
+         LEFT JOIN LATERAL (
+           SELECT id, name, species, breed, age_years, weight_kg, profile_photo_url
+           FROM pets
+           WHERE (
+             (b.notes IS NOT NULL AND b.notes LIKE '%Pet ID:%' AND id::text = SUBSTRING(b.notes FROM 'Pet ID:\\s*([a-f0-9-]+)'))
+           )
+           LIMIT 1
+         ) p ON true
          WHERE b.id = $1 AND b.customer_id = $2`,
         [bookingId, customerId]
       );
@@ -275,6 +346,15 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
       }
 
       const booking = bookingQuery.rows[0];
+
+      // ✅ FIX: Extract pet_id from multiple sources
+      let petIdToUse = booking.pet_id || booking.pet_id_from_table;
+      if (!petIdToUse && booking.notes) {
+        const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]{36})/i);
+        if (petIdMatch) {
+          petIdToUse = petIdMatch[1];
+        }
+      }
 
       // Get prescription if exists
       const prescriptions = await query(
@@ -292,7 +372,17 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
         success: true,
         booking: {
           id: booking.id,
+          // ✅ FIX: Ensure all IDs are at top level
           customerId: booking.customer_id,
+          customer_id: booking.customer_id,
+          vendorId: booking.vendor_id,
+          vendor_id: booking.vendor_id,
+          staffId: booking.staff_id || null,
+          staff_id: booking.staff_id || null,
+          petId: petIdToUse || null,
+          pet_id: petIdToUse || null,
+          serviceId: booking.service_id,
+          service_id: booking.service_id,
           vendor: {
             id: booking.vendor_id,
             businessName: booking.vendor_name,
@@ -316,10 +406,32 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
             name: booking.staff_name,
             phone: booking.staff_phone,
           } : null,
+          // ✅ FIX: Pet information
+          pet: (booking.pet_id_from_table || petIdToUse) ? {
+            id: booking.pet_id_from_table || petIdToUse,
+            name: booking.pet_name_from_table,
+            species: booking.pet_species_from_table,
+            breed: booking.pet_breed_from_table,
+            age: booking.pet_age_from_table,
+            weight: booking.pet_weight_from_table,
+            photo_url: booking.pet_photo_from_table,
+          } : null,
+          petName: booking.pet_name_from_table || null,
+          petBreed: booking.pet_breed_from_table || null,
+          petType: booking.pet_species_from_table || null,
+          petAge: booking.pet_age_from_table || null,
+          petPhoto: booking.pet_photo_from_table || null,
           status: booking.status,
           paymentStatus: booking.payment_status,
+          // ✅ FIX: Schedule information - ensure all formats are included
           bookingDate: booking.booking_date,
+          booking_date: booking.booking_date,
           bookingTime: booking.booking_time,
+          booking_time: booking.booking_time,
+          scheduledDate: booking.booking_date, // Alias for frontend compatibility
+          scheduledTime: booking.booking_time, // Alias for frontend compatibility
+          schedule: booking.booking_time, // Alias for frontend compatibility
+          startDate: booking.booking_date, // Alias for frontend compatibility
           serviceType: booking.service_type,
           address: booking.address,
           city: booking.city,

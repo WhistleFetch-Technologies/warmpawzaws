@@ -86,6 +86,12 @@ import { MatingDatingHub } from './MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from './HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../IntegratedServicesHub';
 
+// ✅ UNIVERSAL HOME SERVICE ROUTER - Unified booking flow for all home services
+import { UniversalHomeServiceRouter, HomeServiceType } from './home-services/UniversalHomeServiceRouter';
+
+// ✅ RATING & REVIEW POPUP - Post service completion
+import { RateServicePopup } from './RateServicePopup';
+
 type ScreenType = 
   | 'home' 
   | 'user-profile' 
@@ -162,7 +168,15 @@ type ScreenType =
   | 'customer-wallet'
   | 'mating-dating-hub'
   | 'integrated-services'
-  | 'home-service-selection';
+  | 'home-service-selection'
+  // ✅ NEW: Unified Home Service Router screens
+  | 'home-walker'
+  | 'home-grooming'
+  | 'home-training'
+  | 'home-vet'
+  | 'home-behaviourist'
+  | 'home-sitter'
+  | 'home-diagnostics';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -186,7 +200,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [selectedHomeServiceType, setSelectedHomeServiceType] = useState<HomeServiceType>('walker'); // For universal home service router
   const { addToCart } = useCart();
+  
+  // ✅ RATING POPUP STATE - For post-service completion ratings
+  const [showRatingPopup, setShowRatingPopup] = useState(false);
+  const [ratingBookingData, setRatingBookingData] = useState<{
+    bookingId: string;
+    serviceName: string;
+    vendorId: string;
+    vendorName: string;
+    petName: string;
+    serviceType: string;
+    completedAt?: string;
+  } | null>(null);
 
   // ✅ Navigate to a screen (push to history)
   const navigateToScreen = (screen: ScreenType) => {
@@ -231,6 +258,35 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
            duration: 5000
          });
       }
+      
+      // ✅ NEW: Handle service completion notification - Show rating popup
+      if (notification.type === 'service_completed' && notification.bookingId) {
+        console.log('📬 [CUSTOMER-HOME] Service completed notification:', notification);
+        try {
+          const response = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${notification.bookingId}`,
+            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          );
+          if (response.ok) {
+            const { booking } = await response.json();
+            // Check if already reviewed
+            if (!booking.hasReview) {
+              setRatingBookingData({
+                bookingId: booking.id || notification.bookingId,
+                serviceName: booking.serviceName || 'Service',
+                vendorId: booking.vendorId,
+                vendorName: booking.vendorName || 'Service Provider',
+                petName: booking.petName || 'Pet',
+                serviceType: booking.serviceType || 'service',
+                completedAt: booking.completedAt
+              });
+              setShowRatingPopup(true);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching booking for rating popup:', error);
+        }
+      }
     }
   });
   
@@ -255,7 +311,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleAddPetSuccess = () => setRefreshKey(prev => prev + 1);
 
   const handleNavigateToService = (service: string) => {
-    if (service === 'walker') setCurrentScreen('walker');
+    if (service === 'walker') {
+      // ✅ Route to unified home service router for walker
+      setSelectedHomeServiceType('walker');
+      setCurrentScreen('home-walker');
+    }
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
     else if (service === 'grooming') setCurrentScreen('grooming');
     else if (service === 'training') setCurrentScreen('training');
@@ -270,7 +330,36 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'breeder') setCurrentScreen('breeder');
     else if (service === 'ambulance') setCurrentScreen('integrated-services'); // Use new integrated hub
     else if (service === 'nutritionist') setCurrentScreen('integrated-services');
-    else if (service === 'diagnostics') setCurrentScreen('integrated-services');
+    // ✅ Route to unified home service router for diagnostics
+    else if (service === 'diagnostics') {
+      setSelectedHomeServiceType('diagnostics');
+      setCurrentScreen('home-diagnostics');
+    }
+    // ✅ Route to unified home service router for behaviourist
+    else if (service === 'behaviourist' || service === 'behaviorist') {
+      setSelectedHomeServiceType('behaviourist');
+      setCurrentScreen('home-behaviourist');
+    }
+    // ✅ Route to unified home service router for sitter
+    else if (service === 'sitter' || service === 'pet-sitting') {
+      setSelectedHomeServiceType('sitter');
+      setCurrentScreen('home-sitter');
+    }
+    // ✅ Route to unified home service router for home grooming
+    else if (service === 'home-grooming') {
+      setSelectedHomeServiceType('grooming');
+      setCurrentScreen('home-grooming');
+    }
+    // ✅ Route to unified home service router for home training
+    else if (service === 'home-training') {
+      setSelectedHomeServiceType('training');
+      setCurrentScreen('home-training');
+    }
+    // ✅ Route to unified home service router for home vet
+    else if (service === 'home-vet') {
+      setSelectedHomeServiceType('veterinary');
+      setCurrentScreen('home-vet');
+    }
     else if (service === 'home-service') setCurrentScreen('home-service-selection');
     else if (service === 'relocation') setCurrentScreen('relocation');
     else if (service === 'resort') setCurrentScreen('resort');
@@ -380,6 +469,29 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             onNavigate={handleAccountNavigate}
           />
         )}
+        
+        {/* ✅ RATING POPUP - Shows after service completion */}
+        {showRatingPopup && ratingBookingData && (
+          <RateServicePopup
+            booking={ratingBookingData}
+            customerPhone={phone}
+            onSubmit={(data) => {
+              console.log('✅ [CUSTOMER-HOME] Review submitted:', data);
+              setShowRatingPopup(false);
+              setRatingBookingData(null);
+              toast.success('Thank you for your feedback!', { description: '+10 Warmpawz Coins earned!' });
+            }}
+            onSkip={() => {
+              console.log('⏭️ [CUSTOMER-HOME] Review skipped');
+              setShowRatingPopup(false);
+              setRatingBookingData(null);
+            }}
+            onClose={() => {
+              setShowRatingPopup(false);
+              setRatingBookingData(null);
+            }}
+          />
+        )}
       </>
     );
   }
@@ -401,10 +513,35 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'walker') return <WalkerDashboard phone={phone} onBack={handleBack} onNavigate={handleWalkerNavigate} data={walkerServiceData} />;
   if (currentScreen === 'walker-booking') return <WalkerService phone={phone} onBack={() => setCurrentScreen('walker')} />;
   if (currentScreen === 'vet') return <VetServiceRouter phone={phone} onBack={handleBack} onNavigate={handleVetNavigate} data={vetServiceData} />;
-  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.doctorId} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType || 'clinic'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-booking') return <VetBookingRouter 
+    phone={phone} 
+    doctorId={vetServiceData?.doctorId} 
+    doctor={vetServiceData?.doctor} 
+    selectedService={vetServiceData?.service} 
+    serviceType={vetServiceData?.serviceType || 'clinic'}
+    vendorId={vetServiceData?.vendorId || vetServiceData?.clinicId}
+    clinicId={vetServiceData?.clinicId}
+    onBack={() => setCurrentScreen('vet')} 
+    onNavigate={handleVetNavigate} 
+    onViewBooking={handleViewBooking} 
+  />;
   if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); setCurrentScreen('vet-clinic-profile'); } }} />;
-  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { if (screen === 'appointment') { setVetServiceData({ vendorId: data?.clinicId, serviceType: 'clinic' }); setCurrentScreen('vet-booking'); } }} />;
+  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { 
+    if (screen === 'appointment') { 
+      // Pass clinic booking data: vendorId, service, serviceType
+      setVetServiceData({ 
+        vendorId: data?.clinicId || data?.vendorId || vetServiceData?.id,
+        clinicId: data?.clinicId || vetServiceData?.id,
+        serviceType: 'clinic',
+        service: data?.service,
+        serviceId: data?.serviceId,
+        // If clinic has multiple doctors, we'll need to select one in booking flow
+        // For now, let booking router handle doctor selection
+      }); 
+      setCurrentScreen('vet-booking'); 
+    } 
+  }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
   if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
@@ -582,6 +719,91 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     petId={selectedPetId || 'pet_default'}
     onBack={handleBack}
     onBookingComplete={(bookingId) => handleViewBooking(bookingId)}
+  />;
+
+  // ✅ UNIVERSAL HOME SERVICE ROUTER - Consistent booking flow for all home services
+  // Walker Service
+  if (currentScreen === 'home-walker') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="walker"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
+  />;
+
+  // Home Grooming Service
+  if (currentScreen === 'home-grooming') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="grooming"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
+  />;
+
+  // Home Training Service
+  if (currentScreen === 'home-training') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="training"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
+  />;
+
+  // Home Vet Service
+  if (currentScreen === 'home-vet') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="veterinary"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
+  />;
+
+  // Behaviourist Service
+  if (currentScreen === 'home-behaviourist') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="behaviourist"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
+  />;
+
+  // Sitter Service
+  if (currentScreen === 'home-sitter') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="sitter"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
+  />;
+
+  // Diagnostics / Home Sample Collection Service
+  if (currentScreen === 'home-diagnostics') return <UniversalHomeServiceRouter
+    phone={phone}
+    serviceType="diagnostics"
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+    }}
+    onViewBooking={handleViewBooking}
+    onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }}
   />;
 
   return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;

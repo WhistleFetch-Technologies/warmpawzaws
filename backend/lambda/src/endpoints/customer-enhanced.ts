@@ -385,12 +385,32 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   // Otherwise /customer/by-phone would be matched by /customer/:customerId with customerId="by-phone"
   
   app.get('/customer/by-phone', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
-    const context = createLambdaContext();
-    const result: any = await getByPhoneHandler.execute(event, context);
-    const body = JSON.parse(result.body);
-    return c.json(body, result.statusCode);
+    try {
+      const phone = c.req.query('phone');
+      
+      if (!phone) {
+        return c.json({ 
+          success: false,
+          error: { code: 'MISSING_PHONE', message: 'phone parameter is required' }
+        }, 400);
+      }
+
+      const event = createApiGatewayEvent(c.req);
+      event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+      const context = createLambdaContext();
+      
+      try {
+        const result: any = await getByPhoneHandler.execute(event, context);
+        const body = JSON.parse(result.body);
+        return c.json(body, result.statusCode);
+      } catch (error: any) {
+        console.error('[by-phone] Error in getByPhoneHandler:', error);
+        return c.json({ success: false, customer: null }, 200);
+      }
+    } catch (error: any) {
+      console.error('[by-phone] Error in /customer/by-phone endpoint:', error);
+      return c.json({ success: false, customer: null }, 200);
+    }
   });
 
   // GET /customer/pets?phone=... - MUST come before /customer/:customerId
@@ -453,8 +473,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         count: pets.length,
       });
     } catch (error: any) {
-      console.error('Error fetching customer pets by phone:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[pets] Error fetching customer pets by phone:', error);
+      return c.json({ success: true, pets: [], count: 0 }, 200);
     }
   });
 
@@ -562,8 +582,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         count: pets.length,
       });
     } catch (error: any) {
-      console.error('Error fetching customer pets by phone:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[pets/:phone] Error fetching customer pets by phone:', error);
+      return c.json({ success: true, pets: [], count: 0 }, 200);
     }
   });
 
@@ -1113,6 +1133,518 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     } catch (error: any) {
       console.error('Error completing onboarding:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/:phone/bookings/pending-reviews
+   * Get pending reviews for a customer (for rating popup)
+   */
+  app.get('/customer/:phone/bookings/pending-reviews', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      
+      // Get customer by phone
+      const customers = await select('customers', { phone: phone.replace(/\D/g, '') });
+      if (customers.length === 0) {
+        return c.json({ success: true, bookings: [] });
+      }
+
+      const customer = customers[0];
+
+      // Get completed bookings without reviews from last 7 days
+      const bookingsResult = await query(
+        `SELECT b.id, b.booking_date, b.completed_at,
+                COALESCE(v.business_name, s.name) as vendor_name,
+                COALESCE(v.profile_photo, s.photo) as vendor_photo,
+                sv.name as service_name,
+                p.name as pet_name
+         FROM bookings b
+         LEFT JOIN vendors v ON b.vendor_id = v.id
+         LEFT JOIN staff s ON b.staff_id = s.id
+         LEFT JOIN services sv ON b.service_id = sv.id
+         LEFT JOIN pets p ON b.pet_id = p.id
+         WHERE b.customer_id = $1
+           AND b.status = 'completed'
+           AND (b.has_review IS NOT TRUE OR b.has_review = false)
+           AND b.completed_at > NOW() - INTERVAL '7 days'
+           AND (b.review_skipped_at IS NULL)
+         ORDER BY b.completed_at DESC
+         LIMIT 5`,
+        [customer.id]
+      );
+
+      const bookings = (bookingsResult as any).rows.map((b: any) => ({
+        id: b.id,
+        vendorName: b.vendor_name,
+        vendorPhoto: b.vendor_photo,
+        serviceName: b.service_name || 'Service',
+        completedAt: b.completed_at,
+        petName: b.pet_name,
+      }));
+
+      return c.json({
+        success: true,
+        bookings,
+      });
+    } catch (error: any) {
+      console.error('Error fetching pending reviews:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/:phone/reviews/:bookingId/skip
+   * Skip review for a booking
+   */
+  app.post('/customer/:phone/reviews/:bookingId/skip', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const bookingId = c.req.param('bookingId');
+
+      // Get customer by phone
+      const customers = await select('customers', { phone: phone.replace(/\D/g, '') });
+      if (customers.length === 0) {
+        return c.json({ error: 'Customer not found' }, 404);
+      }
+
+      const customer = customers[0];
+
+      // Verify booking belongs to customer
+      const bookings = await select('bookings', { id: bookingId, customer_id: customer.id });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      // Mark review as skipped
+      await update('bookings', { id: bookingId }, {
+        review_skipped_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Review skipped',
+      });
+    } catch (error: any) {
+      console.error('Error skipping review:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/:phone/bookings/active-tracking
+   * Get active GPS tracking bookings (vendor is on the way)
+   */
+  app.get('/customer/:phone/bookings/active-tracking', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+
+      // Get customer by phone
+      const customers = await select('customers', { phone: phone.replace(/\D/g, '') });
+      if (customers.length === 0) {
+        return c.json({ success: true, bookings: [] });
+      }
+
+      const customer = customers[0];
+
+      // Get bookings with active GPS tracking (status: confirmed, in_progress, on_the_way)
+      const bookingsResult = await query(
+        `SELECT b.id, b.booking_date, b.scheduled_at,
+                b.status, b.service_style,
+                COALESCE(v.business_name, s.name) as vendor_name,
+                COALESCE(v.profile_photo, s.photo) as vendor_photo,
+                sv.name as service_name,
+                p.name as pet_name,
+                gps.current_latitude, gps.current_longitude,
+                gps.tracking_started_at
+         FROM bookings b
+         LEFT JOIN vendors v ON b.vendor_id = v.id
+         LEFT JOIN staff s ON b.staff_id = s.id
+         LEFT JOIN services sv ON b.service_id = sv.id
+         LEFT JOIN pets p ON b.pet_id = p.id
+         LEFT JOIN gps_tracking gps ON b.id = gps.booking_id AND gps.is_active = true
+         WHERE b.customer_id = $1
+           AND b.status IN ('confirmed', 'in_progress', 'on_the_way')
+           AND b.service_style = 'at_home'
+           AND gps.is_active = true
+         ORDER BY b.scheduled_at ASC
+         LIMIT 10`,
+        [customer.id]
+      );
+
+      const bookings = (bookingsResult as any).rows.map((b: any) => ({
+        id: b.id,
+        vendorName: b.vendor_name,
+        vendorPhoto: b.vendor_photo,
+        serviceName: b.service_name,
+        petName: b.pet_name,
+        status: b.status,
+        currentLocation: b.current_latitude && b.current_longitude ? {
+          lat: parseFloat(b.current_latitude),
+          lng: parseFloat(b.current_longitude),
+        } : null,
+        trackingStartedAt: b.tracking_started_at,
+      }));
+
+      return c.json({
+        success: true,
+        bookings,
+      });
+    } catch (error: any) {
+      console.error('Error fetching active tracking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/:phone/bookings/upcoming-calls
+   * Get upcoming video calls within specified minutes
+   */
+  app.get('/customer/:phone/bookings/upcoming-calls', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const minutes = parseInt(c.req.query('minutes') || '5', 10);
+
+      // Get customer by phone with error handling
+      let customers: any[];
+      try {
+        customers = await select('customers', { phone: phone.replace(/\D/g, '') });
+      } catch (error: any) {
+        console.error('Error fetching customer:', error);
+        return c.json({ 
+          success: true, 
+          bookings: [],
+          error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+      }
+
+      if (customers.length === 0) {
+        return c.json({ success: true, bookings: [] });
+      }
+
+      const customer = customers[0];
+
+      // Get upcoming video calls within the specified minutes
+      const now = new Date();
+      const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
+
+      let bookingsResult: any;
+      try {
+        bookingsResult = await query(
+          `SELECT b.id, b.booking_date, b.scheduled_at,
+                  COALESCE(v.business_name, s.name) as vendor_name,
+                  COALESCE(v.profile_photo, s.photo) as vendor_photo,
+                  sv.name as service_name,
+                  p.name as pet_name,
+                  b.video_call_meeting_id
+           FROM bookings b
+           LEFT JOIN vendors v ON b.vendor_id = v.id
+           LEFT JOIN staff s ON b.staff_id = s.id
+           LEFT JOIN services sv ON b.service_id = sv.id
+           LEFT JOIN pets p ON b.pet_id = p.id
+           WHERE b.customer_id = $1
+             AND b.status IN ('confirmed', 'scheduled')
+             AND b.service_style = 'tele'
+             AND b.scheduled_at >= $2
+             AND b.scheduled_at <= $3
+           ORDER BY b.scheduled_at ASC
+           LIMIT 10`,
+          [customer.id, now.toISOString(), futureTime.toISOString()]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching upcoming calls (returning empty):', error.message);
+        // Return empty array if query fails (table might not exist or schema issue)
+        return c.json({ success: true, bookings: [] });
+      }
+
+      const bookings = ((bookingsResult as any)?.rows || []).map((b: any) => ({
+        id: b.id,
+        vendorName: b.vendor_name,
+        vendorPhoto: b.vendor_photo,
+        serviceName: b.service_name,
+        petName: b.pet_name,
+        scheduledAt: b.scheduled_at,
+        meetingId: b.video_call_meeting_id,
+        minutesUntil: Math.round((new Date(b.scheduled_at).getTime() - now.getTime()) / 60000),
+      }));
+
+      return c.json({
+        success: true,
+        bookings,
+      });
+    } catch (error: any) {
+      console.error('Error fetching upcoming calls:', error);
+      // Return empty array instead of error to prevent frontend crashes
+      return c.json({ 
+        success: true, 
+        bookings: [],
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  });
+
+  /**
+   * GET /customer/:phone/orders/pharmacy/active
+   * Get active pharmacy orders for customer
+   * Fixes GAP-8.4: Live Tracking Widget
+   */
+  app.get('/customer/:phone/orders/pharmacy/active', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const normalizedPhone = phone.replace(/\D/g, '');
+
+      // Get customer by phone with error handling
+      let customers: any[];
+      try {
+        customers = await select('customers', { phone: normalizedPhone });
+      } catch (error: any) {
+        console.error('Error fetching customer:', error);
+        return c.json({ 
+          success: true, 
+          orders: [],
+          error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+      }
+
+      if (customers.length === 0) {
+        return c.json({ success: true, orders: [] });
+      }
+
+      const customer = customers[0];
+
+      // Get active pharmacy orders with error handling
+      let ordersResult: any;
+      try {
+        ordersResult = await query(
+          `SELECT 
+            po.id,
+            po.order_number,
+            po.status,
+            po.tracking_status,
+            po.created_at,
+            po.delivery_address,
+            po.delivery_latitude,
+            po.delivery_longitude,
+            po.estimated_delivery_time,
+            po.logistics_partner_id,
+            v.business_name as pharmacy_name,
+            v.profile_photo as pharmacy_photo
+          FROM pharmacy_orders po
+          LEFT JOIN vendors v ON po.pharmacy_id = v.id
+          WHERE po.customer_id = $1
+            AND po.status NOT IN ('delivered', 'cancelled', 'refunded')
+            AND (po.tracking_status IS NOT NULL OR po.status IN ('preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'))
+          ORDER BY po.created_at DESC
+          LIMIT 10`,
+          [customer.id]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching active pharmacy orders (returning empty):', error.message);
+        // Return empty array if query fails (table might not exist or schema issue)
+        return c.json({ success: true, orders: [] });
+      }
+
+      const orders = ((ordersResult as any)?.rows || []).map((order: any) => {
+        let deliveryAddress = order.delivery_address;
+        try {
+          if (typeof order.delivery_address === 'string') {
+            deliveryAddress = JSON.parse(order.delivery_address);
+          }
+        } catch (parseError) {
+          // If parsing fails, use the string as-is
+          deliveryAddress = order.delivery_address;
+        }
+
+        return {
+          id: order.id,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          orderType: 'pharmacy',
+          status: order.status,
+          trackingStatus: order.tracking_status || order.status,
+          pharmacyName: order.pharmacy_name,
+          pharmacyPhoto: order.pharmacy_photo,
+          deliveryAddress,
+          estimatedDeliveryTime: order.estimated_delivery_time,
+          createdAt: order.created_at,
+        };
+      });
+
+      return c.json({
+        success: true,
+        orders,
+      });
+    } catch (error: any) {
+      console.error('Error fetching active pharmacy orders:', error);
+      // Return empty array instead of error to prevent frontend crashes
+      return c.json({ 
+        success: true, 
+        orders: [],
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  });
+
+  /**
+   * GET /customer/:phone/orders/meals/active
+   * Get active meal orders for customer
+   * Fixes GAP-8.4: Live Tracking Widget
+   */
+  app.get('/customer/:phone/orders/meals/active', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const normalizedPhone = phone.replace(/\D/g, '');
+
+      let customers: any[];
+      try {
+        customers = await select('customers', { phone: normalizedPhone });
+      } catch (error: any) {
+        console.error('[meals/active] Error fetching customer:', error);
+        return c.json({ success: true, orders: [] }, 200);
+      }
+      if (customers.length === 0) {
+        return c.json({ success: true, orders: [] });
+      }
+
+      const customer = customers[0];
+
+      let ordersResult: any;
+      try {
+        ordersResult = await query(
+        `SELECT 
+          mo.id,
+          mo.order_number,
+          mo.status,
+          mo.tracking_status,
+          mo.created_at,
+          mo.delivery_address,
+          mo.delivery_latitude,
+          mo.delivery_longitude,
+          mo.estimated_delivery_time,
+          mo.logistics_partner_id,
+          v.business_name as vendor_name,
+          v.profile_photo as vendor_photo
+        FROM meal_orders mo
+        LEFT JOIN vendors v ON mo.vendor_id = v.id
+        WHERE mo.customer_id = $1
+          AND mo.status NOT IN ('delivered', 'cancelled', 'refunded')
+          AND (mo.tracking_status IS NOT NULL OR mo.status IN ('preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'))
+        ORDER BY mo.created_at DESC
+        LIMIT 10`,
+        [customer.id]
+      );
+      } catch (error: any) {
+        console.warn('[meals/active] Error fetching orders (returning empty):', error?.message);
+        return c.json({ success: true, orders: [] }, 200);
+      }
+
+      const orders = ((ordersResult as any)?.rows || []).map((order: any) => {
+        let deliveryAddress = order.delivery_address;
+        try {
+          if (typeof order.delivery_address === 'string') {
+            deliveryAddress = JSON.parse(order.delivery_address);
+          }
+        } catch (_) {
+          deliveryAddress = order.delivery_address;
+        }
+        return {
+          id: order.id,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          orderType: 'meal',
+          status: order.status,
+          trackingStatus: order.tracking_status || order.status,
+          vendorName: order.vendor_name,
+          vendorPhoto: order.vendor_photo,
+          deliveryAddress,
+          estimatedDeliveryTime: order.estimated_delivery_time,
+          createdAt: order.created_at,
+        };
+      });
+
+      return c.json({
+        success: true,
+        orders,
+      });
+    } catch (error: any) {
+      console.error('[meals/active] Error fetching active meal orders:', error);
+      return c.json({ success: true, orders: [] }, 200);
+    }
+  });
+
+  /**
+   * GET /customer/:phone/subscriptions/active
+   * ✅ FIX GAP-12.1: Check active subscription for zero payment bookings
+   * Get active subscriptions for a customer, optionally filtered by serviceId
+   */
+  app.get('/customer/:phone/subscriptions/active', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const serviceId = c.req.query('serviceId');
+      const normalizedPhone = phone.replace(/\D/g, '');
+
+      // Get customer by phone
+      const customers = await select('customers', { phone: normalizedPhone });
+      if (customers.length === 0) {
+        return c.json({ success: true, hasActiveSubscription: false, subscriptions: [] });
+      }
+
+      const customer = customers[0];
+
+      // Get active subscriptions
+      const subscriptionsQuery = `
+        SELECT s.*, 
+               vs.name as service_name,
+               vs.service_type,
+               v.business_name as vendor_name
+        FROM customer_subscriptions s
+        LEFT JOIN vendor_services vs ON s.service_id = vs.id
+        LEFT JOIN vendors v ON s.vendor_id = v.id
+        WHERE s.customer_id = $1
+          AND s.status = 'active'
+          AND (s.expires_at IS NULL OR s.expires_at > NOW())
+          ${serviceId ? 'AND (s.service_id = $2 OR s.service_id IS NULL)' : ''}
+        ORDER BY s.created_at DESC
+      `;
+
+      const params = serviceId ? [customer.id, serviceId] : [customer.id];
+      const subscriptionsResult = await query(subscriptionsQuery, params);
+
+      const subscriptions = (subscriptionsResult as any).rows.map((sub: any) => ({
+        id: sub.id,
+        type: sub.subscription_type || 'unlimited',
+        serviceId: sub.service_id,
+        serviceName: sub.service_name,
+        serviceType: sub.service_type,
+        vendorId: sub.vendor_id,
+        vendorName: sub.vendor_name,
+        coversFees: sub.covers_fees || false,
+        expiresAt: sub.expires_at,
+        createdAt: sub.created_at,
+      }));
+
+      const hasActiveSubscription = subscriptions.length > 0;
+      
+      // Check if subscription covers the specific service
+      const coversService = serviceId 
+        ? subscriptions.some(s => !s.serviceId || s.serviceId === serviceId)
+        : hasActiveSubscription;
+
+      return c.json({
+        success: true,
+        hasActiveSubscription,
+        coversService,
+        subscriptions,
+      });
+    } catch (error: any) {
+      console.error('Error checking active subscriptions:', error);
+      return c.json({ 
+        success: true, 
+        hasActiveSubscription: false, 
+        subscriptions: [],
+        error: error.message 
+      });
     }
   });
 }

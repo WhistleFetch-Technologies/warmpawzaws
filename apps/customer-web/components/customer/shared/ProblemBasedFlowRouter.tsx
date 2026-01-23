@@ -170,9 +170,26 @@ function ServiceStyleSelector({
           <div className="p-8 text-center bg-gray-50 rounded-2xl">
             <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <h3 className="font-bold text-gray-900 mb-2">No Services Available</h3>
-            <p className="text-gray-500 text-sm">
-              No providers are currently offering services for this specialization in your area.
+            <p className="text-gray-500 text-sm mb-4">
+              No providers are currently offering services for <span className="font-semibold">{problemTitle}</span> in your area.
             </p>
+            <p className="text-gray-400 text-xs">
+              Try selecting a different service type or check back later.
+            </p>
+          </div>
+        ) : availableStyles.filter(s => s.available).length === 0 ? (
+          <div className="p-8 text-center bg-gray-50 rounded-2xl">
+            <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <h3 className="font-bold text-gray-900 mb-2">No Service Types Available</h3>
+            <p className="text-gray-500 text-sm mb-4">
+              No providers are currently offering <span className="font-semibold">{problemTitle}</span> for any service type in your area.
+            </p>
+            <button
+              onClick={onBack}
+              className="mt-4 px-4 py-2 bg-[#FF8C42] text-white rounded-xl text-sm font-semibold hover:bg-[#FF7A29] transition"
+            >
+              Go Back
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -419,14 +436,23 @@ export function ProblemBasedFlowRouter({
             ) as any;
 
             const providers = response.providers || response.vendors || [];
+            const isAvailable = providers.length > 0;
+            
+            console.log(`[ServiceStyle] ${style.style}: ${providers.length} providers found, available: ${isAvailable}`);
+            
             return {
               ...style,
-              available: providers.length > 0,
+              available: isAvailable,
               providerCount: providers.length,
             };
-          } catch (error) {
-            // If endpoint fails, assume style is available (optimistic)
-            return { ...style, available: true };
+          } catch (error: any) {
+            // ✅ FIX: If endpoint fails, mark as unavailable to prevent empty fields
+            console.error(`[ServiceStyle] Error checking ${style.style}:`, error);
+            return { 
+              ...style, 
+              available: false,
+              providerCount: 0,
+            };
           }
         })
       );

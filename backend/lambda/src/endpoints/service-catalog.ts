@@ -28,6 +28,7 @@ import { isValidUUID } from '../types/entities';
 const roleMappings: Record<string, string[]> = {
   // Healthcare Roles
   'veterinarian': ['vet', 'veterinarian', 'veterinarian'],
+  'vet_solo': ['vet', 'veterinarian', 'veterinarian', 'vet_solo', 'solo_vet'], // ✅ FIX: Add vet_solo mapping
   'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinary_clinic'],
   'pet_pharmacy': ['pharmacy', 'pet_pharmacy', 'pharmacy'],
   'pet_ambulance': ['ambulance', 'pet_ambulance', 'ambulance'],
@@ -619,7 +620,12 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      if (status) {
+      // ✅ FIX: When roleId is provided (vendor accessing catalog), default to active and published services
+      if (roleId && !status) {
+        catalogQuery += ` AND status = $${paramIndex} AND (publish_status = $${paramIndex + 1} OR publish_status IS NULL)`;
+        params.push('active', 'published');
+        paramIndex += 2;
+      } else if (status) {
         catalogQuery += ` AND status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
@@ -628,13 +634,44 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       if (roleId || vendorRole) {
         const targetRole = role || vendorRole;
         const acceptableRoles = targetRole
-          ? [targetRole.name, targetRole.id, ...(roleMappings[targetRole.name] || []), ...(roleMappings[roleId || ''] || [])]
+          ? [
+              targetRole.name, 
+              targetRole.id, 
+              targetRole.display_name, // ✅ Add display_name to matching
+              ...(roleMappings[targetRole.name] || []), 
+              ...(roleMappings[roleId || ''] || []),
+              // ✅ Add normalized variations (lowercase, with underscores, etc.)
+              targetRole.name?.toLowerCase(),
+              targetRole.name?.toLowerCase().replace(/\s+/g, '_'),
+              targetRole.name?.toLowerCase().replace(/\s+/g, '-'),
+            ]
           : (roleMappings[roleId || ''] || [roleId || '']);
         const uniqueRoles = [...new Set(acceptableRoles.filter(Boolean))];
         
+        console.log(`[Admin Service Catalog] Role filtering - targetRole: ${targetRole?.name}, acceptableRoles: ${JSON.stringify(uniqueRoles)}`);
+        
+        // ✅ IMPROVED: More lenient query - show services that match role OR have NULL applicable_roles (available to all)
         catalogQuery += ` AND (applicable_roles && $${paramIndex}::text[] OR applicable_roles IS NULL OR array_length(applicable_roles, 1) IS NULL)`;
         params.push(uniqueRoles);
         paramIndex++;
+        
+        // ✅ CRITICAL FIX: Filter out at_center services for solo providers
+        const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+        if (vendorConfiguration === 'solo') {
+          catalogQuery += ` AND (service_style != $${paramIndex} OR service_style IS NULL)`;
+          params.push('at_center');
+          paramIndex++;
+          console.log(`[Admin Service Catalog] Solo provider detected - filtering out at_center services`);
+        }
+      } else {
+        // ✅ Also check roleConfig even if roleId wasn't provided but vendorRole was loaded
+        const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+        if (vendorConfiguration === 'solo') {
+          catalogQuery += ` AND (service_style != $${paramIndex} OR service_style IS NULL)`;
+          params.push('at_center');
+          paramIndex++;
+          console.log(`[Admin Service Catalog] Solo provider detected (from vendorRole) - filtering out at_center services`);
+        }
       }
 
       catalogQuery += ` ORDER BY category_name ASC, sub_category_name ASC NULLS LAST, display_order ASC, service_name ASC`;

@@ -128,6 +128,35 @@ export function registerPackageBookingEndpoints(app: Hono) {
         }, 400);
       }
 
+      // ✅ FIX GAP-11.1: Check for active subscription first (zero payment)
+      let isSubscriptionBooking = false;
+      let subscriptionId = null;
+      let finalAmount = 0;
+
+      try {
+        const subscriptionCheck = await query(
+          `SELECT cs.id, cs.subscription_type, cs.is_unlimited, cs.usage_limit, cs.end_date
+           FROM customer_subscriptions cs
+           WHERE cs.customer_id = $1
+             AND cs.status = 'active'
+             AND (cs.end_date IS NULL OR cs.end_date > NOW())
+             AND (cs.is_unlimited = true OR (cs.usage_limit IS NOT NULL AND cs.used_count < cs.usage_limit))
+           ORDER BY cs.created_at DESC
+           LIMIT 1`,
+          [customerId]
+        );
+
+        if (subscriptionCheck.rows.length > 0) {
+          const subscription = subscriptionCheck.rows[0];
+          subscriptionId = subscription.id;
+          isSubscriptionBooking = true;
+          finalAmount = 0; // Zero payment for active subscription
+          console.log(`[PACKAGE-BOOKING] ✅ Active subscription found: ${subscriptionId}. Setting amount to ₹0.`);
+        }
+      } catch (subError: any) {
+        console.warn('[PACKAGE-BOOKING] Subscription check failed, proceeding with package:', subError);
+      }
+
       // Verify package is active and has sessions
       const packageResult = await query(`
         SELECT * FROM package_purchases
@@ -172,20 +201,25 @@ export function registerPackageBookingEndpoints(app: Hono) {
           booking_date, booking_time, service_type,
           notes, address,
           package_purchase_id, is_package_session, package_session_number,
+          subscription_id, subscription_booking,
           status, payment_status, total_amount
         ) VALUES (
           $1, $2, $3, $4,
           $5, $6, $7,
           $8, $9,
           $10, true, $11,
-          'confirmed', 'completed', 0
+          $12, $13,
+          'confirmed', $14, $15
         )
         RETURNING *
       `, [
         customerId, vendorId, petId, serviceId,
         scheduledDate, scheduledTime, serviceType,
         notes, address ? JSON.stringify(address) : null,
-        packagePurchaseId, nextSessionNumber
+        packagePurchaseId, nextSessionNumber,
+        subscriptionId, isSubscriptionBooking,
+        isSubscriptionBooking ? 'paid' : 'completed', // ✅ Mark as paid for subscription
+        finalAmount // ✅ Zero payment for subscription
       ]);
 
       const booking = bookingResult.rows[0];

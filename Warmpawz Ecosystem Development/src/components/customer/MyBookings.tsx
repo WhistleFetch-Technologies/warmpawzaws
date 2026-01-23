@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { 
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
-  AlertCircle, RefreshCw, Eye, EyeOff, Package, ChevronRight
+  AlertCircle, RefreshCw, Eye, EyeOff, Package, ChevronRight,
+  Phone, Navigation, Star, MessageSquare, User
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { copyTextToClipboard } from '../../utils/shareUtils';
+import { Badge } from '../ui/badge';
 
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -26,6 +28,10 @@ interface Booking {
   serviceName: string;
   vendorId: string;
   vendorName: string;
+  vendorPhone?: string;
+  vendorAddress?: string;
+  vendorLatitude?: number;
+  vendorLongitude?: number;
   staffId?: string;
   staffName?: string;
   petId: string;
@@ -52,6 +58,8 @@ interface Booking {
   startTime?: string;
   endTime?: string;
   actualDuration?: number;
+  hasReview?: boolean;
+  rating?: number;
 }
 
 interface MyBookingsProps {
@@ -207,42 +215,187 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
           filteredBookings.map((booking) => (
             <div
               key={booking.bookingId}
-              onClick={() => setSelectedBooking(booking)}
-              className="bg-white border border-gray-200 rounded-xl p-4 hover:border-[#FF8C42] cursor-pointer transition-colors"
+              className="bg-white border border-gray-200 rounded-xl p-4 hover:border-[#FF8C42] transition-colors shadow-sm"
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="font-medium mb-1">{booking.serviceName}</h3>
-                  <p className="text-sm text-gray-600">{booking.vendorName}</p>
+              {/* Header Row - Click to open details */}
+              <div 
+                onClick={() => setSelectedBooking(booking)}
+                className="cursor-pointer"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">{booking.serviceName}</h3>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <User className="w-3.5 h-3.5" />
+                      {booking.vendorName}
+                    </p>
+                  </div>
+                  <Badge className={`text-xs ${getStatusColor(booking.status)}`}>
+                    {getStatusText(booking.status)}
+                  </Badge>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
-                  {getStatusText(booking.status)}
-                </span>
+
+                <div className="space-y-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-[#FF8C42]" />
+                    <span>{new Date(booking.bookingDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {booking.bookingTime}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-[#FF8C42]" />
+                    <span className="capitalize">{booking.serviceStyle.replace('_', ' ')}</span>
+                    {booking.vendorAddress && (
+                      <span className="text-gray-400 text-xs truncate max-w-[150px]">• {booking.vendorAddress}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-[#FF8C42]" />
+                    <span>Pet: {booking.petName}</span>
+                  </div>
+                </div>
+
+                {booking.isPackage && booking.packageDetails && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-sm">
+                    <Package className="w-4 h-4 text-purple-600" />
+                    <span className="text-purple-600 font-medium">
+                      {booking.packageDetails.completedSessions}/{booking.packageDetails.totalSessions} sessions completed
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2 text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  <span>{new Date(booking.bookingDate).toLocaleDateString()} at {booking.bookingTime}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  <span className="capitalize">{booking.serviceStyle.replace('_', ' ')}</span>
-                </div>
-              </div>
-
-              {booking.isPackage && booking.packageDetails && (
-                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2 text-sm">
-                  <Package className="w-4 h-4 text-purple-600" />
-                  <span className="text-purple-600">
-                    {booking.packageDetails.completedSessions}/{booking.packageDetails.totalSessions} sessions completed
-                  </span>
+              {/* OTP Section - For upcoming/confirmed bookings */}
+              {booking.completionOTP && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between bg-purple-50 rounded-lg p-3 border border-purple-200">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">OTP</span>
+                      </div>
+                      <div>
+                        <p className="text-xs text-purple-600 font-medium">Service Completion OTP</p>
+                        <p className="text-xl font-bold text-purple-700 tracking-wider">
+                          {showOTP === booking.bookingId ? booking.completionOTP : '••••••'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOTP(showOTP === booking.bookingId ? null : booking.bookingId);
+                        }}
+                        className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
+                      >
+                        {showOTP === booking.bookingId ? (
+                          <EyeOff className="w-4 h-4 text-purple-600" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-purple-600" />
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (booking.completionOTP) {
+                            copyOTP(booking.completionOTP, booking.bookingId);
+                          }
+                        }}
+                        className="p-2 hover:bg-purple-100 rounded-lg transition-colors"
+                      >
+                        {copiedOTP === booking.bookingId ? (
+                          <Check className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <Copy className="w-4 h-4 text-purple-600" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-purple-600 mt-2 text-center">
+                    Share this OTP with the service provider after completion
+                  </p>
                 </div>
               )}
 
-              <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                <span className="font-medium">₹{booking.price}</span>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+              {/* Quick Actions Row */}
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-bold text-lg text-gray-900">₹{booking.price}</span>
+                  <button
+                    onClick={() => setSelectedBooking(booking)}
+                    className="text-sm text-[#FF8C42] font-medium flex items-center gap-1 hover:underline"
+                  >
+                    View Details
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  {/* Call Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const phoneNumber = booking.vendorPhone || '+911234567890';
+                      window.location.href = `tel:${phoneNumber}`;
+                    }}
+                    className="flex-1 py-2.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-blue-100 transition-colors border border-blue-200"
+                  >
+                    <Phone className="w-4 h-4" />
+                    Call
+                  </button>
+
+                  {/* Directions Button - Only for at_center services */}
+                  {booking.serviceStyle === 'at_center' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Open Google Maps with directions
+                        const destination = booking.vendorLatitude && booking.vendorLongitude
+                          ? `${booking.vendorLatitude},${booking.vendorLongitude}`
+                          : encodeURIComponent(booking.vendorAddress || booking.vendorName);
+                        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank');
+                      }}
+                      className="flex-1 py-2.5 bg-green-50 text-green-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      Directions
+                    </button>
+                  )}
+
+                  {/* Chat Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedBooking(booking);
+                    }}
+                    className="flex-1 py-2.5 bg-orange-50 text-[#FF8C42] rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-orange-100 transition-colors border border-orange-200"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    Chat
+                  </button>
+
+                  {/* Review Button - Only for completed bookings without review */}
+                  {booking.status === 'completed' && !booking.hasReview && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBooking(booking);
+                        // TODO: Open review modal directly
+                      }}
+                      className="flex-1 py-2.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-amber-100 transition-colors border border-amber-200"
+                    >
+                      <Star className="w-4 h-4" />
+                      Review
+                    </button>
+                  )}
+
+                  {/* Show rating if already reviewed */}
+                  {booking.status === 'completed' && booking.hasReview && booking.rating && (
+                    <div className="flex-1 py-2.5 bg-gray-50 text-gray-600 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border border-gray-200">
+                      <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+                      {booking.rating}/5
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))
