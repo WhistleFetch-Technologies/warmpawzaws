@@ -200,13 +200,86 @@ const allowedOrigins = [
   'https://www.warmpawz.com',
 ];
 
+// Helper function to get allowed origin
+const getAllowedOrigin = (origin: string | null | undefined): string => {
+  if (!origin) {
+    return allowedOrigins[0];
+  }
+  const normalizedOrigin = origin.toLowerCase();
+  const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+  return normalizedAllowedOrigins.includes(normalizedOrigin) 
+    ? origin 
+    : allowedOrigins[0];
+};
+
+// Explicit OPTIONS handler for all routes - must be before CORS middleware
+// This ensures OPTIONS requests return 200 OK immediately
+app.options('*', async (c) => {
+  try {
+    const origin = c.req.header('origin') || c.req.header('Origin') || '';
+    console.log('[Hono OPTIONS] OPTIONS request received:', {
+      path: c.req.path,
+      origin: origin || 'none',
+      rawPath: (c.req as any).rawPath || c.req.path,
+    });
+    
+    const allowedOrigin = getAllowedOrigin(origin);
+    
+    const requestedHeaders = c.req.header('access-control-request-headers') || 
+                            c.req.header('Access-Control-Request-Headers') || '';
+    const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
+    const allowedHeaders = requestedHeaders 
+      ? `${baseAllowedHeaders},${requestedHeaders.split(',').map(h => h.trim()).join(',')}`
+      : baseAllowedHeaders;
+    
+    console.log('[Hono OPTIONS] Returning 200 OK with CORS headers:', {
+      allowedOrigin,
+      allowedHeaders: allowedHeaders.substring(0, 100), // Log first 100 chars
+    });
+    
+    // Return empty body with 200 status and CORS headers
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': allowedOrigin,
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'Access-Control-Allow-Headers': allowedHeaders,
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Max-Age': '86400',
+        'Content-Length': '0',
+      },
+    });
+  } catch (error) {
+    console.error('[Hono OPTIONS] Error in OPTIONS handler:', error);
+    // Even on error, return 200 OK for CORS
+    const origin = c.req.header('origin') || c.req.header('Origin') || '';
+    const allowedOrigin = getAllowedOrigin(origin);
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': allowedOrigin,
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Max-Age': '86400',
+        'Content-Length': '0',
+      },
+    });
+  }
+});
+
 app.use('*', cors({
   origin: (origin) => {
-    // Allow requests from allowed origins or if no origin (same-origin)
-    if (!origin || allowedOrigins.includes(origin)) {
-      return origin || allowedOrigins[0];
+    // Use case-insensitive matching like getAllowedOrigin
+    if (!origin) {
+      return allowedOrigins[0];
     }
-    return allowedOrigins[0]; // Default to CloudFront
+    const normalizedOrigin = origin.toLowerCase();
+    const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+    if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
+      return origin; // Return original origin (preserve case)
+    }
+    return allowedOrigins[0]; // Default to first CloudFront
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key', 'X-UAT-Mode', 'X-UAT-Token'],
@@ -446,9 +519,16 @@ registerTaxInvoicePdfEndpoints(app); // GST tax invoice PDF generation
 registerReviewsEnhancedEndpoints(app); // Enhanced booking reviews
 registerReturnsEnhancedEndpoints(app); // Complete return/refund management
 
-// 404 handler
+// 404 handler - CRITICAL: Must include CORS headers
 app.notFound((c) => {
-  return c.json({ error: 'Not Found' }, 404);
+  const origin = c.req.header('origin') || c.req.header('Origin') || '';
+  const allowedOrigin = getAllowedOrigin(origin);
+  return c.json({ error: 'Not Found' }, 404, {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+  });
 });
 
 // Error handler with CloudWatch tracking
@@ -475,6 +555,16 @@ app.onError((err, c) => {
     stack: err.stack?.substring(0, 200),
   });
   
+  // Get origin for CORS headers (used in all error responses)
+  const origin = c.req.header('origin') || c.req.header('Origin') || '';
+  const allowedOrigin = getAllowedOrigin(origin);
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+  
   // CRITICAL: Check path FIRST - this is the most reliable way to match
   // Check for service-catalog/categories errors by PATH (most reliable)
   if (requestPath.includes('service-catalog/categories') || 
@@ -490,7 +580,7 @@ app.onError((err, c) => {
       categories: [],
       total: 0,
       message: `Service categories query failed: ${errorMessage}`,
-    }, 200);
+    }, 200, corsHeaders);
   }
   
   // Check for payment-gateways errors by PATH (most reliable)
@@ -505,7 +595,7 @@ app.onError((err, c) => {
       success: true,
       gateways: [],
       message: `Payment gateway query failed: ${errorMessage}`,
-    }, 200);
+    }, 200, corsHeaders);
   }
   
   // Fallback: Check by error message (less reliable but catches edge cases)
@@ -524,7 +614,7 @@ app.onError((err, c) => {
       categories: [],
       total: 0,
       message: `Service categories query failed: ${errorMessage}`,
-    }, 200);
+    }, 200, corsHeaders);
   }
   
   // Fallback: Check payment-gateways by error message
@@ -541,7 +631,7 @@ app.onError((err, c) => {
       success: true,
       gateways: [],
       message: `Payment gateway query failed: ${errorMessage}`,
-    }, 200);
+    }, 200, corsHeaders);
   }
   
   // Check for onboarding/roles errors
@@ -554,14 +644,14 @@ app.onError((err, c) => {
       success: true,
       data: { roles: [] },
       message: `Failed to get roles: ${errorMessage}`,
-    }, 200);
+    }, 200, corsHeaders);
   }
   
-  // Default error response
+  // Default error response - CRITICAL: Must include CORS headers
   if (process.env.DEBUG === 'true') {
     console.log('[Hono Error Handler] NO MATCH - Returning 500');
   }
-  return c.json({ error: errorMessage }, 500);
+  return c.json({ error: errorMessage }, 500, corsHeaders);
 });
 
 /**
@@ -609,131 +699,76 @@ export const handler = async (
     // we should return early to avoid conflicts.
     const httpMethod = event.requestContext?.http?.method || 
                       (event as any).requestContext?.httpMethod || 
-                      (event as any).httpMethod || 
-                      event.requestContext?.httpMethod ||
+                      (event as any).httpMethod ||
                       'GET';
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:600',message:'Method check',data:{httpMethod,isOptions:httpMethod==='OPTIONS',requestContextMethod:event.requestContext?.http?.method,rawPath:event.rawPath},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
     
-    // If OPTIONS request reaches Lambda (shouldn't happen when CORS is configured on API Gateway),
-    // return early with CORS headers as fallback. API Gateway should handle OPTIONS automatically.
+    // Handle OPTIONS preflight requests - CRITICAL: Must return 200 OK
+    // API Gateway HTTP API v2 may handle OPTIONS automatically if CORS is configured,
+    // but we handle it here as a fallback to ensure 200 OK response
     if (httpMethod === 'OPTIONS') {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:610',message:'OPTIONS reached Lambda (unexpected)',data:{rawPath:event.rawPath,origin:event.headers?.origin||event.headers?.Origin||'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
+      console.log('[OPTIONS] OPTIONS request received:', {
+        rawPath: event.rawPath,
+        origin: event.headers?.origin || event.headers?.Origin || 'none',
+        requestHeaders: event.headers?.['access-control-request-headers'] || event.headers?.['Access-Control-Request-Headers'] || 'none'
+      });
+      
       try {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:602',message:'OPTIONS handler entered',data:{rawPath:event.rawPath,allHeaders:Object.keys(event.headers||{}),origin:event.headers?.origin||event.headers?.Origin||'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        // Get origin from headers (case-insensitive)
         const origin = event.headers?.origin || 
                        event.headers?.Origin || 
                        event.headers?.['origin'] ||
                        event.headers?.['Origin'] ||
-                       'https://dfof7mguaa0a5.cloudfront.net';
+                       '';
         
-        // Use the same allowedOrigins array defined at module level for consistency
-        // OFFICIAL CloudFront distributions only
-        const allowedOrigins = [
-          // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
-          'https://dfof7mguaa0a5.cloudfront.net',
-          // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
-          'https://d2aoyjj8ine0wk.cloudfront.net',
-          // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
-          'https://d1s6ykkj381k58.cloudfront.net',
-          // Local development
-          'http://localhost:3000',
-          'http://localhost:3001',
-          'http://localhost:3002',
-          'http://localhost:3003',
-          'http://localhost:5173',
-          // Dev domains
-          'https://dev.admin.warmpawz.com',
-          'https://dev.vendor.warmpawz.com',
-          'https://dev.customer.warmpawz.com',
-          // Production domains (for prod environment)
-          'https://admin.warmpawz.com',
-          'https://vendor.warmpawz.com',
-          'https://customer.warmpawz.com',
-          'https://warmpawz.com',
-          'https://www.warmpawz.com',
-        ];
+        const allowedOrigin = getAllowedOrigin(origin);
+        console.log('[OPTIONS] Allowed origin:', allowedOrigin);
         
-        // Normalize origin for comparison (lowercase)
-        const normalizedOrigin = origin.toLowerCase();
-        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
-        const allowedOrigin = normalizedAllowedOrigins.includes(normalizedOrigin) 
-          ? origin 
-          : allowedOrigins[0];
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:640',message:'Origin validation',data:{origin,allowedOrigin,isAllowed:normalizedAllowedOrigins.includes(normalizedOrigin)},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C1'})}).catch(()=>{});
-        // #endregion
-        
-        // Get requested headers and methods from preflight request
+        // Get requested headers from preflight request
         const requestedHeaders = event.headers?.['access-control-request-headers'] || 
                                  event.headers?.['Access-Control-Request-Headers'] ||
                                  '';
-        const requestedMethod = event.headers?.['access-control-request-method'] || 
-                               event.headers?.['Access-Control-Request-Method'] ||
-                               '';
-        
-        // Build allowed headers list - include requested headers if they're safe
         const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
         const allowedHeaders = requestedHeaders 
           ? `${baseAllowedHeaders},${requestedHeaders.split(',').map(h => h.trim()).join(',')}`
           : baseAllowedHeaders;
         
-        // Return 200 OK for OPTIONS (browsers expect 200, not 204 for CORS preflight)
-        // API Gateway HTTP API v2 accepts both 200 and 204, but 200 is more compatible
-        const optionsResponse: APIGatewayProxyResultV2 = {
+        console.log('[OPTIONS] Returning 200 OK with CORS headers');
+        // CRITICAL: Return 200 OK for OPTIONS preflight (browsers require this)
+        return {
           statusCode: 200,
-          body: '',  // Empty body for OPTIONS response
+          body: '',
           headers: {
             'Access-Control-Allow-Origin': allowedOrigin,
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
             'Access-Control-Allow-Headers': allowedHeaders,
             'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Max-Age': '86400',
+            'Content-Length': '0',
           },
         };
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:665',message:'OPTIONS response prepared',data:{statusCode:optionsResponse.statusCode,allowedOrigin,allowedHeaders,headerCount:Object.keys(optionsResponse.headers).length},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:677',message:'OPTIONS response returning',data:{statusCode:optionsResponse.statusCode},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D1'})}).catch(()=>{});
-        // #endregion
-        return optionsResponse;
       } catch (optionsError) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:680',message:'OPTIONS handler error',data:{error:optionsError instanceof Error?optionsError.message:String(optionsError),stack:optionsError instanceof Error?optionsError.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F'})}).catch(()=>{});
-        // #endregion
-        // Return error response with CORS headers
+        // CRITICAL: Even on error, return 200 OK for CORS preflight
+        // Browsers will reject non-200 responses for OPTIONS requests
+        console.error('[OPTIONS] Error in OPTIONS handler, but returning 200 OK for CORS:', optionsError);
         const origin = event.headers?.origin || 
                        event.headers?.Origin || 
                        event.headers?.['origin'] ||
                        event.headers?.['Origin'] ||
-                       'https://d1s6ykkj381k58.cloudfront.net';
-        const allowedOrigins = [
-          'https://d1s6ykkj381k58.cloudfront.net',
-          'https://dfof7mguaa0a5.cloudfront.net',
-          'https://d2aoyjj8ine0wk.cloudfront.net',
-        ];
-        const normalizedOrigin = origin.toLowerCase();
-        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
-        const allowedOrigin = normalizedAllowedOrigins.includes(normalizedOrigin) 
-          ? origin 
-          : allowedOrigins[0];
+                       '';
+        const allowedOrigin = getAllowedOrigin(origin);
+        
         return {
-          statusCode: 500,
-          body: JSON.stringify({ error: 'CORS preflight failed' }),
+          statusCode: 200,
+          body: '',
           headers: {
-            'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': allowedOrigin,
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
             'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
             'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '86400',
+            'Content-Length': '0',
           },
         };
       }
@@ -771,25 +806,57 @@ export const handler = async (
       });
     }
     
-    // Ensure Content-Type is set for JSON bodies
-    if (event.body && !headers.has('content-type')) {
-      headers.append('content-type', 'application/json');
-    }
-
-    // Parse body once to avoid consumption issues with Hono Request
-    // This parsed body will be passed through Hono context (c.env) instead of global state
-    const requestBody = event.isBase64Encoded && event.body
-      ? Buffer.from(event.body, 'base64').toString()
-      : event.body || undefined;
-
+    // Handle body based on content type
+    const contentType = headers.get('content-type') || '';
+    const isMultipartFormData = contentType.includes('multipart/form-data');
+    const isJson = contentType.includes('application/json');
+    
+    // For multipart/form-data, we need to preserve binary data
+    // For JSON, we can parse it
+    // For other types, pass as-is
+    let requestBody: string | ArrayBuffer | undefined = undefined;
     let parsedBody: Record<string, unknown> | null = null;
-    if (requestBody) {
-      try {
-        parsedBody = JSON.parse(requestBody) as Record<string, unknown>;
-      } catch (e) {
-        // Not JSON, will be passed as string body
-        parsedBody = null;
+    
+    if (event.body) {
+      if (event.isBase64Encoded) {
+        // Decode base64 body
+        const decoded = Buffer.from(event.body, 'base64');
+        
+        if (isMultipartFormData) {
+          // For multipart/form-data, pass as ArrayBuffer to preserve binary data
+          requestBody = decoded.buffer.slice(decoded.byteOffset, decoded.byteOffset + decoded.byteLength);
+        } else if (isJson) {
+          // For JSON, convert to string and parse
+          requestBody = decoded.toString('utf-8');
+          try {
+            parsedBody = JSON.parse(requestBody) as Record<string, unknown>;
+          } catch (e) {
+            // Not valid JSON, pass as string
+            parsedBody = null;
+          }
+        } else {
+          // For other content types, convert to string
+          requestBody = decoded.toString('utf-8');
+        }
+      } else {
+        // Body is not base64 encoded
+        if (isJson) {
+          requestBody = event.body;
+          try {
+            parsedBody = JSON.parse(requestBody) as Record<string, unknown>;
+          } catch (e) {
+            // Not valid JSON, pass as string
+            parsedBody = null;
+          }
+        } else {
+          requestBody = event.body;
+        }
       }
+    }
+    
+    // Only set default Content-Type for JSON if not already set
+    if (requestBody && !headers.has('content-type') && !isMultipartFormData) {
+      headers.append('content-type', 'application/json');
     }
 
     const request = new Request(url, {
@@ -866,12 +933,8 @@ export const handler = async (
       'https://www.warmpawz.com',
     ];
     
-    // Normalize origin for comparison (lowercase)
-    const normalizedOrigin = origin ? origin.toLowerCase() : '';
-    const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
-    const allowedOrigin = normalizedOrigin && normalizedAllowedOrigins.includes(normalizedOrigin)
-      ? origin
-      : allowedOrigins[0];
+    // Get allowed origin using helper function
+    const allowedOrigin = getAllowedOrigin(origin);
     
     // Check if Hono CORS middleware already set CORS headers
     const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['Access-Control-Allow-Origin'];
@@ -910,39 +973,8 @@ export const handler = async (
                    event.headers?.Origin || 
                    event.headers?.['origin'] ||
                    event.headers?.['Origin'] ||
-                   'https://dfof7mguaa0a5.cloudfront.net';
-    
-    const allowedOrigins = [
-      // Admin Web CloudFront
-      'https://dfof7mguaa0a5.cloudfront.net',
-      // Customer Web CloudFront
-      'https://d2aoyjj8ine0wk.cloudfront.net',
-      // Vendor Web CloudFront
-      'https://d1s6ykkj381k58.cloudfront.net',
-      // Local development
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'http://localhost:3003',
-      'http://localhost:5173',
-      // Dev domains
-      'https://dev.admin.warmpawz.com',
-      'https://dev.vendor.warmpawz.com',
-      'https://dev.customer.warmpawz.com',
-      // Production domains (for prod environment)
-      'https://admin.warmpawz.com',
-      'https://vendor.warmpawz.com',
-      'https://customer.warmpawz.com',
-      'https://warmpawz.com',
-      'https://www.warmpawz.com',
-    ];
-    
-    // Normalize origin for comparison (lowercase)
-    const normalizedOrigin = origin.toLowerCase();
-    const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
-    const allowedOrigin = normalizedAllowedOrigins.includes(normalizedOrigin) 
-      ? origin 
-      : allowedOrigins[0];
+                   '';
+    const allowedOrigin = getAllowedOrigin(origin);
     
     // Ensure CORS headers in error responses (Hono middleware won't run for errors)
     return {

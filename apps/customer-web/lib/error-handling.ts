@@ -123,14 +123,20 @@ export async function withRetry<T>(
 export async function resilientFetch(
   url: string,
   options: RequestInit = {},
-  config: Partial<RetryConfig> = {}
+  config: Partial<RetryConfig> = {},
+  customTimeoutMs?: number // ✅ FIX: Allow custom timeout for specific endpoints
 ): Promise<Response> {
   const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
-  const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+  // ✅ FIX: Use custom timeout if provided, otherwise default to 30s
+  // Payment endpoints need more time (45s) due to Razorpay API calls
+  const REQUEST_TIMEOUT_MS = customTimeoutMs || 30000; // Default 30 seconds, or custom
 
   return withRetry(async () => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => {
+      console.warn(`[RESILIENT-FETCH] Request timeout after ${REQUEST_TIMEOUT_MS}ms: ${url}`);
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
 
     try {
       const response = await fetch(url, {

@@ -249,7 +249,7 @@ export function LiveTrackingWidget({
     };
 
     // Create map
-    const map = new google.maps.Map(mapRef.current, {
+    const map = new window.google.maps.Map(mapRef.current, {
       center,
       zoom: 14,
       mapTypeControl: false,
@@ -268,7 +268,7 @@ export function LiveTrackingWidget({
     mapInstanceRef.current = map;
 
     // Create provider marker (custom icon)
-    const providerMarker = new google.maps.Marker({
+    const providerMarker = new window.google.maps.Marker({
       position: { lat: current_location.latitude, lng: current_location.longitude },
       map,
       icon: {
@@ -278,8 +278,8 @@ export function LiveTrackingWidget({
             <path d="M24 16C20.7 16 18 18.7 18 22C18 26.25 24 32 24 32S30 26.25 30 22C30 18.7 27.3 16 24 16ZM24 24C22.9 24 22 23.1 22 22C22 20.9 22.9 20 24 20C25.1 20 26 20.9 26 22C26 23.1 25.1 24 24 24Z" fill="white"/>
           </svg>
         `),
-        scaledSize: new google.maps.Size(48, 48),
-        anchor: new google.maps.Point(24, 24),
+        scaledSize: new window.google.maps.Size(48, 48),
+        anchor: new window.google.maps.Point(24, 24),
       },
       title: trackingData.staff_name,
       zIndex: 100,
@@ -288,7 +288,7 @@ export function LiveTrackingWidget({
     providerMarkerRef.current = providerMarker;
 
     // Create destination marker
-    const destinationMarker = new google.maps.Marker({
+    const destinationMarker = new window.google.maps.Marker({
       position: { lat: destination.latitude, lng: destination.longitude },
       map,
       icon: {
@@ -298,8 +298,8 @@ export function LiveTrackingWidget({
             <path d="M20 12L26 28H14L20 12Z" fill="white"/>
           </svg>
         `),
-        scaledSize: new google.maps.Size(40, 40),
-        anchor: new google.maps.Point(20, 40),
+        scaledSize: new window.google.maps.Size(40, 40),
+        anchor: new window.google.maps.Point(20, 40),
       },
       title: 'Your Location',
       zIndex: 99,
@@ -308,7 +308,7 @@ export function LiveTrackingWidget({
     destinationMarkerRef.current = destinationMarker;
 
     // Draw route line
-    const routePath = new google.maps.Polyline({
+    const routePath = new window.google.maps.Polyline({
       path: [
         { lat: current_location.latitude, lng: current_location.longitude },
         { lat: destination.latitude, lng: destination.longitude },
@@ -323,7 +323,7 @@ export function LiveTrackingWidget({
     polylineRef.current = routePath;
 
     // Fit bounds to show both markers
-    const bounds = new google.maps.LatLngBounds();
+    const bounds = new window.google.maps.LatLngBounds();
     bounds.extend({ lat: current_location.latitude, lng: current_location.longitude });
     bounds.extend({ lat: destination.latitude, lng: destination.longitude });
     map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });

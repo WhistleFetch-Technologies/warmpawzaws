@@ -791,6 +791,9 @@ export function registerSettlementEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/bank-details
    * Get vendor bank details
+   * 
+   * ✅ FIX: Checks both vendor_bank_accounts and vendor_bank_details tables
+   * ✅ FIX: Includes vendor resolution logic for vendors in vendor_identity
    */
   app.get("/vendor/:vendorId/bank-details", async (c) => {
     try {
@@ -805,10 +808,93 @@ export function registerSettlementEndpoints(app: Hono) {
         });
       }
 
-      const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+      // ✅ CRITICAL FIX: Resolve vendor ID - check vendor_identity if not in vendors table
+      let actualVendorId = vendorId;
+      const existingVendor = await select('vendors', { id: vendorId });
+      
+      if (existingVendor.length === 0) {
+        console.log(`[BankDetails] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select('vendor_identity', { id: vendorId });
+        
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+            // Check if vendor exists by phone (might have different ID)
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              console.log(`[BankDetails] Found existing vendor by phone: ${actualVendorId}`);
+            } else {
+              // Auto-create vendor record from onboarding application
+              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              
+              console.log(`[BankDetails] Auto-creating vendor record for approved vendor ${vendorId}`);
+              await insert('vendors', {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '000000',
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              console.log(`[BankDetails] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: 'Vendor not approved or activated' }, 403);
+          }
+        } else {
+          return c.json({ error: 'Vendor not found' }, 404);
+        }
+      }
 
-      // ✅ FIX: Return 200 with null bank details instead of 404
-      // 404 implies an error, but "no bank details yet" is a valid state
+      // ✅ FIX: Check both vendor_bank_accounts (newer) and vendor_bank_details (older) tables
+      let bankDetails: any[] = [];
+      
+      // First, try vendor_bank_accounts (newer table, supports multiple accounts)
+      try {
+        const schemaCheck = await query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_name = 'vendor_bank_accounts'
+          ) as table_exists
+        `);
+        
+        if (schemaCheck.rows[0]?.table_exists) {
+          // Get primary account or first account
+          const accounts = await query(
+            `SELECT * FROM vendor_bank_accounts 
+             WHERE vendor_id = $1 
+             ORDER BY is_primary DESC, created_at DESC 
+             LIMIT 1`,
+            [actualVendorId]
+          );
+          bankDetails = accounts.rows;
+        }
+      } catch (e) {
+        console.warn('[BankDetails] Error querying vendor_bank_accounts:', e);
+      }
+
+      // Fallback to vendor_bank_details if no results from vendor_bank_accounts
+      if (bankDetails.length === 0) {
+        try {
+          bankDetails = await select('vendor_bank_details', { vendor_id: actualVendorId });
+        } catch (e) {
+          console.warn('[BankDetails] Error querying vendor_bank_details:', e);
+        }
+      }
+
+      // Return 200 with null bank details if none found (valid state, not an error)
       if (bankDetails.length === 0) {
         return c.json({
           success: true,

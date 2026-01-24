@@ -26,7 +26,8 @@
  * ============================================================================
  */
 
-import { Hono } from 'hono';
+import { Hono, Context } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { select, insert, update, query } from '../database/rds-connection';
 import {
@@ -994,7 +995,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   const reviewHandler = new AdminReviewApplicationHandlerEnhanced();
 
   // Phase 1: Auth & Entry
-  app.get('/vendor/onboarding/status', async (c) => {
+  app.get('/vendor/onboarding/status', async (c: Context) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result: any = await statusHandler.execute(event, context);
@@ -1003,7 +1004,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   // Phase 2: Role Selection
-  app.get('/vendor/onboarding/roles', async (c) => {
+  app.get('/vendor/onboarding/roles', async (c: Context) => {
     try {
       const event = createApiGatewayEvent(c.req);
       const context = createLambdaContext();
@@ -1029,7 +1030,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     }
   });
 
-  app.post('/vendor/onboarding/select-role', async (c) => {
+  app.post('/vendor/onboarding/select-role', async (c: Context) => {
     const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await selectRoleHandler.execute(event, context);
@@ -1038,7 +1039,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   // Phase 3: Vendor Type
-  app.post('/vendor/onboarding/select-vendor-type', async (c) => {
+  app.post('/vendor/onboarding/select-vendor-type', async (c: Context) => {
     const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await selectVendorTypeHandler.execute(event, context);
@@ -1047,7 +1048,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   // Phase 4: Dynamic Form
-  app.get('/vendor/onboarding/form-schema', async (c) => {
+  app.get('/vendor/onboarding/form-schema', async (c: Context) => {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result: any = await formSchemaHandler.execute(event, context);
@@ -1055,7 +1056,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
     return c.json(body, result.statusCode);
   });
 
-  app.post('/vendor/onboarding/submit-application', async (c) => {
+  app.post('/vendor/onboarding/submit-application', async (c: Context) => {
     const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
     const result: any = await submitHandler.execute(event, context);
@@ -1064,7 +1065,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   // Phase 6: Admin Review
-  app.post('/admin/vendor/onboarding/:applicationId/review', async (c) => {
+  app.post('/admin/vendor/onboarding/:applicationId/review', async (c: Context) => {
     const event = await createApiGatewayEventWithBody(c);
     event.pathParameters = { applicationId: c.req.param('applicationId') };
     const context = createLambdaContext();
@@ -1074,7 +1075,7 @@ export function registerVendorOnboardingEndpointsEnhanced(app: Hono) {
   });
 
   // Phase 7: Activate Vendor
-  app.post('/vendor/onboarding/activate', async (c) => {
+  app.post('/vendor/onboarding/activate', async (c: Context) => {
     try {
       const body = await c.req.json().catch(() => ({}));
       const { phone } = body;
@@ -1179,7 +1180,7 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
@@ -1216,14 +1217,14 @@ async function createApiGatewayEventWithBody(c: any): Promise<any> {
     body: JSON.stringify(body),
     isBase64Encoded: false,
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'vendor-onboarding-handler',
     functionVersion: '$LATEST',
   };

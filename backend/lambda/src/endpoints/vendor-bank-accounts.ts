@@ -81,6 +81,56 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Account holder name, account number, and IFSC code are required' }, 400);
       }
 
+      // ✅ CRITICAL FIX: Ensure vendor exists in vendors table before inserting
+      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
+      let actualVendorId = vendorId;
+      const existingVendor = await select('vendors', { id: vendorId });
+      if (existingVendor.length === 0) {
+        console.log(`[BankAccount] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select('vendor_identity', { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+            // Check if vendor exists by phone (there might be an existing vendor with different ID)
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              console.log(`[BankAccount] Found existing vendor by phone: ${actualVendorId}`);
+            } else {
+              // Get application data for vendor details
+              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              
+              // Create vendors record
+              console.log(`[BankAccount] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert('vendors', {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '000000',
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              console.log(`[BankAccount] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: 'Vendor not approved or activated' }, 403);
+          }
+        } else {
+          return c.json({ error: 'Vendor not found' }, 404);
+        }
+      }
+
       // Check what columns exist in the table
       const schemaCheck = await query(`
         SELECT 
@@ -100,26 +150,26 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Bank accounts feature is not available' }, 500);
       }
 
-      // Check if account already exists
+      // Check if account already exists (use actualVendorId)
       const existing = await query(
         `SELECT id FROM ${tableName} WHERE vendor_id = $1 AND account_number = $2`,
-        [vendorId, accountNumber]
+        [actualVendorId, accountNumber]
       );
 
       if (existing.rows.length > 0) {
         return c.json({ error: 'This account is already added' }, 409);
       }
 
-      // Check if this is the first account
+      // Check if this is the first account (use actualVendorId)
       const existingAccounts = await query(
         `SELECT id FROM ${tableName} WHERE vendor_id = $1`,
-        [vendorId]
+        [actualVendorId]
       );
       const isPrimary = existingAccounts.rows.length === 0;
 
-      // Build insert data dynamically based on schema
+      // Build insert data dynamically based on schema (use actualVendorId)
       const insertData: any = {
-        vendor_id: vendorId,
+        vendor_id: actualVendorId,
         account_holder_name: accountHolderName,
         account_number: accountNumber,
         ifsc_code: ifscCode.toUpperCase(),

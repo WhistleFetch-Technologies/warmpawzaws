@@ -70,7 +70,8 @@ export class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    retryConfig?: Partial<import('./error-handling').RetryConfig>
+    retryConfig?: Partial<import('./error-handling').RetryConfig>,
+    customTimeoutMs?: number // ✅ FIX: Allow custom timeout for specific endpoints
   ): Promise<T> {
     if (!this.baseUrl) {
       throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
@@ -127,10 +128,12 @@ export class ApiClient {
     }
     
     try {
+      // ✅ FIX: Use custom timeout for payment endpoints (they need more time)
+      const timeout = customTimeoutMs || (endpoint.includes('/razorpay/') ? 45000 : undefined); // 45s for payment endpoints
       const response = await resilientFetch(url, {
         ...options,
         headers,
-      }, retryConfig);
+      }, retryConfig, timeout);
 
       if (!response.ok) {
         // Try to parse JSON, but also capture raw text if JSON parsing fails
@@ -242,12 +245,12 @@ export class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' }, retryConfig);
   }
 
-  async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
+  async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>, customTimeoutMs?: number): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       // CRITICAL: Don't stringify FormData - pass it directly
       body: data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined),
-    }, retryConfig);
+    }, retryConfig, customTimeoutMs);
   }
 
   async put<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {

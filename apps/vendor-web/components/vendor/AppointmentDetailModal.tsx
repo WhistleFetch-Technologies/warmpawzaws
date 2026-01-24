@@ -173,7 +173,41 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         timestamp: a.createdAt || a.timestamp,
         actor: a.performedBy || a.actor,
       })));
-      setPrescriptions(data.prescriptions || []);
+      // Safely process prescriptions - validate and normalize data
+      const safePrescriptions = (data.prescriptions || []).map((prescription: any) => {
+        try {
+          // Ensure all prescription fields are properly typed
+          return {
+            id: String(prescription.id || ''),
+            bookingId: String(prescription.bookingId || prescription.booking_id || ''),
+            notes: String(prescription.notes || prescription.instructions || ''),
+            medications: prescription.medications || prescription.medication_name || '',
+            dosage: String(prescription.dosage || ''),
+            frequency: String(prescription.frequency || ''),
+            duration: String(prescription.duration || ''),
+            uploadedAt: String(prescription.uploadedAt || prescription.created_at || ''),
+            uploadedBy: String(prescription.uploadedBy || prescription.uploaded_by || 'Unknown'),
+            // Preserve original data for compatibility
+            ...prescription
+          };
+        } catch (error) {
+          console.error('Error processing prescription:', error, prescription);
+          return {
+            id: String(prescription?.id || ''),
+            bookingId: String(prescription?.bookingId || ''),
+            notes: '',
+            medications: '',
+            dosage: '',
+            frequency: '',
+            duration: '',
+            uploadedAt: '',
+            uploadedBy: 'Unknown',
+            ...prescription
+          };
+        }
+      }).filter((p: any) => p && p.id); // Filter out invalid prescriptions
+      
+      setPrescriptions(safePrescriptions);
     } catch (error) {
       console.error('Error loading appointment details:', error);
     } finally {
@@ -636,17 +670,30 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               <div className="p-4 space-y-3">
                 {/* Add Prescription Button - Always visible at top for vets */}
                 {/* ✅ Check multiple role fields and values */}
-                {(
-                  vendorData?.roleId?.toLowerCase()?.includes('vet') ||
-                  vendorData?.roleId?.toLowerCase()?.includes('clinic') ||
-                  vendorData?.role?.toLowerCase()?.includes('vet') ||
-                  vendorData?.roleName?.toLowerCase()?.includes('vet') ||
-                  vendorData?.roleName?.toLowerCase()?.includes('clinic') ||
-                  vendorData?.capabilities?.includes('prescriptions') ||
-                  vendorData?.capabilities?.includes('prescription_create') ||
-                  // Always show for testing - can be removed later
-                  true
-                ) && booking.status !== 'cancelled' && (
+                {(() => {
+                  try {
+                    const roleId = vendorData?.roleId;
+                    const role = vendorData?.role;
+                    const roleName = vendorData?.roleName;
+                    const capabilities = vendorData?.capabilities;
+                    
+                    const isVet = (
+                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('vet')) ||
+                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('clinic')) ||
+                      (role && typeof role === 'string' && String(role).toLowerCase().includes('vet')) ||
+                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('vet')) ||
+                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('clinic')) ||
+                      (Array.isArray(capabilities) && capabilities.includes('prescriptions')) ||
+                      (Array.isArray(capabilities) && capabilities.includes('prescription_create')) ||
+                      true // Always show for testing
+                    );
+                    
+                    return isVet && booking.status !== 'cancelled';
+                  } catch (error) {
+                    console.error('Error checking vendor role:', error);
+                    return true; // Show button on error
+                  }
+                })() && (
                   <button
                     onClick={() => setShowPrescriptionModal(true)}
                     className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg"
@@ -669,7 +716,40 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     <div className="text-sm text-gray-500 mb-2">
                       {prescriptions.length} prescription{prescriptions.length > 1 ? 's' : ''} for this visit
                     </div>
-                    {prescriptions.map((prescription: any) => (
+                    {prescriptions.map((prescription: any) => {
+                      // Safely get medication name - handle both string and array/object formats
+                      const getMedicationName = () => {
+                        try {
+                          if (prescription.medication_name && typeof prescription.medication_name === 'string') {
+                            return prescription.medication_name;
+                          }
+                          if (prescription.medications) {
+                            if (typeof prescription.medications === 'string') {
+                              return prescription.medications;
+                            }
+                            if (Array.isArray(prescription.medications)) {
+                              if (prescription.medications.length > 0) {
+                                const firstMed = prescription.medications[0];
+                                if (typeof firstMed === 'string') return firstMed;
+                                if (typeof firstMed === 'object' && firstMed?.name) {
+                                  return String(firstMed.name || '');
+                                }
+                              }
+                            }
+                            if (typeof prescription.medications === 'object' && prescription.medications !== null) {
+                              if (prescription.medications.name) {
+                                return String(prescription.medications.name || '');
+                              }
+                            }
+                          }
+                          return 'Prescription';
+                        } catch (error) {
+                          console.error('Error getting medication name:', error);
+                          return 'Prescription';
+                        }
+                      };
+                      
+                      return (
                       <div key={prescription.id} className="bg-white rounded-xl p-4 space-y-3 border border-gray-100 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -678,7 +758,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                             </div>
                             <div>
                               <h4 className="font-semibold text-gray-900">
-                                {prescription.medication_name || prescription.medications || 'Prescription'}
+                                {getMedicationName()}
                               </h4>
                               <span className="text-xs text-gray-500">
                                 {new Date(prescription.uploadedAt || prescription.created_at).toLocaleDateString('en-IN', {
@@ -716,10 +796,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                         )}
                         
                         <div className="pt-2 border-t border-gray-100 text-xs text-gray-500">
-                          Prescribed by: {prescription.uploadedBy}
+                          Prescribed by: {prescription.uploadedBy || 'Unknown'}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                     
                     {vendorData?.roleId === 'veterinarian' && (
                       <button

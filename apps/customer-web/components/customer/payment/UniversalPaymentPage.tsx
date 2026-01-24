@@ -717,9 +717,10 @@ export function UniversalPaymentPage({
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, totalAfterDiscounts - razorpayOfferDiscount) : 0;
   const finalAmount = Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
-  const handlePayment = async () => {
+  const handlePayment = async (skipPolicyCheck: boolean = false) => {
     // Check if policies have been accepted (for bookings)
-    if (type === 'booking' && !policyAccepted) {
+    // ✅ FIX: Allow skipping policy check when called from modal acceptance
+    if (type === 'booking' && !skipPolicyCheck && !policyAccepted) {
       setShowPolicyModal(true);
       return;
     }
@@ -1265,13 +1266,17 @@ export function UniversalPaymentPage({
       }
       
       // Step 3: Create Razorpay order
+      // ✅ FIX: Use longer timeout (45s) for payment operations
+      console.log('🔄 [PAYMENT] Creating Razorpay order...');
       const orderRes = await apiClient.post<any>('/razorpay/create-order', {
         bookingId: currentBookingId,
         orderId: currentOrderId,
         amount: finalAmount,
         customerId,
         offerId: selectedRazorpayOffer?.id,
-      });
+      }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+      
+      console.log('✅ [PAYMENT] Razorpay order created:', orderRes.orderId);
       
       if (!orderRes.orderId) {
         throw new Error('Failed to create payment order');
@@ -2010,7 +2015,7 @@ export function UniversalPaymentPage({
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-[100]">
         <div className="max-w-lg mx-auto">
           <Button
-            onClick={handlePayment}
+            onClick={() => handlePayment()}
             disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
             className="w-full py-4 bg-gradient-to-r from-[#FF8C42] to-[#FF7029] hover:from-[#E67A35] hover:to-[#D66A25] text-white rounded-xl font-bold text-lg disabled:opacity-50"
           >
@@ -2105,10 +2110,13 @@ export function UniversalPaymentPage({
         isOpen={showPolicyModal}
         onClose={() => setShowPolicyModal(false)}
         onAccept={() => {
-          setPolicyAccepted(true);
+          // ✅ FIX: Close modal first, then set policy accepted and proceed with payment
+          // This ensures the modal closes immediately and payment proceeds without double-click
           setShowPolicyModal(false);
-          // Proceed with payment after accepting policies
-          handlePayment();
+          setPolicyAccepted(true);
+          // Call handlePayment with skipPolicyCheck=true to bypass the policy check
+          // since we just accepted it in the modal
+          handlePayment(true);
         }}
         bookingType={type === 'booking' ? 'service' : 'order'}
         vendorId={vendorId}

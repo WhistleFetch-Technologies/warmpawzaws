@@ -22,13 +22,26 @@ export interface RazorpayConfig {
  * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback)
  */
 export async function getRazorpayConfig(): Promise<RazorpayConfig> {
-  // ✅ PRIMARY: Try AWS Secrets Manager first
+  // ✅ PRIMARY: Try AWS Secrets Manager first (with timeout to prevent hangs)
   try {
-    const secretConfig = await getSecretJson<{
-      keyId: string;
-      keySecret: string;
-      webhookSecret?: string;
-    }>('razorpay');
+    // ✅ FIX: Add timeout to Secrets Manager call to prevent Lambda timeout
+    const secretConfig = await Promise.race([
+      getSecretJson<{
+        keyId: string;
+        keySecret: string;
+        webhookSecret?: string;
+      }>('razorpay'),
+      new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Secrets Manager timeout')), 5000) // 5s timeout
+      )
+    ]).catch((error) => {
+      // If timeout, return null to trigger fallback
+      if (error.message === 'Secrets Manager timeout') {
+        console.warn('[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback');
+        return null;
+      }
+      throw error;
+    });
     
     if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
       console.log('[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager');
@@ -90,31 +103,61 @@ export async function getRazorpayAuthHeader(): Promise<string> {
 }
 
 /**
- * Make Razorpay API request
+ * Make Razorpay API request with timeout handling
  */
 export async function razorpayRequest(
   endpoint: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  body?: any
+  body?: any,
+  timeoutMs: number = 20000 // ✅ FIX: Increased default to 20 seconds
 ): Promise<any> {
   const authHeader = await getRazorpayAuthHeader();
   const url = `https://api.razorpay.com/v1${endpoint}`;
 
-  const response = await fetch(url, {
-    method,
-    headers: {
-      'Authorization': authHeader,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
 
-  if (!response.ok) {
-    const error: any = await response.json().catch(() => ({}));
-    throw new Error(`Razorpay API error: ${error?.error?.description || response.statusText || 'Unknown error'}`);
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const startTime = Date.now();
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`);
+
+    if (!response.ok) {
+      const error: any = await response.json().catch(() => ({}));
+      const errorMsg = error?.error?.description || response.statusText || 'Unknown error';
+      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`);
+      throw new Error(`Razorpay API error: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    console.log(`[RAZORPAY-REQUEST] Success for ${endpoint}`);
+    return result;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+      throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
+    }
+    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, error.message);
+    throw error;
   }
-
-  return response.json();
 }
 
 /**

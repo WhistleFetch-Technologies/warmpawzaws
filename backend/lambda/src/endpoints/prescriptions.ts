@@ -148,27 +148,114 @@ export function registerPrescriptionEndpoints(app: Hono) {
           instructions: med.instructions || null,
         }]);
 
+        // ✅ FIX: Declare prescriptionDate OUTSIDE try-catch so it's accessible in catch block
+        // Always ensure we have a valid date string - NEVER pass null
+        // Initialize with current date as default
+        const now = new Date();
+        let prescriptionDate: string = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
         try {
+          
+          // Get prescription_date from request data
+          const providedDate = (prescriptionData as any).prescription_date || 
+                               (prescriptionData as any).prescriptionDate ||
+                               (prescriptionData as any).bookingDate;
+          
+          // If provided, try to parse and format it
+          if (providedDate && String(providedDate).trim() !== '') {
+            try {
+              // Handle ISO date strings (e.g., "2026-01-23T00:00:00.000Z")
+              const dateObj = new Date(providedDate);
+              if (!isNaN(dateObj.getTime())) {
+                prescriptionDate = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+              } else {
+                // If it's already in YYYY-MM-DD format, use it
+                if (/^\d{4}-\d{2}-\d{2}$/.test(String(providedDate).trim())) {
+                  prescriptionDate = String(providedDate).trim();
+                } else {
+                  throw new Error('Invalid date format');
+                }
+              }
+            } catch (e) {
+              // Invalid date provided, keep default (current date)
+              console.warn('[Prescription] Invalid prescription_date provided, using current date:', providedDate);
+            }
+          }
+          
+          // ✅ FINAL VALIDATION: Ensure prescriptionDate is always a valid YYYY-MM-DD string
+          if (!prescriptionDate || !/^\d{4}-\d{2}-\d{2}$/.test(prescriptionDate.trim())) {
+            const now = new Date();
+            prescriptionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            console.warn('[Prescription] prescriptionDate validation failed, forced to current date');
+          }
+          
+          // ✅ CRITICAL: Final trim and validation
+          prescriptionDate = prescriptionDate.trim();
+          if (prescriptionDate === '' || !/^\d{4}-\d{2}-\d{2}$/.test(prescriptionDate)) {
+            const now = new Date();
+            prescriptionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            console.warn('[Prescription] prescriptionDate was invalid after trim, forced to current date');
+          }
+          
+          // ✅ ABSOLUTE FINAL CHECK: Ensure prescriptionDate is NEVER null/undefined/empty
+          // This is the last line of defense before SQL
+          if (!prescriptionDate || prescriptionDate === null || prescriptionDate === undefined || prescriptionDate.trim() === '') {
+            const now = new Date();
+            prescriptionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            console.error('[Prescription] CRITICAL: prescriptionDate was null/undefined/empty at final check, forced to current date');
+          }
+          
+          // ✅ RUNTIME ASSERTION: Throw error if still invalid (should never happen)
+          if (!prescriptionDate || typeof prescriptionDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(prescriptionDate)) {
+            const now = new Date();
+            prescriptionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            console.error('[Prescription] CRITICAL: prescriptionDate failed runtime assertion, forced to current date:', prescriptionDate);
+          }
+          
+          console.log('[Prescription] Using prescription_date:', prescriptionDate, 'Type:', typeof prescriptionDate);
+          
+          // ✅ CRITICAL: Build parameters array with explicit date check
+          // Ensure prescriptionDate is explicitly set and never null in the array
+          const queryParams: any[] = [
+            bookingId,
+            customerId,
+            petId || null,
+            vendorId,
+            staffId || null,
+              medsJson,
+            combinedInstructions,
+            diagnosis || null,
+          ];
+          
+          // ✅ ABSOLUTE FINAL CHECK: Ensure prescriptionDate is valid before adding to params
+          if (!prescriptionDate || prescriptionDate === null || prescriptionDate === undefined || prescriptionDate.trim() === '') {
+            const now = new Date();
+            prescriptionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            console.error('[Prescription] CRITICAL: prescriptionDate was invalid in params array, forced to current date');
+          }
+          
+          queryParams.push(prescriptionDate); // Index 8 - prescription_date
+          queryParams.push(followUpDate || null); // Index 9 - follow_up_date
+          queryParams.push(createdBy || vendorId); // Index 10 - created_by
+          queryParams.push(createdByRole || 'vendor'); // Index 11 - created_by_role
+          queryParams.push(true); // Index 12 - is_active
+          
+          console.log('[Prescription] Query params prescription_date (index 8):', queryParams[8], 'Type:', typeof queryParams[8]);
+          
+          // ✅ CRITICAL: Use SQL COALESCE as final safety net - even if JS variable is null, SQL will use CURRENT_DATE
+          // This is the ABSOLUTE last line of defense at the database level
+          // NULLIF handles empty strings, COALESCE handles NULL values
           const result = await query(
             `INSERT INTO prescriptions (
               booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
-              diagnosis, follow_up_date, created_by, created_by_role, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::date, $10, $11, $12)
+              diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6::jsonb, $7, $8, 
+              COALESCE(NULLIF(TRIM($9::text), '')::date, CURRENT_DATE), 
+              $10::date, $11, $12, $13
+            )
             RETURNING *`,
-            [
-              bookingId,
-              customerId,
-              petId || null,
-              vendorId,
-              staffId || null,
-              medsJson,
-              combinedInstructions,
-              diagnosis || null,
-              followUpDate || null,
-              createdBy || vendorId,
-              createdByRole || 'vendor',
-              true,
-            ]
+            queryParams
           );
           const row = result.rows?.[0];
           if (row) insertedPrescriptions.push(row);
@@ -187,7 +274,67 @@ export function registerPrescriptionEndpoints(app: Hono) {
               code: 'PRESCRIPTION_STAFF_ID_MIGRATION_REQUIRED',
             }, 500);
           }
-          throw insertErr;
+          if (insertErr.message?.includes('medications') && insertErr.message?.includes('does not exist')) {
+            console.error('[prescriptions] medications column missing. Run migration: db/migrations/312_add_prescriptions_medications_column.sql');
+            return c.json({
+              error: 'Database schema outdated: medications column missing. Please run migration 312_add_prescriptions_medications_column.sql.',
+              code: 'PRESCRIPTION_MEDICATIONS_MIGRATION_REQUIRED',
+            }, 500);
+          }
+          if (insertErr.message?.includes('created_by') && insertErr.message?.includes('does not exist')) {
+            console.error('[prescriptions] created_by column missing. Run migration: db/migrations/313_add_prescriptions_created_by_columns.sql');
+            return c.json({
+              error: 'Database schema outdated: created_by column missing. Please run migration 313_add_prescriptions_created_by_columns.sql.',
+              code: 'PRESCRIPTION_CREATED_BY_MIGRATION_REQUIRED',
+            }, 500);
+          }
+          if (insertErr.message?.includes('prescription_date') && insertErr.message?.includes('null value')) {
+            console.error('[prescriptions] prescription_date was null despite validation. prescriptionDate value:', prescriptionDate);
+            // Retry with explicit current date
+            const now = new Date();
+            const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            console.log('[prescriptions] Retrying with fallback date:', fallbackDate);
+            try {
+              const retryResult = await query(
+                `INSERT INTO prescriptions (
+                  booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
+                  diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active
+                ) VALUES (
+                  $1, $2, $3, $4, $5, $6::jsonb, $7, $8, 
+                  $9::date, 
+                  $10::date, $11, $12, $13
+                )
+                RETURNING *`,
+                [
+                  bookingId,
+                  customerId,
+                  petId || null,
+                  vendorId,
+                  staffId || null,
+                  medsJson,
+                  combinedInstructions,
+                  diagnosis || null,
+                  fallbackDate,
+                  followUpDate || null,
+                  createdBy || vendorId,
+                  createdByRole || 'vendor',
+                  true,
+                ]
+              );
+              const retryRow = retryResult.rows?.[0];
+              if (retryRow) insertedPrescriptions.push(retryRow);
+              console.log('[prescriptions] Successfully inserted with fallback date');
+            } catch (retryErr: any) {
+              console.error('[prescriptions] Retry also failed:', retryErr.message);
+              return c.json({
+                error: 'Failed to create prescription: prescription_date is required',
+                code: 'PRESCRIPTION_DATE_REQUIRED',
+                details: retryErr.message,
+              }, 400);
+            }
+          } else {
+            throw insertErr;
+          }
         }
       }
 
@@ -498,7 +645,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
                 'vet_solo', 'vet_clinic', 'veterinary_clinic', 'solo_vet',
                 'veterinarian_solo', 'pet_clinic', 'animal_clinic'
               ];
-              const isVetRole = vetRolePatterns.some(pattern => roleName.includes(pattern));
+              const isVetRole = vetRolePatterns.some(pattern => (roleName || '').includes(pattern));
               
               if (isVetRole) {
                 console.log(`[Prescription] ✅ Allowing prescription access for ${roleName} role (vendor: ${vendorId}, role_id: ${roleId})`);

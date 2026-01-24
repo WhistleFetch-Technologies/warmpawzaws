@@ -104,6 +104,32 @@ interface UniversalProviderProfileProps {
 }
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Convert 24-hour format time to 12-hour format
+ * Example: "09:00" -> "9:00 AM", "14:30" -> "2:30 PM"
+ */
+function formatTime12Hour(time24: string): string {
+  if (!time24) return '';
+  
+  const [hours, minutes] = time24.split(':');
+  const hour = parseInt(hours, 10);
+  const min = minutes || '00';
+  
+  if (hour === 0) {
+    return `12:${min} AM`;
+  } else if (hour === 12) {
+    return `12:${min} PM`;
+  } else if (hour < 12) {
+    return `${hour}:${min} AM`;
+  } else {
+    return `${hour - 12}:${min} PM`;
+  }
+}
+
+// ============================================================================
 // COMPONENT
 // ============================================================================
 
@@ -468,7 +494,7 @@ export function UniversalProviderProfile({
 
       {/* Booking Form (Slide-in from bottom) */}
       {showBookingForm ? (
-        <div className="px-4 py-4 pb-32">
+        <div className="px-4 py-4 pb-40">
           <h2 className="text-lg font-bold mb-4">Complete Your Booking</h2>
 
           {/* Selected Services Summary */}
@@ -531,7 +557,7 @@ export function UniversalProviderProfile({
                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}
                     >
-                      {slot.time}
+                      {formatTime12Hour(slot.time)}
                     </button>
                   ))}
                 </div>
@@ -646,8 +672,8 @@ export function UniversalProviderProfile({
             </div>
           </div>
 
-          {/* Tab Content */}
-          <div className="px-4 py-4 pb-32">
+          {/* Tab Content - Extra padding for footer button above nav */}
+          <div className="px-4 py-4 pb-40">
             {activeTab === 'services' && (
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-700">Available Services</h3>
@@ -801,34 +827,43 @@ export function UniversalProviderProfile({
         </>
       )}
 
-      {/* Sticky Footer */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-lg mx-auto">
+      {/* Sticky Footer - Positioned above bottom navigation */}
+      <div className="fixed bottom-20 left-0 right-0 bg-white border-t shadow-lg z-[60] max-w-lg mx-auto">
         {showBookingForm ? (
-          <Button
-            className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl"
-            onClick={handleProceedToPayment}
-            disabled={!selectedPet || !selectedDate || !selectedTime || (serviceStyle === 'at_home' && !selectedAddress)}
-          >
-            Proceed to Payment • ₹{totalAmount}
-          </Button>
-        ) : (
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <p className="text-sm text-gray-500">
-                {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} selected
-              </p>
-              <p className="font-bold text-lg">
-                {totalAmount > 0 ? `₹${totalAmount}` : 'Select services'}
-              </p>
-            </div>
+          <div className="p-4">
             <Button
-              className="h-12 px-8 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl"
-              onClick={handleProceedToBooking}
-              disabled={selectedServices.size === 0}
+              className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md"
+              onClick={handleProceedToPayment}
+              disabled={!selectedPet || !selectedDate || !selectedTime || (serviceStyle === 'at_home' && !selectedAddress)}
             >
-              Continue
-              <ChevronRight className="w-5 h-5 ml-1" />
+              Proceed to Payment • ₹{totalAmount}
             </Button>
+          </div>
+        ) : (
+          <div className="p-4">
+            {selectedServices.size > 0 ? (
+              <Button
+                className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2"
+                onClick={handleProceedToBooking}
+              >
+                Continue with {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} • ₹{totalAmount}
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500">Select a service to continue</p>
+                  <p className="font-bold text-lg text-gray-400">₹0</p>
+                </div>
+                <Button
+                  className="h-12 px-8 bg-gray-300 text-gray-500 font-bold rounded-xl cursor-not-allowed"
+                  disabled
+                >
+                  Continue
+                  <ChevronRight className="w-5 h-5 ml-1" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

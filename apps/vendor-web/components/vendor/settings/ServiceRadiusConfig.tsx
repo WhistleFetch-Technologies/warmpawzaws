@@ -128,7 +128,7 @@ export function ServiceRadiusConfig({
       styles: [
         { featureType: 'poi', stylers: [{ visibility: 'off' }] },
       ],
-    });
+    } as any);
     mapInstanceRef.current = map;
 
     // Create marker
@@ -137,18 +137,18 @@ export function ServiceRadiusConfig({
       map,
       title: 'Your Location',
       icon: {
-        path: window.google.maps.SymbolPath.CIRCLE,
+        path: (window.google.maps as any).SymbolPath.CIRCLE,
         scale: 10,
         fillColor: '#FF8C42',
         fillOpacity: 1,
         strokeColor: '#fff',
         strokeWeight: 3,
       },
-    });
+    } as any);
     markerRef.current = marker;
 
     // Create radius circle
-    const circle = new window.google.maps.Circle({
+    const circle = new (window.google.maps as any).Circle({
       map,
       center: location,
       radius: maxRadius * 1000, // Convert km to meters
@@ -161,7 +161,7 @@ export function ServiceRadiusConfig({
     circleRef.current = circle;
 
     // Fit map to circle
-    map.fitBounds(circle.getBounds()!);
+    (map as any).fitBounds((circle as any).getBounds()!);
   };
 
   const updateCircle = () => {

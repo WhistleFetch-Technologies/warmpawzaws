@@ -33,55 +33,160 @@ export function registerStorageEndpoints(app: Hono) {
    */
   app.post("/storage/upload", async (c) => {
     try {
-      const formData = await c.req.formData();
+      console.log('📤 [STORAGE] Upload request received');
+      console.log('📤 [STORAGE] Content-Type:', c.req.header('content-type'));
+      console.log('📤 [STORAGE] Bucket:', BUCKET_NAME);
+      console.log('📤 [STORAGE] Region:', process.env.AWS_REGION || 'ap-south-1');
+
+      // Check if bucket is configured
+      if (!BUCKET_NAME || BUCKET_NAME === 'warmpawz-dev-uploads') {
+        console.warn('⚠️ [STORAGE] Using default bucket name - ensure S3_UPLOADS_BUCKET env var is set');
+      }
+
+      let formData: FormData;
+      try {
+        formData = await c.req.formData();
+        console.log('✅ [STORAGE] FormData parsed successfully');
+      } catch (formDataError: any) {
+        console.error('❌ [STORAGE] FormData parsing error:', formDataError);
+        return c.json({ 
+          error: 'Failed to parse form data',
+          details: formDataError.message || 'Invalid form data format',
+          hint: 'Ensure Content-Type is multipart/form-data'
+        }, 400);
+      }
+
       const file = formData.get('file') as File;
       const vendorId = formData.get('vendorId') as string;
       const documentType = formData.get('documentType') as string;
 
-      if (!file || !vendorId || !documentType) {
-        return c.json({ error: 'Missing required fields: file, vendorId, documentType' }, 400);
+      console.log('📤 [STORAGE] Extracted fields:', {
+        hasFile: !!file,
+        fileName: file?.name,
+        fileSize: file?.size,
+        fileType: file?.type,
+        vendorId,
+        documentType
+      });
+
+      if (!file) {
+        return c.json({ error: 'Missing required field: file' }, 400);
+      }
+      if (!vendorId) {
+        return c.json({ error: 'Missing required field: vendorId' }, 400);
+      }
+      if (!documentType) {
+        return c.json({ error: 'Missing required field: documentType' }, 400);
       }
 
-      console.log(`📤 Uploading file: ${file.name} for vendor: ${vendorId}`);
+      console.log(`📤 [STORAGE] Uploading file: ${file.name} (${file.size} bytes) for vendor: ${vendorId}, type: ${documentType}`);
 
       // Generate unique filename
       const timestamp = Date.now();
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${vendorId}/${documentType}_${timestamp}.${fileExt}`;
+      const random = Math.random().toString(36).substring(2, 11);
+      const fileExt = file.name.split('.').pop() || 'bin';
+      const fileName = `${vendorId}/${documentType}_${timestamp}_${random}.${fileExt}`;
+
+      console.log('📤 [STORAGE] Generated filename:', fileName);
 
       // Convert File to ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
+      let arrayBuffer: ArrayBuffer;
+      let uint8Array: Uint8Array;
+      try {
+        arrayBuffer = await file.arrayBuffer();
+        uint8Array = new Uint8Array(arrayBuffer);
+        console.log('✅ [STORAGE] File converted to buffer, size:', uint8Array.length);
+      } catch (bufferError: any) {
+        console.error('❌ [STORAGE] Buffer conversion error:', bufferError);
+        return c.json({ 
+          error: 'Failed to process file',
+          details: bufferError.message || 'Could not read file data'
+        }, 400);
+      }
 
       // Upload to S3
-      await s3Client.send(new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: fileName,
-        Body: uint8Array,
-        ContentType: file.type,
-      }));
-
-      console.log('✅ File uploaded successfully:', fileName);
-
-      // Generate presigned URL (valid for 1 year)
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
+      try {
+        console.log('📤 [STORAGE] Uploading to S3...');
+        await s3Client.send(new PutObjectCommand({
           Bucket: BUCKET_NAME,
           Key: fileName,
-        }),
-        { expiresIn: 604800 } // 7 days (max for presigned URLs)
-      );
+          Body: uint8Array,
+          ContentType: file.type || 'application/octet-stream',
+        }));
+        console.log('✅ [STORAGE] File uploaded successfully to S3:', fileName);
+      } catch (s3Error: any) {
+        console.error('❌ [STORAGE] S3 upload error:', {
+          message: s3Error.message,
+          code: s3Error.Code || s3Error.name,
+          bucket: BUCKET_NAME,
+          key: fileName,
+          stack: s3Error.stack?.substring(0, 500)
+        });
+        
+        // Provide helpful error messages
+        if (s3Error.Code === 'NoSuchBucket' || s3Error.name === 'NoSuchBucket') {
+          return c.json({ 
+            error: 'S3 bucket not found',
+            details: `Bucket "${BUCKET_NAME}" does not exist. Please check S3_UPLOADS_BUCKET environment variable.`,
+            bucket: BUCKET_NAME
+          }, 500);
+        }
+        if (s3Error.Code === 'AccessDenied' || s3Error.name === 'AccessDenied') {
+          return c.json({ 
+            error: 'S3 access denied',
+            details: 'Lambda function does not have permission to upload to S3. Check IAM permissions.',
+            bucket: BUCKET_NAME
+          }, 500);
+        }
+        
+        return c.json({ 
+          error: 'S3 upload failed',
+          details: s3Error.message || 'Unknown S3 error',
+          code: s3Error.Code || s3Error.name
+        }, 500);
+      }
 
-      return c.json({
-        success: true,
-        fileName: fileName,
-        url: signedUrl,
-        publicUrl: signedUrl,
-      });
+      // Generate presigned URL
+      try {
+        const signedUrl = await getSignedUrl(
+          s3Client,
+          new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: fileName,
+          }),
+          { expiresIn: 604800 } // 7 days (max for presigned URLs)
+        );
+
+        console.log('✅ [STORAGE] Presigned URL generated');
+
+        return c.json({
+          success: true,
+          fileName: fileName,
+          url: signedUrl,
+          publicUrl: signedUrl,
+        });
+      } catch (urlError: any) {
+        console.error('❌ [STORAGE] Presigned URL generation error:', urlError);
+        // File is uploaded, but URL generation failed - return partial success
+        return c.json({
+          success: true,
+          fileName: fileName,
+          url: `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileName}`,
+          publicUrl: `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileName}`,
+          warning: 'Presigned URL generation failed, using direct URL'
+        });
+      }
     } catch (error: any) {
-      console.error('❌ Error uploading file:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('❌ [STORAGE] Unexpected error uploading file:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack?.substring(0, 500)
+      });
+      return c.json({ 
+        error: 'Internal Server Error',
+        details: error.message || 'Unknown error occurred',
+        type: error.name || 'Error'
+      }, 500);
     }
   });
 

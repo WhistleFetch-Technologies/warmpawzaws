@@ -250,18 +250,29 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
+    console.log('🔵 [VetServiceRouter] handleNavigate called:', screen, navData);
+    
     // Check if navigation requires a pet (booking-related screens)
     const requiresPet = ['vet-booking', 'vet-doctor-details', 'vet-clinic-booking', 'vet-services-by-style'].includes(screen);
     
     if (requiresPet && (!hasPets || pets.length === 0)) {
+      console.warn('⚠️ [VetServiceRouter] Pet required but not found');
       toast.error('Please add a pet first before booking vet services');
       onNavigate('pets', { action: 'add' });
       return;
     }
     
     try {
+      console.log('🔵 [VetServiceRouter] Calling onNavigate with:', screen);
+      if (typeof onNavigate !== 'function') {
+        console.error('❌ [VetServiceRouter] onNavigate is not a function:', typeof onNavigate);
+        toast.error('Navigation error. Please refresh the page.');
+        return;
+      }
       onNavigate(screen, navData);
+      console.log('✅ [VetServiceRouter] Navigation successful');
     } catch (err: any) {
+      console.error('❌ [VetServiceRouter] Navigation error:', err);
       toast.error('Failed to navigate. Please try again.');
     }
   };
@@ -423,11 +434,11 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
           
           <div className="grid grid-cols-2 gap-3">
-            {serviceTypes.map((service) => (
-              <Card
-                key={service.id}
-                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
-                onClick={() => {
+            {serviceTypes.map((service) => {
+              const handleServiceClick = () => {
+                console.log('🔵 [VetServiceRouter] Service clicked:', service.id);
+                
+                try {
                   // Map service IDs to service styles
                   const styleMap: Record<string, string> = {
                     'tele': 'tele',
@@ -441,12 +452,28 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   // Navigate to dedicated flow for each service type
                   if (service.id === 'clinic') {
                     // Clinic: list of clinics → clinic profile → services → booking
+                    console.log('🔵 [VetServiceRouter] Navigating to vet-clinic-list');
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    // ✅ NEW: Tele Consultation with Scheduled/Instant options
-                    handleNavigate('vet-tele-consultation');
+                    // ✅ FIX: Tele Consultation - direct navigation with error handling
+                    console.log('🔵 [VetServiceRouter] Navigating to vet-tele-consultation');
+                    // Direct navigation to avoid any validation issues
+                    if (typeof onNavigate === 'function') {
+                      try {
+                        onNavigate('vet-tele-consultation');
+                        console.log('✅ [VetServiceRouter] Tele consultation navigation called');
+                      } catch (error) {
+                        console.error('❌ [VetServiceRouter] Direct navigation error:', error);
+                        // Fallback to handleNavigate
+                        handleNavigate('vet-tele-consultation');
+                      }
+                    } else {
+                      console.error('❌ [VetServiceRouter] onNavigate is not a function');
+                      handleNavigate('vet-tele-consultation');
+                    }
                   } else if (service.id === 'home') {
                     // ✅ NEW: Home Visit with provider list → profile → booking
+                    console.log('🔵 [VetServiceRouter] Navigating to vet-home-visit');
                     handleNavigate('vet-home-visit');
                   } else if (service.id === 'medicine') {
                     // ✅ FIX: Medicine should go to pharmacy store, not booking flow
@@ -457,7 +484,32 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   } else {
                     handleNavigate('vet-booking', { serviceType: service.id });
                   }
+                } catch (error) {
+                  console.error('❌ [VetServiceRouter] Service click error:', error);
+                  toast.error('Failed to navigate. Please try again.');
+                }
+              };
+
+              return (
+              <Card
+                key={service.id}
+                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm relative active:scale-95"
+                onClick={(e) => {
+                  console.log('🔵 [VetServiceRouter] Card onClick triggered for:', service.id);
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleServiceClick();
                 }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    console.log('🔵 [VetServiceRouter] Keyboard navigation for:', service.id);
+                    handleServiceClick();
+                  }
+                }}
+                style={{ pointerEvents: 'auto', userSelect: 'none' }}
               >
                 <div className="flex flex-col h-full">
                   <div 
@@ -476,7 +528,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   )}
                 </div>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </div>
 

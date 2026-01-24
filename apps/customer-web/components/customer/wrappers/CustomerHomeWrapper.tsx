@@ -20,6 +20,9 @@ import { VetDoctorDetails } from '../vet/VetDoctorDetails';
 import { ClinicListView } from '../vet/ClinicListView';
 import { ClinicProfileView } from '../vet/ClinicProfileView';
 import { VetServicesByStyle } from '../vet/VetServicesByStyle';
+import { TeleConsultationRouter } from '../vet/TeleConsultationRouter';
+import { HomeVisitRouter } from '../vet/HomeVisitRouter';
+import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { GroomingServiceRouter } from '../GroomingServiceRouter';
 import { TrainingServiceRouter } from '../TrainingServiceRouter';
 import { BoardingServiceRouter } from '../BoardingServiceRouter';
@@ -116,6 +119,8 @@ type ScreenType =
   | 'vet-clinic-profile'
   | 'vet-clinic-booking'
   | 'vet-services-by-style'
+  | 'vet-tele-consultation'
+  | 'vet-home-visit'
   | 'grooming'
   | 'training'
   | 'training_center'
@@ -184,7 +189,8 @@ type ScreenType =
   | 'grooming_center'
   | 'grooming_home'
   | 'walk-live-tracking'
-  | 'schedule-walk';
+  | 'schedule-walk'
+  | 'payment';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -193,6 +199,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [selectedProblem, setSelectedProblem] = useState<{ id: string; title: string; roleId?: string } | null>(null);
   const [currentServiceType, setCurrentServiceType] = useState<string | null>(null);
+  const [paymentData, setPaymentData] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userSidebarOpen, setUserSidebarOpen] = useState(false);
   const [showAddPetModal, setShowAddPetModal] = useState(false);
@@ -341,6 +348,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (screen === 'vet-clinic-profile') setCurrentScreen('vet-clinic-profile');
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'vet-services-by-style') setCurrentScreen('vet-services-by-style');
+    else if (screen === 'vet-tele-consultation') setCurrentScreen('vet-tele-consultation');
+    else if (screen === 'vet-home-visit') setCurrentScreen('vet-home-visit');
     else if (screen === 'home') { setCurrentScreen('home'); setVetServiceData(null); }
   };
   
@@ -663,6 +672,103 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'vet-services-by-style') return <VetServicesByStyle phone={phone} serviceStyle={vetServiceData?.serviceStyle || 'tele'} serviceTypeName={vetServiceData?.serviceTypeName} category={vetServiceData?.category || 'vet'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+  // ✅ FIX: Tele Consultation Router
+  if (currentScreen === 'vet-tele-consultation') {
+    return renderScreenWithLayout('vet-tele-consultation',
+      <TeleConsultationRouter 
+        phone={phone} 
+        onBack={() => setCurrentScreen('vet')} 
+        onNavigate={(screen, data) => {
+          // Handle navigation from TeleConsultationRouter
+          if (screen === 'video-call') {
+            // Navigate to video call page
+            if (typeof window !== 'undefined' && data?.bookingId) {
+              window.location.href = `/video/${data.bookingId}`;
+            }
+          } else if (screen === 'add-pet') {
+            setCurrentScreen('add-pet');
+          } else if (screen === 'payment') {
+            // Handle payment navigation - go directly to payment page with booking data
+            setPaymentData(data);
+            setCurrentScreen('payment');
+          } else {
+            // Fallback to vet navigation handler
+            handleVetNavigate(screen, data);
+          }
+        }} 
+      />,
+      { title: 'Tele Consultation', subtitle: 'Video consultation with vets', showBackButton: true }
+    );
+  }
+  // ✅ FIX: Home Visit Router
+  if (currentScreen === 'vet-home-visit') {
+    return renderScreenWithLayout('vet-home-visit',
+      <HomeVisitRouter 
+        phone={phone} 
+        onBack={() => setCurrentScreen('vet')} 
+        onNavigate={(screen, data) => {
+          // Handle navigation from HomeVisitRouter
+          if (screen === 'payment') {
+            // Handle payment navigation - go directly to payment page with booking data
+            setPaymentData(data);
+            setCurrentScreen('payment');
+          } else if (screen === 'add-pet') {
+            setCurrentScreen('add-pet');
+          } else {
+            // Fallback to vet navigation handler
+            handleVetNavigate(screen, data);
+          }
+        }} 
+      />,
+      { title: 'Home Visit', subtitle: 'Vet comes to your doorstep', showBackButton: true }
+    );
+  }
+  // ✅ FIX: Payment Screen - Direct payment without repeating booking form
+  if (currentScreen === 'payment' && paymentData) {
+    const bookingData = paymentData;
+    const firstService = bookingData.services?.[0] || bookingData;
+    
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        vendorId={bookingData.vendorId || bookingData.provider?.id || ''}
+        vendorName={bookingData.provider?.name || bookingData.vendorName || 'Service Provider'}
+        serviceId={bookingData.serviceId || firstService.serviceId || firstService.id}
+        serviceName={firstService.name || firstService.serviceName || bookingData.serviceName || 'Tele Consultation'}
+        serviceDescription={firstService.description || bookingData.description}
+        serviceStyle={bookingData.serviceType || bookingData.serviceStyle || 'tele'}
+        category={bookingData.category || 'vet'}
+        bookingDate={bookingData.bookingDate}
+        bookingTime={bookingData.bookingTime}
+        petId={bookingData.petId}
+        petName={bookingData.petName}
+        petBreed={bookingData.petBreed}
+        address={bookingData.address}
+        baseAmount={bookingData.totalAmount || firstService.price || bookingData.price || 0}
+        duration={bookingData.totalDuration || firstService.duration || bookingData.duration}
+        customerPhone={phone}
+        customerId={bookingData.customerId}
+        onBack={() => {
+          // Go back to provider profile or tele consultation
+          if (bookingData.flowType === 'tele-scheduled') {
+            setCurrentScreen('vet-tele-consultation');
+          } else if (bookingData.flowType === 'home-visit') {
+            setCurrentScreen('vet-home-visit');
+          } else {
+            setCurrentScreen('vet');
+          }
+          setPaymentData(null);
+        }}
+        onSuccess={(bookingId, orderId, otpCode) => {
+          // Navigate to booking details or success page
+          setSelectedBookingId(bookingId);
+          setCurrentScreen('appointment-details');
+          setPaymentData(null);
+          toast.success('Booking confirmed successfully!');
+        }}
+      />
+    );
+  }
   // ✅ FIX: Grooming Service with StandardizedHeader layout
   if (currentScreen === 'grooming') {
     return renderScreenWithLayout('grooming',

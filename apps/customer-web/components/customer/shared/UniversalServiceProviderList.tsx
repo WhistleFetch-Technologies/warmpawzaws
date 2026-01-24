@@ -337,13 +337,16 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
         {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between mb-1">
-            <div>
+            <div className="flex-1 min-w-0">
               <h3 className="font-bold text-gray-900 truncate">{provider.name}</h3>
+              {provider.businessName && provider.businessName !== provider.name && (
+                <p className="text-xs text-gray-500 truncate">{provider.businessName}</p>
+              )}
               {provider.qualifications && (
                 <p className="text-xs text-gray-500 truncate">{provider.qualifications}</p>
               )}
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2" />
           </div>
 
           {/* Specialization */}
@@ -399,6 +402,30 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
       </div>
     </Card>
   );
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Clean provider name by removing trailing IDs, numbers, or unwanted suffixes
+ * Examples:
+ * - "Test Veterinary Clinic 1768333216818" → "Test Veterinary Clinic"
+ * - "Clinic Name 12345" → "Clinic Name"
+ * - "Provider Name" → "Provider Name" (no change)
+ */
+function cleanProviderName(name: string): string {
+  if (!name) return 'Provider';
+  
+  // Remove trailing numbers/IDs (common pattern: name followed by long number)
+  // Match: space followed by 10+ digits at the end
+  const cleaned = name.replace(/\s+\d{10,}$/, '').trim();
+  
+  // Also remove any trailing UUID-like patterns (with or without dashes)
+  const cleaned2 = cleaned.replace(/\s+[a-f0-9]{8,}(-[a-f0-9]{4,}){0,}$/i, '').trim();
+  
+  return cleaned2 || name || 'Provider';
 }
 
 // ============================================================================
@@ -529,8 +556,15 @@ export function UniversalServiceProviderList({
 
       if (response.success) {
         const providerData = response.providers || response.vendors || [];
-        setProviders(providerData);
-        console.log(`✅ Loaded ${providerData.length} providers for ${category}/${serviceStyle}`);
+        // Clean provider names to remove trailing IDs
+        const cleanedProviders = providerData.map((p: any) => ({
+          ...p,
+          name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
+          vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
+          businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
+        }));
+        setProviders(cleanedProviders);
+        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
       } else {
         // Try fallback endpoint
         const fallbackResponse = await apiClient.get(
@@ -545,13 +579,18 @@ export function UniversalServiceProviderList({
           const providerId = item.providerId || item.vendorId || item.id;
           
           if (!providerMap.has(providerId)) {
+            // Clean the name to remove trailing IDs/numbers
+            const rawName = item.name || item.vendorName || item.businessName || 'Provider';
+            const cleanedName = cleanProviderName(rawName);
+            
             providerMap.set(providerId, {
               providerId,
               providerType: item.providerType || 'vendor',
               vendorId: item.vendorId,
-              vendorName: item.vendorName,
+              vendorName: item.vendorName ? cleanProviderName(item.vendorName) : undefined,
+              businessName: item.businessName ? cleanProviderName(item.businessName) : undefined,
               staffId: item.staffId,
-              name: item.name || item.vendorName || item.businessName || 'Provider',
+              name: cleanedName,
               photo: item.photo,
               address: item.address,
               city: item.city,
@@ -785,13 +824,13 @@ export function UniversalServiceProviderList({
               {chip}
             </button>
           ))}
+          </div>
         </div>
 
-          {/* Results Count */}
-          <p className="text-sm text-slate-500 mt-3">
-            {loading ? 'Loading...' : `${filteredProviders.length} providers found`}
-          </p>
-        </div>
+        {/* Results Count */}
+        <p className="text-sm text-slate-500 mb-4">
+          {loading ? 'Loading...' : `${filteredProviders.length} ${filteredProviders.length === 1 ? 'provider' : 'providers'} found`}
+        </p>
 
         {/* Provider List */}
         <div className="mt-4">
