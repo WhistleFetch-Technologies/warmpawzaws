@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
-import { StandardizedHeader } from '../shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
+// Header frame will be implemented inline
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -129,6 +129,11 @@ export function GroomingBookingRouter({
   // ✅ NEW: Store all selected services for passing to booking API
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(selectedServices || []);
   
+  // ✅ NEW: Multi-service selection state
+  const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
+    new Set(selectedServices?.map(s => s.id || s.serviceId) || (serviceId ? [serviceId] : []))
+  );
+  
   // Package awareness state
   const [activePackage, setActivePackage] = useState<any>(null);
   const [showPackageModal, setShowPackageModal] = useState(false);
@@ -217,15 +222,23 @@ export function GroomingBookingRouter({
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
+  // ✅ NEW: Calculate total duration from selected services
+  const calculateTotalDuration = () => {
+    return Array.from(selectedServiceIds).reduce((total, id) => {
+      const service = serviceOptions.find(s => s.id === id);
+      return total + (service?.duration || 0);
+    }, 0);
+  };
+
   // Load slots when date is selected and vendor is known
   useEffect(() => {
-    if (selectedDate && vendorId) {
+    if (selectedDate && vendorId && selectedServiceIds.size > 0) {
       loadTimeSlots(selectedDate);
     } else {
       // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, selectedServiceType]);
+  }, [selectedDate, vendorId, selectedServiceType, selectedServiceIds]);
 
   // ✅ ENHANCED: Load scheduling policy and validate slots
   const [schedulingPolicy, setSchedulingPolicy] = useState<any>(null);
@@ -328,8 +341,12 @@ export function GroomingBookingRouter({
     
     try {
       setLoadingSlots(true);
+      // ✅ NEW: Calculate total duration for multiple services
+      const totalDuration = calculateTotalDuration();
+      const serviceIds = Array.from(selectedServiceIds).join(',');
+      
       const response = await apiClient.get(
-        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
+        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}&totalDuration=${totalDuration}&serviceIds=${serviceIds}`
       ) as any;
 
       let slots: TimeSlot[] = [];
@@ -618,7 +635,10 @@ export function GroomingBookingRouter({
   const handleConfirmBooking = async () => {
     setProcessing(true);
     try {
-      const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
+      // ✅ NEW: Get selected services from allSelectedServices or fallback to single service
+      const selectedServiceOption = allSelectedServices.length > 0 
+        ? allSelectedServices[0] 
+        : serviceOptions.find(s => s.id === selectedServiceType);
       
       // If using package session, create session instead of booking
       if (usePackageSession && activePackage) {
@@ -706,37 +726,141 @@ export function GroomingBookingRouter({
     );
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      {/* ✅ FIX: Standardized Header for consistent UI with mobile-optimized container */}
-      <StandardizedHeader
-        userName={userName}
-        userProfilePhoto={userProfilePhoto}
-        title={step === 'confirmation' ? 'Booking Confirmed' : 'Book Grooming'}
-        subtitle={groomer?.name || groomer?.businessName || 'Premium grooming services'}
-        showBackButton={true}
-        showPets={false}
-        onBack={handleBack}
-        onNavigate={(screen: string) => onNavigate(screen)}
-        onProfileClick={() => onNavigate('profile')}
-        customerPhone={phone}
-      />
-      
-      <div className="max-w-[430px] mx-auto px-4 py-6 pb-32">
-        {step !== 'confirmation' && renderStepIndicator()}
+  // Get header title and icon based on step and service type
+  const getHeaderInfo = () => {
+    if (step === 'confirmation') {
+      return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
+    }
+    if (selectedServiceType === 'at_home') {
+      return { title: 'Book Grooming', subtitle: groomer?.name || groomer?.businessName || 'Home grooming service', icon: Home };
+    }
+    return { title: 'Book Grooming', subtitle: groomer?.name || groomer?.businessName || 'Premium grooming services', icon: Building2 };
+  };
 
-        {/* Service Selection */}
+  const headerInfo = getHeaderInfo();
+  const HeaderIcon = headerInfo.icon;
+
+  return (
+    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto relative overflow-hidden">
+      {/* Orange Header - Half size (17-18vh) with rounded bottom edge - Hide when on payment step */}
+      {step !== 'payment' && (
+        <>
+          <div className="relative px-4 pt-8 pb-6" style={{ minHeight: '18vh' }}>
+            {/* Back Button - White circular with black arrow */}
+            <button
+              onClick={handleBack}
+              className="absolute top-8 left-4 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors shadow-sm z-10"
+            >
+              <ArrowLeft className="w-5 h-5 text-black" />
+            </button>
+
+            {/* Service Icon - Centered horizontally, white circular */}
+            <div className="flex flex-col items-center pt-4">
+              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-2 shadow-sm">
+                <HeaderIcon className="w-6 h-6 text-[#FF8C42]" />
+              </div>
+              
+              {/* Title and Subtitle - Centered */}
+              <h1 className="text-xl font-bold text-white text-center mb-0.5">
+                {headerInfo.title}
+              </h1>
+              <p className="text-white text-xs text-center opacity-90">
+                {headerInfo.subtitle}
+              </p>
+            </div>
+          </div>
+
+          {/* Rounded Bottom Edge on Header */}
+          <div className="relative -mt-1">
+            <div className="absolute top-0 left-0 right-0 h-6 bg-[#FF8C42] rounded-b-[32px]"></div>
+          </div>
+        </>
+      )}
+
+      {/* Main Content - White Card with Top Radius */}
+      <div className={`bg-white rounded-t-[32px] px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10 ${step !== 'payment' ? '-mt-1' : ''}`}>
+        {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
+        {step === 'payment' && showPaymentPage ? (
+          <div className="fixed inset-0 z-50 bg-white">
+            <UniversalPaymentPage
+            type="booking"
+            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+            serviceName={allSelectedServices.length > 1 
+              ? `${allSelectedServices.length} Services Selected`
+              : (selectedServiceOption?.name || serviceName || 'Grooming Service')}
+            serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
+            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+            category="grooming"
+            vendorId={vendorId || ''}
+            vendorName={groomer?.name || 'Grooming Professional'}
+            vendorAddress={selectedServiceType === 'at_center' ? (groomer?.address || groomer?.business_address) : undefined} // ✅ NEW: Clinic address
+            staffName={selectedServiceType === 'at_home' ? (groomer?.name || 'Grooming Professional') : undefined} // ✅ NEW: Staff name for home services
+            staffPhoto={selectedServiceType === 'at_home' ? (groomer?.photo || groomer?.profile_photo) : undefined} // ✅ NEW: Staff photo for home services
+            bookingDate={selectedDate}
+            bookingTime={selectedTime}
+            petId={selectedPet?.id}
+            petName={selectedPet?.name}
+            petBreed={selectedPet?.breed}
+            addressId={selectedAddress?.id}
+            address={selectedAddress}
+            showAddressSelection={selectedServiceType === 'at_home'}
+            baseAmount={allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) || selectedServiceOption?.price || price || 499}
+            duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
+            quantity={1}
+            customerPhone={phone}
+            customerId={customerId || undefined}
+            selectedServices={allSelectedServices}
+            onBack={() => setShowPaymentPage(false)}
+            onSuccess={handlePaymentSuccess}
+            />
+          </div>
+        ) : null}
+
+        {/* Main booking content - only show when not on payment */}
+        {step !== 'payment' && (
+          <>
+            {step !== 'confirmation' && renderStepIndicator()}
+
+            {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Select Grooming Service</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Select Grooming Service</h2>
+              {selectedServiceIds.size > 0 && (
+                <span className="text-sm text-gray-500">
+                  {selectedServiceIds.size} selected
+                </span>
+              )}
+            </div>
             <div className="space-y-3">
               {serviceOptions.map((service) => {
                 const Icon = service.icon;
-                const isSelected = selectedServiceType === service.id;
+                const isSelected = selectedServiceIds.has(service.id);
                 return (
                   <button
                     key={service.id}
-                    onClick={() => setSelectedServiceType(service.id)}
+                    onClick={() => {
+                      const newSelectedIds = new Set(selectedServiceIds);
+                      if (isSelected) {
+                        newSelectedIds.delete(service.id);
+                      } else {
+                        newSelectedIds.add(service.id);
+                      }
+                      setSelectedServiceIds(newSelectedIds);
+                      
+                      // Update allSelectedServices array
+                      const updatedServices = serviceOptions.filter(s => newSelectedIds.has(s.id));
+                      setAllSelectedServices(updatedServices);
+                      
+                      // Update selectedVendorService for backward compatibility (use first selected)
+                      if (updatedServices.length > 0) {
+                        setSelectedVendorService(updatedServices[0]);
+                        setSelectedServiceType(updatedServices[0].id);
+                      } else {
+                        setSelectedVendorService(null);
+                        setSelectedServiceType('');
+                      }
+                    }}
                     className={`w-full p-4 rounded-xl border-2 transition-all ${
                       isSelected 
                         ? 'border-[#FF8C42] bg-orange-50' 
@@ -744,6 +868,13 @@ export function GroomingBookingRouter({
                     }`}
                   >
                     <div className="flex items-center gap-4">
+                      <div className={`w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                        isSelected 
+                          ? 'border-[#FF8C42] bg-[#FF8C42]' 
+                          : 'border-gray-300'
+                      }`}>
+                        {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                      </div>
                       <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
                         service.color === 'blue' ? 'bg-blue-100 text-blue-600' :
                         service.color === 'green' ? 'bg-green-100 text-green-600' :
@@ -761,19 +892,38 @@ export function GroomingBookingRouter({
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
-                        {isSelected && (
-                          <CheckCircle2 className="w-6 h-6 text-orange-500 mt-1 ml-auto" />
-                        )}
                       </div>
                     </div>
                   </button>
                 );
               })}
             </div>
+            {selectedServiceIds.size > 0 && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700">Total Duration:</span>
+                  <span className="font-semibold text-gray-900">
+                    {Array.from(selectedServiceIds).reduce((total, id) => {
+                      const service = serviceOptions.find(s => s.id === id);
+                      return total + (service?.duration || 0);
+                    }, 0)} mins
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm mt-1">
+                  <span className="text-gray-700">Total Price:</span>
+                  <span className="font-semibold text-[#FF8C42]">
+                    ₹{Array.from(selectedServiceIds).reduce((total, id) => {
+                      const service = serviceOptions.find(s => s.id === id);
+                      return total + (service?.price || 0);
+                    }, 0)}
+                  </span>
+                </div>
+              </div>
+            )}
             <Button 
               onClick={handleNext} 
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35] mt-4"
-              disabled={!selectedServiceType}
+              disabled={selectedServiceIds.size === 0}
             >
               Continue
             </Button>
@@ -1046,6 +1196,8 @@ export function GroomingBookingRouter({
               {selectedServiceType === 'at_home' && !selectedAddress ? 'Select an Address to Continue' : 'Continue'}
             </Button>
           </div>
+            )}
+          </>
         )}
 
         {/* Payment Summary - Now using UniversalPaymentPage */}
@@ -1054,21 +1206,53 @@ export function GroomingBookingRouter({
             <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
             
             <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* Service */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                  selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
-                  'bg-purple-100 text-purple-600'
-                }`}>
-                  {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                   <Building2 className="w-6 h-6" />}
+              {/* ✅ Updated: Show all selected services */}
+              {allSelectedServices && allSelectedServices.length > 0 ? (
+                <div className="space-y-3 pb-4 border-b">
+                  {allSelectedServices.map((service, index) => {
+                    const serviceIdValue = service.id || service.serviceId || '';
+                    const serviceNameValue = service.name || service.serviceName || 'Service';
+                    const servicePrice = service.price || 0;
+                    const serviceDuration = service.duration || 0;
+                    const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
+                    
+                    return (
+                      <div key={serviceIdValue || index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                          serviceStyleValue === 'at_home' ? 'bg-green-100 text-green-600' :
+                          'bg-purple-100 text-purple-600'
+                        }`}>
+                          {serviceStyleValue === 'at_home' ? <Home className="w-6 h-6" /> :
+                           <Building2 className="w-6 h-6" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-900">{serviceNameValue}</h3>
+                          {serviceDuration > 0 && (
+                            <p className="text-sm text-gray-500">{serviceDuration} mins</p>
+                          )}
+                        </div>
+                        <p className="font-bold text-orange-600 flex-shrink-0">₹{servicePrice}</p>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
-                  <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
+              ) : (
+                /* Fallback: Single service display */
+                <div className="flex items-center gap-3 pb-4 border-b">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
+                    'bg-purple-100 text-purple-600'
+                  }`}>
+                    {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
+                     <Building2 className="w-6 h-6" />}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
+                    <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
+                  </div>
+                  <p className="font-bold">₹{selectedServiceOption?.price}</p>
                 </div>
-                <p className="font-bold">₹{selectedServiceOption?.price}</p>
-              </div>
+              )}
 
               {/* Date & Time */}
               <div className="flex items-center gap-3 pb-4 border-b">
@@ -1109,7 +1293,11 @@ export function GroomingBookingRouter({
             <div className="bg-white rounded-xl p-4">
               <div className="flex justify-between items-center text-lg">
                 <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">₹{selectedServiceOption?.price}</span>
+                <span className="font-bold text-orange-600">
+                  ₹{allSelectedServices && allSelectedServices.length > 0 
+                    ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
+                    : (selectedServiceOption?.price || 0)}
+                </span>
               </div>
             </div>
 
@@ -1121,35 +1309,6 @@ export function GroomingBookingRouter({
               {processing ? 'Processing...' : 'Proceed to Payment'}
             </Button>
           </div>
-        )}
-
-        {/* ✅ UniversalPaymentPage Integration */}
-        {step === 'payment' && showPaymentPage && (
-          <UniversalPaymentPage
-            type="booking"
-            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
-            serviceName={selectedServiceOption?.name || serviceName || 'Grooming Service'}
-            serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
-            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-            category="grooming"
-            vendorId={vendorId || ''}
-            vendorName={groomer?.name || 'Grooming Professional'}
-            bookingDate={selectedDate}
-            bookingTime={selectedTime}
-            petId={selectedPet?.id}
-            petName={selectedPet?.name}
-            petBreed={selectedPet?.breed}
-            addressId={selectedAddress?.id}
-            address={selectedAddress}
-            showAddressSelection={selectedServiceType === 'at_home'}
-            baseAmount={selectedServiceOption?.price || price || 499}
-            duration={selectedServiceOption?.duration || duration || 60}
-            quantity={1}
-            customerPhone={phone}
-            customerId={customerId || undefined}
-            onBack={() => setShowPaymentPage(false)}
-            onSuccess={handlePaymentSuccess}
-          />
         )}
 
         {/* Confirmation */}
@@ -1287,7 +1446,7 @@ export function GroomingBookingRouter({
             </div>
           </div>
         )}
-        
+
         {/* ✅ NEW: Rating Modal - Auto-prompt after booking */}
         {showRatingModal && ratingModalData && (
           <RateServiceModal

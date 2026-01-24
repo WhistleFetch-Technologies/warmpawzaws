@@ -19,7 +19,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowLeft, Search, Filter, MapPin, Star, Clock, Calendar, 
   User, CheckCircle2, ChevronRight, Package, Heart, 
-  Navigation, Phone, X, Plus, RefreshCw, Briefcase
+  Navigation, Phone, X, Plus, RefreshCw, Briefcase, Home
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -806,54 +806,98 @@ export function HomeServiceRouter({
     </Card>
   );
 
-  return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-      {/* Header */}
-      <div className={`bg-gradient-to-r ${colors.gradient} text-white px-4 py-4 sticky top-0 z-50`}>
-        <div className="flex items-center gap-3">
-          <button onClick={handleBackStep} className="p-2 hover:bg-white/10 rounded-full">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{serviceIcon}</span>
-              <h1 className="text-xl font-bold">{serviceName}</h1>
-            </div>
-            <p className="text-white/80 text-sm">
-              {step === 'discovery' ? 'Find service providers near you' :
-               step === 'provider-profile' ? selectedProvider?.name :
-               step === 'services' ? 'Select service' :
-               step === 'datetime' ? 'Pick date & time' :
-               step === 'pet' ? 'Select your pet' :
-               step === 'address' ? 'Confirm address' :
-               step === 'payment' ? 'Complete payment' :
-               'Booking confirmed'}
-            </p>
-          </div>
-        </div>
+  // Get header title and subtitle based on step
+  const getHeaderInfo = () => {
+    if (step === 'discovery') {
+      return { title: serviceName, subtitle: 'Find service providers near you' };
+    }
+    if (step === 'provider-profile') {
+      return { title: selectedProvider?.name || serviceName, subtitle: 'Provider details' };
+    }
+    if (step === 'services') {
+      return { title: serviceName, subtitle: 'Select service' };
+    }
+    if (step === 'datetime') {
+      return { title: serviceName, subtitle: 'Pick date & time' };
+    }
+    if (step === 'pet') {
+      return { title: serviceName, subtitle: 'Select your pet' };
+    }
+    if (step === 'address') {
+      return { title: serviceName, subtitle: 'Confirm address' };
+    }
+    if (step === 'payment') {
+      return { title: serviceName, subtitle: 'Complete payment' };
+    }
+    return { title: serviceName, subtitle: 'Booking confirmed' };
+  };
 
+  const headerInfo = getHeaderInfo();
+  // Get icon component - use Home icon for home services
+  const ServiceIconComponent = () => {
+    // If serviceIcon is an emoji string, render it, otherwise use Home icon
+    if (typeof serviceIcon === 'string' && serviceIcon.length <= 2) {
+      return <span className="text-xl">{serviceIcon}</span>;
+    }
+    return <Home className="w-6 h-6 text-[#FF8C42]" />;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto relative overflow-hidden">
+      {/* Orange Header - Half size (17-18vh) with rounded bottom edge */}
+      <div className="relative px-4 pt-8 pb-6" style={{ minHeight: '18vh' }}>
+        {/* Back Button - White circular with black arrow */}
+        <button
+          onClick={handleBackStep}
+          className="absolute top-8 left-4 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors shadow-sm z-10"
+        >
+          <ArrowLeft className="w-5 h-5 text-black" />
+        </button>
+
+        {/* Service Icon - Centered horizontally, white circular */}
+        <div className="flex flex-col items-center pt-4">
+          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-2 shadow-sm">
+            <ServiceIconComponent />
+          </div>
+          
+          {/* Title and Subtitle - Centered */}
+          <h1 className="text-xl font-bold text-white text-center mb-0.5">
+            {headerInfo.title}
+          </h1>
+          <p className="text-white text-xs text-center opacity-90">
+            {headerInfo.subtitle}
+          </p>
+        </div>
+      </div>
+
+      {/* Rounded Bottom Edge on Header */}
+      <div className="relative -mt-1">
+        <div className="absolute top-0 left-0 right-0 h-6 bg-[#FF8C42] rounded-b-[32px]"></div>
+      </div>
+
+      {/* Main Content - White Card with Top Radius */}
+      <div className="bg-white rounded-t-[32px] px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10 -mt-1">
         {/* Search Bar - Only in discovery */}
         {step === 'discovery' && (
-          <div className="mt-3 flex gap-2">
+          <div className="mb-4 flex gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/70" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 type="text"
                 placeholder="Search by name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white/20 backdrop-blur rounded-lg text-white placeholder-white/70 border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent"
               />
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="p-2 bg-white/20 backdrop-blur rounded-lg border border-white/30 hover:bg-white/30"
+              className="p-3 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100"
             >
-              <Filter className="w-5 h-5" />
+              <Filter className="w-5 h-5 text-slate-600" />
             </button>
           </div>
         )}
-      </div>
 
       {/* Step Indicator */}
       {step !== 'discovery' && step !== 'confirmation' && (
@@ -1450,19 +1494,22 @@ export function HomeServiceRouter({
         )}
 
         {/* ============ PAYMENT STEP ============ */}
+        {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
         {step === 'payment' && bookingId && (
-          <UniversalPaymentPage
-            type="booking"
-            bookingId={bookingId}
-            vendorId={selectedProvider?.vendorId || ''}
-            vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}
-            serviceStyle="at_home"
-            serviceName={selectedService?.name || serviceName}
-            baseAmount={selectedService?.price || 0}
-            customerPhone={phone}
-            onSuccess={handlePaymentSuccess}
-            onBack={() => setStep('address')}
-          />
+          <div className="fixed inset-0 z-50 bg-white">
+            <UniversalPaymentPage
+              type="booking"
+              bookingId={bookingId}
+              vendorId={selectedProvider?.vendorId || ''}
+              vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}
+              serviceStyle="at_home"
+              serviceName={selectedService?.name || serviceName}
+              baseAmount={selectedService?.price || 0}
+              customerPhone={phone}
+              onSuccess={handlePaymentSuccess}
+              onBack={() => setStep('address')}
+            />
+          </div>
         )}
 
         {/* ============ CONFIRMATION STEP ============ */}
@@ -1487,6 +1534,7 @@ export function HomeServiceRouter({
             onBackToHome={onBack}
           />
         )}
+      </div>
       </div>
 
       {/* Package Selection Modal */}
