@@ -371,7 +371,6 @@ function StaffModal({
     }
   };
 
-  // ✅ ENHANCED: Photo upload with progress tracking
   const uploadPhotoToS3 = async (file: File): Promise<string | null> => {
     try {
       const { uploadStaffPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
@@ -380,18 +379,18 @@ function StaffModal({
         onProgress: (progress) => {
           setUploadProgress(progress);
         },
-        verifyUpload: true,
-        maxRetries: 3,
+        verifyUpload: false,
+        maxRetries: 2,
       });
 
       if (result.success && result.publicUrl) {
         return result.publicUrl;
-      } else {
-        throw new Error(result.error || 'Upload failed');
       }
+      
+      throw new Error(result.error || 'Upload failed');
     } catch (error: any) {
-      console.error('Photo upload error:', error);
-      toast.error(error.message || 'Failed to upload photo. Please try again.');
+      const errorMessage = error.message || 'Failed to upload photo. Please try again.';
+      toast.error(errorMessage);
       return null;
     }
   };
@@ -447,26 +446,30 @@ function StaffModal({
     try {
       let photoUrl = staff?.photo_url || staff?.photo || '';
       
-      // Upload photo if new one selected
       if (photoFile) {
         setUploading(true);
         const uploadedUrl = await uploadPhotoToS3(photoFile);
         setUploading(false);
         
-        if (uploadedUrl) {
+        if (!uploadedUrl) {
+          if (!staff) {
+            setSaving(false);
+            return;
+          }
+        } else {
           photoUrl = uploadedUrl;
-        } else if (!staff) {
-          // For new staff, photo upload is mandatory
-          toast.error('Failed to upload photo. Please try again.');
-          setSaving(false);
-          return;
         }
       }
 
-      // ✅ FIX: Trim name and normalize phone (extract digits only) before sending to backend
+      if (!staff && !photoUrl) {
+        toast.error('Photo is required for new staff members');
+        setSaving(false);
+        return;
+      }
+
       const staffData = {
         name: formData.name.trim(),
-        phone: phoneDigits, // Send only digits for consistency
+        phone: phoneDigits,
         email: formData.email?.trim() || undefined,
         role: formData.role,
         experienceYears: formData.experience_years,

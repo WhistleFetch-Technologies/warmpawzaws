@@ -155,8 +155,18 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       
       // ✅ FIX: Load facility data using correct endpoint
       const facilityData = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
+      
+      console.log(`[CENTER-PROFILE] Facility data response:`, {
+        success: facilityData?.success,
+        hasFacility: !!facilityData?.facility,
+        photosCount: facilityData?.facility?.photos?.length || 0,
+        rawPhotos: facilityData?.facility?.photos
+      });
 
       if (facilityData && facilityData.success && facilityData.facility) {
+        const loadedPhotos = facilityData.facility.photos || [];
+        console.log(`[CENTER-PROFILE] Loaded ${loadedPhotos.length} photos from facility data:`, loadedPhotos);
+        
         setProfile(prev => ({
           ...prev,
           centerName: facilityData.facility.centerName || prev.centerName,
@@ -164,10 +174,10 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
           address: facilityData.facility.address || prev.address,
           city: facilityData.facility.city || prev.city,
           state: facilityData.facility.state || prev.state,
-          pincode: facilityData.facility.pincode || prev.pincode || '', // ✅ FIX: Load pincode
+          pincode: facilityData.facility.pincode || prev.pincode || '',
           amenities: facilityData.facility.amenities || [],
-          customAmenities: facilityData.facility.customAmenities || [], // ✅ FIX: Load custom amenities
-          photos: facilityData.facility.photos || [],
+          customAmenities: facilityData.facility.customAmenities || [],
+          photos: loadedPhotos,
           specializations: facilityData.facility.specializations || [],
           operatingHours: facilityData.facility.operatingHours || prev.operatingHours
         }));
@@ -550,13 +560,46 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             <div className="bg-white rounded-xl border p-6">
               <h2 className="font-bold text-gray-900 mb-4">Center Photos</h2>
               
+              {profile.photos.length === 0 && newPhotos.length === 0 && (
+                <div className="text-center py-8 text-gray-500 text-sm mb-4">
+                  No photos uploaded yet. Upload photos to showcase your center.
+                </div>
+              )}
+              
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                 {profile.photos.map((photo, idx) => (
                   <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
-                    <img src={photo} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                    <img 
+                      src={photo} 
+                      alt={`Photo ${idx + 1}`} 
+                      className="w-full h-full object-cover"
+                      crossOrigin="anonymous"
+                      loading="lazy"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.photo-error-message')) {
+                          const errorDiv = document.createElement('div');
+                          errorDiv.className = 'photo-error-message w-full h-full flex items-center justify-center text-xs text-gray-400';
+                          errorDiv.textContent = 'Failed to load';
+                          parent.appendChild(errorDiv);
+                        }
+                      }}
+                      onLoad={(e) => {
+                        // Remove any error messages on successful load
+                        const parent = (e.target as HTMLImageElement).parentElement;
+                        if (parent) {
+                          const errorMsg = parent.querySelector('.photo-error-message');
+                          if (errorMsg) {
+                            errorMsg.remove();
+                          }
+                        }
+                      }}
+                    />
                     <button
                       onClick={() => removeExistingPhoto(idx)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
+                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-10"
                     >
                       ×
                     </button>

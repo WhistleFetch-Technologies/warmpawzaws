@@ -21,6 +21,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update } from '../database/rds-connection';
 import {
@@ -1628,7 +1629,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       
       // Check if subscription covers the specific service
       const coversService = serviceId 
-        ? subscriptions.some(s => !s.serviceId || s.serviceId === serviceId)
+        ? subscriptions.some((s: any) => !s.serviceId || s.serviceId === serviceId)
         : hasActiveSubscription;
 
       return c.json({
@@ -1658,14 +1659,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'customer-handler',
     functionVersion: '$LATEST',
   };

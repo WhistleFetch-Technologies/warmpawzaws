@@ -518,8 +518,10 @@ export function VendorServiceCatalogView({
       const newSet = new Set(prev);
       if (newSet.has(serviceKey)) {
         newSet.delete(serviceKey);
+        console.log('[SELECTION] Removed service:', serviceKey, 'New count:', newSet.size);
       } else {
         newSet.add(serviceKey);
+        console.log('[SELECTION] Added service:', serviceKey, 'New count:', newSet.size);
       }
       return newSet;
     });
@@ -756,7 +758,9 @@ export function VendorServiceCatalogView({
               <CheckSquare className="w-5 h-5 text-blue-600" />
               <div>
                 <p className="text-sm font-semibold text-blue-900">Multi-Select Mode</p>
-                <p className="text-xs text-blue-700">{selectedServices.size} service(s) selected</p>
+                <p className="text-xs text-blue-700">
+                  {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} selected
+                </p>
               </div>
             </div>
             {selectedServices.size > 0 && (
@@ -873,14 +877,29 @@ export function VendorServiceCatalogView({
                           {subcategory.services.map((service, idx) => {
                             const added = isServiceAdded(service);
                             const selected = isServiceSelected(service);
-                            const serviceKey = service.catalogId || `${service.categoryName}_${service.serviceName}_${idx}`;
+                            const serviceKey = getServiceKey(service); // ✅ FIX: Use consistent key generation
+                            
+                            // ✅ Check if service is live (published and enabled)
+                            const isLive = vendorServices.some(vs => {
+                              const vsServiceId = vs.serviceId || vs.service_id || vs.catalogId || vs.catalog_id;
+                              const catalogServiceId = service.catalogId || (service as any).id || (service as any).service_id;
+                              if (vsServiceId && catalogServiceId && vsServiceId === catalogServiceId) {
+                                const isEnabled = vs.isEnabled !== undefined ? vs.isEnabled : (vs.is_enabled !== undefined ? vs.is_enabled : true);
+                                const publishStatus = vs.publishStatus || vs.publish_status || 'draft';
+                                return isEnabled && publishStatus === 'published';
+                              }
+                              return false;
+                            });
+                            
+                            // ✅ Disable selection if service is live (published and enabled) in multi-select mode
+                            const isDisabled = mode === 'multi-select' && isLive;
 
                             return (
                               <div
                                 key={serviceKey}
                                 className={`p-4 pl-12 hover:bg-gray-50 transition-colors ${
                                   selected ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                                }`}
+                                } ${isDisabled ? 'opacity-60' : ''}`}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   {/* ✅ FIX: Checkbox separate from content */}
@@ -889,15 +908,19 @@ export function VendorServiceCatalogView({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        toggleServiceSelection(service);
+                                        if (!isDisabled) {
+                                          toggleServiceSelection(service);
+                                        }
                                       }}
-                                      className="flex-shrink-0 mt-1 p-1 hover:bg-gray-100 rounded"
+                                      disabled={isDisabled}
+                                      className={`flex-shrink-0 mt-1 p-1 hover:bg-gray-100 rounded ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
                                       type="button"
+                                      title={isDisabled ? 'This service is already live and cannot be selected' : ''}
                                     >
                                       {selected ? (
                                         <CheckSquare className="w-5 h-5 text-blue-600" />
                                       ) : (
-                                        <Square className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                                        <Square className={`w-5 h-5 ${isDisabled ? 'text-gray-300' : 'text-gray-400 hover:text-gray-600'}`} />
                                       )}
                                     </button>
                                   )}

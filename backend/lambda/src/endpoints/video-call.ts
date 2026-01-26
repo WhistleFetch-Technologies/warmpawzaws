@@ -281,22 +281,25 @@ export function registerVideoCallEndpoints(app: Hono) {
   const endHandler = new EndMeetingHandler();
 
   app.post('/video-call/create-meeting', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/video-call/join', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await joinHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post('/video-call/end', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { bookingId: c.req.param('bookingId') || (await c.req.json()).bookingId };
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
+    event.pathParameters = { bookingId: c.req.param('bookingId') || body.bookingId };
     const context = createLambdaContext();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -312,7 +315,8 @@ export function registerVideoCallEndpoints(app: Hono) {
 
   // Legacy endpoints for backward compatibility
   app.post('/video-call/create', async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -327,12 +331,12 @@ export function registerVideoCallEndpoints(app: Hono) {
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+function createApiGatewayEvent(req: any, body?: any): any {
   return {
     httpMethod: req.method,
     path: req.url,
     headers: req.headers,
-    body: JSON.stringify(req.body || {}),
+    body: JSON.stringify(body || {}),
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {

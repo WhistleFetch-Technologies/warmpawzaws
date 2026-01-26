@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, FileText, Calendar, User, Search, Filter } from 'lucide-react';
@@ -32,21 +32,48 @@ export default function PrescriptionsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDate, setFilterDate] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Global error handler to catch and log errors
+    const handleError = (event: ErrorEvent) => {
+      console.error('Global error caught:', event.error);
+      if (event.error?.message?.includes('toLowerCase')) {
+        console.error('toLowerCase error detected:', {
+          message: event.error.message,
+          stack: event.error.stack,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno
+        });
+      }
+    };
+
+    window.addEventListener('error', handleError);
+    
     const storedVendorId = localStorage.getItem('vendorId');
     if (!storedVendorId) {
       router.push('/onboarding');
       return;
     }
     setVendorId(storedVendorId);
-    loadPrescriptions();
-  }, [router, filterDate]);
+    
+    return () => {
+      window.removeEventListener('error', handleError);
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (vendorId) {
+      loadPrescriptions();
+    }
+  }, [vendorId, filterDate]);
 
   const loadPrescriptions = async () => {
     if (!vendorId) return;
     try {
       setLoading(true);
+      setError(null);
       // Get vendor's bookings first, then fetch prescriptions for those bookings
       const bookingsRes = await apiClient.get<any>(`/vendor/${vendorId}/bookings`);
       const bookings = bookingsRes.bookings || [];
@@ -60,59 +87,190 @@ export default function PrescriptionsPage() {
       const allPrescriptions: Prescription[] = [];
       
       prescriptionResults.forEach((result) => {
-        if (result.success && result.prescriptions) {
-          allPrescriptions.push(...result.prescriptions);
+        try {
+          if (result && result.success && result.prescriptions) {
+            const prescriptions = Array.isArray(result.prescriptions) ? result.prescriptions : [];
+            prescriptions.forEach((prescription: any) => {
+              if (prescription && typeof prescription === 'object' && prescription.id) {
+                allPrescriptions.push(prescription);
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error processing prescription result:', error);
         }
       });
       
-      // Sort by created_at descending
-      allPrescriptions.sort((a, b) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      // Sort by created_at descending (with safety checks)
+      const validPrescriptions = allPrescriptions.filter((p: any) => {
+        return p && typeof p === 'object' && p.id;
+      });
       
-      setPrescriptions(allPrescriptions);
+      validPrescriptions.sort((a, b) => {
+        try {
+          const dateA = a?.created_at ? new Date(a.created_at).getTime() : 0;
+          const dateB = b?.created_at ? new Date(b.created_at).getTime() : 0;
+          if (isNaN(dateA)) return 1;
+          if (isNaN(dateB)) return -1;
+          return dateB - dateA;
+        } catch {
+          return 0;
+        }
+      });
+      
+      setPrescriptions(validPrescriptions);
     } catch (err: any) {
       console.error('Error loading prescriptions:', err);
-      toast.error(err.message || 'Failed to load prescriptions');
+      const errorMsg = err?.message || 'Failed to load prescriptions';
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredPrescriptions = prescriptions.filter((prescription) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        prescription.diagnosis?.toLowerCase().includes(query) ||
-        prescription.instructions?.toLowerCase().includes(query) ||
-        prescription.pet?.name?.toLowerCase().includes(query) ||
-        prescription.medications?.some((med: any) => 
-          med.name?.toLowerCase().includes(query)
-        )
-      );
+  const filteredPrescriptions = useMemo(() => {
+    // Ensure prescriptions is always an array
+    if (!Array.isArray(prescriptions) || prescriptions.length === 0) {
+      return [];
     }
-    return true;
-  });
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    
+    return prescriptions.filter((prescription) => {
+      try {
+        if (!prescription || typeof prescription !== 'object') return true;
+        
+        if (searchQuery && typeof searchQuery === 'string' && searchQuery.trim()) {
+          const query = String(searchQuery || '').toLowerCase();
+          
+          // Helper to safely get medications array
+          const getMedications = () => {
+            try {
+              if (!prescription.medications) return [];
+              if (Array.isArray(prescription.medications)) return prescription.medications;
+              if (typeof prescription.medications === 'string') {
+                try {
+                  const parsed = JSON.parse(prescription.medications);
+                  return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  return [];
+                }
+              }
+              return [];
+            } catch {
+              return [];
+            }
+          };
+          
+          const medications = getMedications();
+          
+          // Check other fields first
+          const matchesOtherFields = (
+            (prescription.diagnosis && typeof prescription.diagnosis === 'string' && String(prescription.diagnosis).toLowerCase().includes(query)) ||
+            (prescription.instructions && typeof prescription.instructions === 'string' && String(prescription.instructions).toLowerCase().includes(query)) ||
+            (prescription.pet?.name && typeof prescription.pet.name === 'string' && String(prescription.pet.name).toLowerCase().includes(query))
+          );
+          
+          // Only check medications if it's a valid array
+          if (!Array.isArray(medications) || medications.length === 0) {
+            return matchesOtherFields;
+          }
+          
+          // Safely check medications with extra defensive coding
+          try {
+            const matchesMedications = medications.some((med: any) => {
+              try {
+                // Validate med is not null/undefined
+                if (!med || (typeof med !== 'string' && typeof med !== 'object')) {
+                  return false;
+                }
+                
+                // Handle string medications
+                if (typeof med === 'string') {
+                  const medStr = String(med || '');
+                  if (medStr && typeof medStr === 'string') {
+                    return medStr.toLowerCase().includes(query);
+                  }
+                  return false;
+                }
+                
+                // Handle object medications
+                if (typeof med === 'object' && med !== null) {
+                  if (med.name) {
+                    const medName = String(med.name || '');
+                    if (medName && typeof medName === 'string') {
+                      return medName.toLowerCase().includes(query);
+                    }
+                  }
+                }
+                
+                return false;
+              } catch (err) {
+                console.error('Error in medications.some callback:', err, med);
+                return false;
+              }
+            });
+            
+            return matchesOtherFields || matchesMedications;
+          } catch (err) {
+            console.error('Error checking medications:', err, medications);
+            return matchesOtherFields;
+          }
+        }
+        return true;
+      } catch (error) {
+        console.error('Error filtering prescription:', error, prescription);
+        return true; // Include in results if filter fails
+      }
     });
+  }, [prescriptions, searchQuery]);
+
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString || typeof dateString !== 'string') return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return 'N/A';
+    }
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const formatTime = (dateString: string | null | undefined) => {
+    if (!dateString || typeof dateString !== 'string') return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'N/A';
+    }
   };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Error Loading Prescriptions</h1>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <Button onClick={() => { setError(null); loadPrescriptions(); }}>
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
@@ -154,16 +312,32 @@ export default function PrescriptionsPage() {
               />
             </div>
             <div className="flex gap-2">
-              {(['all', 'today', 'week', 'month'] as const).map((filter) => (
-                <Button
-                  key={filter}
-                  variant={filterDate === filter ? 'default' : 'outline'}
-                  onClick={() => setFilterDate(filter)}
-                  className={filterDate === filter ? 'bg-orange-500 hover:bg-orange-600' : ''}
-                >
-                  {filter === 'all' ? 'All Time' : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </Button>
-              ))}
+              {(['all', 'today', 'week', 'month'] as const).map((filter) => {
+                const filterStr = String(filter);
+                return (
+                  <Button
+                    key={filterStr}
+                    variant={filterDate === filter ? 'default' : 'outline'}
+                    onClick={() => setFilterDate(filter)}
+                    className={filterDate === filter ? 'bg-orange-500 hover:bg-orange-600' : ''}
+                  >
+                    {(() => {
+                      if (filterStr === 'all') return 'All Time';
+                      if (filterStr && typeof filterStr === 'string' && filterStr.length > 0) {
+                        try {
+                          const firstChar = filterStr.charAt(0);
+                          if (firstChar && typeof firstChar === 'string') {
+                            return firstChar.toUpperCase() + filterStr.slice(1);
+                          }
+                        } catch (e) {
+                          console.error('Error formatting filter:', e);
+                        }
+                      }
+                      return filterStr || 'Unknown';
+                    })()}
+                  </Button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -215,29 +389,54 @@ export default function PrescriptionsPage() {
                   </div>
                 )}
 
-                {prescription.medications && prescription.medications.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Medications</h4>
-                    <div className="space-y-2">
-                      {prescription.medications.map((med: any, index: number) => (
-                        <div key={index} className="bg-gray-50 rounded-lg p-3">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-gray-900">{med.name}</span>
-                            {med.dosage && (
-                              <span className="text-sm text-gray-600">{med.dosage}</span>
-                            )}
-                          </div>
-                          {med.frequency && (
-                            <p className="text-sm text-gray-500 mt-1">{med.frequency}</p>
-                          )}
-                          {med.duration && (
-                            <p className="text-sm text-gray-500">{med.duration}</p>
-                          )}
-                        </div>
-                      ))}
+                {(() => {
+                  // Safely parse medications
+                  let medications: any[] = [];
+                  if (prescription.medications) {
+                    if (Array.isArray(prescription.medications)) {
+                      medications = prescription.medications;
+                    } else if (typeof prescription.medications === 'string') {
+                      try {
+                        const parsed = JSON.parse(prescription.medications);
+                        medications = Array.isArray(parsed) ? parsed : [];
+                      } catch {
+                        medications = [];
+                      }
+                    }
+                  }
+                  
+                  return medications.length > 0 ? (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Medications</h4>
+                      <div className="space-y-2">
+                        {medications.map((med: any, index: number) => {
+                          // Handle both object and string medication formats
+                          const medName = typeof med === 'string' ? med : (med?.name || 'Unknown');
+                          const medDosage = typeof med === 'object' ? med?.dosage : null;
+                          const medFrequency = typeof med === 'object' ? med?.frequency : null;
+                          const medDuration = typeof med === 'object' ? med?.duration : null;
+                          
+                          return (
+                            <div key={index} className="bg-gray-50 rounded-lg p-3">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-gray-900">{medName}</span>
+                                {medDosage && (
+                                  <span className="text-sm text-gray-600">{medDosage}</span>
+                                )}
+                              </div>
+                              {medFrequency && (
+                                <p className="text-sm text-gray-500 mt-1">{medFrequency}</p>
+                              )}
+                              {medDuration && (
+                                <p className="text-sm text-gray-500">{medDuration}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : null;
+                })()}
 
                 {prescription.instructions && (
                   <div className="mb-4">

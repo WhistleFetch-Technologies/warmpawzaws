@@ -33,6 +33,12 @@ esbuild.build({
     'pg-native', // Native PostgreSQL module
     '@opensearch-project/opensearch',
     '@opensearch-project/opensearch/aws',
+    // Mark these as external - they'll be included in package via serverless.yml patterns
+    'pg',
+    'jose',
+    'firebase-admin',
+    'zod',
+    // 'hono' - REMOVED: Must be bundled for Lambda deployment
   ],
   
   // Exclude old non-enhanced handlers from bundle

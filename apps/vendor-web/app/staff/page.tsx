@@ -136,18 +136,51 @@ export default function StaffManagementPage() {
       router.push('/onboarding');
       return;
     }
+    // ✅ FIX: Always load staff when component mounts
     loadStaff();
   }, [router]);
 
   const loadStaff = async () => {
     try {
+      setLoading(true);
       const vendorId = localStorage.getItem('vendorId');
-      if (vendorId) {
-        const response = await apiClient.get<{ staff: Staff[] }>(`/vendor/${vendorId}/staff`);
-        setStaff(response.staff || []);
+      if (!vendorId) {
+        console.warn('[Staff] No vendorId found');
+        setStaff([]);
+        return;
       }
-    } catch (err) {
-      console.error('Error loading staff:', err);
+      
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/staff`);
+      console.log('[Staff] Raw API response:', response);
+      
+      // Handle multiple response structures:
+      // 1. { success: true, staff: [...] }
+      // 2. { staff: [...] }
+      // 3. { data: { staff: [...] } }
+      // 4. Direct array (unlikely but handle it)
+      let staffList: Staff[] = [];
+      
+      if (Array.isArray(response)) {
+        staffList = response;
+      } else if (response?.staff && Array.isArray(response.staff)) {
+        staffList = response.staff;
+      } else if (response?.data?.staff && Array.isArray(response.data.staff)) {
+        staffList = response.data.staff;
+      } else if (response?.success && response?.staff && Array.isArray(response.staff)) {
+        staffList = response.staff;
+      }
+      
+      // Ensure all staff are included (including unverified)
+      // No filtering - show all staff members
+      setStaff(staffList);
+      console.log('[Staff] Loaded staff:', staffList.length, 'members', {
+        verified: staffList.filter(s => s.mobile_verified).length,
+        unverified: staffList.filter(s => !s.mobile_verified).length,
+      });
+    } catch (err: any) {
+      console.error('[Staff] Error loading staff:', err);
+      toast.error(err.message || 'Failed to load staff members');
+      setStaff([]); // Set empty array on error to show empty state
     } finally {
       setLoading(false);
     }
@@ -251,21 +284,32 @@ export default function StaffManagementPage() {
         isActive: newStaff.is_active,
       });
 
-      toast.success('Staff member added! OTP sent to their mobile for verification.');
-      setShowAddForm(false);
-      setNewStaff({
-        name: '',
-        phone: '',
-        email: '',
-        role: '',
-        experience_years: 0,
-        photo: '',
-        qualifications: '',
-        specializations: [],
-        is_active: true,
-      });
-      setFormErrors({});
-      loadStaff();
+      // Check if response indicates success
+      if (response.success || response.staff || response.id) {
+        toast.success('Staff member added! OTP sent to their mobile for verification.');
+        setShowAddForm(false);
+        setNewStaff({
+          name: '',
+          phone: '',
+          email: '',
+          role: '',
+          experience_years: 0,
+          photo: '',
+          qualifications: '',
+          specializations: [],
+          is_active: true,
+        });
+        setFormErrors({});
+        
+        // ✅ FIX: Wait a moment for database to be ready, then reload staff
+        // This ensures the newly created staff appears in the list
+        // Increased delay to 1000ms to ensure DB write is fully committed
+        setTimeout(() => {
+          loadStaff();
+        }, 1000);
+      } else {
+        throw new Error('Staff creation response was not successful');
+      }
     } catch (err: any) {
       console.error('Error adding staff:', err);
       toast.error(err.message || 'Failed to add staff member');

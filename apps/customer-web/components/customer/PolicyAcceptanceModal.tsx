@@ -1,14 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +15,7 @@ import {
   ChevronUp,
   CheckCircle2,
   Info,
+  X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -205,55 +198,67 @@ export function PolicyAcceptanceModal({
     setExpandedSection(expandedSection === section ? null : section);
   };
 
+  if (!isOpen) return null;
+
   if (loading) {
     return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Loading Policies</DialogTitle>
-            <DialogDescription>Please wait while we load the booking policies...</DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#FF8C42] border-t-transparent"></div>
+      <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold mb-2">Loading Policies</h3>
+            <p className="text-sm text-gray-600 mb-4">Please wait while we load the booking policies...</p>
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#FF8C42] border-t-transparent"></div>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto bg-white">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <div className="fixed inset-0 bg-black/50 z-[100] flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-[#FF8C42]" />
-            Booking Policies
-          </DialogTitle>
-          <DialogDescription>
-            Please review and accept our policies before proceeding
-          </DialogDescription>
-        </DialogHeader>
+            <h2 className="text-lg font-bold text-gray-900">Booking Policies</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
 
-        {policy && (
-          <div className="space-y-3 py-2">
-            {/* Cancellation Policy */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggleSection('cancellation')}
-                className="w-full flex items-center justify-between p-3 bg-white hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-red-500" />
-                  <span className="font-medium text-sm">Cancellation Policy</span>
-                </div>
-                {expandedSection === 'cancellation' ? (
-                  <ChevronUp className="w-4 h-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
-                )}
-              </button>
-              {expandedSection === 'cancellation' && (
-                <div className="p-3 space-y-2 text-sm">
+        {/* Content */}
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-600 mb-4">
+            Please review and accept our policies before proceeding
+          </p>
+
+          {policy && (
+            <div className="space-y-3">
+              {/* Cancellation Policy */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button
+                  onClick={() => toggleSection('cancellation')}
+                  className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-red-500" />
+                    <span className="font-medium text-sm">Cancellation Policy</span>
+                  </div>
+                  {expandedSection === 'cancellation' ? (
+                    <ChevronUp className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+                {expandedSection === 'cancellation' && (
+                  <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
                   <div className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500 mt-1.5"></div>
                     <div>
@@ -275,28 +280,28 @@ export function PolicyAcceptanceModal({
                       <span className="text-gray-600"> - Cancel less than {policy.cancellation.noRefundHours} hours before</span>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-
-            {/* Reschedule Policy */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggleSection('reschedule')}
-                className="w-full flex items-center justify-between p-3 bg-white hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-500" />
-                  <span className="font-medium text-sm">Reschedule Policy</span>
-                </div>
-                {expandedSection === 'reschedule' ? (
-                  <ChevronUp className="w-4 h-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                  </div>
                 )}
-              </button>
-              {expandedSection === 'reschedule' && (
-                <div className="p-3 space-y-2 text-sm">
+              </div>
+
+              {/* Reschedule Policy */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button
+                  onClick={() => toggleSection('reschedule')}
+                  className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-500" />
+                    <span className="font-medium text-sm">Reschedule Policy</span>
+                  </div>
+                  {expandedSection === 'reschedule' ? (
+                    <ChevronUp className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+                {expandedSection === 'reschedule' && (
+                  <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-green-500" />
                     <span className="text-gray-700">
@@ -315,28 +320,28 @@ export function PolicyAcceptanceModal({
                       </div>
                     </>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* No-Show Policy */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggleSection('noshow')}
-                className="w-full flex items-center justify-between p-3 bg-white hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-orange-500" />
-                  <span className="font-medium text-sm">No-Show Policy</span>
-                </div>
-                {expandedSection === 'noshow' ? (
-                  <ChevronUp className="w-4 h-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                  </div>
                 )}
-              </button>
-              {expandedSection === 'noshow' && (
-                <div className="p-3 space-y-2 text-sm">
+              </div>
+
+              {/* No-Show Policy */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button
+                  onClick={() => toggleSection('noshow')}
+                  className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-orange-500" />
+                    <span className="font-medium text-sm">No-Show Policy</span>
+                  </div>
+                  {expandedSection === 'noshow' ? (
+                    <ChevronUp className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+                {expandedSection === 'noshow' && (
+                  <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
                   <div className="flex items-center gap-2 text-gray-600">
                     <AlertCircle className="w-4 h-4 text-orange-500" />
                     <span>{policy.noShow.gracePeriodMinutes} minutes grace period after scheduled time</span>
@@ -345,28 +350,28 @@ export function PolicyAcceptanceModal({
                     <Info className="w-4 h-4" />
                     <span>No-show results in {policy.noShow.penaltyPercentage}% forfeiture of booking amount</span>
                   </div>
-                </div>
-              )}
-            </div>
-
-            {/* Refund Processing */}
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggleSection('refund')}
-                className="w-full flex items-center justify-between p-3 bg-white hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-green-500" />
-                  <span className="font-medium text-sm">Refund Processing</span>
-                </div>
-                {expandedSection === 'refund' ? (
-                  <ChevronUp className="w-4 h-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                  </div>
                 )}
-              </button>
-              {expandedSection === 'refund' && (
-                <div className="p-3 space-y-2 text-sm">
+              </div>
+
+              {/* Refund Processing */}
+              <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button
+                  onClick={() => toggleSection('refund')}
+                  className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4 text-green-500" />
+                    <span className="font-medium text-sm">Refund Processing</span>
+                  </div>
+                  {expandedSection === 'refund' ? (
+                    <ChevronUp className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+                {expandedSection === 'refund' && (
+                  <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
                   <div className="flex items-center gap-2 text-gray-600">
                     <Clock className="w-4 h-4 text-gray-400" />
                     <span>Processing time: {policy.refund.processingDays}</span>
@@ -379,42 +384,48 @@ export function PolicyAcceptanceModal({
                       ))}
                     </ul>
                   </div>
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
 
-            <Separator className="my-3" />
+              <Separator className="my-4" />
 
-            {/* Acceptance Checkbox */}
-            <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200">
-              <Checkbox
-                id="accept-policies"
-                checked={accepted}
-                onCheckedChange={(checked) => setAccepted(checked as boolean)}
-                className="mt-0.5"
-              />
-              <label htmlFor="accept-policies" className="text-sm text-gray-700 cursor-pointer">
-                I have read and agree to the cancellation, reschedule, no-show, and refund policies. 
-                I understand these terms apply to my booking.
-              </label>
+              {/* Acceptance Checkbox */}
+              <div className="flex items-start gap-3 p-4 bg-orange-50 rounded-xl border border-orange-200">
+                <Checkbox
+                  id="accept-policies"
+                  checked={accepted}
+                  onCheckedChange={(checked) => setAccepted(checked as boolean)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="accept-policies" className="text-sm text-gray-700 cursor-pointer leading-relaxed">
+                  I have read and agree to the cancellation, reschedule, no-show, and refund policies. 
+                  I understand these terms apply to my booking.
+                </label>
+              </div>
             </div>
+          )}
+
+          {/* Footer Buttons */}
+          <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 mt-6 flex gap-3">
+            <Button 
+              variant="outline" 
+              onClick={onClose}
+              className="flex-1 h-12 border-gray-300 hover:bg-gray-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAccept}
+              disabled={!accepted}
+              className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#E67A32] text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Accept & Continue
+            </Button>
           </div>
-        )}
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleAccept}
-            disabled={!accepted}
-            className="bg-[#FF8C42] hover:bg-[#E67A32] text-white"
-          >
-            Accept & Continue
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </div>
   );
 }
 

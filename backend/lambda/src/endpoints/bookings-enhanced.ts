@@ -22,6 +22,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
@@ -105,8 +106,8 @@ function validateBookingDate(bookingDate: string, bookingTime: string): { valid:
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
-    eventId: crypto.randomUUID(),
-    requestId: requestId || crypto.randomUUID(),
+    eventId: randomUUID(),
+    requestId: requestId || randomUUID(),
     sourceService: 'booking-handler',
   };
 }
@@ -1793,7 +1794,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
         requestContext: {
-          requestId: crypto.randomUUID(),
+          requestId: randomUUID(),
           http: {
             method: c.req.method || 'POST',
             path: c.req.path,
@@ -1842,7 +1843,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
             method: c.req.method || 'POST',
             path: c.req.path,
           },
-          requestId: crypto.randomUUID(),
+          requestId: randomUUID(),
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
@@ -1885,7 +1886,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
             method: c.req.method || 'POST',
             path: c.req.path,
           },
-          requestId: crypto.randomUUID(),
+          requestId: randomUUID(),
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
@@ -1929,7 +1930,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
             method: c.req.method || 'POST',
             path: c.req.path,
           },
-          requestId: crypto.randomUUID(),
+          requestId: randomUUID(),
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, 'http://localhost').search.substring(1),
@@ -2165,7 +2166,7 @@ async function createApiGatewayEventWithBody(c: any): Promise<any> {
         method: c.req.method || 'POST',
         path: url.pathname,
       },
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
     headers: headers,
     body: JSON.stringify(body),
@@ -2180,7 +2181,7 @@ async function createApiGatewayEvent(c: any): Promise<any> {
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'booking-handler',
     functionVersion: '$LATEST',
   };

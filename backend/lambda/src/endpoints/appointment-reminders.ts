@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -279,7 +280,7 @@ class ScheduledReminderJobHandler extends BaseHandler {
           reminderMinutes: 5,
           serviceStyles: ['tele'],
         }),
-      }, { requestId: context.event.requestContext?.requestId || crypto.randomUUID() } as any);
+      }, { requestId: context.event.requestContext?.requestId || randomUUID() } as any);
       results.push({ type: '5_min_tele', result: JSON.parse(fiveMinResult.body) });
 
       // 30-minute reminder for home services
@@ -290,7 +291,7 @@ class ScheduledReminderJobHandler extends BaseHandler {
           reminderMinutes: 30,
           serviceStyles: ['at_home'],
         }),
-      }, { requestId: context.event.requestContext?.requestId || crypto.randomUUID() } as any);
+      }, { requestId: context.event.requestContext?.requestId || randomUUID() } as any);
       results.push({ type: '30_min_home', result: JSON.parse(thirtyMinResult.body) });
 
       // 1-hour reminder for center bookings
@@ -301,7 +302,7 @@ class ScheduledReminderJobHandler extends BaseHandler {
           reminderMinutes: 60,
           serviceStyles: ['at_center'],
         }),
-      }, { requestId: context.event.requestContext?.requestId || crypto.randomUUID() } as any);
+      }, { requestId: context.event.requestContext?.requestId || randomUUID() } as any);
       results.push({ type: '1_hour_center', result: JSON.parse(oneHourResult.body) });
 
       return this.success({
@@ -418,9 +419,9 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
         body: '',
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-        requestContext: { requestId: crypto.randomUUID() },
+        requestContext: { requestId: randomUUID() },
       };
-      const context = { requestId: crypto.randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
+      const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
       const result = await getUpcomingHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
@@ -439,9 +440,9 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
     const result = await sendRemindersHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -455,9 +456,9 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
     const result = await scheduledJobHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -471,9 +472,9 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       body: '',
       pathParameters: { bookingId: c.req.param('bookingId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
     const result = await manualTriggerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

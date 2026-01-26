@@ -23,6 +23,46 @@ import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../utils/entity-extractor';
 import { isValidUUID, normalizeVendorService } from '../types/entities';
 
+/**
+ * Map role IDs to service catalog roles
+ * Based on reference implementation - matches vendor app roles to catalog roles
+ */
+const roleMappings: Record<string, string[]> = {
+  // Healthcare Roles
+  'veterinarian': ['vet', 'veterinarian', 'veterinarian'],
+  'vet_solo': ['vet', 'veterinarian', 'veterinarian', 'vet_solo', 'solo_vet'],
+  'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinary_clinic'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
+  'pet_pharmacy': ['pharmacy', 'pet_pharmacy', 'pharmacy'],
+  'pet_ambulance': ['ambulance', 'pet_ambulance', 'ambulance'],
+  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist'],
+  // Center/Clinic Roles - map to vet_clinic for tele consultation access
+  'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
+  'testing_center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'testing_center', 'center'],
+  'clinic': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'clinic'],
+  
+  // Service Provider Roles
+  'pet_groomer': ['groomer', 'pet_groomer', 'groomer'],
+  'pet_walker': ['walker', 'pet_walker', 'dog_walker', 'pet_walker'],
+  'pet_trainer': ['trainer', 'pet_trainer', 'trainer'],
+  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'behaviorist'],
+  'pet_sitter': ['sitter', 'pet_sitter', 'sitter'],
+  'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'pet_transport'],
+  'pet_boarding': ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding'],
+  'pet_resort': ['resort', 'pet_resort', 'resort'],
+  'pet_cafe': ['cafe', 'pet_cafe', 'cafe'],
+  'pet_photographer': ['photographer', 'pet_photographer', 'photographer'],
+  'pet_sunset_services': ['sunset', 'pet_sunset_services', 'sunset_services'],
+  
+  // Retail Roles
+  'pet_products_store': ['store', 'pet_store', 'retailer', 'pet_products_store'],
+  'pet_breeder': ['breeder', 'pet_breeder', 'breeder'],
+  
+  // Other Roles
+  'pet_shelter': ['shelter', 'pet_shelter', 'ngo', 'pet_shelter'],
+  'insurance': ['insurance', 'pet_insurance', 'insurance'],
+};
+
 export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/services
@@ -198,64 +238,73 @@ export function registerVendorServicesEndpoints(app: Hono) {
       const serviceStyles = ['at_home', 'at_center', 'tele'];
       const servicesByStyle: Record<string, any> = {};
 
-      // ✅ FIX: Batch all service queries into a single query to reduce connection usage
-      // Instead of 3 separate queries (one per style), use one query with ANY()
-      if (allowedServiceStyles.length > 0) {
-        // Single query to get all services for all allowed styles at once
-        const allServices = await query(
-          `SELECT vs.*, s.name as base_service_name, s.description as base_description
-           FROM vendor_services vs
-           LEFT JOIN services s ON vs.service_id = s.id
-           WHERE vs.vendor_id = $1
-           AND vs.service_style = ANY($2::text[])
-           ORDER BY vs.service_style, vs.created_at DESC`,
-          [vendorId, allowedServiceStyles]
-        );
+      // ✅ CRITICAL FIX: Return ALL services for the vendor, regardless of service_style
+      // Services created from admin may have any service_style, and vendors should see all their services
+      // The allowedServiceStyles filter is only used for validation when CREATING services, not when FETCHING
+      const allServices = await query(
+        `SELECT vs.*, s.name as base_service_name, s.description as base_description
+         FROM vendor_services vs
+         LEFT JOIN services s ON vs.service_id = s.id
+         WHERE vs.vendor_id = $1
+         ORDER BY vs.service_style NULLS LAST, vs.created_at DESC`,
+        [vendorId]
+      );
 
-        // Group services by style
-        for (const style of serviceStyles) {
-          if (!allowedServiceStyles.includes(style)) {
-            servicesByStyle[style] = { services: [], count: 0 };
-            continue;
+      // Group services by style
+      // Services are grouped by their actual service_style, or assigned to first allowed style if NULL
+      const nullStyleServices = allServices.rows.filter((s: any) => s.service_style === null || s.service_style === undefined);
+      const firstAllowedStyle = allowedServiceStyles.length > 0 ? allowedServiceStyles[0] : 'at_home';
+      
+      // Initialize all service style buckets
+      for (const style of serviceStyles) {
+        servicesByStyle[style] = { services: [], count: 0 };
+      }
+      
+      // Group services by their service_style
+      for (const service of allServices.rows) {
+        const serviceStyle = service.service_style || firstAllowedStyle; // Use first allowed style as fallback for NULL
+        
+        // Only add to the style bucket if it's a valid service style
+        if (serviceStyles.includes(serviceStyle)) {
+          if (!servicesByStyle[serviceStyle]) {
+            servicesByStyle[serviceStyle] = { services: [], count: 0 };
           }
           
-          const styleServices = allServices.rows.filter((s: any) => s.service_style === style);
-          servicesByStyle[style] = {
-            services: styleServices.map((s: any) => ({
-              id: s.id,
-              serviceId: s.service_id,
-              serviceName: s.service_name || s.base_service_name,
-              name: s.service_name || s.base_service_name,
-              description: s.description || s.base_description,
-              category: s.category,
-              subCategory: s.sub_category,
-              price: parseFloat(s.price || s.custom_price || '0'),
-              duration: s.duration_minutes || s.custom_duration || 30,
-              serviceStyle: s.service_style,
-              publishStatus: s.publish_status,
-              isEnabled: s.is_enabled,
-              isCustomService: s.is_custom_service || false,
-              metadata: s.metadata || {},
-              createdAt: s.created_at,
-              updatedAt: s.updated_at,
-            })),
-            count: styleServices.length,
-          };
+          servicesByStyle[serviceStyle].services.push({
+            id: service.id,
+            serviceId: service.service_id,
+            serviceName: service.service_name || service.base_service_name,
+            name: service.service_name || service.base_service_name,
+            description: service.description || service.base_description,
+            category: service.category,
+            subCategory: service.sub_category,
+            price: parseFloat(service.price || service.custom_price || '0'),
+            duration: service.duration_minutes || service.custom_duration || 30,
+            serviceStyle: service.service_style || serviceStyle, // Use actual style or fallback
+            publishStatus: service.publish_status,
+            isEnabled: service.is_enabled,
+            isCustomService: service.is_custom_service || false,
+            metadata: service.metadata || {},
+            createdAt: service.created_at,
+            updatedAt: service.updated_at,
+          });
         }
-      } else {
-        // No allowed styles, return empty
-        for (const style of serviceStyles) {
-          servicesByStyle[style] = { services: [], count: 0 };
+      }
+      
+      // Update counts for each style
+      for (const style of serviceStyles) {
+        if (servicesByStyle[style]) {
+          servicesByStyle[style].count = servicesByStyle[style].services.length;
         }
       }
 
-      const allServices = Object.values(servicesByStyle).flatMap((style: any) => style.services);
+      const flattenedServices = Object.values(servicesByStyle).flatMap((style: any) => style.services);
 
       return c.json({
         success: true,
         services: servicesByStyle,
-        allServices,
-        totalEnabled: allServices.length,
+        allServices: flattenedServices,
+        totalEnabled: flattenedServices.length,
         // ✅ Include role and capabilities directly (no separate API call needed)
         vendor: {
           id: vendor.id,
@@ -365,22 +414,65 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       // ✅ FIX: Return ALL services (enabled and disabled) for management
       // Remove is_enabled filter so vendors can see and manage all their services
+      // ✅ CRITICAL FIX: Include services with NULL service_style (created from admin without style)
       // Note: serviceStyle is already validated above, so all returned services will match allowed styles
       const services = await query(
         `SELECT vs.*, s.name as base_service_name, s.description as base_description
          FROM vendor_services vs
          LEFT JOIN services s ON vs.service_id = s.id
          WHERE vs.vendor_id = $1
-         AND vs.service_style = $2
+         AND (vs.service_style = $2 OR vs.service_style IS NULL)
          ORDER BY vs.created_at DESC`,
         [vendorId, serviceStyle]
       );
+
+      // ✅ NEW: Also get available services from service_catalog for this style and role
+      // This helps vendors see what services they can add
+      let availableCatalogServices: any[] = [];
+      try {
+        if (vendor.role_id) {
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            const role = roles[0];
+            const roleConfig = role.config || {};
+            const acceptableRoles = [
+              role.name,
+              role.id,
+              role.display_name,
+              ...(roleMappings[role.name] || []),
+              role.name?.toLowerCase(),
+              role.name?.toLowerCase().replace(/\s+/g, '_'),
+            ].filter(Boolean);
+            const uniqueRoles = [...new Set(acceptableRoles)];
+
+            // Query service_catalog for available services matching this style and role
+            const catalogQuery = await query(
+              `SELECT sc.* 
+               FROM service_catalog sc
+               WHERE sc.status = 'active'
+               AND (sc.publish_status = 'published' OR sc.publish_status IS NULL)
+               AND sc.service_style = $1
+               AND (sc.applicable_roles && $2::text[] OR sc.applicable_roles IS NULL OR array_length(sc.applicable_roles, 1) IS NULL)
+               ORDER BY sc.category_name ASC, sc.service_name ASC
+               LIMIT 100`,
+              [serviceStyle, uniqueRoles]
+            );
+            availableCatalogServices = catalogQuery.rows || [];
+            console.log(`[Vendor Services] Found ${availableCatalogServices.length} available ${serviceStyle} services in catalog for role ${role.name}`);
+          }
+        }
+      } catch (catalogError: any) {
+        console.warn(`[Vendor Services] Failed to load catalog services:`, catalogError.message);
+        // Don't fail the request if catalog query fails
+      }
 
       return c.json({
         success: true,
         services: services.rows,
         total: services.rows.length,
         allowedServiceStyles, // ✅ Include in response so frontend knows what's allowed
+        availableCatalogServices, // ✅ NEW: Include available services from catalog
+        availableCatalogCount: availableCatalogServices.length, // ✅ NEW: Count of available services
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);
@@ -942,7 +1034,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
       
       // Create new vendor_services record (use actualVendorId)
-      const vendorServiceId = crypto.randomUUID();
+      const vendorServiceId = randomUUID();
       
       const newService = await insert('vendor_services', {
         id: vendorServiceId,

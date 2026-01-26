@@ -135,7 +135,7 @@ export function CreateTicketModal({
               id="subject"
               placeholder="Brief description of your issue"
               value={formData.subject}
-              onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, subject: e.target.value })}
               className="mt-1"
             />
           </div>
@@ -145,7 +145,7 @@ export function CreateTicketModal({
             <Label>Category *</Label>
             <Select
               value={formData.category}
-              onValueChange={(value) => setFormData({ ...formData, category: value })}
+               onValueChange={(value: string) => setFormData({ ...formData, category: value })}
             >
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -168,7 +168,7 @@ export function CreateTicketModal({
             <Label>Priority *</Label>
             <Select
               value={formData.priority}
-              onValueChange={(value) => setFormData({ ...formData, priority: value })}
+              onValueChange={(value: string) => setFormData({ ...formData, priority: value })}
             >
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -209,7 +209,7 @@ export function CreateTicketModal({
               id="description"
               placeholder="Provide detailed information about your issue..."
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
               rows={6}
               className="mt-1"
             />

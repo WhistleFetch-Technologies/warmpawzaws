@@ -129,8 +129,10 @@ provider:
   # API Gateway Configuration
   # Using existing API Gateway (z0b3obweb6) that frontend is pointing to
   # Note: CORS is handled by Lambda handler to ensure proper OPTIONS handling
-  # If API Gateway CORS is configured, it may handle OPTIONS automatically
-  # The Lambda handler also handles OPTIONS as a fallback
+  # The Lambda handler handles OPTIONS requests and returns 200 OK for preflight
+  # CORS configuration removed from here because:
+  # 1. Serverless Framework cannot configure CORS on externally configured HTTP APIs
+  # 2. CORS is fully handled in the Lambda handler code (see handler/index.ts)
   httpApi:
     id: z0b3obweb6  # Use existing API Gateway that frontend is pointing to
 
@@ -157,18 +159,15 @@ functions:
 #       - '/*'
 
 # Package Configuration
+# Include all node_modules (dependencies will be automatically included)
+# Exclude only source files and build configs
 package:
   patterns:
-    - '!node_modules/**'
     - '!src/**'
     - '!*.ts'
     - '!*.tsx'
     - '!tsconfig.json'
     - '!esbuild.config.js'
     - 'dist/**'
-    - 'node_modules/@warmpawz/**'
-    - 'node_modules/zod/**'
-    - 'node_modules/hono/**'
-    - 'node_modules/jose/**'
-    - 'node_modules/pg/**'
+    - 'node_modules/**'
 

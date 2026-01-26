@@ -18,7 +18,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../database/rds-connection';
+import { select, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -565,20 +565,53 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
+      // ✅ FIX: When serviceStyle=at_center, exclude solo vendors and only include vendors with at_center services
+      if (serviceStyle === 'at_center') {
+        // Exclude solo vendors (individual providers, not clinics/centers)
+        vendorQuery += ` AND r.name NOT LIKE '%_solo'`;
+        
+        // Only include vendors that have at_center services
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_services vs
+          WHERE vs.vendor_id = v.id
+            AND vs.service_style = $${paramIndex}
+            AND vs.is_enabled = true
+            AND vs.publish_status = 'published'
+        )`;
+        params.push('at_center');
+        paramIndex++;
+      }
+
       // Filter by category (role)
       if (category) {
         const categoryRoleMap: Record<string, string[]> = {
-          'vet': ['vet_clinic', 'veterinarian', 'vet_solo', 'vet', 'Veterinarian'],
-          'grooming': ['grooming_salon', 'pet_groomer', 'groomer', 'grooming_solo'],
-          'training': ['trainer', 'pet_trainer', 'training_solo'],
-          'walker': ['dog_walker', 'pet_walker', 'walker', 'walker_solo'],
+          'vet': serviceStyle === 'at_center' 
+            ? ['vet_clinic', 'veterinarian', 'vet', 'Veterinarian'] // Exclude vet_solo for at_center
+            : ['vet_clinic', 'veterinarian', 'vet_solo', 'vet', 'Veterinarian'],
+          'grooming': serviceStyle === 'at_center'
+            ? ['grooming_salon', 'pet_groomer', 'groomer'] // Exclude grooming_solo for at_center
+            : ['grooming_salon', 'pet_groomer', 'groomer', 'grooming_solo'],
+          'training': serviceStyle === 'at_center'
+            ? ['trainer', 'pet_trainer'] // Exclude training_solo for at_center
+            : ['trainer', 'pet_trainer', 'training_solo'],
+          'walker': serviceStyle === 'at_center'
+            ? ['dog_walker', 'pet_walker', 'walker'] // Exclude walker_solo for at_center
+            : ['dog_walker', 'pet_walker', 'walker', 'walker_solo'],
           'boarding': ['boarding_resort', 'pet_boarding'],
-          'nutrition': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
+          'nutrition': serviceStyle === 'at_center'
+            ? ['nutritionist', 'pet_nutritionist'] // Exclude nutritionist_solo for at_center
+            : ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
           'adoption': ['ngo', 'shelter', 'breeder'],
           'marketplace': ['pet_store'],
-          'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
-          'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
-          'diagnostics': ['diagnostics_provider', 'diagnostics_solo'],
+          'behaviourist': serviceStyle === 'at_center'
+            ? ['behaviourist', 'pet_behaviourist'] // Exclude behaviourist_solo for at_center
+            : ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
+          'sitting': serviceStyle === 'at_center'
+            ? ['pet_sitter', 'sitter'] // Exclude sitter_solo for at_center
+            : ['pet_sitter', 'sitter', 'sitter_solo'],
+          'diagnostics': serviceStyle === 'at_center'
+            ? ['diagnostics_provider'] // Exclude diagnostics_solo for at_center
+            : ['diagnostics_provider', 'diagnostics_solo'],
         };
 
         const targetRoles = categoryRoleMap[category] || [];
@@ -608,17 +641,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Enrich vendors with services, reviews, and availability
       const enrichedVendors = await Promise.all(
         vendors.map(async (vendor: any) => {
-          // Get services
-          const services = await query(
-            `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled
+          // Get services - ✅ FIX: Filter by serviceStyle if provided
+          let servicesQuery = `
+            SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
              FROM services s
              LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
              WHERE vs.vendor_id = $1
              AND s.is_active = true
              AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
-             LIMIT 10`,
-            [vendor.id]
-          );
+          `;
+          const servicesParams: any[] = [vendor.id];
+          
+          // ✅ FIX: When serviceStyle=at_center, only show at_center services
+          if (serviceStyle === 'at_center') {
+            servicesQuery += ` AND vs.service_style = $2 AND vs.publish_status = 'published'`;
+            servicesParams.push('at_center');
+          }
+          
+          servicesQuery += ` LIMIT 10`;
+          
+          const services = await query(servicesQuery, servicesParams);
 
           // Get reviews and calculate rating
           const reviews = await query(
@@ -726,7 +768,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               name: s.name,
               price: s.custom_price || s.base_price || 0,
               duration: s.custom_duration || s.duration_minutes || 0,
-              serviceStyle: s.service_style,
+              serviceStyle: s.service_style || (serviceStyle || 'at_home'), // Use vs.service_style or fallback
               category: s.category,
             })),
             availabilityScore: isAvailableToday ? 100 : 0,
@@ -743,22 +785,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         })
       );
 
+      // ✅ FIX: When serviceStyle=at_center, filter out vendors with no at_center services
+      let filteredVendors = enrichedVendors;
+      if (serviceStyle === 'at_center') {
+        filteredVendors = enrichedVendors.filter((v: any) => {
+          // Only include vendors that have at least one at_center service
+          return v.featuredOfferings && v.featuredOfferings.length > 0 && 
+                 v.featuredOfferings.some((offering: any) => offering.serviceStyle === 'at_center');
+        });
+      }
+
       // Filter by rating
       if (minRating) {
-        enrichedVendors.filter((v: any) => v.rating >= parseFloat(minRating));
+        filteredVendors = filteredVendors.filter((v: any) => v.rating >= parseFloat(minRating));
       }
 
       // Sort
       if (sortBy === 'distance' && latitude && longitude) {
-        enrichedVendors.sort((a: any, b: any) => {
+        filteredVendors.sort((a: any, b: any) => {
           if (a.distance === null) return 1;
           if (b.distance === null) return -1;
           return a.distance - b.distance;
         });
       } else if (sortBy === 'rating') {
-        enrichedVendors.sort((a: any, b: any) => b.rating - a.rating);
+        filteredVendors.sort((a: any, b: any) => b.rating - a.rating);
       } else if (sortBy === 'price') {
-        enrichedVendors.sort((a: any, b: any) => {
+        filteredVendors.sort((a: any, b: any) => {
           const aPrice = a.featuredOfferings[0]?.price || 0;
           const bPrice = b.featuredOfferings[0]?.price || 0;
           return aPrice - bPrice;
@@ -767,8 +819,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        vendors: enrichedVendors,
-        total: enrichedVendors.length,
+        vendors: filteredVendors,
+        total: filteredVendors.length,
         filters: {
           category,
           location,
@@ -776,6 +828,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           availability,
           petType,
           sortBy,
+          serviceStyle,
         },
       });
     } catch (error: any) {
@@ -890,6 +943,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const now = new Date();
           const requestedDate = new Date(date);
 
+          // ✅ FIX: Only check if slot is in the past if the date is TODAY
+          // For future dates, all slots should be available (unless booked)
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const requestedDateOnly = new Date(requestedDate);
+          requestedDateOnly.setHours(0, 0, 0, 0);
+          const isToday = requestedDateOnly.getTime() === today.getTime();
+
           for (const staffSlot of staffSlotsResult.rows) {
             const [startHour, startMin] = staffSlot.start_time.split(':').map(Number);
             const [endHour, endMin] = staffSlot.end_time.split(':').map(Number);
@@ -901,10 +962,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
               const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
               
-              // Check if slot is in the past
-              const slotDateTime = new Date(requestedDate);
-              slotDateTime.setHours(currentHour, currentMin, 0, 0);
-              const isPast = slotDateTime < now;
+              // ✅ FIX: Only check if slot is in the past if it's TODAY
+              // For future dates, don't mark slots as unavailable due to time
+              let isPast = false;
+              if (isToday) {
+                const slotDateTime = new Date(requestedDate);
+                slotDateTime.setHours(currentHour, currentMin, 0, 0);
+                isPast = slotDateTime < now;
+              }
+              // For future dates, isPast remains false
 
               // Check if booked for this staff
               const isBooked = staffBookedTimes.has(timeStr);
@@ -1001,6 +1067,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       const dayName = dayNames[dayOfWeek];
 
+      // ✅ FIX: Only check if slot is in the past if the date is TODAY
+      // For future dates, all slots should be available (unless booked)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const requestedDateOnly = new Date(requestedDate);
+      requestedDateOnly.setHours(0, 0, 0, 0);
+      const isToday = requestedDateOnly.getTime() === today.getTime();
+
       // Get existing bookings for this date to mark booked slots as unavailable
       const existingBookingsResult = await query(
         `SELECT booking_time FROM bookings 
@@ -1040,11 +1114,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           while (currentHour < closeHour || (currentHour === closeHour && currentMin < closeMin)) {
             const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
             
-            // Check if slot is in the past (for today)
-            const now = new Date();
-            const slotDateTime = new Date(requestedDate);
-            slotDateTime.setHours(currentHour, currentMin, 0, 0);
-            const isPast = slotDateTime < now;
+            // ✅ FIX: Only check if slot is in the past if it's TODAY
+            // For future dates, don't mark slots as unavailable due to time
+            let isPast = false;
+            if (isToday) {
+              const now = new Date();
+              const slotDateTime = new Date(requestedDate);
+              slotDateTime.setHours(currentHour, currentMin, 0, 0);
+              isPast = slotDateTime < now;
+            }
+            // For future dates, isPast remains false
             
             // Check if slot is already booked
             const isBooked = bookedTimes.has(timeStr);
@@ -1618,8 +1697,59 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      // Get vendor
-      const vendors = await select('vendors', { id: vendorId });
+      // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
+      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
+      let actualVendorId = vendorId;
+      let vendors = await select('vendors', { id: vendorId });
+      
+      if (vendors.length === 0) {
+        console.log(`[FACILITY] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select('vendor_identity', { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+            // Check if vendor exists by phone (there might be an existing vendor with different ID)
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              vendors = vendorByPhone;
+              console.log(`[FACILITY] Found existing vendor by phone: ${actualVendorId}`);
+            } else {
+              // Get application data for vendor details
+              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              
+              // Create vendors record
+              console.log(`[FACILITY] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert('vendors', {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '000000',
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              vendors = newVendor;
+              console.log(`[FACILITY] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: 'Vendor not approved or activated' }, 403);
+          }
+        } else {
+          return c.json({ error: 'Vendor not found' }, 404);
+        }
+      }
+
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
@@ -1642,7 +1772,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
          AND s.is_active = true
          AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
          ORDER BY s.name`,
-        [vendorId]
+        [vendor.id]
       );
 
       // Get rating
@@ -1650,7 +1780,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
          FROM reviews
          WHERE vendor_id = $1 AND is_approved = true`,
-        [vendorId]
+        [vendor.id]
       );
 
       // Get recent reviews
@@ -1661,7 +1791,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
          WHERE r.vendor_id = $1 AND r.is_approved = true
          ORDER BY r.created_at DESC
          LIMIT 5`,
-        [vendorId]
+        [vendor.id]
       );
 
       // ✅ FIX: Extract facility data from vendor metadata and operating_hours
@@ -1677,6 +1807,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
       const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
       
+      console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
+      
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const s3Client = new S3Client({ region: AWS_REGION });
@@ -1684,25 +1816,73 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const photos = await Promise.all(
         rawPhotos.map(async (photoItem: string) => {
           try {
-            let fileKey = photoItem;
+            if (!photoItem || typeof photoItem !== 'string') {
+              console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
+              return null;
+            }
+            
+            let fileKey = photoItem.trim();
             
             // Extract key from various formats
             if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-              // Extract key from full S3 URL
+              // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
               const urlParts = photoItem.split('.amazonaws.com/');
               if (urlParts.length > 1) {
-                fileKey = urlParts[1].split('?')[0]; // Remove query params if any
+                fileKey = urlParts[1].split('?')[0].split('#')[0]; // Remove query params and fragments
               }
-            } else if (photoItem.includes('?') && photoItem.includes('X-Amz')) {
+            } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
               // Extract key from presigned URL
               const urlParts = photoItem.split('?')[0];
-              const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-              if (keyMatch) {
-                fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+              if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
+                const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
+                if (keyMatch && keyMatch[1]) {
+                  fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+                } else {
+                  // Try to extract from any path containing vendors/
+                  const vendorsIndex = urlParts.indexOf('vendors/');
+                  if (vendorsIndex >= 0) {
+                    fileKey = urlParts.substring(vendorsIndex);
+                  }
+                }
               }
             } else if (photoItem.startsWith('vendors/')) {
-              // Already a key
-              fileKey = photoItem;
+              // Already a key - ensure it's for this vendor
+              if (!fileKey.startsWith(`vendors/${vendor.id}/`)) {
+                // If key is for different vendor or missing vendor ID, fix it
+                const keyParts = fileKey.split('/');
+                if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
+                  // Replace vendor ID in key
+                  fileKey = `vendors/${vendor.id}/${keyParts.slice(2).join('/')}`;
+                }
+              }
+            } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
+              // Full URL but not S3 - might be CloudFront or other CDN
+              // Try to extract key or return as-is for public URLs
+              console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
+              return photoItem;
+            }
+            
+            if (!fileKey || fileKey.length === 0) {
+              console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
+            
+            // ✅ FIX: Verify the object exists before generating presigned URL
+            try {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              const headCommand = new HeadObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: fileKey,
+              });
+              await s3Client.send(headCommand);
+            } catch (headError: any) {
+              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
+                return null;
+              }
+              console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
             }
             
             // Generate fresh presigned URL (valid for 7 days)
@@ -1712,15 +1892,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             });
             
             const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
+            
+            // ✅ FIX: Validate presigned URL format
+            if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
+              console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
             return presignedUrl;
-          } catch (error) {
-            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error);
+          } catch (error: any) {
+            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error?.message || error);
+            // ✅ FIX: If presigned URL generation fails, try returning the original URL if it's already a valid URL
+            if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
+              console.log(`[FACILITY-PHOTOS] Returning original URL as fallback:`, photoItem);
+              return photoItem;
+            }
             return null;
           }
         })
       );
       
-      const validPhotos = photos.filter((url): url is string => url !== null && url.length > 0);
+      const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
+      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
       return c.json({
         success: true,
@@ -1826,7 +2020,41 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       
       // Facility photos (stored in metadata)
       if (facilityData.photos !== undefined || facilityData.facility_photos !== undefined) {
-        updatedMetadata.facility_photos = facilityData.photos || facilityData.facility_photos;
+        const photosInput = facilityData.photos || facilityData.facility_photos || [];
+        // ✅ FIX: Normalize photos - extract S3 keys from presigned URLs or full URLs
+        const normalizedPhotos = photosInput.map((photoItem: string) => {
+          if (!photoItem || typeof photoItem !== 'string') {
+            return null;
+          }
+          
+          // If it's already a key (starts with vendors/), return as-is
+          if (photoItem.startsWith('vendors/')) {
+            return photoItem;
+          }
+          
+          // If it's a presigned URL or full S3 URL, extract the key
+          if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
+            // Extract key from full S3 URL
+            const urlParts = photoItem.split('.amazonaws.com/');
+            if (urlParts.length > 1) {
+              return urlParts[1].split('?')[0].split('#')[0];
+            }
+          } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
+            // Extract key from presigned URL
+            const urlParts = photoItem.split('?')[0];
+            if (urlParts.includes('vendors/')) {
+              const vendorsIndex = urlParts.indexOf('vendors/');
+              return urlParts.substring(vendorsIndex);
+            }
+          }
+          
+          // If we can't extract a key, return null (invalid photo)
+          console.warn(`[FACILITY-SAVE] Could not normalize photo, skipping:`, photoItem);
+          return null;
+        }).filter((key): key is string => key !== null && key.length > 0);
+        
+        console.log(`[FACILITY-SAVE] Normalized ${normalizedPhotos.length} photos from ${photosInput.length} input photos`);
+        updatedMetadata.facility_photos = normalizedPhotos;
         metadataChanged = true;
       }
       
@@ -2063,6 +2291,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
       const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
       
+      console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
+      
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const s3Client = new S3Client({ region: AWS_REGION });
@@ -2070,25 +2300,73 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const photos = await Promise.all(
         rawPhotos.map(async (photoItem: string) => {
           try {
-            let fileKey = photoItem;
+            if (!photoItem || typeof photoItem !== 'string') {
+              console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
+              return null;
+            }
+            
+            let fileKey = photoItem.trim();
             
             // Extract key from various formats
             if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-              // Extract key from full S3 URL
+              // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
               const urlParts = photoItem.split('.amazonaws.com/');
               if (urlParts.length > 1) {
-                fileKey = urlParts[1].split('?')[0]; // Remove query params if any
+                fileKey = urlParts[1].split('?')[0].split('#')[0]; // Remove query params and fragments
               }
-            } else if (photoItem.includes('?') && photoItem.includes('X-Amz')) {
+            } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
               // Extract key from presigned URL
               const urlParts = photoItem.split('?')[0];
-              const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-              if (keyMatch) {
-                fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+              if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
+                const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
+                if (keyMatch && keyMatch[1]) {
+                  fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+                } else {
+                  // Try to extract from any path containing vendors/
+                  const vendorsIndex = urlParts.indexOf('vendors/');
+                  if (vendorsIndex >= 0) {
+                    fileKey = urlParts.substring(vendorsIndex);
+                  }
+                }
               }
             } else if (photoItem.startsWith('vendors/')) {
-              // Already a key
-              fileKey = photoItem;
+              // Already a key - ensure it's for this vendor
+              if (!fileKey.startsWith(`vendors/${vendor.id}/`)) {
+                // If key is for different vendor or missing vendor ID, fix it
+                const keyParts = fileKey.split('/');
+                if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
+                  // Replace vendor ID in key
+                  fileKey = `vendors/${vendor.id}/${keyParts.slice(2).join('/')}`;
+                }
+              }
+            } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
+              // Full URL but not S3 - might be CloudFront or other CDN
+              // Try to extract key or return as-is for public URLs
+              console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
+              return photoItem;
+            }
+            
+            if (!fileKey || fileKey.length === 0) {
+              console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
+            
+            // ✅ FIX: Verify the object exists before generating presigned URL
+            try {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              const headCommand = new HeadObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: fileKey,
+              });
+              await s3Client.send(headCommand);
+            } catch (headError: any) {
+              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
+                return null;
+              }
+              console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
             }
             
             // Generate fresh presigned URL (valid for 7 days)
@@ -2098,15 +2376,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             });
             
             const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
+            
+            // ✅ FIX: Validate presigned URL format
+            if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
+              console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
             return presignedUrl;
-          } catch (error) {
-            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error);
+          } catch (error: any) {
+            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error?.message || error);
+            // ✅ FIX: If presigned URL generation fails, try returning the original URL if it's already a valid URL
+            if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
+              console.log(`[FACILITY-PHOTOS] Returning original URL as fallback:`, photoItem);
+              return photoItem;
+            }
             return null;
           }
         })
       );
       
-      const validPhotos = photos.filter((url): url is string => url !== null && url.length > 0);
+      const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
+      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
       return c.json({
         success: true,
@@ -2301,21 +2593,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND vs.service_style = $1
             AND vs.is_enabled = true
             AND vs.publish_status = 'published'
+            AND (r.name IS NULL OR r.name NOT LIKE '%_solo')
         `;
         
         const params: any[] = [serviceStyle];
         let paramIndex = 2;
 
         if (category) {
+          // ✅ FIX: For at_center (clinics), exclude solo vendors - they are individual providers, not organizations
           const categoryRoles: Record<string, string[]> = {
-            'vet': ['veterinarian', 'vet_clinic', 'vet_solo', 'vet', 'Veterinarian'],
-            'grooming': ['groomer', 'grooming_salon', 'pet_groomer', 'grooming_solo'],
-            'training': ['trainer', 'pet_trainer', 'training_solo'],
-            'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
-            'walker': ['walker', 'pet_walker', 'dog_walker', 'walker_solo'],
-            'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
-            'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
-            'diagnostics': ['diagnostics_provider', 'diagnostics_solo'],
+            'vet': ['veterinarian', 'vet_clinic', 'vet', 'Veterinarian'], // Excluded 'vet_solo'
+            'grooming': ['groomer', 'grooming_salon', 'pet_groomer'], // Excluded 'grooming_solo'
+            'training': ['trainer', 'pet_trainer'], // Excluded 'training_solo'
+            'nutritionist': ['nutritionist', 'pet_nutritionist'], // Excluded 'nutritionist_solo'
+            'walker': ['walker', 'pet_walker', 'dog_walker'], // Excluded 'walker_solo'
+            'behaviourist': ['behaviourist', 'pet_behaviourist'], // Excluded 'behaviourist_solo'
+            'sitting': ['pet_sitter', 'sitter'], // Excluded 'sitter_solo'
+            'diagnostics': ['diagnostics_provider'], // Excluded 'diagnostics_solo'
           };
           const roles = categoryRoles[category.toLowerCase()];
           if (roles) {
@@ -2492,6 +2786,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       };
 
       // ✅ FIX: Use roleId if provided, otherwise use category mapping
+      // If both category and roleId are provided, combine them for better matching
       let targetRoles: string[] = [];
       if (roleId) {
         // If roleId is provided, try to get role name from database
@@ -2503,7 +2798,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           if (roles.rows.length > 0) {
             const role = roles.rows[0];
             targetRoles = [role.name, role.display_name, roleId];
-            // Also add common variations
+            // Also add common variations based on role name
             if (role.name.toLowerCase().includes('vet') || role.name.toLowerCase().includes('veterinarian')) {
               targetRoles.push(...categoryRoles['vet']);
             }
@@ -2516,12 +2811,28 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         } catch (err) {
           console.warn('Error fetching role:', err);
-          // Fallback: use roleId as-is
+          // Fallback: use roleId as-is and add category roles if category matches
           targetRoles = [roleId];
+          if (roleId.toLowerCase().includes('vet') || roleId.toLowerCase().includes('veterinarian')) {
+            targetRoles.push(...categoryRoles['vet']);
+          }
         }
-      } else if (category) {
+      }
+      
+      // ✅ FIX: Also include category roles if category is provided (combine with roleId results)
+      if (category) {
+        const categoryRoleList = categoryRoles[category.toLowerCase()] || [];
+        // Merge category roles with existing targetRoles, avoiding duplicates
+        const combinedRoles = [...new Set([...targetRoles, ...categoryRoleList])];
+        targetRoles = combinedRoles;
+      }
+      
+      // ✅ FIX: If no roles found, use category as fallback
+      if (targetRoles.length === 0 && category) {
         targetRoles = categoryRoles[category.toLowerCase()] || [];
       }
+      
+      console.log(`[Services By Style] Target roles for roleId=${roleId}, category=${category}:`, targetRoles);
 
       // ========== 1. Get Individual Providers (no vendor_id, verified) ==========
       let individualQuery = `
@@ -2574,7 +2885,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           SELECT 1 FROM vendor_services vs
           WHERE vs.vendor_id = s.vendor_id
             AND vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
             AND vs.service_style = $${individualParamIdx}
         )
       )`;
@@ -2640,7 +2951,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              WHERE vs.vendor_id = $1 
                AND vs.service_style = $2
                AND vs.is_enabled = true
-               AND vs.publish_status = 'published'
+               AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
              ORDER BY vs.price ASC`,
             [ind.vendor_id, serviceStyle]
           ).catch(() => ({ rows: [] }));
@@ -2746,7 +3057,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           SELECT 1 FROM vendor_services vs
           WHERE vs.vendor_id = s.vendor_id
             AND vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
             AND vs.service_style = $${staffParamIdx}
         )
       )`;
@@ -2812,7 +3123,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              WHERE vs.vendor_id = $1 
                AND vs.service_style = $2
                AND vs.is_enabled = true
-               AND vs.publish_status = 'published'
+               AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
              ORDER BY vs.price ASC`,
             [staff.vendor_id, serviceStyle]
           ).catch(() => ({ rows: [] }));
@@ -2896,21 +3207,34 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND v.is_active = true
           AND vs.service_style = $1
           AND vs.is_enabled = true
-          AND vs.publish_status = 'published'
+          AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
       `;
       
       const vendorFallbackParams: any[] = [serviceStyle];
       let vendorFallbackParamIdx = 2;
 
       if (targetRoles.length > 0) {
-        vendorFallbackQuery += ` AND r.name = ANY($${vendorFallbackParamIdx})`;
+        // ✅ FIX: Use OR condition to also match role_id if it's in the targetRoles
+        vendorFallbackQuery += ` AND (
+          r.name = ANY($${vendorFallbackParamIdx}) 
+          OR v.role_id::text = ANY($${vendorFallbackParamIdx})
+          OR r.display_name = ANY($${vendorFallbackParamIdx})
+        )`;
         vendorFallbackParams.push(targetRoles);
         vendorFallbackParamIdx++;
       }
 
       vendorFallbackQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
 
-      const vendorFallbackResult = await query(vendorFallbackQuery, vendorFallbackParams).catch(() => ({ rows: [] }));
+      console.log(`[Services By Style] Vendor fallback query:`, vendorFallbackQuery.substring(0, 200));
+      console.log(`[Services By Style] Vendor fallback params:`, vendorFallbackParams);
+      
+      const vendorFallbackResult = await query(vendorFallbackQuery, vendorFallbackParams).catch((err) => {
+        console.error('[Services By Style] Vendor fallback query error:', err);
+        return { rows: [] };
+      });
+      
+      console.log(`[Services By Style] Vendor fallback found ${vendorFallbackResult.rows.length} vendors`);
 
       for (const vendor of vendorFallbackResult.rows) {
         // Skip vendors that already have staff in providers list
@@ -2930,7 +3254,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            WHERE vs.vendor_id = $1 
              AND vs.service_style = $2
              AND vs.is_enabled = true
-             AND vs.publish_status = 'published'
+             AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
            ORDER BY vs.price ASC`,
           [vendor.vendor_id, serviceStyle]
         ).catch(() => ({ rows: [] }));

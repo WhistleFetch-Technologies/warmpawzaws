@@ -80,12 +80,62 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         const { identity, application, role } = responseData;
         
         // Map onboarding status to frontend status
-        const onboardingStatus = identity.onboarding_status;
+        let onboardingStatus = identity.onboarding_status;
         console.log('📊 [VendorApp] Onboarding status from API:', onboardingStatus);
         
-        // ✅ FIX: Update localStorage with status from API
+        // ✅ CRITICAL: Check existing status - don't overwrite ACTIVATED/APPROVED with lower status
+        const existingStatus = localStorage.getItem('vendorApplicationStatus');
+        
+        // ✅ CRITICAL: Detect staff members - check multiple conditions:
+        // 1. responseData.is_staff (explicit flag from backend)
+        // 2. identity.user_type === 'staff' (NEW: direct user_type check)
+        // 3. responseData.staff_info exists
+        // 4. identity.vendor_id exists AND (identity.metadata?.staff_id OR identity.metadata?.created_via === 'staff_login')
+        const isStaffMember = !!(
+          responseData.is_staff || // Explicit flag from backend
+          identity.user_type === 'staff' || // ✅ NEW: Direct user_type check
+          responseData.staff_info || // Staff info object exists
+          (identity.vendor_id && identity.metadata?.staff_id) || // Has staff_id in metadata
+          (identity.vendor_id && identity.metadata?.created_via === 'staff_login') || // Created via staff login
+          (identity.vendor_id && identity.metadata?.created_via === 'staff_onboarding_status') || // Created via staff onboarding status
+          (identity.vendor_id && identity.metadata?.created_via === 'staff_creation') // ✅ NEW: Created during staff creation
+        );
+        
+        if (isStaffMember) {
+          console.log('📊 [VendorApp] Detected staff member:', {
+            is_staff: responseData.is_staff,
+            user_type: identity.user_type,
+            staff_info: responseData.staff_info,
+            vendor_id: identity.vendor_id,
+            metadata: identity.metadata,
+            current_status: onboardingStatus
+          });
+          
+          // ✅ CRITICAL: Force ACTIVATED for staff members (they should never see role selection)
+          onboardingStatus = 'ACTIVATED'; // Always force for staff
+          console.log('✅ [VendorApp] Forcing ACTIVATED for staff member');
+          
+          // ✅ Store staff flag in localStorage for render logic
+          localStorage.setItem('isStaffMember', 'true');
+        } else {
+          localStorage.removeItem('isStaffMember');
+        }
+        
+        // ✅ CRITICAL FIX: Don't overwrite ACTIVATED/APPROVED with INIT or lower status
         if (onboardingStatus) {
-          localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+          if (existingStatus === 'ACTIVATED' || existingStatus === 'APPROVED') {
+            // Only update if new status is also ACTIVATED/APPROVED (don't downgrade)
+            if (onboardingStatus === 'ACTIVATED' || onboardingStatus === 'APPROVED') {
+              localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+              console.log('✅ [VendorApp] Updated status to', onboardingStatus);
+            } else {
+              console.log('⚠️ [VendorApp] Keeping existing ACTIVATED/APPROVED status, not overwriting with', onboardingStatus);
+            }
+          } else {
+            // No existing status or lower status - update normally
+            localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+            console.log('📊 [VendorApp] Updated status to', onboardingStatus);
+          }
         }
         
         // ✅ FIX: For APPROVED/ACTIVATED vendors, fetch vendor profile to get correct vendor.id
@@ -175,6 +225,10 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           businessName: identity.business_name || identity.full_name || application?.application_payload?.businessName || 'Vendor',
           fullName: identity.full_name || identity.business_name || 'Vendor',
           address: identity.address || application?.application_payload?.address || 'India',
+          // ✅ NEW: Store staff detection for render logic
+          is_staff: isStaffMember,
+          staff_info: responseData.staff_info || null,
+          vendor_id: identity.vendor_id || responseData.staff_info?.vendor_id || null,
         };
         
         // Add application data if exists
@@ -248,14 +302,31 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           });
         } else if (onboardingStatus === 'FORM_PENDING' || onboardingStatus === 'ROLE_PENDING') {
           // Still in onboarding
-          setStatus('new');
-          if (identity.selected_role_id && role) {
-            setSelectedRole(role.id || role.name);
+          // ✅ FIX: If staff member with selected_role_id, skip role selection and go to onboarding form
+          if (isStaffMember && identity.selected_role_id) {
+            console.log('✅ [VendorApp] Staff member with role, skipping role selection, showing onboarding form');
+            setStatus('new');
+            setSelectedRole(identity.selected_role_id);
             setShowOnboarding(true);
+          } else {
+            setStatus('new');
+            if (identity.selected_role_id && role) {
+              setSelectedRole(role.id || role.name);
+              setShowOnboarding(true);
+            }
           }
         } else {
           // INIT or other
-          setStatus('new');
+          // ✅ FIX: If staff member with selected_role_id, don't show role selection - go directly to dashboard
+          if (isStaffMember && identity.selected_role_id) {
+            console.log('✅ [VendorApp] Staff member with role and INIT status, forcing ACTIVATED and showing dashboard');
+            onboardingStatus = 'ACTIVATED';
+            setStatus('active');
+            vendorData.isActive = true;
+            vendorData.status = 'active';
+          } else {
+            setStatus('new');
+          }
         }
         
         // Store vendor data
@@ -654,11 +725,61 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   }
 
   // New Vendor - Role Selection
-  if (status === 'new' && !selectedRole) {
+  // ✅ FIX: Don't show role selection for staff members (they have vendor_id and selected_role_id)
+  // ✅ IMPROVED: Check is_staff from vendorData OR localStorage (set during checkVendorStatus)
+  const isStaffMember = vendorData?.is_staff || 
+    vendorData?.user_type === 'staff' ||
+    (typeof window !== 'undefined' && localStorage.getItem('isStaffMember') === 'true') ||
+    (vendorData?.vendor_id && vendorData?.roleId);
+  
+  console.log('📊 [VendorApp] Render decision:', { 
+    status, 
+    selectedRole, 
+    isStaffMember, 
+    vendorData_is_staff: vendorData?.is_staff,
+    vendorData_user_type: vendorData?.user_type,
+    localStorage_isStaffMember: typeof window !== 'undefined' ? localStorage.getItem('isStaffMember') : null,
+    vendorData_vendor_id: vendorData?.vendor_id,
+    vendorData_roleId: vendorData?.roleId
+  });
+  
+  if (status === 'new' && !selectedRole && !isStaffMember) {
     return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
   }
 
-  // Default: Show role selection
-  return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
+  // ✅ FIX: If staff member but status is 'new', force to 'active' (staff should never see role selection)
+  if (status === 'new' && isStaffMember) {
+    console.log('✅ [VendorApp] Staff member detected in render, forcing to active status');
+    // Use useEffect to avoid state update during render
+    setTimeout(() => {
+      if (vendorData?.roleId) {
+        setSelectedRole(vendorData.roleId);
+      }
+      setStatus('active');
+    }, 0);
+    return (
+      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading staff profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Default: Show role selection (only for non-staff)
+  if (!isStaffMember) {
+    return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
+  }
+
+  // Staff member fallback: Show loading while transitioning to dashboard
+  return (
+    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading staff profile...</p>
+      </div>
+    </div>
+  );
 }
 

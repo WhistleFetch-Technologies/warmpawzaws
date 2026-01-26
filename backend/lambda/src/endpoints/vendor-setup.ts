@@ -76,10 +76,36 @@ class GetVendorAvailabilityHandler extends BaseHandler {
       const vendor = vendors[0];
       const metadata = vendor.metadata || {};
       
+      // ✅ FIX: Parse operatingHours from multiple possible sources
+      let operatingHours = metadata.operating_hours || metadata.operatingHours || null;
+      let emergencyServices = metadata.emergency_services || metadata.emergencyServices || null;
+      
+      // If operatingHours is null but operatingHoursText exists as JSON string, parse it
+      if (!operatingHours && vendor.operating_hours) {
+        try {
+          // Check if operating_hours is a JSON string
+          const parsed = typeof vendor.operating_hours === 'string' 
+            ? JSON.parse(vendor.operating_hours) 
+            : vendor.operating_hours;
+          
+          // If it's an object with day keys (monday, tuesday, etc.), use it as operatingHours
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const hasDayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+              .some(day => parsed.hasOwnProperty(day));
+            if (hasDayKeys) {
+              operatingHours = parsed;
+            }
+          }
+        } catch (parseErr) {
+          // If parsing fails, operatingHoursText is just a display string, not JSON
+          console.log('[GetVendorAvailability] operating_hours is not JSON, using as text only');
+        }
+      }
+      
       // Build availability object from vendor metadata
       const availability = {
-        operatingHours: metadata.operating_hours || metadata.operatingHours || null,
-        emergencyServices: metadata.emergency_services || metadata.emergencyServices || null,
+        operatingHours,
+        emergencyServices,
         operatingHoursText: vendor.operating_hours || null,
       };
       
@@ -100,16 +126,8 @@ class UpdateVendorAvailabilityHandler extends BaseHandler {
       return this.error('Vendor ID is required', 400);
     }
     
-    // ✅ FIX: Accept both legacy format (body.availability) and new format (body.operatingHours)
-    const operatingHours = body.availability?.operatingHours || body.operatingHours;
-    const emergencyServices = body.availability?.emergencyServices || body.emergencyServices;
-    
-    if (!operatingHours && !emergencyServices) {
-      return this.error('Operating hours or emergency services data is required', 400);
-    }
-    
     try {
-      // Get current vendor
+      // Get current vendor first to check existing data
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length === 0) {
         return this.error('Vendor not found', 404);
@@ -117,6 +135,35 @@ class UpdateVendorAvailabilityHandler extends BaseHandler {
       
       const vendor = vendors[0];
       const currentMetadata = vendor.metadata || {};
+      
+      // ✅ FIX: Accept both legacy format (body.availability) and new format (body.operatingHours)
+      let operatingHours = body.availability?.operatingHours || body.operatingHours;
+      let emergencyServices = body.availability?.emergencyServices || body.emergencyServices;
+      
+      // ✅ FIX: If operatingHours is null/undefined but we have existing data, try to parse it
+      if (!operatingHours && vendor.operating_hours) {
+        try {
+          const parsed = typeof vendor.operating_hours === 'string' 
+            ? JSON.parse(vendor.operating_hours) 
+            : vendor.operating_hours;
+          
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const hasDayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+              .some(day => parsed.hasOwnProperty(day));
+            if (hasDayKeys) {
+              operatingHours = parsed;
+            }
+          }
+        } catch (parseErr) {
+          // If parsing fails, use existing metadata
+          operatingHours = currentMetadata.operating_hours || currentMetadata.operatingHours;
+        }
+      }
+      
+      // ✅ FIX: If both are still null/undefined after trying to get existing data, return error
+      if (!operatingHours && !emergencyServices) {
+        return this.error('Operating hours or emergency services data is required', 400);
+      }
       
       // ✅ FIX: Store in vendor's metadata field since vendor_availability table doesn't exist
       const updatedMetadata = {

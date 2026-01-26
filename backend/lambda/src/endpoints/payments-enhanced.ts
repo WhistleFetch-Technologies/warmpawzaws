@@ -19,6 +19,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
@@ -564,13 +565,12 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
         return false;
       }
 
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
+      const expectedSignature = createHmac('sha256', webhookSecret)
         .update(body)
         .digest('hex');
 
       // Use timing-safe comparison to prevent timing attacks
-      return crypto.timingSafeEqual(
+      return timingSafeEqual(
         Buffer.from(signature),
         Buffer.from(expectedSignature)
       );
@@ -758,14 +758,14 @@ function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'payment-handler',
     functionVersion: '$LATEST',
   };
