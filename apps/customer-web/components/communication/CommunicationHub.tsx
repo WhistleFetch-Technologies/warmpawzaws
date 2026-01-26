@@ -16,7 +16,7 @@ interface ChatMessage {
   sender_name: string;
   sender_type: 'customer' | 'vendor' | 'system';
   message: string;
-  message_type: 'text' | 'image' | 'file' | 'system';
+  message_type: 'text' | 'image' | 'file' | 'system' | 'prescription';
   file_id?: string;
   file_name?: string;
   file_url?: string;
@@ -395,6 +395,7 @@ export function CommunicationHub({
     switch (type) {
       case 'image': return <Image className="w-4 h-4" />;
       case 'file': return <FileText className="w-4 h-4" />;
+      case 'prescription': return <FileText className="w-4 h-4" />;
       default: return null;
     }
   };
@@ -430,12 +431,30 @@ export function CommunicationHub({
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-full transition-colors"
-          >
-            <X className="w-5 h-5 text-white" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* ✅ FIX: Add video call button */}
+            {onNavigate && booking && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'active') && (
+              <button
+                onClick={() => {
+                  if (onNavigate) {
+                    onNavigate('video-call', { bookingId, meetingId, vendorName: otherUserName });
+                    onClose();
+                  }
+                }}
+                className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors flex items-center gap-1.5 text-white text-sm"
+                title="Start Video Call"
+              >
+                <Video className="w-4 h-4" />
+                <span className="hidden sm:inline">Video</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
         </div>
 
         {/* Chat Status Banner */}
@@ -542,10 +561,20 @@ export function CommunicationHub({
                           <div className={`px-4 py-3 rounded-2xl ${
                             message.sender_type === 'customer'
                               ? 'bg-[#FF8C42] text-white rounded-br-sm'
+                              : message.message_type === 'prescription'
+                              ? 'bg-purple-50 text-gray-900 rounded-bl-sm shadow-sm border-2 border-purple-200'
                               : 'bg-white text-gray-900 rounded-bl-sm shadow-sm border border-gray-100'
                           }`}>
+                            {/* Prescription message - special styling */}
+                            {message.message_type === 'prescription' && (
+                              <div className="mb-2 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-purple-600" />
+                                <span className="text-sm font-semibold text-purple-700">Prescription Published</span>
+                              </div>
+                            )}
+                            
                             {/* File/Image attachment */}
-                            {message.message_type !== 'text' && message.file_name && (
+                            {message.message_type !== 'text' && message.message_type !== 'prescription' && message.file_name && (
                               <a 
                                 href={message.file_url || `/chat/file/${message.file_id}`}
                                 target="_blank"
@@ -561,6 +590,26 @@ export function CommunicationHub({
                             
                             {/* Message text */}
                             <p className="whitespace-pre-wrap break-words">{message.message}</p>
+                            
+                            {/* Prescription action button */}
+                            {message.message_type === 'prescription' && message.file_id && (
+                              <button
+                                onClick={() => {
+                                  // Open prescription modal
+                                  if (onBookFollowUp) {
+                                    // Use follow-up callback to trigger prescription view
+                                    // This will be handled by parent component
+                                    window.dispatchEvent(new CustomEvent('viewPrescription', { 
+                                      detail: { prescriptionId: message.file_id, bookingId } 
+                                    }));
+                                  }
+                                }}
+                                className="mt-3 w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                              >
+                                <FileText className="w-4 h-4" />
+                                View Full Prescription
+                              </button>
+                            )}
                           </div>
                           
                           {/* Time and read status */}

@@ -18,8 +18,23 @@ interface BookingDetailModalProps {
   petId: string;
   phone: string;
   onClose: () => void;
-  onReorderMedicine?: (medications: any[]) => void;
+  onReorderMedicine?: (medications: any[], prescriptionId?: string, bookingId?: string) => void;
   onNavigate?: (screen: string, data?: any) => void; // ✅ FIX: Add navigation handler for video calls
+}
+
+// ✅ FIX: Helper function to format service style labels
+function getServiceStyleLabel(serviceStyle: string | null | undefined): string {
+  if (!serviceStyle) return '';
+  
+  const styleMap: Record<string, string> = {
+    'tele': 'Video Consultation',
+    'at_home': 'At Home',
+    'at_center': 'At Center',
+    'at_vendor': 'At Center',
+    'online': 'Video Consultation',
+  };
+  
+  return styleMap[serviceStyle] || serviceStyle.replace('_', ' ');
 }
 
 interface Prescription {
@@ -58,6 +73,39 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     loadBookingDetails();
   }, [bookingId]);
 
+  // ✅ FIX: Listen for prescription view events from chat
+  useEffect(() => {
+    const handleViewPrescription = (event: CustomEvent) => {
+      const { prescriptionId } = event.detail;
+      if (prescriptionId) {
+        // Load prescription by ID and show modal
+        loadPrescriptionById(prescriptionId);
+        setShowPrescription(true);
+      }
+    };
+    
+    window.addEventListener('viewPrescription', handleViewPrescription as EventListener);
+    return () => {
+      window.removeEventListener('viewPrescription', handleViewPrescription as EventListener);
+    };
+  }, []);
+
+  // ✅ FIX: Load prescription by ID (for chat prescription links)
+  const loadPrescriptionById = async (prescriptionId: string) => {
+    try {
+      setLoadingPrescription(true);
+      const response = await apiClient.get(`/prescriptions/${prescriptionId}`) as any;
+      if (response.prescription) {
+        setPrescription(response.prescription);
+      }
+    } catch (error) {
+      console.error('Error loading prescription:', error);
+      toast.error('Failed to load prescription');
+    } finally {
+      setLoadingPrescription(false);
+    }
+  };
+
   const loadBookingDetails = async () => {
     try {
       setLoading(true);
@@ -74,7 +122,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         // Service fields
         serviceName: rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service',
         serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
-        serviceStyle: rawBooking.serviceStyle || rawBooking.service_type || 'at_center',
+        // ✅ FIX: Map service_type to serviceStyle, but don't default to 'at_center' for tele consultations
+        serviceStyle: rawBooking.serviceStyle || rawBooking.service_style || rawBooking.service_type || null,
         duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
         price: parseFloat(rawBooking.amount || rawBooking.total_amount || rawBooking.base_price || 0),
         // Vendor fields
@@ -122,8 +171,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       setLoadingPrescription(true);
       // AWS Serverless compatible - use apiClient
       try {
-        const result = await apiClient.get(`/prescription/booking/${bookingId}`) as any;
-        setPrescription(result.prescription || null);
+        // ✅ FIX: Use correct endpoint path (plural "prescriptions")
+        const result = await apiClient.get(`/prescriptions/booking/${bookingId}`) as any;
+        setPrescription(result.prescription || result.prescriptions?.[0] || null);
       } catch {
         setPrescription(null);
         console.log('ℹ️  [PRESCRIPTION] No prescription found');
@@ -140,7 +190,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     try {
       setLoadingMedicalRecords(true);
       try {
-        const result = await apiClient.get(`/customer/bookings/${bookingId}/medical-records`) as any;
+        // ✅ FIX: Use correct endpoint path (remove "customer" prefix)
+        const result = await apiClient.get(`/bookings/${bookingId}/medical-records`) as any;
         setMedicalRecords(result.medicalRecords || result.records || []);
       } catch {
         setMedicalRecords([]);
@@ -412,7 +463,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                     </h4>
                     <p className="text-sm text-gray-600">
                       {booking.duration ? `${booking.duration} min` : ''} 
-                      {booking.serviceStyle && ` • ${booking.serviceStyle.replace('_', ' ')}`}
+                      {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
                     </p>
                   </div>
                   <div className="text-right">
@@ -807,6 +858,12 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           onUploadSuccess={() => {
             loadPrescription(bookingId);
             loadMedicalRecords(bookingId);
+          }}
+          onOrderMedicine={(prescriptionId, bookingId, medications) => {
+            // ✅ FIX: Handle pharmacy ordering from prescription
+            if (onReorderMedicine) {
+              onReorderMedicine(medications || [], prescriptionId, bookingId);
+            }
           }}
         />
       )}

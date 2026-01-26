@@ -77,13 +77,11 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       let queryText = `
         SELECT mr.*, 
                v.business_name as vendor_name,
-               s.name as staff_name,
                p.name as pet_name
         FROM medical_records mr
         LEFT JOIN vendors v ON mr.vendor_id = v.id
-        LEFT JOIN staff s ON mr.staff_id = s.id
         LEFT JOIN pets p ON mr.pet_id = p.id
-        WHERE mr.pet_id = $1
+        WHERE mr.pet_id = $1::uuid
       `;
       const params: any[] = [petId];
       let paramIndex = 2;
@@ -130,12 +128,10 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // Get records for this booking
       const records = await query(
         `SELECT mr.*, 
-                v.business_name as vendor_name,
-                s.name as staff_name
+                v.business_name as vendor_name
          FROM medical_records mr
          LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN staff s ON mr.staff_id = s.id
-         WHERE mr.booking_id = $1
+         WHERE mr.booking_id = $1::uuid
          ORDER BY mr.created_at DESC`,
         [bookingId]
       );
@@ -143,12 +139,10 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // Also get records from referral chain (diagnostics reports)
       const referralRecords = await query(
         `SELECT mr.*, 
-                v.business_name as vendor_name,
-                s.name as staff_name
+                v.business_name as vendor_name
          FROM medical_records mr
          LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN staff s ON mr.staff_id = s.id
-         WHERE mr.referred_from_booking_id = $1
+         WHERE mr.referred_from_booking_id = $1::uuid
          ORDER BY mr.created_at DESC`,
         [bookingId]
       );
@@ -206,25 +200,56 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       }
 
       // Create prescription record
-      const record = await insert('medical_records', {
-        pet_id: petId,
-        customer_id: customerId,
-        vendor_id: vendorId,
-        staff_id: staffId,
-        booking_id: bookingId,
-        record_type: 'prescription',
-        title: `Prescription - ${new Date().toLocaleDateString()}`,
-        description: diagnosis || notes,
-        content_data: JSON.stringify({
-          medications,
-          diagnosis,
-          notes,
-          followUpDate,
-        }),
-        prescribed_by: staffId || vendorId,
-        prescribed_by_name: prescriberName,
-        created_at: new Date().toISOString(),
-      });
+      // ✅ FIX: Handle constraint error gracefully - try 'prescription', fallback to 'treatment' if constraint doesn't allow it
+      let record;
+      try {
+        record = await insert('medical_records', {
+          pet_id: petId,
+          customer_id: customerId,
+          vendor_id: vendorId,
+          staff_id: staffId,
+          booking_id: bookingId,
+          record_type: 'prescription',
+          title: `Prescription - ${new Date().toLocaleDateString()}`,
+          description: diagnosis || notes,
+          content_data: JSON.stringify({
+            medications,
+            diagnosis,
+            notes,
+            followUpDate,
+          }),
+          prescribed_by: staffId || vendorId,
+          prescribed_by_name: prescriberName,
+          created_at: new Date().toISOString(),
+        });
+      } catch (constraintError: any) {
+        // ✅ FIX: If constraint doesn't allow 'prescription', use 'treatment' as fallback
+        if (constraintError.message && constraintError.message.includes('record_type_check')) {
+          console.warn('[Medical Records] Constraint doesn\'t allow "prescription", using "treatment" as fallback');
+          record = await insert('medical_records', {
+            pet_id: petId,
+            customer_id: customerId,
+            vendor_id: vendorId,
+            staff_id: staffId,
+            booking_id: bookingId,
+            record_type: 'treatment', // Fallback value that works with older constraints
+            title: `Prescription - ${new Date().toLocaleDateString()}`,
+            description: `${diagnosis || notes} [Type: Prescription]`,
+            content_data: JSON.stringify({
+              medications,
+              diagnosis,
+              notes,
+              followUpDate,
+              recordType: 'prescription', // Store actual type in content_data
+            }),
+            prescribed_by: staffId || vendorId,
+            prescribed_by_name: prescriberName,
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          throw constraintError;
+        }
+      }
 
       // Send notification to customer
       try {
@@ -470,13 +495,11 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const referralRecords = await query(
         `SELECT mr.*, 
                 v.business_name as vendor_name,
-                s.name as staff_name,
                 p.name as pet_name,
                 b.booking_date,
                 b.service_name
          FROM medical_records mr
          LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN staff s ON mr.staff_id = s.id
          LEFT JOIN pets p ON mr.pet_id = p.id
          LEFT JOIN bookings b ON mr.booking_id = b.id
          WHERE mr.referred_from_booking_id = $1
@@ -487,12 +510,10 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // Get the original prescription from this booking
       const originalRecords = await query(
         `SELECT mr.*, 
-                v.business_name as vendor_name,
-                s.name as staff_name
+                v.business_name as vendor_name
          FROM medical_records mr
          LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN staff s ON mr.staff_id = s.id
-         WHERE mr.booking_id = $1
+         WHERE mr.booking_id = $1::uuid
          ORDER BY mr.created_at DESC`,
         [bookingId]
       );
@@ -585,6 +606,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const recordDate = formData.get('recordDate') as string; // Mandatory date field
       const uploadedBy = formData.get('uploadedBy') as string; // 'customer' or 'vendor'
       const userId = formData.get('userId') as string; // customer phone or vendor ID
+      const context = formData.get('context') as string; // Optional context/notes field
 
       if (!file || !recordDate) {
         return c.json({ error: 'file and recordDate are required' }, 400);
@@ -632,18 +654,41 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       );
 
       // Create medical record entry
-      const record = await insert('medical_records', {
-        pet_id: booking.pet_id,
-        customer_id: booking.customer_id,
-        vendor_id: booking.vendor_id,
-        booking_id: bookingId,
-        record_type: 'prescription',
-        title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
-        description: `Handwritten prescription uploaded by ${uploadedBy}`,
-        file_url: signedUrl,
-        record_date: recordDate, // Mandatory date field
-        created_at: new Date().toISOString(),
-      });
+      // ✅ FIX: Handle constraint error gracefully - try 'prescription', fallback to 'treatment' if constraint doesn't allow it
+      let record;
+      try {
+        record = await insert('medical_records', {
+          pet_id: booking.pet_id,
+          customer_id: booking.customer_id,
+          vendor_id: booking.vendor_id,
+          booking_id: bookingId,
+          record_type: 'prescription',
+          title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
+          description: context || `Handwritten prescription uploaded by ${uploadedBy}`,
+          file_url: signedUrl,
+          record_date: recordDate, // Mandatory date field
+          created_at: new Date().toISOString(),
+        });
+      } catch (constraintError: any) {
+        // ✅ FIX: If constraint doesn't allow 'prescription', use 'treatment' as fallback
+        if (constraintError.message && constraintError.message.includes('record_type_check')) {
+          console.warn('[Medical Records] Constraint doesn\'t allow "prescription", using "treatment" as fallback');
+          record = await insert('medical_records', {
+            pet_id: booking.pet_id,
+            customer_id: booking.customer_id,
+            vendor_id: booking.vendor_id,
+            booking_id: bookingId,
+            record_type: 'treatment', // Fallback value that works with older constraints
+            title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
+            description: context || `Handwritten prescription uploaded by ${uploadedBy} [Type: Prescription]`,
+            file_url: signedUrl,
+            record_date: recordDate,
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          throw constraintError;
+        }
+      }
 
       return c.json({
         success: true,
@@ -703,7 +748,13 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const existingRecords = await query(
         `SELECT * FROM medical_records 
          WHERE booking_id = $1 
-         AND record_type = 'prescription' 
+         AND (
+           record_type = 'prescription' 
+           OR (record_type = 'treatment' AND (
+             description ILIKE '%[Type: Prescription]%' 
+             OR content_data::text ILIKE '%"recordType":"prescription"%'
+           ))
+         )
          AND prescription_date IS NOT NULL
          ORDER BY prescription_date DESC
          LIMIT 1`,
@@ -728,26 +779,58 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         record = record[0];
       } else {
         // Create new prescription record
-        const newRecord = await insert('medical_records', {
-          pet_id: booking.pet_id,
-          customer_id: booking.customer_id,
-          vendor_id: vendorId || booking.vendor_id,
-          staff_id: staffId,
-          booking_id: bookingId,
-          record_type: 'prescription',
-          title: `Prescription - ${new Date().toLocaleDateString()}`,
-          description: diagnosis || notes,
-          content_data: JSON.stringify({
-            medications,
-            diagnosis,
-            notes,
-            followUpDate,
-          }),
-          prescribed_by: staffId || vendorId || booking.vendor_id,
-          prescribed_by_name: prescriberName,
-          prescription_date: prescriptionDate, // Auto-updated with latest date
-          created_at: new Date().toISOString(),
-        });
+        // ✅ FIX: Handle constraint error gracefully - try 'prescription', fallback to 'treatment' if constraint doesn't allow it
+        let newRecord;
+        try {
+          newRecord = await insert('medical_records', {
+            pet_id: booking.pet_id,
+            customer_id: booking.customer_id,
+            vendor_id: vendorId || booking.vendor_id,
+            staff_id: staffId,
+            booking_id: bookingId,
+            record_type: 'prescription',
+            title: `Prescription - ${new Date().toLocaleDateString()}`,
+            description: diagnosis || notes,
+            content_data: JSON.stringify({
+              medications,
+              diagnosis,
+              notes,
+              followUpDate,
+            }),
+            prescribed_by: staffId || vendorId || booking.vendor_id,
+            prescribed_by_name: prescriberName,
+            prescription_date: prescriptionDate, // Auto-updated with latest date
+            created_at: new Date().toISOString(),
+          });
+        } catch (constraintError: any) {
+          // ✅ FIX: If constraint doesn't allow 'prescription', use 'treatment' as fallback
+          if (constraintError.message && constraintError.message.includes('record_type_check')) {
+            console.warn('[Medical Records] Constraint doesn\'t allow "prescription", using "treatment" as fallback');
+            newRecord = await insert('medical_records', {
+              pet_id: booking.pet_id,
+              customer_id: booking.customer_id,
+              vendor_id: vendorId || booking.vendor_id,
+              staff_id: staffId,
+              booking_id: bookingId,
+              record_type: 'treatment', // Fallback value that works with older constraints
+              title: `Prescription - ${new Date().toLocaleDateString()}`,
+              description: `${diagnosis || notes} [Type: Prescription]`,
+              content_data: JSON.stringify({
+                medications,
+                diagnosis,
+                notes,
+                followUpDate,
+                recordType: 'prescription', // Store actual type in content_data
+              }),
+              prescribed_by: staffId || vendorId || booking.vendor_id,
+              prescribed_by_name: prescriberName,
+              prescription_date: prescriptionDate,
+              created_at: new Date().toISOString(),
+            });
+          } else {
+            throw constraintError;
+          }
+        }
         record = newRecord[0];
       }
 
@@ -780,19 +863,30 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       }
 
       // Get all prescription records for this booking
+      // ✅ FIX: Also include records with record_type='treatment' that have prescription metadata
+      // ✅ FIX: Handle nullable columns and use safe column references
+      // ✅ FIX: Check if staff_id column exists, if not use staffId or omit
       const records = await query(
         `SELECT mr.*, 
                 v.business_name as vendor_name,
-                s.name as staff_name,
                 p.name as pet_name
          FROM medical_records mr
          LEFT JOIN vendors v ON mr.vendor_id = v.id
-         LEFT JOIN staff s ON mr.staff_id = s.id
          LEFT JOIN pets p ON mr.pet_id = p.id
-         WHERE mr.booking_id = $1
-         AND mr.record_type = 'prescription'
+         WHERE mr.booking_id = $1::uuid
+         AND (
+           mr.record_type = 'prescription' 
+           OR (mr.record_type = 'treatment' AND (
+             (mr.description IS NOT NULL AND mr.description ILIKE '%[Type: Prescription]%')
+             OR (mr.content_data IS NOT NULL AND mr.content_data::text ILIKE '%"recordType":"prescription"%')
+           ))
+         )
          ORDER BY 
-           COALESCE(mr.prescription_date, mr.record_date::timestamp, mr.created_at) DESC,
+           COALESCE(
+             CASE WHEN mr.prescription_date IS NOT NULL THEN mr.prescription_date::timestamp END,
+             CASE WHEN mr.record_date IS NOT NULL THEN mr.record_date::timestamp END,
+             mr.created_at
+           ) DESC,
            mr.created_at DESC`,
         [bookingId]
       );
@@ -837,42 +931,82 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
 
       // If it's a file-based prescription (handwritten), return file URL
       if (record.file_url) {
-        // Generate fresh presigned URL if needed
-        if (record.file_url.includes('amazonaws.com')) {
-          // It's already a presigned URL or public URL
-          return c.json({
-            success: true,
-            record,
-            fileUrl: record.file_url,
-            type: 'file',
-          });
-        } else {
-          // Generate presigned URL from S3 key
-          const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-          const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-          
-          const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
-          const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
-          
-          // Extract key from file_url if it's a path
-          const key = record.file_url.replace(`https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/`, '');
-          
-          const signedUrl = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({
-              Bucket: BUCKET_NAME,
-              Key: key,
-            }),
-            { expiresIn: 3600 } // 1 hour
-          );
-
-          return c.json({
-            success: true,
-            record,
-            fileUrl: signedUrl,
-            type: 'file',
-          });
+        // ✅ FIX: Always generate fresh presigned URL for S3 files
+        const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+        const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+        
+        const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+        const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+        
+        // Extract S3 key from various URL formats
+        let key = record.file_url;
+        
+        // Remove query string if present (for presigned URLs)
+        if (key.includes('?')) {
+          key = key.split('?')[0];
         }
+        
+        // Handle different S3 URL formats
+        // Format 1: https://bucket-name.s3.region.amazonaws.com/key
+        // Format 2: https://s3.region.amazonaws.com/bucket-name/key
+        // Format 3: s3://bucket-name/key
+        // Format 4: Just the key path (documents/prescription-123.jpg)
+        // Format 5: CloudFront URL - extract from path
+        
+        const urlPatterns = [
+          new RegExp(`https://${BUCKET_NAME}\\.s3\\.([^.]+)\\.amazonaws\\.com/(.+)`),
+          new RegExp(`https://s3\\.([^.]+)\\.amazonaws\\.com/${BUCKET_NAME}/(.+)`),
+          new RegExp(`s3://${BUCKET_NAME}/(.+)`),
+          new RegExp(`https://[^/]+\\.cloudfront\\.net/(.+)`), // CloudFront URL
+        ];
+        
+        let extractedKey: string | null = null;
+        
+        // Try to extract key from URL patterns
+        for (const pattern of urlPatterns) {
+          const match = key.match(pattern);
+          if (match) {
+            extractedKey = match[match.length - 1]; // Get the last capture group (the key)
+            break;
+          }
+        }
+        
+        // If no pattern matched, check if it's already a key path (starts with 'documents/' or similar)
+        if (!extractedKey && (key.startsWith('documents/') || key.startsWith('prescriptions/') || key.startsWith('medical-records/'))) {
+          extractedKey = key;
+        }
+        
+        // If we have a valid key, generate presigned URL
+        if (extractedKey) {
+          try {
+            const signedUrl = await getSignedUrl(
+              s3Client,
+              new GetObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: extractedKey,
+              }),
+              { expiresIn: 3600 } // 1 hour
+            );
+
+            return c.json({
+              success: true,
+              record,
+              fileUrl: signedUrl,
+              type: 'file',
+            });
+          } catch (s3Error: any) {
+            console.error('Failed to generate presigned URL:', s3Error);
+            // Fall through to return original URL
+          }
+        }
+        
+        // Fallback: return original URL (might be a public URL or external URL)
+        return c.json({
+          success: true,
+          record,
+          fileUrl: record.file_url,
+          type: 'file',
+        });
       }
 
       // If it's a doctor-created prescription, return content data
