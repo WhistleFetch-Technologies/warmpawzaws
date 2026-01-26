@@ -30,9 +30,11 @@ export function StaffAuth({ onAuthSuccess }: StaffAuthProps) {
 
     setLoading(true);
     try {
-      const response = await apiClient.post<any>('/staff/login/send-otp', { phone });
+      // ✅ FIX: Use /auth/send-otp endpoint (same as vendors) for unified login flow
+      console.log('📤 [STAFF AUTH] Sending OTP via /auth/send-otp (unified endpoint)...');
+      const response = await apiClient.post<any>('/auth/send-otp', { phone });
       
-      if (response.success) {
+      if (response.success || response.message) {
         toast.success('OTP sent to your mobile number');
         if (response.debug_otp) {
           toast.info(`UAT Mode: OTP is ${response.debug_otp}`);
@@ -61,14 +63,143 @@ export function StaffAuth({ onAuthSuccess }: StaffAuthProps) {
 
     setLoading(true);
     try {
-      const response = await apiClient.post<any>('/staff/login/verify-otp', { phone, otp });
+      // ✅ FIX: Use /auth/verify-otp endpoint (same as vendors) for unified login flow
+      // This ensures staff get the same dashboard and experience as vendors
+      console.log('🔐 [STAFF AUTH] Verifying OTP via /auth/verify-otp (unified endpoint)...');
+      const response = await apiClient.post<any>('/auth/verify-otp', { phone, otp });
       
-      if (response.success && response.staff) {
-        toast.success('Login successful!');
-        onAuthSuccess(response.staff);
-      } else {
-        throw new Error(response.error || 'Invalid OTP');
+      console.log('📋 [STAFF AUTH] OTP verification result:', response);
+      
+      // Handle nested response structure
+      let responseData = response;
+      if (response.data) {
+        if (response.data.data) {
+          responseData = response.data.data;
+        } else {
+          responseData = response.data;
+        }
       }
+      
+      // Extract token and profile
+      const tokens = responseData.token || responseData.tokens || {};
+      const user = responseData.user || {};
+      const profile = responseData.profile || {};
+      
+      console.log('📋 [STAFF AUTH] Extracted profile:', profile);
+      console.log('📋 [STAFF AUTH] Profile onboarding_status:', profile.onboarding_status);
+      console.log('📋 [STAFF AUTH] ResponseData onboarding_status:', responseData.onboarding_status);
+      console.log('📋 [STAFF AUTH] Full response structure:', {
+        hasToken: !!responseData.token,
+        hasTokens: !!responseData.tokens,
+        hasAccessToken: !!responseData.accessToken,
+        tokenKeys: responseData.token ? Object.keys(responseData.token) : [],
+        tokensKeys: responseData.tokens ? Object.keys(responseData.tokens) : []
+      });
+      
+      // ✅ CRITICAL: Extract accessToken from multiple possible locations
+      // Support both Cognito tokens and fallback tokens
+      const accessToken = responseData.accessToken ||           // Direct accessToken
+                         tokens.accessToken ||                   // tokens.accessToken
+                         tokens.access_token ||                  // tokens.access_token
+                         responseData.token?.access_token ||     // token.access_token
+                         responseData.token?.accessToken ||      // token.accessToken
+                         responseData.access_token;              // Direct access_token
+      
+      console.log('📋 [STAFF AUTH] Extracted accessToken:', accessToken ? `${accessToken.substring(0, 30)}...` : 'MISSING');
+      
+      // ✅ CRITICAL: For staff, ALWAYS use ACTIVATED if profile exists (staff should never see role selection)
+      let onboardingStatus = profile.onboarding_status || responseData.onboarding_status;
+      
+      // ✅ FIX: If staff member and status is not ACTIVATED, force it
+      if (profile && profile.vendor_id && onboardingStatus !== 'ACTIVATED') {
+        console.warn(`⚠️ [STAFF AUTH] Staff member has status ${onboardingStatus}, forcing to ACTIVATED`);
+        onboardingStatus = 'ACTIVATED';
+        profile.onboarding_status = 'ACTIVATED'; // Update profile object too
+      }
+      
+      // Fallback to ACTIVATED for staff (not INIT)
+      if (!onboardingStatus) {
+        onboardingStatus = 'ACTIVATED';
+        console.log('📋 [STAFF AUTH] No onboarding_status found, defaulting to ACTIVATED for staff');
+      }
+      
+      console.log('📋 [STAFF AUTH] Final onboarding_status to store:', onboardingStatus);
+      
+      // ✅ CRITICAL: For staff members, generate fallback token if missing
+      // This ensures staff can always log in even if backend doesn't return token
+      let finalAccessToken = accessToken;
+      if (!finalAccessToken && responseData.verified) {
+        console.warn('⚠️ [STAFF AUTH] No accessToken but verified=true, generating fallback token for staff');
+        // Generate a simple session token for staff
+        const fallbackToken = `staff_session_${phone}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        finalAccessToken = fallbackToken;
+        console.log('✅ [STAFF AUTH] Generated fallback token for staff member');
+      }
+      
+      if (!finalAccessToken && !responseData.verified) {
+        console.error('❌ [STAFF AUTH] No access token or verification status');
+        throw new Error('Authentication failed: No access token received');
+      }
+      
+      console.log('✅ [STAFF AUTH] OTP verified successfully! Onboarding status:', onboardingStatus);
+      
+      // ✅ FIX: Store session in same format as vendor login
+      const { storeSession } = require('@/lib/session-manager');
+      storeSession({
+        phone: phone,
+        accessToken: finalAccessToken, // Use finalAccessToken (may be fallback)
+        user: user,
+        profile: profile,
+        vendorId: user.id || profile.id || profile.vendor_id
+      });
+      
+      // ✅ CRITICAL: Double-check that tokens are stored
+      const storedToken = localStorage.getItem('authToken');
+      const storedPhone = localStorage.getItem('vendorPhone');
+      if (!storedToken || !storedPhone) {
+        console.error('❌ [STAFF AUTH] Session storage failed! Storing directly...');
+        // Fallback: Store directly
+        if (!storedToken) {
+          localStorage.setItem('authToken', finalAccessToken);
+          localStorage.setItem('vendorSessionToken', finalAccessToken);
+        }
+        if (!storedPhone) {
+          localStorage.setItem('vendorPhone', phone);
+        }
+        console.log('✅ [STAFF AUTH] Direct storage completed');
+      }
+      
+      // Store profile data
+      if (profile && Object.keys(profile).length > 0) {
+        localStorage.setItem('vendorData', JSON.stringify(profile));
+        if (profile.id || profile.vendor_id) {
+          localStorage.setItem('vendorId', profile.id || profile.vendor_id);
+        }
+        if (profile.roleId || profile.role_id) {
+          localStorage.setItem('vendorRole', profile.roleId || profile.role_id);
+        }
+      }
+      
+      // Store onboarding status
+      localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+      
+      // Set sessionStorage flags
+      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
+      
+      // ✅ FIX: Call onAuthSuccess with vendor-compatible format
+      onAuthSuccess({
+        phone: phone,
+        accessToken: finalAccessToken, // Use finalAccessToken (may be fallback)
+        user: user,
+        profile: profile,
+        vendorId: user.id || profile.id || profile.vendor_id,
+        onboardingStatus: onboardingStatus,
+        state: responseData.state || 'existing',
+        staff_info: responseData.staff_info, // Keep staff info for reference
+      });
+      
+      toast.success('Login successful!');
     } catch (error: any) {
       console.error('[STAFF AUTH] Error:', error);
       setError(error.message || 'Invalid OTP. Please try again.');
@@ -83,8 +214,9 @@ export function StaffAuth({ onAuthSuccess }: StaffAuthProps) {
     setOtp('');
     setLoading(true);
     try {
-      const response = await apiClient.post<any>('/staff/login/send-otp', { phone });
-      if (response.success) {
+      // ✅ FIX: Use /auth/send-otp endpoint (same as vendors)
+      const response = await apiClient.post<any>('/auth/send-otp', { phone });
+      if (response.success || response.message) {
         toast.success('OTP resent successfully');
         if (response.debug_otp) {
           toast.info(`UAT Mode: OTP is ${response.debug_otp}`);

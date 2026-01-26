@@ -274,11 +274,214 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         return this.error('Invalid or expired OTP', 401, 'UNAUTHORIZED', undefined, context.requestId);
       }
 
+      // ✅ FIX: Normalize phone number for database lookups
+      const phoneDigits = phone.replace(/\D/g, '');
+      const normalizedPhone = phoneDigits.length > 10 
+        ? phoneDigits.slice(-10)
+        : phoneDigits.length === 9 
+          ? '0' + phoneDigits
+          : phoneDigits;
+
+      // ============================================================================
+      // ✅ STAFF DETECTION: Check if phone belongs to staff FIRST
+      // ============================================================================
+      // Staff login takes priority - if phone is in staff table, treat as vendor login
+      let staffMember: any = null;
+      let isStaffLogin = false;
+      
+      try {
+        const staffQuery = await query(`
+          SELECT s.id, s.name, s.vendor_id, s.phone, s.role, s.is_active
+          FROM staff s
+          WHERE s.phone = $1 OR s.phone = $2
+          LIMIT 1
+        `, [phone, normalizedPhone]);
+        
+        if (staffQuery.rows && staffQuery.rows.length > 0) {
+          staffMember = staffQuery.rows[0];
+          
+          if (staffMember.vendor_id && staffMember.is_active !== false) {
+            // Verify vendor exists and is not solo
+            const vendorQuery = await query(`
+              SELECT v.id, v.business_name, vi.vendor_type
+              FROM vendors v
+              LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+              WHERE v.id = $1::uuid
+              LIMIT 1
+            `, [staffMember.vendor_id]);
+            
+            if (vendorQuery.rows && vendorQuery.rows.length > 0) {
+              const vendor = vendorQuery.rows[0];
+              const vendorType = vendor.vendor_type || 'business';
+              
+              // Business rule: Solo vendors cannot have staff
+              if (vendorType !== 'solo') {
+                isStaffLogin = true;
+                console.log(`[AUTH] ✅ Phone ${phone} belongs to STAFF member ${staffMember.id}, vendor: ${staffMember.vendor_id}`);
+              } else {
+                console.warn(`[AUTH] Staff ${staffMember.id} belongs to solo vendor - treating as customer`);
+              }
+            }
+          }
+        }
+      } catch (staffError: any) {
+        console.warn('[AUTH] Error checking staff table:', staffError.message);
+      }
+
       // Get or create customer/vendor
-      const role = body.role || 'customer';
+      let role = body.role || 'customer';
+      
+      // ✅ FIX: If staff login detected, force vendor role
+      if (isStaffLogin && staffMember) {
+        role = 'vendor';
+        console.log(`[AUTH] Staff login detected - forcing role to 'vendor'`);
+      }
+      
       let userId: string;
       let userData: any;
 
+      // ============================================================================
+      // ✅ STAFF LOGIN HANDLER: Special handling for staff members
+      // ============================================================================
+      if (isStaffLogin && staffMember) {
+        // Staff login - create/update vendor_identity with ACTIVATED status
+        const staffVendorId = staffMember.vendor_id;
+        
+        // Check if vendor_identity exists for staff phone
+        let vendorIdentity = await select('vendor_identity', { phone: normalizedPhone });
+        if (vendorIdentity.length === 0 && phone !== normalizedPhone) {
+          vendorIdentity = await select('vendor_identity', { phone });
+        }
+        
+        // Resolve role ID from staff role name
+        let resolvedRoleId: string | null = null;
+        if (staffMember.role) {
+          try {
+            const roleQuery = await query(`
+              SELECT id, name, display_name 
+              FROM roles 
+              WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
+                AND is_active = true
+              LIMIT 1
+            `, [staffMember.role]);
+            
+            if (roleQuery.rows && roleQuery.rows.length > 0) {
+              resolvedRoleId = roleQuery.rows[0].id;
+              console.log(`[AUTH] Resolved staff role "${staffMember.role}" to role ID: ${resolvedRoleId}`);
+            }
+          } catch (roleError: any) {
+            console.warn('[AUTH] Error resolving role:', roleError.message);
+          }
+        }
+        
+        // Get vendor info
+        const vendorInfo = await select('vendors', { id: staffVendorId });
+        const vendor = vendorInfo.length > 0 ? vendorInfo[0] : null;
+        
+        if (vendorIdentity.length > 0) {
+          // Update existing vendor_identity to ACTIVATED
+          const identity = vendorIdentity[0];
+          const updateData: any = {
+            onboarding_status: 'ACTIVATED',
+            vendor_id: staffVendorId,
+            updated_at: new Date().toISOString(),
+          };
+          
+          if (resolvedRoleId) {
+            updateData.selected_role_id = resolvedRoleId;
+          }
+          
+          await update('vendor_identity', { id: identity.id }, updateData);
+          console.log(`[AUTH] ✅ Updated vendor_identity ${identity.id} to ACTIVATED for staff phone ${normalizedPhone}`);
+          
+          userId = identity.id;
+          userData = {
+            id: identity.id,
+            phone: normalizedPhone,
+            onboarding_status: 'ACTIVATED',
+            vendor_id: staffVendorId,
+            role_id: resolvedRoleId,
+            vendor_identity_id: identity.id,
+            business_name: vendor?.business_name,
+            is_staff: true,
+            staff_id: staffMember.id,
+            staff_name: staffMember.name,
+          };
+        } else {
+          // Create new vendor_identity for staff with ACTIVATED status
+          const newIdentity = await insert('vendor_identity', {
+            phone: normalizedPhone,
+            vendor_id: staffVendorId,
+            onboarding_status: 'ACTIVATED',
+            selected_role_id: resolvedRoleId,
+            vendor_type: 'business',
+            business_name: vendor?.business_name,
+          });
+          
+          console.log(`[AUTH] ✅ Created vendor_identity for staff phone ${normalizedPhone} with ACTIVATED status`);
+          
+          userId = newIdentity[0].id;
+          userData = {
+            id: newIdentity[0].id,
+            phone: normalizedPhone,
+            onboarding_status: 'ACTIVATED',
+            vendor_id: staffVendorId,
+            role_id: resolvedRoleId,
+            vendor_identity_id: newIdentity[0].id,
+            business_name: vendor?.business_name,
+            is_staff: true,
+            staff_id: staffMember.id,
+            staff_name: staffMember.name,
+          };
+        }
+        
+        // Return staff login response with ACTIVATED status
+        return this.success({
+          verified: true,
+          message: 'OTP verified successfully',
+          token: {
+            access_token: `staff_session_${normalizedPhone}_${Date.now()}`,
+            refresh_token: `staff_refresh_${normalizedPhone}_${Date.now()}`,
+            expires_in: 3600,
+            token_type: 'Bearer',
+          },
+          user: {
+            id: userId,
+            phone: normalizedPhone,
+            role: 'vendor',
+            is_active: true,
+            is_staff: true,
+            staff_id: staffMember.id,
+            staff_name: staffMember.name,
+          },
+          state: 'existing',
+          profile: {
+            id: userId,
+            phone: normalizedPhone,
+            onboarding_status: 'ACTIVATED',
+            vendor_id: staffVendorId,
+            role_id: resolvedRoleId,
+            roleId: resolvedRoleId,
+            vendor_type: 'business',
+            business_name: vendor?.business_name,
+            is_staff: true,
+            staff_info: {
+              staff_id: staffMember.id,
+              staff_name: staffMember.name,
+              staff_role: staffMember.role,
+            },
+          },
+          staff_info: {
+            staff_id: staffMember.id,
+            staff_name: staffMember.name,
+            vendor_id: staffVendorId,
+          },
+        }, context.requestId);
+      }
+      
+      // ============================================================================
+      // REGULAR CUSTOMER/VENDOR LOGIN (no staff detected)
+      // ============================================================================
       if (role === 'customer') {
         const customers = await select('customers', { phone });
         let isNewCustomer = false;

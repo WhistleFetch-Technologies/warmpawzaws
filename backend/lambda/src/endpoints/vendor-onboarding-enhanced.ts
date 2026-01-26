@@ -52,6 +52,14 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Phone number is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
+    // ✅ FIX: Normalize phone number for database lookups
+    const phoneDigits = phone.replace(/\D/g, '');
+    const normalizedPhone = phoneDigits.length > 10 
+      ? phoneDigits.slice(-10)
+      : phoneDigits.length === 9 
+        ? '0' + phoneDigits
+        : phoneDigits;
+
     // Check if UAT mode is enabled
     const isUATMode = process.env.UAT_MODE === 'true' || 
                      process.env.NODE_ENV === 'development' ||
@@ -59,17 +67,78 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
                      (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
 
     try {
-      // Get or create vendor identity
+      // ✅ FIX: Check if phone belongs to staff FIRST
+      let isStaff = false;
+      let staffInfo: any = null;
+      
+      try {
+        const staffQuery = await query(`
+          SELECT s.id, s.name, s.vendor_id, s.phone, s.role, s.is_active
+          FROM staff s
+          WHERE s.phone = $1 OR s.phone = $2
+          LIMIT 1
+        `, [phone, normalizedPhone]);
+        
+        if (staffQuery.rows && staffQuery.rows.length > 0) {
+          const staff = staffQuery.rows[0];
+          if (staff.vendor_id && staff.is_active !== false) {
+            isStaff = true;
+            staffInfo = {
+              staff_id: staff.id,
+              staff_name: staff.name,
+              staff_role: staff.role,
+              vendor_id: staff.vendor_id,
+            };
+            console.log(`[ONBOARDING STATUS] Phone ${phone} belongs to staff member ${staff.id}`);
+          }
+        }
+      } catch (staffError: any) {
+        console.warn('[ONBOARDING STATUS] Error checking staff:', staffError.message);
+      }
+      
+      // Get or create vendor identity - try both phone formats
       let identity = await select('vendor_identity', { phone });
+      if (identity.length === 0 && phone !== normalizedPhone) {
+        identity = await select('vendor_identity', { phone: normalizedPhone });
+      }
       
       if (identity.length === 0) {
-        // Create new identity with INIT status
-        const newIdentity = await insert('vendor_identity', {
-          phone,
-          onboarding_status: 'INIT',
-          metadata: {},
-        });
+        // ✅ FIX: If staff, create with ACTIVATED status; otherwise INIT
+        const newIdentityData: any = {
+          phone: normalizedPhone,
+          onboarding_status: isStaff ? 'ACTIVATED' : 'INIT',
+          metadata: isStaff ? { staff_id: staffInfo?.staff_id, created_via: 'staff_onboarding_status' } : {},
+        };
+        
+        if (isStaff && staffInfo) {
+          newIdentityData.vendor_id = staffInfo.vendor_id;
+          newIdentityData.user_type = 'staff';
+        }
+        
+        const newIdentity = await insert('vendor_identity', newIdentityData);
         identity = newIdentity;
+        console.log(`[ONBOARDING STATUS] Created vendor_identity for ${normalizedPhone} with status: ${newIdentityData.onboarding_status}`);
+      } else if (isStaff) {
+        // ✅ FIX: If staff but existing identity doesn't have ACTIVATED, update it
+        const existingIdentity = identity[0];
+        if (existingIdentity.onboarding_status !== 'ACTIVATED') {
+          console.log(`[ONBOARDING STATUS] Updating staff vendor_identity to ACTIVATED (was: ${existingIdentity.onboarding_status})`);
+          await update('vendor_identity', { id: existingIdentity.id }, {
+            onboarding_status: 'ACTIVATED',
+            vendor_id: staffInfo?.vendor_id || existingIdentity.vendor_id,
+            user_type: 'staff',
+            metadata: {
+              ...existingIdentity.metadata,
+              staff_id: staffInfo?.staff_id,
+              updated_via: 'staff_onboarding_status',
+            },
+            updated_at: new Date().toISOString(),
+          });
+          // Update local identity object
+          existingIdentity.onboarding_status = 'ACTIVATED';
+          existingIdentity.user_type = 'staff';
+          existingIdentity.vendor_id = staffInfo?.vendor_id || existingIdentity.vendor_id;
+        }
       }
 
       const vendorIdentity = identity[0];
@@ -93,11 +162,14 @@ class GetOnboardingStatusHandlerEnhanced extends BaseHandlerEnhanced {
         role = roles.length > 0 ? roles[0] : null;
       }
 
+      // ✅ FIX: Include staff info in response for frontend staff detection
       return this.success({
         identity: vendorIdentity,
         application,
         role,
         nextStep: this.getNextStep(vendorIdentity.onboarding_status),
+        is_staff: isStaff,
+        staff_info: staffInfo,
       }, requestId);
     } catch (error: any) {
       console.error('Error getting onboarding status:', error);

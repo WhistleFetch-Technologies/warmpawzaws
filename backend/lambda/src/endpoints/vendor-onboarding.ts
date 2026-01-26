@@ -24,20 +24,336 @@ class GetOnboardingStatusHandler extends BaseHandler {
     }
 
     try {
-      // Get or create vendor identity
+      // ✅ FIX: Normalize phone number (remove non-digits, handle country codes)
+      const phoneDigits = phone.replace(/\D/g, ''); // Remove all non-digits
+      // If phone has country code (11+ digits), take last 10 digits
+      // If phone is 9 digits, pad with leading 0 to make it 10 digits (handles cases like "985342940" -> "0985342940")
+      let normalizedPhone = phoneDigits.length > 10 
+        ? phoneDigits.slice(-10)  // Take last 10 digits if longer
+        : phoneDigits.length === 9 
+          ? '0' + phoneDigits      // Pad with 0 if 9 digits
+          : phoneDigits;            // Use as-is if 10 digits
+      
+      // ✅ NEW: Check which columns exist in vendor_identity
+      const viSchemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'user_type') as has_user_type,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'metadata') as has_metadata,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'full_name') as has_full_name
+      `);
+      const viSchema = viSchemaCheck.rows[0] || {};
+      console.log('[ONBOARDING STATUS] vendor_identity schema:', viSchema);
+      
+      // Get or create vendor identity (try both original and normalized phone)
       let identity = await select('vendor_identity', { phone });
+      if (identity.length === 0 && normalizedPhone !== phone) {
+        identity = await select('vendor_identity', { phone: normalizedPhone });
+      }
+      
+      // ✅ FALLBACK: Check if phone belongs to a staff member in staff table FIRST
+      // This helps us detect staff even if vendor_identity doesn't have user_type='staff' yet
+      let staffMember = null;
+      try {
+        const staffQuery = await query(`
+          SELECT id, name, vendor_id, phone, role
+          FROM staff 
+          WHERE (phone = $1 OR phone = $2) AND is_active = true
+          LIMIT 1
+        `, [phone, normalizedPhone]);
+        
+        if (staffQuery.rows && staffQuery.rows.length > 0) {
+          staffMember = staffQuery.rows[0];
+          console.log(`[ONBOARDING STATUS] Phone ${phone} belongs to staff member ${staffMember.id}, role: ${staffMember.role}`);
+        }
+      } catch (staffError: any) {
+        console.warn('[ONBOARDING STATUS] Error checking staff:', staffError.message);
+      }
+      
+      // ✅ CRITICAL: Check if user_type='staff' in vendor_identity - this is the primary detection method
+      // OR if we found a staff member in staff table and vendor_identity has vendor_id
+      const hasStaffUserType = identity.length > 0 && viSchema.has_user_type && identity[0].user_type === 'staff';
+      const hasVendorIdAndStaffMember = identity.length > 0 && staffMember && identity[0].vendor_id === staffMember.vendor_id;
+      
+      if (hasStaffUserType || hasVendorIdAndStaffMember) {
+        const vendorIdentity = identity[0];
+        console.log(`[ONBOARDING STATUS] ✅ Detected staff in vendor_identity for phone ${phone}`, {
+          has_user_type_column: viSchema.has_user_type,
+          user_type: vendorIdentity.user_type,
+          vendor_id: vendorIdentity.vendor_id,
+          onboarding_status: vendorIdentity.onboarding_status,
+          staff_member_found: !!staffMember
+        });
+        
+        // Force ACTIVATED status for staff and ensure user_type='staff' is set
+        const updateFields: string[] = ['onboarding_status = $1', 'updated_at = NOW()'];
+        const updateValues: any[] = ['ACTIVATED'];
+        let paramIndex = 2;
+        
+        if (viSchema.has_user_type && vendorIdentity.user_type !== 'staff') {
+          updateFields.push(`user_type = $${paramIndex}`);
+          updateValues.push('staff');
+          paramIndex++;
+          vendorIdentity.user_type = 'staff';
+        }
+        
+        if (vendorIdentity.onboarding_status !== 'ACTIVATED') {
+          updateValues.push(vendorIdentity.id);
+          await query(`UPDATE vendor_identity SET ${updateFields.join(', ')} WHERE id = $${paramIndex}::uuid`, updateValues);
+          vendorIdentity.onboarding_status = 'ACTIVATED';
+        } else if (viSchema.has_user_type && vendorIdentity.user_type !== 'staff') {
+          // Status is already ACTIVATED but user_type is wrong
+          updateValues.push(vendorIdentity.id);
+          await query(`UPDATE vendor_identity SET ${updateFields.join(', ')} WHERE id = $${paramIndex}::uuid`, updateValues);
+        }
+        
+        // ✅ CRITICAL: Fetch role info if selected_role_id exists (staff needs role data like vendor solo)
+        let role = null;
+        if (vendorIdentity.selected_role_id) {
+          const roles = await select('roles', {
+            id: vendorIdentity.selected_role_id,
+            is_active: true,
+          });
+          role = roles.length > 0 ? roles[0] : null;
+        }
+        
+        // ✅ CRITICAL: Get staff member info - use staffMember we found earlier, or fetch from staff table
+        let staff_info = null;
+        if (staffMember) {
+          // Use the staffMember we already found
+          staff_info = {
+            staff_id: staffMember.id,
+            staff_name: staffMember.name,
+            vendor_id: staffMember.vendor_id?.toString() || null,
+            role: staffMember.role,
+          };
+        } else if (vendorIdentity.vendor_id) {
+          // Fallback: fetch from staff table if we didn't find it earlier
+          try {
+            const staffQuery = await query(`
+              SELECT id, name, vendor_id, phone, role
+              FROM staff 
+              WHERE vendor_id = $1::uuid AND (phone = $2 OR phone = $3) AND is_active = true
+              LIMIT 1
+            `, [vendorIdentity.vendor_id, phone, normalizedPhone]);
+            
+            if (staffQuery.rows && staffQuery.rows.length > 0) {
+              const foundStaffMember = staffQuery.rows[0];
+              staff_info = {
+                staff_id: foundStaffMember.id,
+                staff_name: foundStaffMember.name,
+                vendor_id: foundStaffMember.vendor_id?.toString() || null,
+                role: foundStaffMember.role,
+              };
+            } else if (vendorIdentity.metadata) {
+              // Fallback to metadata
+              const metadata = typeof vendorIdentity.metadata === 'string' 
+                ? JSON.parse(vendorIdentity.metadata) 
+                : vendorIdentity.metadata;
+              staff_info = {
+                staff_id: metadata?.staff_id,
+                vendor_id: vendorIdentity.vendor_id?.toString() || null,
+              };
+            }
+          } catch (staffError: any) {
+            console.warn('[ONBOARDING STATUS] Error fetching staff info:', staffError.message);
+          }
+        }
+        
+        // Return with all necessary data (same structure as vendor solo)
+        return this.success({
+          identity: vendorIdentity,
+          application: null,
+          role, // ✅ Include role so frontend has roleId
+          staff_info,
+          is_staff: true,
+          nextStep: '/dashboard',
+          feedback: { status: 'ACTIVATED' },
+        });
+      }
       
       if (identity.length === 0) {
-        // Create new identity with INIT status
-        const newIdentity = await insert('vendor_identity', {
-          phone,
-          onboarding_status: 'INIT',
-          metadata: {},
-        });
-        identity = newIdentity;
+        // ✅ FIX: If staff member, create with ACTIVATED status and role using raw SQL
+        if (staffMember && staffMember.vendor_id) {
+          // Resolve role ID from staff role name
+          let resolvedRoleId = null;
+          if (staffMember.role) {
+            try {
+              const roleQuery = await query(`
+                SELECT id FROM roles 
+                WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
+                  AND is_active = true
+                LIMIT 1
+              `, [staffMember.role]);
+              
+              if (roleQuery.rows && roleQuery.rows.length > 0) {
+                resolvedRoleId = roleQuery.rows[0].id;
+              }
+            } catch (roleError: any) {
+              console.warn('[ONBOARDING STATUS] Error resolving role:', roleError.message);
+            }
+          }
+          
+          // Build insert query dynamically based on available columns
+          const insertFields = ['phone', 'vendor_id', 'onboarding_status'];
+          const insertValues: any[] = [normalizedPhone, staffMember.vendor_id, 'ACTIVATED'];
+          
+          if (viSchema.has_user_type) {
+            insertFields.push('user_type');
+            insertValues.push('staff');
+          }
+          
+          if (resolvedRoleId) {
+            insertFields.push('selected_role_id');
+            insertValues.push(resolvedRoleId);
+          }
+          
+          if (viSchema.has_full_name) {
+            insertFields.push('full_name');
+            insertValues.push(staffMember.name);
+          }
+          
+          if (viSchema.has_metadata) {
+            insertFields.push('metadata');
+            insertValues.push(JSON.stringify({ staff_id: staffMember.id, created_via: 'staff_onboarding_status' }));
+          }
+          
+          const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
+          const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+          
+          const newIdentityResult = await query(insertQuery, insertValues);
+          identity = newIdentityResult.rows;
+          console.log(`[ONBOARDING STATUS] Created vendor_identity for staff phone ${normalizedPhone} with user_type='staff'`);
+        } else {
+          // Regular vendor - create with INIT status
+          const insertFields = ['phone', 'onboarding_status'];
+          const insertValues: any[] = [normalizedPhone, 'INIT'];
+          
+          if (viSchema.has_user_type) {
+            insertFields.push('user_type');
+            insertValues.push('vendor');
+          }
+          
+          const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
+          const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+          
+          const newIdentityResult = await query(insertQuery, insertValues);
+          identity = newIdentityResult.rows;
+        }
+      } else {
+        // ✅ FIX: If vendor_identity exists but belongs to staff, ALWAYS update to ACTIVATED
+        const vendorIdentity = identity[0];
+        if (staffMember && staffMember.vendor_id) {
+          // Resolve role ID from staff role name
+          let resolvedRoleId = null;
+          if (staffMember.role) {
+            try {
+              const roleQuery = await query(`
+                SELECT id FROM roles 
+                WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
+                  AND is_active = true
+                LIMIT 1
+              `, [staffMember.role]);
+              
+              if (roleQuery.rows && roleQuery.rows.length > 0) {
+                resolvedRoleId = roleQuery.rows[0].id;
+              }
+            } catch (roleError: any) {
+              console.warn('[ONBOARDING STATUS] Error resolving role:', roleError.message);
+            }
+          }
+          
+          // ✅ FIX: Get vendor_type from vendor's vendor_identity (if exists) or default to 'business'
+          let vendorType = null;
+          try {
+            const vendorTypeQuery = await query(`
+              SELECT vendor_type 
+              FROM vendor_identity 
+              WHERE vendor_id = $1::uuid AND (user_type IS NULL OR user_type = 'vendor')
+              LIMIT 1
+            `, [staffMember.vendor_id]);
+            
+            if (vendorTypeQuery.rows && vendorTypeQuery.rows.length > 0) {
+              vendorType = vendorTypeQuery.rows[0].vendor_type;
+            }
+          } catch (vendorTypeError: any) {
+            console.warn('[ONBOARDING STATUS] Error fetching vendor_type:', vendorTypeError.message);
+          }
+          
+          // ✅ FIX: ALWAYS update staff vendor_identity to ACTIVATED with user_type='staff'
+          const updateFields: string[] = [
+            'onboarding_status = $1',
+            'vendor_id = $2::uuid',
+            'updated_at = NOW()'
+          ];
+          const updateValues: any[] = ['ACTIVATED', staffMember.vendor_id];
+          let paramIndex = 3;
+          
+          // ✅ NEW: Set user_type='staff' if column exists
+          if (viSchema.has_user_type) {
+            updateFields.push(`user_type = $${paramIndex}`);
+            updateValues.push('staff');
+            paramIndex++;
+          }
+          
+          if (resolvedRoleId) {
+            updateFields.push(`selected_role_id = $${paramIndex}::uuid`);
+            updateValues.push(resolvedRoleId);
+            paramIndex++;
+          }
+          
+          // ✅ NEW: Set vendor_type if not already set
+          if (vendorType && !vendorIdentity.vendor_type) {
+            updateFields.push(`vendor_type = $${paramIndex}`);
+            updateValues.push(vendorType);
+            paramIndex++;
+          }
+          
+          // ✅ NEW: Set full_name if column exists
+          if (viSchema.has_full_name && staffMember.name) {
+            updateFields.push(`full_name = $${paramIndex}`);
+            updateValues.push(staffMember.name);
+            paramIndex++;
+          }
+          
+          // ✅ NEW: Set metadata if column exists
+          if (viSchema.has_metadata) {
+            updateFields.push(`metadata = $${paramIndex}::jsonb`);
+            updateValues.push(JSON.stringify({ staff_id: staffMember.id, created_via: 'staff_onboarding_status' }));
+            paramIndex++;
+          }
+          
+          updateValues.push(vendorIdentity.id);
+          
+          await query(`
+            UPDATE vendor_identity 
+            SET ${updateFields.join(', ')}
+            WHERE id = $${paramIndex}::uuid
+          `, updateValues);
+          
+          // ✅ CRITICAL: Update local object with new values
+          vendorIdentity.onboarding_status = 'ACTIVATED';
+          vendorIdentity.vendor_id = staffMember.vendor_id;
+          vendorIdentity.user_type = 'staff';
+          if (resolvedRoleId) {
+            vendorIdentity.selected_role_id = resolvedRoleId;
+          }
+          if (vendorType) {
+            vendorIdentity.vendor_type = vendorType;
+          }
+          
+          console.log(`[ONBOARDING STATUS] Updated vendor_identity ${vendorIdentity.id} to ACTIVATED with user_type='staff' and vendor_type='${vendorType || 'business'}' for staff member ${staffMember.id}`);
+        }
       }
 
       const vendorIdentity = identity[0];
+      
+      // ✅ CRITICAL: Final check - if staff member OR user_type='staff', ensure status is ACTIVATED
+      const isStaffUser = staffMember || vendorIdentity?.user_type === 'staff';
+      if (isStaffUser && vendorIdentity && vendorIdentity.onboarding_status !== 'ACTIVATED') {
+        console.warn(`[ONBOARDING STATUS] ⚠️ Staff user has status ${vendorIdentity.onboarding_status}, forcing to ACTIVATED`);
+        vendorIdentity.onboarding_status = 'ACTIVATED';
+        vendorIdentity.user_type = 'staff'; // Ensure this is set
+      }
       
       // Get application if exists
       let application = null;
@@ -64,10 +380,60 @@ class GetOnboardingStatusHandler extends BaseHandler {
       const reviewedAt = application?.reviewed_at || null;
       const reviewedBy = application?.reviewed_by || null;
 
+      // ✅ NEW: Include staff_info if this is a staff member login (check both staffMember and user_type)
+      let staff_info = null;
+      if (staffMember) {
+        staff_info = {
+          staff_id: staffMember.id,
+          staff_name: staffMember.name,
+          vendor_id: staffMember.vendor_id?.toString() || null,
+          role: staffMember.role,
+        };
+        // Also ensure vendor_id is set in identity for frontend detection
+        if (!vendorIdentity.vendor_id && staffMember.vendor_id) {
+          vendorIdentity.vendor_id = staffMember.vendor_id;
+        }
+      } else if (vendorIdentity?.user_type === 'staff' && vendorIdentity?.metadata) {
+        // ✅ NEW: Get staff_info from metadata if user_type is staff but we didn't query staff table
+        const metadata = typeof vendorIdentity.metadata === 'string' 
+          ? JSON.parse(vendorIdentity.metadata) 
+          : vendorIdentity.metadata;
+        staff_info = {
+          staff_id: metadata?.staff_id,
+          vendor_id: vendorIdentity.vendor_id?.toString() || null,
+        };
+      }
+      
+      // ✅ CRITICAL: For staff members, ensure vendor_identity has all necessary fields from vendor record
+      if (isStaffUser && vendorIdentity.vendor_id && !vendorIdentity.business_name) {
+        try {
+          const vendorInfoQuery = await query(`
+            SELECT business_name, phone as vendor_phone
+            FROM vendors 
+            WHERE id = $1::uuid
+            LIMIT 1
+          `, [vendorIdentity.vendor_id]);
+          
+          if (vendorInfoQuery.rows && vendorInfoQuery.rows.length > 0) {
+            const vendorInfo = vendorInfoQuery.rows[0];
+            if (vendorInfo.business_name && viSchema.has_business_name) {
+              // Update vendor_identity with business_name
+              await query('UPDATE vendor_identity SET business_name = $1 WHERE id = $2', 
+                [vendorInfo.business_name, vendorIdentity.id]);
+              vendorIdentity.business_name = vendorInfo.business_name;
+            }
+          }
+        } catch (vendorInfoError: any) {
+          console.warn('[ONBOARDING STATUS] Error fetching vendor info for staff:', vendorInfoError.message);
+        }
+      }
+      
       return this.success({
         identity: vendorIdentity,
         application,
-        role,
+        role, // ✅ CRITICAL: Include role so frontend has roleId
+        staff_info, // ✅ NEW: Include for frontend staff detection
+        is_staff: isStaffUser, // ✅ FIXED: Use isStaffUser which checks both staffMember and user_type
         nextStep: this.getNextStep(vendorIdentity.onboarding_status),
         // ✅ FIX: Explicitly include feedback for frontend display
         feedback: {

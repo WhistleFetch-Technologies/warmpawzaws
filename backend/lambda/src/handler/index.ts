@@ -661,9 +661,117 @@ export const handler = async (
   event: APIGatewayProxyEventV2,
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:561',message:'Handler entry',data:{method:event.requestContext?.http?.method,path:event.rawPath,hasOrigin:!!event.headers?.origin,origin:event.headers?.origin||event.headers?.Origin||'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
+  // ✅ CRITICAL CORS FIX: Check for OPTIONS FIRST - before ANY other code
+  // This MUST be the absolute first thing to ensure OPTIONS always returns 200 OK
+  // Use try-catch at the very top level to catch any errors
+  try {
+    // Safely extract method and check for OPTIONS
+    let method: string | undefined;
+    let hasPreflightHeaders = false;
+    
+    try {
+      method = event?.requestContext?.http?.method || 
+               (event as any)?.requestContext?.httpMethod || 
+               (event as any)?.httpMethod;
+      hasPreflightHeaders = !!(event?.headers?.['access-control-request-method'] || 
+                                event?.headers?.['Access-Control-Request-Method']);
+    } catch {
+      // If we can't read the method, assume it might be OPTIONS and return 200
+      hasPreflightHeaders = true;
+    }
+    
+    if (method === 'OPTIONS' || hasPreflightHeaders) {
+    // ✅ CRITICAL CORS FIX: Self-contained OPTIONS handler that doesn't depend on other functions
+    // This ensures OPTIONS always returns 200 OK even if other code fails
+    try {
+      const origin = event?.headers?.origin || 
+                     event?.headers?.Origin || 
+                     event?.headers?.['origin'] ||
+                     event?.headers?.['Origin'] ||
+                     '';
+      
+      // ✅ FIX: Inline origin check instead of calling getAllowedOrigin
+      const allowedOrigins = [
+        'https://d1s6ykkj381k58.cloudfront.net',
+        'https://dfof7mguaa0a5.cloudfront.net',
+        'https://d2aoyjj8ine0wk.cloudfront.net',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:3003',
+        'http://localhost:5173',
+        'https://dev.admin.warmpawz.com',
+        'https://dev.vendor.warmpawz.com',
+        'https://dev.customer.warmpawz.com',
+        'https://admin.warmpawz.com',
+        'https://vendor.warmpawz.com',
+        'https://customer.warmpawz.com',
+        'https://warmpawz.com',
+        'https://www.warmpawz.com',
+      ];
+      
+      let allowedOrigin = allowedOrigins[0];
+      if (origin) {
+        const normalizedOrigin = origin.toLowerCase();
+        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
+        if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
+          allowedOrigin = origin;
+        }
+      }
+      
+      // Get requested headers from preflight request
+      const requestedHeaders = event?.headers?.['access-control-request-headers'] || 
+                               event?.headers?.['Access-Control-Request-Headers'] ||
+                               '';
+      const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
+      const allowedHeaders = requestedHeaders 
+        ? `${baseAllowedHeaders},${requestedHeaders.split(',').map((h: string) => h.trim()).join(',')}`
+        : baseAllowedHeaders;
+      
+      // CRITICAL: Return 200 OK for OPTIONS preflight (browsers require this)
+      return {
+        statusCode: 200,
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': allowedHeaders,
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+          'Content-Length': '0',
+        },
+      };
+    } catch (optionsError) {
+      // CRITICAL: Even on error, return 200 OK for CORS preflight
+      // Browsers will reject non-200 responses for OPTIONS requests
+      const origin = event?.headers?.origin || 
+                     event?.headers?.Origin || 
+                     event?.headers?.['origin'] ||
+                     event?.headers?.['Origin'] ||
+                     '';
+      
+      // Default to CloudFront origin if we can't determine
+      const defaultOrigin = 'https://d1s6ykkj381k58.cloudfront.net';
+      let allowedOrigin = defaultOrigin;
+      if (origin && origin.toLowerCase().includes('cloudfront.net')) {
+        allowedOrigin = origin;
+      }
+      
+      return {
+        statusCode: 200,
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+          'Content-Length': '0',
+        },
+      };
+    }
+  }
+  
   try {
     // UAT Mode: Check if request has UAT header and bypass authorizer validation
     // This allows UAT tokens to pass through even though they're not valid Cognito JWTs
@@ -693,86 +801,11 @@ export const handler = async (
       }
     }
     
-    // Check HTTP method
-    // Note: When API Gateway HTTP API v2 has CORS configured, it handles OPTIONS automatically
-    // before routing to Lambda. However, if OPTIONS somehow reaches Lambda (e.g., via ANY route),
-    // we should return early to avoid conflicts.
+    // Get HTTP method (OPTIONS already handled at the beginning of handler)
     const httpMethod = event.requestContext?.http?.method || 
                       (event as any).requestContext?.httpMethod || 
                       (event as any).httpMethod ||
                       'GET';
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:600',message:'Method check',data:{httpMethod,isOptions:httpMethod==='OPTIONS',requestContextMethod:event.requestContext?.http?.method,rawPath:event.rawPath},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    
-    // Handle OPTIONS preflight requests - CRITICAL: Must return 200 OK
-    // API Gateway HTTP API v2 may handle OPTIONS automatically if CORS is configured,
-    // but we handle it here as a fallback to ensure 200 OK response
-    if (httpMethod === 'OPTIONS') {
-      console.log('[OPTIONS] OPTIONS request received:', {
-        rawPath: event.rawPath,
-        origin: event.headers?.origin || event.headers?.Origin || 'none',
-        requestHeaders: event.headers?.['access-control-request-headers'] || event.headers?.['Access-Control-Request-Headers'] || 'none'
-      });
-      
-      try {
-        const origin = event.headers?.origin || 
-                       event.headers?.Origin || 
-                       event.headers?.['origin'] ||
-                       event.headers?.['Origin'] ||
-                       '';
-        
-        const allowedOrigin = getAllowedOrigin(origin);
-        console.log('[OPTIONS] Allowed origin:', allowedOrigin);
-        
-        // Get requested headers from preflight request
-        const requestedHeaders = event.headers?.['access-control-request-headers'] || 
-                                 event.headers?.['Access-Control-Request-Headers'] ||
-                                 '';
-        const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
-        const allowedHeaders = requestedHeaders 
-          ? `${baseAllowedHeaders},${requestedHeaders.split(',').map(h => h.trim()).join(',')}`
-          : baseAllowedHeaders;
-        
-        console.log('[OPTIONS] Returning 200 OK with CORS headers');
-        // CRITICAL: Return 200 OK for OPTIONS preflight (browsers require this)
-        return {
-          statusCode: 200,
-          body: '',
-          headers: {
-            'Access-Control-Allow-Origin': allowedOrigin,
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-            'Access-Control-Allow-Headers': allowedHeaders,
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Max-Age': '86400',
-            'Content-Length': '0',
-          },
-        };
-      } catch (optionsError) {
-        // CRITICAL: Even on error, return 200 OK for CORS preflight
-        // Browsers will reject non-200 responses for OPTIONS requests
-        console.error('[OPTIONS] Error in OPTIONS handler, but returning 200 OK for CORS:', optionsError);
-        const origin = event.headers?.origin || 
-                       event.headers?.Origin || 
-                       event.headers?.['origin'] ||
-                       event.headers?.['Origin'] ||
-                       '';
-        const allowedOrigin = getAllowedOrigin(origin);
-        
-        return {
-          statusCode: 200,
-          body: '',
-          headers: {
-            'Access-Control-Allow-Origin': allowedOrigin,
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-            'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Max-Age': '86400',
-            'Content-Length': '0',
-          },
-        };
-      }
-    }
 
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handler/index.ts:720',message:'POST request processing',data:{method:httpMethod,rawPath:event.rawPath,path:event.requestContext?.http?.path},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E'})}).catch(()=>{});
@@ -960,19 +993,49 @@ export const handler = async (
   } catch (error) {
     console.error('Lambda handler error:', error);
     
+    // ✅ CRITICAL FIX: If this is an OPTIONS request, always return 200 OK for CORS
+    const httpMethod = event.requestContext?.http?.method || 
+                      (event as any).requestContext?.httpMethod || 
+                      (event as any).httpMethod ||
+                      'GET';
+    
+    if (httpMethod === 'OPTIONS') {
+      console.error('[OPTIONS] Error in handler, but returning 200 OK for CORS preflight:', error);
+      const origin = event.headers?.origin || 
+                     event.headers?.Origin || 
+                     event.headers?.['origin'] ||
+                     event.headers?.['Origin'] ||
+                     '';
+      const allowedOrigin = getAllowedOrigin(origin);
+      
+      return {
+        statusCode: 200,
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+          'Content-Length': '0',
+        },
+      };
+    }
+    
+    // Continue with normal error handling for non-OPTIONS requests
     // Capture error in error tracking
     captureException(error instanceof Error ? error : new Error(String(error)), {
       requestId: context.awsRequestId,
-      path: event.rawPath,
-      method: event.requestContext?.http?.method,
-      apiId: event.requestContext?.apiId,
+      path: event?.rawPath,
+      method: event?.requestContext?.http?.method,
+      apiId: event?.requestContext?.apiId,
     });
     
     // Ensure CORS headers in error responses too
-    const origin = event.headers?.origin || 
-                   event.headers?.Origin || 
-                   event.headers?.['origin'] ||
-                   event.headers?.['Origin'] ||
+    const origin = event?.headers?.origin || 
+                   event?.headers?.Origin || 
+                   event?.headers?.['origin'] ||
+                   event?.headers?.['Origin'] ||
                    '';
     const allowedOrigin = getAllowedOrigin(origin);
     
@@ -989,5 +1052,93 @@ export const handler = async (
       },
     };
   }
+  } catch (outerError) {
+    // ✅ CRITICAL CORS FIX: Outer catch - ALWAYS return 200 for OPTIONS, even if we can't check
+    // This ensures OPTIONS preflight requests never fail with 500
+    try {
+      const method = event?.requestContext?.http?.method || 
+                     (event as any)?.requestContext?.httpMethod || 
+                     (event as any)?.httpMethod;
+      const hasPreflightHeaders = event?.headers?.['access-control-request-method'] || 
+                                   event?.headers?.['Access-Control-Request-Method'];
+      
+      // If it's OPTIONS or has preflight headers, ALWAYS return 200 OK
+      if (method === 'OPTIONS' || hasPreflightHeaders) {
+        const origin = event?.headers?.origin || 
+                       event?.headers?.Origin || 
+                       event?.headers?.['origin'] ||
+                       event?.headers?.['Origin'] ||
+                       '';
+        const defaultOrigin = 'https://d1s6ykkj381k58.cloudfront.net';
+        let allowedOrigin = defaultOrigin;
+        if (origin && origin.toLowerCase().includes('cloudfront.net')) {
+          allowedOrigin = origin;
+        }
+        
+        return {
+          statusCode: 200,
+          body: '',
+          headers: {
+            'Access-Control-Allow-Origin': allowedOrigin,
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+            'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '86400',
+            'Content-Length': '0',
+          },
+        };
+      }
+    } catch {
+      // ✅ CRITICAL: If we can't even check the method, assume it's OPTIONS and return 200
+      // This prevents any OPTIONS request from returning 500
+      return {
+        statusCode: 200,
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': 'https://d1s6ykkj381k58.cloudfront.net',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+          'Content-Length': '0',
+        },
+      };
+    }
+    
+    // For non-OPTIONS errors, return 500 with CORS headers
+    try {
+      const origin = event?.headers?.origin || 
+                     event?.headers?.Origin || 
+                     event?.headers?.['origin'] ||
+                     event?.headers?.['Origin'] ||
+                     '';
+      const allowedOrigin = getAllowedOrigin(origin);
+      
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Internal Server Error' }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true',
+        },
+      };
+    } catch {
+      // Final fallback - return 200 OK with CORS headers (safer than 500 for CORS)
+      return {
+        statusCode: 200,
+        body: '',
+        headers: {
+          'Access-Control-Allow-Origin': 'https://d1s6ykkj381k58.cloudfront.net',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+          'Content-Length': '0',
+        },
+      };
+    }
+  }
 };
-

@@ -30,9 +30,14 @@ const roleMappings: Record<string, string[]> = {
   'veterinarian': ['vet', 'veterinarian', 'veterinarian'],
   'vet_solo': ['vet', 'veterinarian', 'veterinarian', 'vet_solo', 'solo_vet'], // ✅ FIX: Add vet_solo mapping
   'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinary_clinic'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
   'pet_pharmacy': ['pharmacy', 'pet_pharmacy', 'pharmacy'],
   'pet_ambulance': ['ambulance', 'pet_ambulance', 'ambulance'],
   'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist'],
+  // Center/Clinic Roles - map to vet_clinic for tele consultation access
+  'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
+  'testing_center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'testing_center', 'center'],
+  'clinic': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'clinic'],
   
   // Service Provider Roles
   'pet_groomer': ['groomer', 'pet_groomer', 'groomer'],
@@ -574,6 +579,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       const roleId = c.req.query('roleId');
       const vendorId = c.req.query('vendorId'); // Optional: for vendor-specific filtering
       const groupBy = c.req.query('groupBy'); // 'category' | 'subcategory' | 'none'
+      const serviceStyle = c.req.query('serviceStyle'); // ✅ NEW: Filter by service style (at_home, at_center, tele)
 
       // ✅ CRITICAL: Get role from DB if roleId provided (no frontend dependency)
       let role = null;
@@ -672,6 +678,14 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           paramIndex++;
           console.log(`[Admin Service Catalog] Solo provider detected (from vendorRole) - filtering out at_center services`);
         }
+      }
+
+      // ✅ NEW: Filter by service style if provided
+      if (serviceStyle && ['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
+        catalogQuery += ` AND service_style = $${paramIndex}`;
+        params.push(serviceStyle);
+        paramIndex++;
+        console.log(`[Admin Service Catalog] Filtering by service style: ${serviceStyle}`);
       }
 
       catalogQuery += ` ORDER BY category_name ASC, sub_category_name ASC NULLS LAST, display_order ASC, service_name ASC`;

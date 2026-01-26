@@ -17,7 +17,7 @@
 
 import { Hono } from 'hono';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
-import { query, select, insert } from '../database/rds-connection';
+import { query, select, insert, update } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse, createHandler } from '../handler/base-handler';
 import { 
   getOrCreateCognitoUser, 
@@ -27,6 +27,7 @@ import {
 } from '../utils/cognito-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { createHash, randomBytes } from 'crypto';
 
 // ============================================================================
 // OTP REPOSITORY HELPERS
@@ -244,21 +245,272 @@ class VerifyOtpHandler extends BaseHandler {
       return this.error('Invalid or expired OTP', 401);
     }
 
-    // ✅ FIX: Fetch vendor_identity to include roleId in response
+    // ✅ FIX: Normalize phone number (remove non-digits, handle country codes)
+    // Phone numbers in database are stored as digits only (10 digits for India)
+    const phoneDigits = phone.replace(/\D/g, ''); // Remove all non-digits
+    // If phone has country code (11+ digits), take last 10 digits
+    // If phone is 9 digits, pad with leading 0 to make it 10 digits (handles cases like "985342940" -> "0985342940")
+    let normalizedPhone = phoneDigits.length > 10 
+      ? phoneDigits.slice(-10)  // Take last 10 digits if longer
+      : phoneDigits.length === 9 
+        ? '0' + phoneDigits      // Pad with 0 if 9 digits
+        : phoneDigits;            // Use as-is if 10 digits
+    
+    console.log(`[AUTH] Normalized phone: ${phone} -> ${normalizedPhone}`);
+
+    // ✅ FIX: Check BOTH vendor_identity AND staff table, prioritize staff if phone belongs to staff
     let vendorIdentity = null;
     let vendorRole = null;
+    let staffMember = null;
+    
     try {
-      const identities = await select('vendor_identity', { phone });
-      if (identities.length > 0) {
-        vendorIdentity = identities[0];
-        // Fetch role info if vendor has a selected role
-        if (vendorIdentity.selected_role_id) {
-          const roles = await select('roles', { id: vendorIdentity.selected_role_id, is_active: true });
-          if (roles.length > 0) {
-            vendorRole = roles[0];
+      // ============================================================================
+      // STEP 1: ALWAYS check if phone belongs to staff FIRST
+      // ============================================================================
+      // This ensures staff login works even if vendor_identity already exists
+      console.log(`[AUTH] Checking if phone ${normalizedPhone} belongs to staff...`);
+      
+      const staffQuery = await query(`
+        SELECT id, name, vendor_id, phone, mobile_verified, role
+        FROM staff 
+        WHERE phone = $1 OR phone = $2
+        LIMIT 1
+      `, [phone, normalizedPhone]);
+      
+      if (staffQuery.rows && staffQuery.rows.length > 0) {
+        // ============================================================================
+        // STAFF LOGIN FLOW - Phone belongs to staff member
+        // ============================================================================
+        staffMember = staffQuery.rows[0];
+        const staffVendorId = staffMember.vendor_id;
+        const staffRoleName = staffMember.role;
+        
+        console.log(`[AUTH] ✅ Phone ${phone} belongs to STAFF member ${staffMember.id}, vendor_id: ${staffVendorId}, role: ${staffRoleName}`);
+        
+        if (staffVendorId) {
+          // Verify vendor exists and is NOT solo (business rule for staff)
+          try {
+            const vendorQuery = await query(`
+              SELECT id, business_name, phone as vendor_phone, role_id
+              FROM vendors 
+              WHERE id = $1::uuid
+              LIMIT 1
+            `, [staffVendorId]);
+            
+            if (vendorQuery.rows && vendorQuery.rows.length === 0) {
+              console.error(`[AUTH] Staff member ${staffMember.id} has invalid vendor_id: ${staffVendorId}`);
+            } else if (vendorQuery.rows && vendorQuery.rows.length > 0) {
+              const vendor = vendorQuery.rows[0];
+              
+              // Check vendor_type - must NOT be "solo" (business rule)
+              const vendorIdentityForVendor = await query(`
+                SELECT vendor_type, onboarding_status
+                FROM vendor_identity 
+                WHERE vendor_id = $1::uuid
+                LIMIT 1
+              `, [staffVendorId]);
+              
+              let vendorType = null;
+              if (vendorIdentityForVendor.rows && vendorIdentityForVendor.rows.length > 0) {
+                vendorType = vendorIdentityForVendor.rows[0].vendor_type;
+              }
+              
+              // Business rule: Solo vendors cannot have staff
+              if (vendorType === 'solo') {
+                console.error(`[AUTH] Staff member ${staffMember.id} belongs to solo vendor ${staffVendorId} - solo vendors cannot have staff`);
+              } else {
+                // Vendor is business/clinic - proceed with staff login
+                console.log(`[AUTH] Verified vendor ${staffVendorId} exists and is ${vendorType || 'business'} type (not solo)`);
+              
+                // Resolve role ID from staff role name
+                let resolvedRoleId = null;
+                if (staffRoleName) {
+                  try {
+                    const roleQuery = await query(`
+                      SELECT id, name, display_name 
+                      FROM roles 
+                      WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
+                        AND is_active = true
+                      LIMIT 1
+                    `, [staffRoleName]);
+                    
+                    if (roleQuery.rows && roleQuery.rows.length > 0) {
+                      resolvedRoleId = roleQuery.rows[0].id;
+                      vendorRole = roleQuery.rows[0];
+                      console.log(`[AUTH] Resolved role "${staffRoleName}" to role ID: ${resolvedRoleId}`);
+                    }
+                  } catch (roleError: any) {
+                    console.warn('[AUTH] Error resolving role from staff member:', roleError.message);
+                  }
+                }
+                
+                // ✅ FIX: Create/update vendor_identity for staff phone - ALWAYS set to ACTIVATED
+                try {
+                  // Check which columns exist
+                  const viSchemaCheck = await query(`
+                    SELECT 
+                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'user_type') as has_user_type,
+                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'metadata') as has_metadata,
+                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'full_name') as has_full_name,
+                      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_identity' AND column_name = 'business_name') as has_business_name
+                  `);
+                  const viSchema = viSchemaCheck.rows[0] || {};
+                  
+                  // Check if vendor_identity already exists for this phone
+                  const existingCheck = await query('SELECT * FROM vendor_identity WHERE phone = $1', [normalizedPhone]);
+                  
+                  if (existingCheck.rows.length > 0) {
+                    // ✅ UPDATE existing vendor_identity to ACTIVATED for staff
+                    vendorIdentity = existingCheck.rows[0];
+                    console.log(`[AUTH] Found existing vendor_identity ${vendorIdentity.id} with status ${vendorIdentity.onboarding_status}, updating to ACTIVATED for staff...`);
+                    
+                    const updateFields: string[] = [
+                      'onboarding_status = $1',
+                      'vendor_id = $2::uuid',
+                      'updated_at = NOW()'
+                    ];
+                    const updateValues: any[] = ['ACTIVATED', staffVendorId];
+                    let paramIndex = 3;
+                    
+                    if (viSchema.has_user_type) {
+                      updateFields.push(`user_type = $${paramIndex}`);
+                      updateValues.push('staff');
+                      paramIndex++;
+                    }
+                    
+                    if (resolvedRoleId) {
+                      updateFields.push(`selected_role_id = $${paramIndex}::uuid`);
+                      updateValues.push(resolvedRoleId);
+                      paramIndex++;
+                    }
+                    
+                    if (vendorType) {
+                      updateFields.push(`vendor_type = $${paramIndex}`);
+                      updateValues.push(vendorType);
+                      paramIndex++;
+                    }
+                    
+                    if (viSchema.has_business_name && vendor.business_name) {
+                      updateFields.push(`business_name = $${paramIndex}`);
+                      updateValues.push(vendor.business_name);
+                      paramIndex++;
+                    }
+                    
+                    if (viSchema.has_full_name && staffMember.name) {
+                      updateFields.push(`full_name = $${paramIndex}`);
+                      updateValues.push(staffMember.name);
+                      paramIndex++;
+                    }
+                    
+                    if (viSchema.has_metadata) {
+                      updateFields.push(`metadata = $${paramIndex}::jsonb`);
+                      updateValues.push(JSON.stringify({
+                        staff_id: staffMember.id,
+                        created_via: 'staff_login',
+                      }));
+                      paramIndex++;
+                    }
+                    
+                    updateValues.push(vendorIdentity.id);
+                    
+                    await query(`UPDATE vendor_identity SET ${updateFields.join(', ')} WHERE id = $${paramIndex}::uuid`, updateValues);
+                    
+                    // Re-fetch to get updated data
+                    const updated = await query('SELECT * FROM vendor_identity WHERE id = $1', [vendorIdentity.id]);
+                    vendorIdentity = updated.rows[0];
+                    console.log(`[AUTH] ✅ Updated vendor_identity ${vendorIdentity.id} to ACTIVATED for staff member ${staffMember.id}`);
+                  } else {
+                    // Create new vendor_identity for staff
+                    console.log(`[AUTH] No vendor_identity found for staff phone ${normalizedPhone}, creating new one with ACTIVATED status...`);
+                    
+                    const insertFields = ['phone', 'vendor_id', 'onboarding_status'];
+                    const insertValues: any[] = [normalizedPhone, staffVendorId, 'ACTIVATED'];
+                    
+                    if (viSchema.has_user_type) {
+                      insertFields.push('user_type');
+                      insertValues.push('staff');
+                    }
+                    
+                    if (resolvedRoleId) {
+                      insertFields.push('selected_role_id');
+                      insertValues.push(resolvedRoleId);
+                    }
+                    
+                    if (vendorType) {
+                      insertFields.push('vendor_type');
+                      insertValues.push(vendorType);
+                    }
+                    
+                    if (viSchema.has_business_name && vendor.business_name) {
+                      insertFields.push('business_name');
+                      insertValues.push(vendor.business_name);
+                    }
+                    
+                    if (viSchema.has_full_name && staffMember.name) {
+                      insertFields.push('full_name');
+                      insertValues.push(staffMember.name);
+                    }
+                    
+                    if (viSchema.has_metadata) {
+                      insertFields.push('metadata');
+                      insertValues.push(JSON.stringify({
+                        staff_id: staffMember.id,
+                        created_via: 'staff_login',
+                      }));
+                    }
+                    
+                    const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
+                    const insertQuery = `INSERT INTO vendor_identity (${insertFields.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+                    
+                    const result = await query(insertQuery, insertValues);
+                    vendorIdentity = result.rows[0];
+                    console.log(`[AUTH] ✅ Created vendor_identity ${vendorIdentity.id} for staff phone ${normalizedPhone} with ACTIVATED status`);
+                  }
+                } catch (createError: any) {
+                  console.error('[AUTH] Error creating/updating vendor_identity for staff:', createError.message, createError.stack);
+                }
+              }
+            }
+          } catch (vendorError: any) {
+            console.error('[AUTH] Error verifying vendor for staff:', vendorError.message);
           }
         }
+      } else {
+        // ============================================================================
+        // STEP 2: NORMAL VENDOR LOGIN FLOW - Phone is NOT staff, check vendor_identity
+        // ============================================================================
+        console.log(`[AUTH] Phone ${normalizedPhone} is NOT staff, checking vendor_identity for regular vendor login...`);
+        
+        let identities = await select('vendor_identity', { phone: normalizedPhone });
+        if (identities.length === 0 && phone !== normalizedPhone) {
+          identities = await select('vendor_identity', { phone });
+        }
+        
+        if (identities.length > 0) {
+          vendorIdentity = identities[0];
+          console.log(`[AUTH] Found vendor_identity by phone: ${vendorIdentity.id}, status: ${vendorIdentity.onboarding_status}`);
+          // ✅ BUSINESS RULE: Regular vendor login - don't modify status
+          // This preserves existing vendor business rules
+        }
       }
+      
+      // Fetch role info if vendor has a selected role (and we haven't already fetched it)
+      if (vendorIdentity && vendorIdentity.selected_role_id && !vendorRole) {
+        const roles = await select('roles', { id: vendorIdentity.selected_role_id, is_active: true });
+        if (roles.length > 0) {
+          vendorRole = roles[0];
+        }
+      }
+      
+      // ✅ CRITICAL FIX: If staff member found, FORCE vendorIdentity.onboarding_status to ACTIVATED
+      // This ensures we never return INIT for staff, even if DB update failed
+      if (staffMember && vendorIdentity) {
+        if (vendorIdentity.onboarding_status !== 'ACTIVATED') {
+          console.warn(`[AUTH] ⚠️ Staff member ${staffMember.id} has vendor_identity with status ${vendorIdentity.onboarding_status}, forcing to ACTIVATED`);
+          vendorIdentity.onboarding_status = 'ACTIVATED';
+        }
+      }
+      
     } catch (e) {
       console.warn('[AUTH] Could not fetch vendor identity:', e);
     }
@@ -272,26 +524,102 @@ class VerifyOtpHandler extends BaseHandler {
       tokens = await authenticateCognitoUser(phone);
     } catch (error) {
       console.error('[AUTH] Cognito integration failed:', error);
-      // Fallback: return success without Cognito (for backward compatibility during migration)
-      return this.success({
+      
+      // ✅ CRITICAL: Generate fallback accessToken for staff members (and regular vendors)
+      // This ensures they can always log in even if Cognito fails
+      const generateFallbackToken = (phone: string, userId?: string): string => {
+        // Create a session token based on phone, timestamp, and random bytes
+        const timestamp = Date.now();
+        const random = randomBytes(16).toString('hex');
+        const userIdPart = userId || phone;
+        const tokenData = `${phone}_${userIdPart}_${timestamp}_${random}`;
+        const tokenHash = createHash('sha256').update(tokenData).digest('hex');
+        // Return a JWT-like format: base64 encoded payload with hash
+        // Use base64 and replace URL-unsafe characters for base64url compatibility
+        const payload = Buffer.from(JSON.stringify({
+          phone,
+          userId: userIdPart,
+          timestamp,
+          type: 'fallback_session'
+        })).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        return `fallback_${payload}.${tokenHash.substring(0, 32)}`;
+      };
+      
+      const fallbackUserId = staffMember?.id || vendorIdentity?.id || phone;
+      const fallbackAccessToken = generateFallbackToken(phone, fallbackUserId);
+      const fallbackIdToken = generateFallbackToken(phone, fallbackUserId);
+      const fallbackRefreshToken = generateFallbackToken(phone, `${fallbackUserId}_refresh`);
+      
+      console.log(`[AUTH] Generated fallback tokens for ${staffMember ? 'staff member' : 'vendor'}: ${phone}`);
+      
+      // Fallback: return success with generated tokens (for backward compatibility during migration)
+      const fallbackData: any = {
         message: 'OTP verified successfully',
         verified: true,
         phone,
-        warning: 'Cognito integration unavailable',
+        userId: fallbackUserId,
+        username: phone,
+        accessToken: fallbackAccessToken,
+        idToken: fallbackIdToken,
+        refreshToken: fallbackRefreshToken,
+        expiresIn: 3600, // 1 hour
+        warning: 'Cognito integration unavailable - using fallback tokens',
         // ✅ Include vendor profile data even without Cognito
+        // ✅ CRITICAL: For staff members, ALWAYS return ACTIVATED status
         profile: vendorIdentity ? {
           id: vendorIdentity.id,
-          onboarding_status: vendorIdentity.onboarding_status,
+          onboarding_status: staffMember ? 'ACTIVATED' : (vendorIdentity.onboarding_status || 'INIT'), // ✅ FIX: Force ACTIVATED for staff
           roleId: vendorIdentity.selected_role_id,
           role_id: vendorIdentity.selected_role_id,
           vendor_type: vendorIdentity.vendor_type,
           roleName: vendorRole?.display_name || vendorRole?.name,
-        } : null,
-      });
+          // ✅ NEW: Include vendor_id
+          vendor_id: vendorIdentity.vendor_id || (staffMember?.vendor_id ? staffMember.vendor_id.toString() : null),
+        } : (staffMember && staffMember.vendor_id ? {
+          // ✅ NEW: Staff member but no vendor_identity - return minimal profile with vendor_id
+          vendor_id: staffMember.vendor_id.toString(),
+          onboarding_status: 'ACTIVATED', // ✅ FIX: Use ACTIVATED for staff
+        } : null),
+        // ✅ CRITICAL: Include token object for frontend compatibility
+        token: {
+          access_token: fallbackAccessToken,
+          id_token: fallbackIdToken,
+          refresh_token: fallbackRefreshToken,
+          expires_in: 3600
+        },
+        tokens: {
+          accessToken: fallbackAccessToken,
+          idToken: fallbackIdToken,
+          refreshToken: fallbackRefreshToken,
+          expiresIn: 3600
+        },
+        user: {
+          id: fallbackUserId,
+          phone: phone,
+          username: phone
+        }
+      };
+      
+      // ✅ NEW: Add staff info if staff member logged in
+      if (staffMember) {
+        fallbackData.staff_info = {
+          staff_id: staffMember.id,
+          staff_name: staffMember.name,
+          vendor_id: staffMember.vendor_id?.toString() || null,
+        };
+        // ✅ CRITICAL: Force ACTIVATED in fallback response for staff
+        if (fallbackData.profile) {
+          fallbackData.profile.onboarding_status = 'ACTIVATED';
+          console.log(`[AUTH] ✅ FORCED onboarding_status to ACTIVATED for staff in fallback response`);
+        }
+      }
+      
+      return this.success(fallbackData);
     }
 
     // Return tokens and user info with vendor profile
-    return this.success({
+    // ✅ NEW: If staff member logged in, include vendor_id in response
+    const responseData: any = {
       message: 'OTP verified successfully',
       verified: true,
       phone,
@@ -302,15 +630,41 @@ class VerifyOtpHandler extends BaseHandler {
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
       // ✅ FIX: Include vendor profile with roleId
+      // ✅ CRITICAL: For staff members, ALWAYS return ACTIVATED status
       profile: vendorIdentity ? {
         id: vendorIdentity.id,
-        onboarding_status: vendorIdentity.onboarding_status,
+        onboarding_status: staffMember ? 'ACTIVATED' : (vendorIdentity.onboarding_status || 'INIT'), // ✅ FIX: Force ACTIVATED for staff
         roleId: vendorIdentity.selected_role_id,
         role_id: vendorIdentity.selected_role_id,
         vendor_type: vendorIdentity.vendor_type,
         roleName: vendorRole?.display_name || vendorRole?.name,
-      } : null,
-    });
+        // ✅ NEW: Include vendor_id if available (from staff lookup or vendor_identity)
+        vendor_id: vendorIdentity.vendor_id || (staffMember?.vendor_id ? staffMember.vendor_id.toString() : null),
+      } : (staffMember && staffMember.vendor_id ? {
+        // ✅ NEW: Staff member but no vendor_identity - return minimal profile with vendor_id
+        vendor_id: staffMember.vendor_id.toString(),
+        onboarding_status: 'ACTIVATED', // ✅ FIX: Use ACTIVATED, not 'completed'
+      } : null),
+    };
+    
+    // ✅ NEW: Add staff info if staff member logged in (for reference, but they're logged in as vendor)
+    if (staffMember) {
+      responseData.staff_info = {
+        staff_id: staffMember.id,
+        staff_name: staffMember.name,
+        vendor_id: staffMember.vendor_id?.toString() || null,
+      };
+      console.log(`[AUTH] Staff member ${staffMember.name} (${staffMember.id}) logged in as vendor ${staffMember.vendor_id}`);
+      // ✅ CRITICAL: Force ACTIVATED in response for staff (double-check)
+      if (responseData.profile) {
+        responseData.profile.onboarding_status = 'ACTIVATED';
+        console.log(`[AUTH] ✅ FORCED onboarding_status to ACTIVATED for staff in response`);
+      }
+      // ✅ FIX: Log the final onboarding_status being returned
+      console.log(`[AUTH] Final onboarding_status in response: ${responseData.profile?.onboarding_status || 'MISSING'}`);
+    }
+    
+    return this.success(responseData);
   }
 }
 

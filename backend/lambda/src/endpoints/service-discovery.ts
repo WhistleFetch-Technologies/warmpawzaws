@@ -1807,6 +1807,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
       const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
       
+      console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
+      
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const s3Client = new S3Client({ region: AWS_REGION });
@@ -1814,25 +1816,73 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const photos = await Promise.all(
         rawPhotos.map(async (photoItem: string) => {
           try {
-            let fileKey = photoItem;
+            if (!photoItem || typeof photoItem !== 'string') {
+              console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
+              return null;
+            }
+            
+            let fileKey = photoItem.trim();
             
             // Extract key from various formats
             if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-              // Extract key from full S3 URL
+              // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
               const urlParts = photoItem.split('.amazonaws.com/');
               if (urlParts.length > 1) {
-                fileKey = urlParts[1].split('?')[0]; // Remove query params if any
+                fileKey = urlParts[1].split('?')[0].split('#')[0]; // Remove query params and fragments
               }
-            } else if (photoItem.includes('?') && photoItem.includes('X-Amz')) {
+            } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
               // Extract key from presigned URL
               const urlParts = photoItem.split('?')[0];
-              const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-              if (keyMatch) {
-                fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+              if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
+                const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
+                if (keyMatch && keyMatch[1]) {
+                  fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+                } else {
+                  // Try to extract from any path containing vendors/
+                  const vendorsIndex = urlParts.indexOf('vendors/');
+                  if (vendorsIndex >= 0) {
+                    fileKey = urlParts.substring(vendorsIndex);
+                  }
+                }
               }
             } else if (photoItem.startsWith('vendors/')) {
-              // Already a key
-              fileKey = photoItem;
+              // Already a key - ensure it's for this vendor
+              if (!fileKey.startsWith(`vendors/${vendor.id}/`)) {
+                // If key is for different vendor or missing vendor ID, fix it
+                const keyParts = fileKey.split('/');
+                if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
+                  // Replace vendor ID in key
+                  fileKey = `vendors/${vendor.id}/${keyParts.slice(2).join('/')}`;
+                }
+              }
+            } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
+              // Full URL but not S3 - might be CloudFront or other CDN
+              // Try to extract key or return as-is for public URLs
+              console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
+              return photoItem;
+            }
+            
+            if (!fileKey || fileKey.length === 0) {
+              console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
+            
+            // ✅ FIX: Verify the object exists before generating presigned URL
+            try {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              const headCommand = new HeadObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: fileKey,
+              });
+              await s3Client.send(headCommand);
+            } catch (headError: any) {
+              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
+                return null;
+              }
+              console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
             }
             
             // Generate fresh presigned URL (valid for 7 days)
@@ -1842,15 +1892,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             });
             
             const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
+            
+            // ✅ FIX: Validate presigned URL format
+            if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
+              console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
             return presignedUrl;
-          } catch (error) {
-            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error);
+          } catch (error: any) {
+            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error?.message || error);
+            // ✅ FIX: If presigned URL generation fails, try returning the original URL if it's already a valid URL
+            if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
+              console.log(`[FACILITY-PHOTOS] Returning original URL as fallback:`, photoItem);
+              return photoItem;
+            }
             return null;
           }
         })
       );
       
-      const validPhotos = photos.filter((url): url is string => url !== null && url.length > 0);
+      const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
+      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
       return c.json({
         success: true,
@@ -1956,7 +2020,41 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       
       // Facility photos (stored in metadata)
       if (facilityData.photos !== undefined || facilityData.facility_photos !== undefined) {
-        updatedMetadata.facility_photos = facilityData.photos || facilityData.facility_photos;
+        const photosInput = facilityData.photos || facilityData.facility_photos || [];
+        // ✅ FIX: Normalize photos - extract S3 keys from presigned URLs or full URLs
+        const normalizedPhotos = photosInput.map((photoItem: string) => {
+          if (!photoItem || typeof photoItem !== 'string') {
+            return null;
+          }
+          
+          // If it's already a key (starts with vendors/), return as-is
+          if (photoItem.startsWith('vendors/')) {
+            return photoItem;
+          }
+          
+          // If it's a presigned URL or full S3 URL, extract the key
+          if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
+            // Extract key from full S3 URL
+            const urlParts = photoItem.split('.amazonaws.com/');
+            if (urlParts.length > 1) {
+              return urlParts[1].split('?')[0].split('#')[0];
+            }
+          } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
+            // Extract key from presigned URL
+            const urlParts = photoItem.split('?')[0];
+            if (urlParts.includes('vendors/')) {
+              const vendorsIndex = urlParts.indexOf('vendors/');
+              return urlParts.substring(vendorsIndex);
+            }
+          }
+          
+          // If we can't extract a key, return null (invalid photo)
+          console.warn(`[FACILITY-SAVE] Could not normalize photo, skipping:`, photoItem);
+          return null;
+        }).filter((key): key is string => key !== null && key.length > 0);
+        
+        console.log(`[FACILITY-SAVE] Normalized ${normalizedPhotos.length} photos from ${photosInput.length} input photos`);
+        updatedMetadata.facility_photos = normalizedPhotos;
         metadataChanged = true;
       }
       
@@ -2193,6 +2291,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
       const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
       
+      console.log(`[FACILITY-PHOTOS] Found ${rawPhotos.length} photos in metadata for vendor ${vendor.id}`);
+      
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const s3Client = new S3Client({ region: AWS_REGION });
@@ -2200,25 +2300,73 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const photos = await Promise.all(
         rawPhotos.map(async (photoItem: string) => {
           try {
-            let fileKey = photoItem;
+            if (!photoItem || typeof photoItem !== 'string') {
+              console.warn(`[FACILITY-PHOTOS] Invalid photo item:`, photoItem);
+              return null;
+            }
+            
+            let fileKey = photoItem.trim();
             
             // Extract key from various formats
             if (photoItem.includes('.s3.') && photoItem.includes('.amazonaws.com/')) {
-              // Extract key from full S3 URL
+              // Extract key from full S3 URL (e.g., https://bucket.s3.region.amazonaws.com/vendors/...)
               const urlParts = photoItem.split('.amazonaws.com/');
               if (urlParts.length > 1) {
-                fileKey = urlParts[1].split('?')[0]; // Remove query params if any
+                fileKey = urlParts[1].split('?')[0].split('#')[0]; // Remove query params and fragments
               }
-            } else if (photoItem.includes('?') && photoItem.includes('X-Amz')) {
+            } else if (photoItem.includes('?') && (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))) {
               // Extract key from presigned URL
               const urlParts = photoItem.split('?')[0];
-              const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-              if (keyMatch) {
-                fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+              if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
+                const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
+                if (keyMatch && keyMatch[1]) {
+                  fileKey = `vendors/${vendor.id}/facility/${keyMatch[1]}`;
+                } else {
+                  // Try to extract from any path containing vendors/
+                  const vendorsIndex = urlParts.indexOf('vendors/');
+                  if (vendorsIndex >= 0) {
+                    fileKey = urlParts.substring(vendorsIndex);
+                  }
+                }
               }
             } else if (photoItem.startsWith('vendors/')) {
-              // Already a key
-              fileKey = photoItem;
+              // Already a key - ensure it's for this vendor
+              if (!fileKey.startsWith(`vendors/${vendor.id}/`)) {
+                // If key is for different vendor or missing vendor ID, fix it
+                const keyParts = fileKey.split('/');
+                if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
+                  // Replace vendor ID in key
+                  fileKey = `vendors/${vendor.id}/${keyParts.slice(2).join('/')}`;
+                }
+              }
+            } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
+              // Full URL but not S3 - might be CloudFront or other CDN
+              // Try to extract key or return as-is for public URLs
+              console.log(`[FACILITY-PHOTOS] Photo is a full URL (non-S3), returning as-is:`, photoItem);
+              return photoItem;
+            }
+            
+            if (!fileKey || fileKey.length === 0) {
+              console.warn(`[FACILITY-PHOTOS] Could not extract file key from:`, photoItem);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generating presigned URL for key: ${fileKey}`);
+            
+            // ✅ FIX: Verify the object exists before generating presigned URL
+            try {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              const headCommand = new HeadObjectCommand({
+                Bucket: BUCKET_NAME,
+                Key: fileKey,
+              });
+              await s3Client.send(headCommand);
+            } catch (headError: any) {
+              if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+                console.warn(`[FACILITY-PHOTOS] Object not found in S3: ${fileKey}`);
+                return null;
+              }
+              console.warn(`[FACILITY-PHOTOS] Error checking object existence: ${fileKey}`, headError?.message);
             }
             
             // Generate fresh presigned URL (valid for 7 days)
@@ -2228,15 +2376,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             });
             
             const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 604800 });
+            
+            // ✅ FIX: Validate presigned URL format
+            if (!presignedUrl || typeof presignedUrl !== 'string' || !presignedUrl.startsWith('https://')) {
+              console.error(`[FACILITY-PHOTOS] Invalid presigned URL generated for ${fileKey}`);
+              return null;
+            }
+            
+            console.log(`[FACILITY-PHOTOS] Generated presigned URL for ${fileKey} (length: ${presignedUrl.length})`);
             return presignedUrl;
-          } catch (error) {
-            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error);
+          } catch (error: any) {
+            console.error(`[FACILITY-PHOTOS] Error generating presigned URL for ${photoItem}:`, error?.message || error);
+            // ✅ FIX: If presigned URL generation fails, try returning the original URL if it's already a valid URL
+            if (photoItem && (photoItem.startsWith('http://') || photoItem.startsWith('https://'))) {
+              console.log(`[FACILITY-PHOTOS] Returning original URL as fallback:`, photoItem);
+              return photoItem;
+            }
             return null;
           }
         })
       );
       
-      const validPhotos = photos.filter((url): url is string => url !== null && url.length > 0);
+      const validPhotos = photos.filter((url): url is string => url !== null && url !== undefined && url.length > 0);
+      console.log(`[FACILITY-PHOTOS] Returning ${validPhotos.length} valid photos out of ${rawPhotos.length} total`);
 
       return c.json({
         success: true,

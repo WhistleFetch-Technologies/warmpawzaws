@@ -66,8 +66,12 @@ export async function uploadStaffPhotoWithProgress(
         folder: `staff/${vendorId}`,
       }) as any;
 
-      if (!presignedResponse.success || !presignedResponse.presignedUrl) {
-        throw new Error('Failed to get upload URL');
+      if (presignedResponse?.error) {
+        throw new Error(presignedResponse.error);
+      }
+
+      if (!presignedResponse?.presignedUrl) {
+        throw new Error('Invalid response from server: missing upload URL');
       }
 
       if (onProgress) onProgress(30);

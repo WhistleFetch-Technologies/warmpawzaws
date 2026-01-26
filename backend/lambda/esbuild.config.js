@@ -38,7 +38,7 @@ esbuild.build({
     'jose',
     'firebase-admin',
     'zod',
-    'hono',
+    // 'hono' - REMOVED: Must be bundled for Lambda deployment
   ],
   
   // Exclude old non-enhanced handlers from bundle

@@ -23,6 +23,46 @@ import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../utils/entity-extractor';
 import { isValidUUID, normalizeVendorService } from '../types/entities';
 
+/**
+ * Map role IDs to service catalog roles
+ * Based on reference implementation - matches vendor app roles to catalog roles
+ */
+const roleMappings: Record<string, string[]> = {
+  // Healthcare Roles
+  'veterinarian': ['vet', 'veterinarian', 'veterinarian'],
+  'vet_solo': ['vet', 'veterinarian', 'veterinarian', 'vet_solo', 'solo_vet'],
+  'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinary_clinic'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
+  'pet_pharmacy': ['pharmacy', 'pet_pharmacy', 'pharmacy'],
+  'pet_ambulance': ['ambulance', 'pet_ambulance', 'ambulance'],
+  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist'],
+  // Center/Clinic Roles - map to vet_clinic for tele consultation access
+  'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
+  'testing_center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'testing_center', 'center'],
+  'clinic': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'clinic'],
+  
+  // Service Provider Roles
+  'pet_groomer': ['groomer', 'pet_groomer', 'groomer'],
+  'pet_walker': ['walker', 'pet_walker', 'dog_walker', 'pet_walker'],
+  'pet_trainer': ['trainer', 'pet_trainer', 'trainer'],
+  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'behaviorist'],
+  'pet_sitter': ['sitter', 'pet_sitter', 'sitter'],
+  'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'pet_transport'],
+  'pet_boarding': ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding'],
+  'pet_resort': ['resort', 'pet_resort', 'resort'],
+  'pet_cafe': ['cafe', 'pet_cafe', 'cafe'],
+  'pet_photographer': ['photographer', 'pet_photographer', 'photographer'],
+  'pet_sunset_services': ['sunset', 'pet_sunset_services', 'sunset_services'],
+  
+  // Retail Roles
+  'pet_products_store': ['store', 'pet_store', 'retailer', 'pet_products_store'],
+  'pet_breeder': ['breeder', 'pet_breeder', 'breeder'],
+  
+  // Other Roles
+  'pet_shelter': ['shelter', 'pet_shelter', 'ngo', 'pet_shelter'],
+  'insurance': ['insurance', 'pet_insurance', 'insurance'],
+};
+
 export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/services
@@ -386,11 +426,53 @@ export function registerVendorServicesEndpoints(app: Hono) {
         [vendorId, serviceStyle]
       );
 
+      // ✅ NEW: Also get available services from service_catalog for this style and role
+      // This helps vendors see what services they can add
+      let availableCatalogServices: any[] = [];
+      try {
+        if (vendor.role_id) {
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            const role = roles[0];
+            const roleConfig = role.config || {};
+            const acceptableRoles = [
+              role.name,
+              role.id,
+              role.display_name,
+              ...(roleMappings[role.name] || []),
+              role.name?.toLowerCase(),
+              role.name?.toLowerCase().replace(/\s+/g, '_'),
+            ].filter(Boolean);
+            const uniqueRoles = [...new Set(acceptableRoles)];
+
+            // Query service_catalog for available services matching this style and role
+            const catalogQuery = await query(
+              `SELECT sc.* 
+               FROM service_catalog sc
+               WHERE sc.status = 'active'
+               AND (sc.publish_status = 'published' OR sc.publish_status IS NULL)
+               AND sc.service_style = $1
+               AND (sc.applicable_roles && $2::text[] OR sc.applicable_roles IS NULL OR array_length(sc.applicable_roles, 1) IS NULL)
+               ORDER BY sc.category_name ASC, sc.service_name ASC
+               LIMIT 100`,
+              [serviceStyle, uniqueRoles]
+            );
+            availableCatalogServices = catalogQuery.rows || [];
+            console.log(`[Vendor Services] Found ${availableCatalogServices.length} available ${serviceStyle} services in catalog for role ${role.name}`);
+          }
+        }
+      } catch (catalogError: any) {
+        console.warn(`[Vendor Services] Failed to load catalog services:`, catalogError.message);
+        // Don't fail the request if catalog query fails
+      }
+
       return c.json({
         success: true,
         services: services.rows,
         total: services.rows.length,
         allowedServiceStyles, // ✅ Include in response so frontend knows what's allowed
+        availableCatalogServices, // ✅ NEW: Include available services from catalog
+        availableCatalogCount: availableCatalogServices.length, // ✅ NEW: Count of available services
       });
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);

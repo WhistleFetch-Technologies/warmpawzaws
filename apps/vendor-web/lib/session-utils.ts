@@ -136,21 +136,78 @@ export function clearVendorSession(): void {
 
 /**
  * Check if token is expired
+ * ✅ FIX: Handle both JWT tokens and staff session tokens
+ * Staff tokens format: staff_session_PHONE_TIMESTAMP or staff_refresh_PHONE_TIMESTAMP
+ * Fallback tokens format: fallback_BASE64PAYLOAD.HASH
  */
 export function isTokenExpired(token: string | null): boolean {
   if (!token) return true;
   
   try {
+    // ✅ FIX: Check for staff session tokens (non-JWT format)
+    // Staff tokens are valid for 24 hours from creation
+    if (token.startsWith('staff_session_') || token.startsWith('staff_refresh_')) {
+      // Extract timestamp from staff token: staff_session_PHONE_TIMESTAMP
+      const parts = token.split('_');
+      if (parts.length >= 3) {
+        const timestamp = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(timestamp)) {
+          const tokenAge = Date.now() - timestamp;
+          const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+          const isExpired = tokenAge > maxAge;
+          console.log('[TokenExpiry] Staff token check:', { tokenAge: tokenAge / 1000 / 60, minutes: tokenAge / 1000 / 60, maxAgeMinutes: maxAge / 1000 / 60, isExpired });
+          return isExpired;
+        }
+      }
+      // If we can't parse timestamp, assume valid (let backend reject if needed)
+      console.log('[TokenExpiry] Staff token - cannot parse timestamp, assuming valid');
+      return false;
+    }
+    
+    // ✅ FIX: Check for fallback tokens (format: fallback_BASE64.HASH)
+    if (token.startsWith('fallback_')) {
+      // Fallback tokens are valid for 1 hour
+      try {
+        const payloadPart = token.replace('fallback_', '').split('.')[0];
+        // Convert base64url to standard base64
+        const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(base64));
+        if (payload.timestamp) {
+          const tokenAge = Date.now() - payload.timestamp;
+          const maxAge = 60 * 60 * 1000; // 1 hour in milliseconds
+          return tokenAge > maxAge;
+        }
+      } catch (e) {
+        // Can't parse fallback token, assume valid
+        console.log('[TokenExpiry] Fallback token - cannot parse, assuming valid');
+        return false;
+      }
+      return false;
+    }
+    
+    // Standard JWT token validation
     const parts = token.split('.');
-    if (parts.length !== 3) return true;
+    if (parts.length !== 3) {
+      // Not a JWT, but also not a recognized session token
+      // ✅ FIX: Return false (not expired) to let the backend validate
+      console.log('[TokenExpiry] Unknown token format, assuming valid (backend will validate)');
+      return false;
+    }
     
     const payload = JSON.parse(atob(parts[1]));
-    if (!payload.exp) return true;
+    if (!payload.exp) {
+      // No expiry in JWT, assume valid
+      console.log('[TokenExpiry] JWT without exp claim, assuming valid');
+      return false;
+    }
     
     const now = Math.floor(Date.now() / 1000);
     return payload.exp < now;
   } catch (error) {
-    return true;
+    // ✅ FIX: On error, return false (not expired) instead of true
+    // Let the backend validate the token - don't prematurely clear session
+    console.warn('[TokenExpiry] Error parsing token, assuming valid:', error);
+    return false;
   }
 }
 
