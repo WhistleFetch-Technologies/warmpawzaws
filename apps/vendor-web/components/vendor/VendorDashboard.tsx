@@ -76,10 +76,10 @@ interface VendorDashboardProps {
   onNavigateToServiceManagement?: () => void;
   onNavigateToBookingManagement?: () => void;
   onNavigateToTeleConsultation?: () => void;
-  onNavigateToScheduleManagement?: () => void;
-  onNavigateToCenterProfile?: () => void; // ✅ NEW: Navigate to Center Profile Manager
+  onNavigateToScheduleManagement?: () => void; // ⚠️ DEPRECATED: Use onNavigateToAdvancedAvailability instead
+  onNavigateToAdvancedAvailability?: () => void; // ✅ STANDARD: Navigate to Advanced Availability Manager
+  onNavigateToProfile?: () => void; // ✅ RENAMED: Navigate to Profile Manager (works for both center and solo)
   onNavigateToFacilityManagement?: () => void;
-  onNavigateToStaffManagement?: () => void;
   onNavigateToBusinessHub?: () => void;
   onNavigateToLiveTracking?: () => void;
   onNavigateToSpecializedServices?: () => void; // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
@@ -186,10 +186,10 @@ export function VendorDashboard({
   onNavigateToServiceManagement, 
   onNavigateToBookingManagement, 
   onNavigateToTeleConsultation, 
-  onNavigateToScheduleManagement, 
-  onNavigateToCenterProfile, // ✅ NEW: Navigate to Center Profile Manager
+  onNavigateToScheduleManagement, // ⚠️ DEPRECATED: Routes to Advanced Availability
+  onNavigateToAdvancedAvailability, // ✅ STANDARD: Navigate to Advanced Availability Manager
+  onNavigateToProfile, // ✅ RENAMED: Navigate to Profile Manager (works for both center and solo)
   onNavigateToFacilityManagement, 
-  onNavigateToStaffManagement, 
   onNavigateToBusinessHub,
   onNavigateToLiveTracking,
   onNavigateToSpecializedServices, // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
@@ -472,17 +472,19 @@ export function VendorDashboard({
         // Check profile completion
         if (profileRes && profileRes.success) {
           const profile = profileRes.vendor || profileRes;
+          // FIX: Check all possible image field names (logo_url, profile_image_url, photo_url, photo)
+          const hasLogo = !!(profile.logo_url || profile.profile_image_url || profile.photo_url || profile.photo);
           const isProfileComplete = !!(
             profile.business_name &&
             profile.phone &&
             profile.address &&
-            (profile.logo_url || profile.profile_image_url || profileType === 'professional')
+            (hasLogo || profileType === 'professional')
           );
           setWarnings(prev => ({
             ...prev,
             profileIncomplete: !isProfileComplete,
             reasonProfileIncomplete: !isProfileComplete 
-              ? `Missing: ${!profile.business_name ? 'Business Name, ' : ''}${!profile.phone ? 'Phone, ' : ''}${!profile.address ? 'Address, ' : ''}${!(profile.logo_url || profile.profile_image_url) && profileType !== 'professional' ? 'Logo' : ''}`.replace(/, $/, '')
+              ? `Missing: ${!profile.business_name ? 'Business Name, ' : ''}${!profile.phone ? 'Phone, ' : ''}${!profile.address ? 'Address, ' : ''}${!hasLogo && profileType !== 'professional' ? 'Logo' : ''}`.replace(/, $/, '')
               : undefined,
           }));
         }
@@ -498,17 +500,29 @@ export function VendorDashboard({
   };
 
   // Fetch data on mount and when activeTab changes
+  // ✅ FIX: Load dashboard data immediately, don't wait for capabilities
+  // Capabilities are used for conditional fetching but shouldn't block initial load
   useEffect(() => {
-    if (vendorId && !capsLoading) {
+    if (vendorId) {
+      // Don't wait for capsLoading - fetch dashboard data immediately
+      // The fetchDashboardData already handles capability-based conditional fetching
       fetchDashboardData();
     }
-  }, [vendorId, activeTab, capsLoading, capabilities.booking, capabilities.medical_records]);
+  }, [vendorId, activeTab]);
+  
+  // ✅ FIX: Refresh when capabilities are loaded to fetch capability-specific data
+  useEffect(() => {
+    if (vendorId && initialLoadComplete && !capsLoading) {
+      // Capabilities are now loaded, refresh to fetch any capability-specific data
+      fetchDashboardData(true);
+    }
+  }, [initialLoadComplete]);
 
   // ✅ NEW: OTP handler for completing appointments
   const handleCompleteWithOtp = async () => {
     if (!selectedAppointment) return;
-    if (otp.length !== 6) {
-      setOtpError('Please enter a valid 6-digit OTP');
+    if (otp.length !== 4) {
+      setOtpError('Please enter a valid 4-digit OTP');
       return;
     }
 
@@ -674,16 +688,16 @@ export function VendorDashboard({
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">
-                        {profileType === 'center' ? 'Center Profile Incomplete' : 'Professional Profile Incomplete'}
+                        Profile Incomplete
                       </p>
                       <p className="text-xs text-gray-500">{warnings.reasonProfileIncomplete || 'Complete your profile to receive bookings'}</p>
                     </div>
                   </div>
                   <button 
                     onClick={() => {
-                      // Use the same Center Profile Manager as the dashboard
-                      if (profileType === 'center' && onNavigateToCenterProfile) {
-                        onNavigateToCenterProfile();
+                      // Use Profile Manager (works for both center and solo)
+                      if (onNavigateToProfile) {
+                        onNavigateToProfile();
                       } else {
                         router.push('/profile');
                       }
@@ -760,34 +774,33 @@ export function VendorDashboard({
               </button>
             )}
             
-            {/* Staff Management - For Clinics/Hospitals */}
-            {/* ✅ FIX: Only show if vendor has staff_management capability */}
-            {onNavigateToStaffManagement && CapabilityHelper.hasStaffManagement(capabilities) && (
+            {/* ✅ Profile - Works for both center and solo vendors */}
+            {onNavigateToProfile && (
               <button
-                onClick={onNavigateToStaffManagement}
-                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
-              >
-                <Users className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Manage Staff</span>
-              </button>
-            )}
-            
-            {/* ✅ FIX: Center Profile/Facility - Only show if vendor has facility_management capability AND is business */}
-            {onNavigateToCenterProfile && profileType === 'center' && CapabilityHelper.hasFacilityManagement(capabilities) && (
-              <button
-                onClick={onNavigateToCenterProfile}
+                onClick={onNavigateToProfile}
                 className="flex-1 min-w-[140px] bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
               >
                 <Building2 className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Center Profile</span>
+                <span className="font-semibold text-sm">Profile</span>
               </button>
             )}
             
-            {/* ✅ NEW: Professional Profile - Only show if vendor is solo */}
-            {profileType === 'professional' && (
+            {/* ✅ STANDARD: Advanced Availability - For all service-oriented vendors with booking capability */}
+            {/* This is the ONLY availability management - no basic schedule management anymore */}
+            {onNavigateToAdvancedAvailability && CapabilityHelper.hasBooking(capabilities) && (
+              <button
+                onClick={onNavigateToAdvancedAvailability}
+                className="flex-1 min-w-[140px] bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
+              >
+                <Calendar className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Availability</span>
+              </button>
+            )}
+            
+            {/* ✅ Fallback: Professional Profile - Only show if vendor is solo and no onNavigateToProfile */}
+            {!onNavigateToProfile && profileType === 'professional' && (
               <button
                 onClick={() => {
-                  // Navigate to professional profile (will be created in Phase 8)
                   router.push(`/profile`);
                 }}
                 className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
@@ -1707,7 +1720,7 @@ export function VendorDashboard({
               </button>
               <button
                 onClick={handleCompleteWithOtp}
-                disabled={otp.length !== 6 || processingOtp}
+                disabled={otp.length !== 4 || processingOtp}
                 className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {processingOtp ? (
